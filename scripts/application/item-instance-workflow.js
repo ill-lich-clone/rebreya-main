@@ -1,4 +1,4 @@
-import { ItemInstanceError, planItemInstanceMutation } from "../data/item-instance-rules.js";
+import { ItemInstanceError, planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.376";
 
 export function itemInstanceFingerprint(value) {
   if (Array.isArray(value)) return `[${value.map(itemInstanceFingerprint).join(",")}]`;

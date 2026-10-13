@@ -1,20 +1,21 @@
-import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.370";
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "./inventory-material-quantity.js?v=1.4.376";
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.376";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.370";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.376";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.370";
+} from "./storage-service.js?v=1.4.376";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
   isStorageJournalRow,
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.317";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.370";
-import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.376";
+import { parseStorageDragData } from "../ui/storage-transfer-ui.js?v=1.4.376";
 import { deriveGroundPilePresentation } from "./storage-pile-presentation.js?v=1.4.370";
 
 function clone(value) {
@@ -25,13 +26,13 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
-function positiveQuantity(value, fallback = 0) {
+function positiveQuantity(value, fallback = 0, data = null) {
   const number = Number(value);
-  return Number.isSafeInteger(number) && number >= 1 ? number : fallback;
+  return (isInventoryMaterialItemData(data) ? Number.isFinite(number) && number > 0 && number <= 1e9 && Number(number.toFixed(12)) === number : Number.isSafeInteger(number) && number >= 1) ? number : fallback;
 }
 
-function requireQuantity(value, maximum = Number.POSITIVE_INFINITY) {
-  const quantity = positiveQuantity(value);
+function requireQuantity(value, maximum = Number.POSITIVE_INFINITY, data = null) {
+  const quantity = positiveQuantity(value, 0, data);
   if (!quantity || quantity > maximum) {
     throw new Error(`Количество должно быть целым числом от 1 до ${maximum}.`);
   }
@@ -117,12 +118,12 @@ function isEmbeddedActorItem(item) {
 }
 
 function itemQuantity(item) {
-  return positiveQuantity(item?.system?.quantity, 1);
+  return isInventoryMaterialItemData(item?.toObject?.() ?? item) ? readInventoryItemQuantity(item?.toObject?.() ?? item) : positiveQuantity(item?.system?.quantity, 1);
 }
 
 function buildItemRow(item, available, createRowId) {
   const data = itemData(item);
-  data.system.quantity = available;
+  Object.assign(data, withInventoryItemQuantity(data, available));
   const origin = canonicalOrigin(item);
   return {
     rowId: clean(createRowId?.()) || createDepositRowId(),
@@ -310,7 +311,7 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
         const beforeQuantity = positiveQuantity(item?.system?.quantity);
         const snapshot = itemData(item);
         if (quantity < beforeQuantity) {
-          await item.update({ "system.quantity": beforeQuantity - quantity });
+          await item.update(buildInventoryItemQuantityPatch(item?.toObject?.() ?? item, Number((beforeQuantity - quantity).toFixed(12))));
           return {
             kind: "item-update",
             itemUuid: clean(item.uuid),
@@ -332,7 +333,7 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
       async restore(receipt) {
         if (!receipt || receipt.kind === "copy") return false;
         if (receipt.kind === "item-update") {
-          await receipt.item.update({ "system.quantity": receipt.beforeQuantity });
+          await receipt.item.update(receipt.beforeQuantityState ? buildInventoryItemQuantityRestorePatch(receipt.beforeQuantityState) : buildInventoryItemQuantityPatch(receipt.item?.toObject?.() ?? receipt.item, receipt.beforeQuantity));
           return true;
         }
         if (receipt.kind === "item-delete") {
@@ -402,16 +403,17 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
       return item?.isOwner === true || parent?.isOwner === true;
     },
     async consume(requestedQuantity) {
-      const quantity = requireQuantity(requestedQuantity, itemQuantity(item));
+      const quantity = requireQuantity(requestedQuantity, itemQuantity(item), item?.toObject?.() ?? item);
       if (!embedded) return { kind: "copy" };
       const beforeQuantity = itemQuantity(item);
       const snapshot = itemData(item);
       if (quantity < beforeQuantity) {
-        await item.update({ "system.quantity": beforeQuantity - quantity });
+        await item.update(buildInventoryItemQuantityPatch(item?.toObject?.() ?? item, Number((beforeQuantity - quantity).toFixed(12))));
         return {
           kind: "item-update",
           itemUuid: clean(item.uuid),
           beforeQuantity,
+          beforeQuantityState: captureInventoryItemQuantityState(snapshot),
           item,
           parent
         };
@@ -429,7 +431,7 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
     async restore(receipt) {
       if (!receipt || receipt.kind === "copy") return false;
       if (receipt.kind === "item-update") {
-        await receipt.item.update({ "system.quantity": receipt.beforeQuantity });
+        await receipt.item.update(receipt.beforeQuantityState ? buildInventoryItemQuantityRestorePatch(receipt.beforeQuantityState) : buildInventoryItemQuantityPatch(receipt.item?.toObject?.() ?? receipt.item, receipt.beforeQuantity));
         return true;
       }
       if (receipt.kind === "item-delete") {
@@ -465,7 +467,7 @@ async function resolveStorageRowSource(sourceRef, {
   if (isStorageJournalRow(row)) {
     throw new Error("Ссылку на журнал нельзя переносить как предмет из другого хранилища.");
   }
-  const available = positiveQuantity(row.quantity ?? row.itemData?.system?.quantity, 1);
+  const available = positiveQuantity(row.quantity ?? readInventoryItemQuantity(row.itemData), 1, row.itemData);
   const depositRow = clone(row);
   depositRow.rowId = clean(createRowId?.()) || createDepositRowId();
   depositRow.stackKey = clean(row.stackKey ?? row.sourceId) || JSON.stringify(stableValue({
@@ -478,7 +480,7 @@ async function resolveStorageRowSource(sourceRef, {
   depositRow.quantity = available;
   depositRow.itemData ??= {};
   depositRow.itemData.system ??= {};
-  depositRow.itemData.system.quantity = available;
+  depositRow.itemData = withInventoryItemQuantity(depositRow.itemData, available);
 
   return {
     kind: "storage-row",
@@ -489,7 +491,7 @@ async function resolveStorageRowSource(sourceRef, {
     storageToken: token,
     canUserMove() { return true; },
     async consume(requestedQuantity) {
-      const quantity = requireQuantity(requestedQuantity, available);
+      const quantity = requireQuantity(requestedQuantity, available, row.itemData);
       const beforeState = readStorageStateAtPath(token, path);
       assertStorageCoinTransferAvailable(beforeState);
       const result = await storageService.claim(token, {
@@ -581,12 +583,12 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
         rowId: clean(createRowId?.()) || createDepositRowId()
       });
   const available = groundItem
-    ? positiveQuantity(groundItem.quantity ?? groundItem.itemData?.system?.quantity, 1)
+    ? positiveQuantity(groundItem.quantity ?? readInventoryItemQuantity(groundItem.itemData), 1, groundItem.itemData)
     : 1;
   row.quantity = available;
   row.itemData ??= {};
   row.itemData.system ??= {};
-  row.itemData.system.quantity = available;
+  row.itemData = withInventoryItemQuantity(row.itemData, available);
   const parent = document.parent ?? document.scene ?? null;
   const tokenData = clone(document.toObject?.() ?? document) ?? {};
 
@@ -608,7 +610,7 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
       return document.isOwner === true || document.actor?.isOwner === true;
     },
     async consume(requestedQuantity) {
-      const quantity = requireQuantity(requestedQuantity, available);
+      const quantity = requireQuantity(requestedQuantity, available, row.itemData);
       if (groundItem && quantity < available) {
         if (!storageService?.claim) {
           throw new TypeError("Для частичного переноса наземного предмета требуется StorageService.");

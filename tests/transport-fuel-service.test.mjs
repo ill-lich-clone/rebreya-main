@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
+import { withInventoryItemQuantity, readInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 import { buildTransportFuelSelector } from "../scripts/data/transport-fuel-item.js";
 import {
   TransportFuelService,
@@ -103,6 +104,17 @@ test("fuel consumption payload is exact and non-negative", () => {
   assert.equal(validateTransportFuelConsumptionPayload({ ...valid, appliedMiles: -1 }), false);
   assert.equal(validateTransportFuelConsumptionPayload({ ...valid, forged: true }), false);
   assert.equal(validateTransportFuelConsumptionPayload({ ...valid, groupActorId: "__proto__" }), false);
+});
+
+test("material fuel consumes a small logical remainder with native integer writes", async () => {
+  const item = withInventoryItemQuantity({ _id: "fragment", id: "fragment", name: "Fuel", type: "loot", flags: { [MODULE_ID]: { sourceType: "material", sourceId: "coal", materialId: "coal" } }, system: { quantity: 1, weight: { value: 630, units: "lb" }, price: { value: 10000, denomination: "gp" } } }, 0.000793650794);
+  const vehicle = { id: "v", type: "vehicle", flags: { [MODULE_ID]: { transport: { instance: true, groupActorId: "g", consumption: { kind: "fuel", amount: 0.01, unit: "gal", cadence: "mile" }, instanceState: { fuelSelector: buildTransportFuelSelector(item) } } } } };
+  const groupActor = { items: { contents: [item], get: () => item }, async updateEmbeddedDocuments(_type, patches) { for (const patch of patches) { assert.ok(Number.isInteger(patch["system.quantity"])); for (const [path, value] of Object.entries(patch)) { if (path === "_id") continue; const parts = path.split("."); let cursor = item; for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {}); cursor[parts.at(-1)] = value; } } } };
+  const service = new TransportFuelService({ groupContextService: { resolveForGroup: () => ({ groupId: "g", groupActor, members: [vehicle], groupState: { transportState: { activeTransportId: "member:v" } } }) } });
+  const result = await service.consumeForTravel({ groupActorId: "g", appliedMiles: 1 });
+  assert.equal(result.required, 0.01);
+  assert.equal(result.consumed, 0.000793650794);
+  assert.equal(readInventoryItemQuantity(item), 0);
 });
 
 test("travel consumes matching warehouse stacks in stable item-id order", async () => {

@@ -1,12 +1,13 @@
-import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.370";
-import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.252";
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.376";
+import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.376";
+import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.376";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.370";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.370";
+} from "./storage-service.js?v=1.4.376";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.376";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
@@ -19,13 +20,13 @@ import {
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
 } from "./storage-access.js?v=1.4.197-door-trigger-target";
-import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js?v=1.4.257";
+import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js?v=1.4.376";
 import { STORAGE_TRIGGER_EVENTS } from "./storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import {
   TriggerTargetCoordinator,
   createTriggerTargetRef
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
-import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.370";
+import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.376";
 import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 import {
   buildJournalRecordItemData,
@@ -59,8 +60,12 @@ function isTrimmedString(value, { required = false, max = 512 } = {}) {
     && (!required || value.length > 0);
 }
 
+function isValidItemQuantity(value) {
+  return Number.isFinite(value) && value > 0 && value <= 1e9 && Number(value.toFixed(12)) === value;
+}
+
 function isOptionalQuantity(value) {
-  return value === null || (Number.isSafeInteger(value) && value >= 1);
+  return value === null || isValidItemQuantity(value);
 }
 
 function isValidStoragePath(value) {
@@ -146,8 +151,7 @@ function isValidStorageDepositSource(source) {
     && isTrimmedString(source.tokenUuid, { required: true })
     && isTrimmedString(source.rowId, { required: true, max: 160 })
     && (source.path === undefined || isValidStoragePath(source.path))
-    && Number.isSafeInteger(source.quantity)
-    && source.quantity >= 1;
+    && isValidItemQuantity(source.quantity);
 }
 
 function isValidStorageTarget(destination, target) {
@@ -330,8 +334,7 @@ export function isValidStorageDepositPayload(payload) {
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid)
     && isValidStorageDepositSource(payload.source)
-    && Number.isSafeInteger(payload.quantity)
-    && payload.quantity >= 1
+    && isValidItemQuantity(payload.quantity)
     && (payload.administrative === undefined || typeof payload.administrative === "boolean")
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
@@ -360,8 +363,7 @@ export function isValidStorageDropItemPayload(payload) {
     && isTrimmedString(payload.sceneId, { required: true, max: 160 })
     && Number.isFinite(payload.x)
     && Number.isFinite(payload.y)
-    && Number.isSafeInteger(payload.quantity)
-    && payload.quantity >= 1
+    && isValidItemQuantity(payload.quantity)
     && (payload.rotation === undefined || isGroundPileCardinalRotation(payload.rotation))
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
@@ -656,9 +658,7 @@ export class StorageCommandService {
         for (const row of rows) {
           const liveRow = liveById.get(row.sourceKey);
           if (!liveRow) throw new Error(`Предмет хранилища '${row.sourceKey}' больше недоступен.`);
-          const available = Math.max(1, Math.trunc(Number(
-            liveRow.quantity ?? liveRow.itemData?.system?.quantity ?? 1
-          )) || 1);
+          const available = (isInventoryMaterialItemData(liveRow.itemData) ? Number(liveRow.quantity ?? readInventoryItemQuantity(liveRow.itemData)) : Math.max(1, Math.trunc(Number(liveRow.quantity ?? liveRow.itemData?.system?.quantity ?? 1)) || 1));
           if (!recovering && (liveState.claimedRowIds.includes(row.sourceKey) || available < row.quantity)) {
             throw new Error(`Предмет хранилища '${row.sourceKey}' больше недоступен.`);
           }
@@ -751,7 +751,7 @@ export class StorageCommandService {
     let subject = "";
     if (row) {
       const amount = Number(quantity);
-      const safeQuantity = Number.isSafeInteger(amount) && amount > 0 ? amount : 1;
+      const safeQuantity = Number.isFinite(amount) && amount > 0 ? amount : 1;
       const rowName = escapeFoundryHtml(clean(row?.name ?? row?.itemData?.name) || "Предмет");
       subject = `${safeQuantity} × ${rowName}`;
     }
@@ -1409,15 +1409,13 @@ export class StorageCommandService {
       if (isStorageJournalRow(row)) {
         throw new Error("Ссылку на журнал нельзя забрать из хранилища.");
       }
-      const available = Math.max(1, Math.trunc(Number(
-        row.quantity ?? row.itemData?.system?.quantity ?? 1
-      )) || 1);
+      const available = isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? row.itemData?.system?.quantity ?? 1)) || 1);
       const quantity = coinReservation ? coinReservation.quantity : claimedForRecovery
         ? Number(plannedRow.quantity)
         : payload.quantity === null || payload.quantity === undefined
           ? available
           : Number(payload.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity < 1 || (!claimedForRecovery && quantity > available)) {
+      if (!(isInventoryMaterialItemData(row.itemData) ? isValidItemQuantity(quantity) : Number.isSafeInteger(quantity) && quantity >= 1) || (!claimedForRecovery && quantity > available)) {
         throw new Error("Количество должно быть целым числом от 1 до доступного остатка.");
       }
       let partyActor = null;
@@ -1429,7 +1427,7 @@ export class StorageCommandService {
       transferRow.quantity = quantity;
       transferRow.itemData ??= {};
       transferRow.itemData.system ??= {};
-      transferRow.itemData.system.quantity = quantity;
+      transferRow.itemData = withInventoryItemQuantity(transferRow.itemData, quantity);
       const preparedTransferRow = coinDenomination ? transferRow : await this.#prepareGroundRow(transferRow);
       const containerTransfer = isStorageContainerRow(preparedTransferRow);
       const containerFingerprint = containerBinding?.fingerprint ?? JSON.stringify({ request: containerIntent, grantId });
@@ -1696,14 +1694,12 @@ export class StorageCommandService {
         if (isStorageJournalRow(row)) continue;
         const quantity = destination === "party" && plannedById.has(rowId)
           ? Number(plannedById.get(rowId)?.quantity)
-          : Math.max(1, Math.trunc(Number(
-            row.quantity ?? row.itemData?.system?.quantity ?? 1
-          )) || 1);
+          : (isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? row.itemData?.system?.quantity ?? 1)) || 1));
         const transferRow = clone(row);
         transferRow.quantity = quantity;
         transferRow.itemData ??= {};
         transferRow.itemData.system ??= {};
-        transferRow.itemData.system.quantity = quantity;
+        transferRow.itemData = withInventoryItemQuantity(transferRow.itemData, quantity);
         const preparedTransferRow = await this.#prepareGroundRow(transferRow);
         preparedRows.push({ rowId, quantity, transferRow, preparedTransferRow });
       }
@@ -1856,7 +1852,7 @@ export class StorageCommandService {
       throw new Error("Неподдерживаемый источник предмета для хранилища.");
     }
     const quantity = Number(payload.quantity);
-    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+    if (!isValidItemQuantity(quantity)) {
       throw new Error("Количество должно быть целым числом не меньше 1.");
     }
     if (payload.administrative !== undefined && typeof payload.administrative !== "boolean") {
@@ -1930,7 +1926,7 @@ export class StorageCommandService {
       if (source.kind === "coin-template") {
         throw new Error("Managed Item монет можно переносить только в физическую кучу монет на сцене.");
       }
-      if (quantity > Number(source.available)) {
+      if (!(isInventoryMaterialItemData(source.row?.itemData) ? isValidItemQuantity(quantity) : Number.isSafeInteger(quantity) && quantity >= 1) || quantity > Number(source.available)) {
         throw new Error(`Количество должно быть целым числом от 1 до ${source.available}.`);
       }
       if (source.mode === "move" && source.canUserMove?.(sender) !== true) {
@@ -2148,7 +2144,7 @@ export class StorageCommandService {
         throw new Error("Managed Item монет нельзя выгружать как обычную строку наземной кучи.");
       }
       const quantity = Number(payload.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > Number(source.available)) {
+      if (!(isInventoryMaterialItemData(source.row?.itemData) ? isValidItemQuantity(quantity) : Number.isSafeInteger(quantity) && quantity >= 1) || quantity > Number(source.available)) {
         throw new Error(`Количество должно быть целым числом от 1 до ${source.available}.`);
       }
       if (source.mode === "move" && source.canUserMove?.(sender) !== true) {
@@ -2174,7 +2170,7 @@ export class StorageCommandService {
         groundRow.quantity = quantity;
         groundRow.itemData ??= {};
         groundRow.itemData.system ??= {};
-        groundRow.itemData.system.quantity = quantity;
+        groundRow.itemData = withInventoryItemQuantity(groundRow.itemData, quantity);
       }
       const preparedGroundRow = await this.#prepareGroundRow(groundRow, {
         sourceItem: source.item,

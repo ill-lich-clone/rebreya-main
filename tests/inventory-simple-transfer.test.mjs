@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
+import { withInventoryItemQuantity, readInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 import { InventoryIngressPlanner } from "../scripts/application/inventory-ingress-planner.js";
 import { buildInventoryIngressDescriptor } from "../scripts/data/inventory-ingress-descriptor.js";
 import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
@@ -19,6 +20,43 @@ const {
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
+
+test("material take splits a half-pound stack without changing its mass or price", async () => {
+  const source = createItem({ id: "scrap", quantity: 1 });
+  Object.assign(source, withInventoryItemQuantity({ ...source.toObject(), flags: { [MODULE_ID]: {
+    sourceType: "material", sourceId: "adamant", materialId: "adamant"
+  } }, system: { quantity: 1, weight: { value: 10, units: "lb" }, price: { value: 500, denomination: "gp" } } }, 0.05));
+  const hero = createActor({ id: "hero-scrap" });
+  const group = createActor({ id: "group-scrap", type: "group", managed: true, items: [source], members: [{ actor: hero }] });
+  const fixture = installFixture({ group, actors: [group, hero] });
+  try {
+    const request = { actorId: hero.id, quantity: 0.02, mutationId: "split-scrap" };
+    await fixture.service.takeInventoryItemToCharacter(source.id, request);
+    await fixture.service.takeInventoryItemToCharacter(source.id, request);
+    const target = hero.items.contents[0];
+    assert.equal(hero.items.contents.length, 1);
+    assert.equal(readInventoryItemQuantity(target.toObject()), 0.02);
+    assert.equal(readInventoryItemQuantity(source.toObject()), 0.03);
+    for (const item of [source, target]) assert.ok(Number.isInteger(item.system.quantity));
+    assert.equal(source.system.weight.value * source.system.quantity + target.system.weight.value * target.system.quantity, 0.5);
+    assert.equal(source.system.price.value * source.system.quantity + target.system.price.value * target.system.quantity, 25);
+  } finally { fixture.restore(); }
+});
+
+test("tiny material take rejects a target that drifted by one stock quantum before debit", async () => {
+  const source = createItem({ id: "tiny-scrap", quantity: 1 });
+  Object.assign(source, withInventoryItemQuantity({ ...source.toObject(), flags: { [MODULE_ID]: { sourceType: "material", sourceId: "adamant", materialId: "adamant" } }, system: { quantity: 1, weight: { value: 10, units: "lb" }, price: { value: 500, denomination: "gp" } } }, 1e-12));
+  const hero = createActor({ id: "tiny-hero" });
+  const create = hero.createEmbeddedDocuments.bind(hero);
+  hero.createEmbeddedDocuments = async (type, rows, options) => create(type, rows.map(row => withInventoryItemQuantity(row, 2e-12)), options);
+  const group = createActor({ id: "tiny-group", type: "group", managed: true, items: [source], members: [{ actor: hero }] });
+  const fixture = installFixture({ group, actors: [group, hero] });
+  try {
+    await assert.rejects(fixture.service.takeInventoryItemToCharacter(source.id, { actorId: hero.id, quantity: 1e-12, mutationId: "tiny-drift" }), error => error.code === "transfer-manual-review");
+    assert.equal(readInventoryItemQuantity(source.toObject()), 1e-12);
+    assert.equal(readInventoryItemQuantity(hero.items.contents[0].toObject()), 2e-12);
+  } finally { fixture.restore(); }
+});
 
 function setProperty(source, path, value) {
   const parts = String(path ?? "").split(".");

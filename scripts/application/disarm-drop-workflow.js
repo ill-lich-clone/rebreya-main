@@ -1,7 +1,7 @@
-import { captureRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.4.252";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.368-hero-performance";
-import { planItemInstanceMutation } from "../data/item-instance-rules.js";
-import { itemInstanceFingerprint as fingerprint } from "./item-instance-workflow.js?v=1.4.368-hero-performance";
+import { captureRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.4.376";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.376";
+import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.376";
+import { itemInstanceFingerprint as fingerprint } from "./item-instance-workflow.js?v=1.4.376";
 import { buildHeldItemWornUpdate } from "../integrations/held-items.js";
 import { DisarmError } from "../combat/disarm-rules.js?v=1.4.252";
 const MODULE_ID = "rebreya-main";

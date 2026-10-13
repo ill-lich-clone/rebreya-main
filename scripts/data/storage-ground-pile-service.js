@@ -1,12 +1,13 @@
-import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.370";
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.376";
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.376";
 import { MODULE_ID } from "../constants.js";
-import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.370";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.376";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.376";
 import {
   buildStorageTokenState,
   readStorageCoinDenomination,
   readStorageState
-} from "./storage-service.js?v=1.4.370";
+} from "./storage-service.js?v=1.4.376";
 import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import {
   deriveGroundPilePresentation,
@@ -98,7 +99,7 @@ function readFlag(document, key) {
 }
 
 function rowQuantity(row) {
-  return Math.max(1, Math.trunc(Number(row?.quantity ?? row?.itemData?.system?.quantity ?? 1)) || 1);
+  return isInventoryMaterialItemData(row?.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row?.quantity ?? row?.itemData?.system?.quantity ?? 1)) || 1);
 }
 
 function rowIdentity(row) {
@@ -212,7 +213,7 @@ export class StorageGroundPileService {
   #prepareRow(row, quantity) {
     const available = rowQuantity(row);
     const amount = Number(quantity);
-    if (!Number.isSafeInteger(amount) || amount < 1 || amount > available) {
+    if ((isInventoryMaterialItemData(row?.itemData) ? !Number.isFinite(amount) || amount <= 0 || Number(amount.toFixed(12)) !== amount : !Number.isSafeInteger(amount) || amount < 1) || amount > available) {
       throw new Error(`Количество должно быть целым числом от 1 до ${available}.`);
     }
     const prepared = clone(row);
@@ -227,7 +228,7 @@ export class StorageGroundPileService {
     prepared.quantity = amount;
     prepared.itemData ??= {};
     prepared.itemData.system ??= {};
-    prepared.itemData.system.quantity = amount;
+    prepared.itemData = withInventoryItemQuantity(prepared.itemData, amount);
     return prepared;
   }
 
@@ -421,7 +422,7 @@ export class StorageGroundPileService {
         }
         const identity = rowIdentity(incoming);
         const stackIndex = manualRows.findIndex((entry) => (
-          !claimed.has(clean(entry?.rowId)) && rowIdentity(entry) === identity
+          !claimed.has(clean(entry?.rowId)) && rowIdentity(entry) === identity && (!isInventoryMaterialItemData(incoming.itemData) || storageRowsCanStack(entry, incoming))
           && storageRowsCanStack(entry, incoming)
         ));
         if (stackIndex < 0) {
@@ -429,10 +430,10 @@ export class StorageGroundPileService {
           continue;
         }
         const next = clone(manualRows[stackIndex]);
-        next.quantity = rowQuantity(next) + rowQuantity(incoming);
+        next.quantity = Number((rowQuantity(next) + rowQuantity(incoming)).toFixed(12));
         next.itemData ??= {};
         next.itemData.system ??= {};
-        next.itemData.system.quantity = next.quantity;
+        next.itemData = withInventoryItemQuantity(next.itemData, next.quantity);
         manualRows[stackIndex] = next;
       }
       const incomingCoins = normalizedCoins(coins);

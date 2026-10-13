@@ -1,3 +1,4 @@
+import { normalizeInventoryMaterialProjection } from "./inventory-material-quantity.js?v=1.4.376";
 import { MODULE_ID } from "../constants.js";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 
@@ -14,6 +15,7 @@ function stackState(row) {
     delete metadata.quantity;
   }
   if (state.itemData) {
+    state.itemData = normalizeInventoryMaterialProjection(state.itemData);
     for (const key of ["_id", "id", "uuid", "_stats", "folder", "sort", "ownership", "pack"]) delete state.itemData[key];
     state.itemData.system ??= {};
     delete state.itemData.system.quantity;

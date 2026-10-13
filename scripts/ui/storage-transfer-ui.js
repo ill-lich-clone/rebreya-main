@@ -6,6 +6,11 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
+function positiveQuantity(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 && number <= 1e9 && Number(number.toFixed(12)) === number ? number : 0;
+}
+
 function positiveInteger(value) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 1 ? number : 0;
@@ -16,7 +21,7 @@ export function buildStorageDragData({ tokenUuid = "", path = [], rowId = "", qu
     type: STORAGE_DRAG_TYPE,
     tokenUuid: clean(tokenUuid),
     rowId: clean(rowId),
-    quantity: positiveInteger(quantity)
+    quantity: positiveQuantity(quantity)
   };
   const normalizedPath = (Array.isArray(path) ? path : []).map(clean).filter(Boolean).slice(0, 8);
   if (normalizedPath.length) payload.path = normalizedPath;
@@ -40,7 +45,7 @@ export function parseStorageDragData(value) {
   if (clean(payload.type) !== STORAGE_DRAG_TYPE) return null;
   const tokenUuid = clean(payload.tokenUuid);
   const rowId = clean(payload.rowId);
-  const quantity = positiveInteger(payload.quantity);
+  const quantity = positiveQuantity(payload.quantity);
   if (!tokenUuid || !rowId || !quantity) return null;
   const path = (Array.isArray(payload.path) ? payload.path : []).map(clean).filter(Boolean).slice(0, 8);
   return {
@@ -58,10 +63,10 @@ export function storageGridColumns(itemCount) {
   return Math.max(4, Math.ceil(Math.sqrt(count * 1.25)));
 }
 
-async function defaultQuantityPrompt({ max, value }) {
+async function defaultQuantityPrompt({ max, value, material = false }) {
   const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-  const bounded = Number.isSafeInteger(max) && max >= 1;
-  const rangeLabel = bounded ? ` (1-${max})` : "";
+  const bounded = Number.isFinite(max) && max > 0;
+  const rangeLabel = bounded ? ` (${material ? "0 <" : "1-"}${max})` : "";
   const maximumAttribute = bounded ? ` max="${max}"` : "";
   if (typeof DialogV2?.prompt !== "function") {
     const fallback = globalThis.prompt?.(`Сколько перенести?${rangeLabel}`, String(value));
@@ -72,7 +77,7 @@ async function defaultQuantityPrompt({ max, value }) {
     content: `
       <form class="rm-storage-quantity-dialog">
         <label>Количество${rangeLabel}</label>
-        <input type="number" name="quantity" min="1"${maximumAttribute} step="1" value="${value}" autofocus>
+        <input type="number" name="quantity" min="${material ? "0.000000000001" : "1"}"${maximumAttribute} step="${material ? "any" : "1"}" value="${value}" autofocus>
       </form>
     `,
     ok: {
@@ -115,13 +120,13 @@ async function defaultGroundPileRotationPrompt({ name, img, width, height }) {
   });
 }
 
-export async function promptStorageTransferQuantity(maxQuantity, { prompt = defaultQuantityPrompt } = {}) {
-  const max = positiveInteger(maxQuantity);
+export async function promptStorageTransferQuantity(maxQuantity, { prompt = defaultQuantityPrompt, material = !Number.isInteger(maxQuantity) } = {}) {
+  const max = material ? positiveQuantity(maxQuantity) : positiveInteger(maxQuantity);
   if (!max) throw new Error("В источнике нет доступных предметов.");
-  if (max === 1) return 1;
-  const value = await prompt({ max, value: max });
+  if (!material && max === 1) return 1;
+  const value = await prompt({ max, value: max, ...(material ? { material: true } : {}) });
   if (value === null || value === undefined || value === false || value === "") return null;
-  const quantity = positiveInteger(value);
+  const quantity = material ? positiveQuantity(value) : positiveInteger(value);
   if (!quantity || quantity > max) {
     throw new Error(`Количество должно быть целым числом от 1 до ${max}.`);
   }

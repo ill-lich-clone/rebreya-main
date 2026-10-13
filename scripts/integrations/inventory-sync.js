@@ -1,9 +1,10 @@
+import { isInventoryMaterialItemData, readInventoryItemQuantity, inventoryMaterialQuantitiesMatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch, buildInventoryItemQuantityPatch, readInventoryItemUnitWeight, readInventoryItemUnitPrice } from "../data/inventory-material-quantity.js?v=1.4.376";
 import { MODULE_ID } from "../constants.js";
 import {
   captureInventoryTransferIdentity,
   inventoryTransferIdentityMatches,
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT
-} from "../data/inventory-service.js?v=1.4.375";
+} from "../data/inventory-service.js?v=1.4.376";
 
 const PARTY_INVENTORY_TRANSFER_FLAG = "partyInventoryTransfer";
 const DEFAULT_REFRESH_DEBOUNCE_MS = 0;
@@ -38,12 +39,11 @@ function itemUuidOf(item) {
 }
 
 function itemQuantityOf(item) {
-  const value = Number(item?.system?.quantity ?? item?.toObject?.()?.system?.quantity);
-  return Number.isFinite(value) ? Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100) : 0;
+  return readInventoryItemQuantity(item?.toObject?.() ?? item);
 }
 
 function quantitiesMatch(left, right) {
-  return Math.abs(Number(left) - Number(right)) <= 1e-9;
+  return inventoryMaterialQuantitiesMatch(Number(left), Number(right));
 }
 
 function transferFlagOf(item) {
@@ -155,6 +155,8 @@ async function rollbackAcceptedTransfer(pending) {
   }
   const receipt = pending.targetReceipt;
   const currentQuantity = itemQuantityOf(pending.item);
+  if (receipt.afterQuantityState && JSON.stringify(captureInventoryItemQuantityState(pending.item?.toObject?.() ?? pending.item)) !== JSON.stringify(receipt.afterQuantityState)
+    && (!receipt.beforeQuantityState || JSON.stringify(captureInventoryItemQuantityState(pending.item?.toObject?.() ?? pending.item)) !== JSON.stringify(receipt.beforeQuantityState))) return false;
   pendingAcceptedTransfers.delete(pending.transferId);
   try {
     if (receipt.created === true) {
@@ -172,7 +174,7 @@ async function rollbackAcceptedTransfer(pending) {
         pendingAcceptedTransfers.set(pending.transferId, pending);
         return false;
       }
-      await pending.item.update({ "system.quantity": receipt.beforeQuantity });
+      await pending.item.update(receipt.beforeQuantityState ? buildInventoryItemQuantityRestorePatch(receipt.beforeQuantityState) : buildInventoryItemQuantityPatch(pending.item?.toObject?.() ?? pending.item, receipt.beforeQuantity));
     }
     return true;
   }
@@ -333,12 +335,12 @@ function getPendingTransfer(item, event = {}) {
     }
   }
   else if (changedQuantity === undefined
-    || !quantitiesMatch(changedQuantity, afterQuantity)
+    || !quantitiesMatch(changedQuantity, isInventoryMaterialItemData(item?.toObject?.() ?? item) ? item.system.quantity : afterQuantity)
     || afterQuantity <= expectedQuantity) {
     return null;
   }
 
-  const beforeQuantity = created ? 0 : Math.round((afterQuantity - expectedQuantity + Number.EPSILON) * 100) / 100;
+  const beforeQuantity = created ? 0 : Number((afterQuantity - expectedQuantity).toFixed(12));
 
   return {
     transferId,
@@ -351,7 +353,9 @@ function getPendingTransfer(item, event = {}) {
       created,
       beforeQuantity,
       afterQuantity,
-      delta: expectedQuantity
+      delta: expectedQuantity,
+      ...(isInventoryMaterialItemData(item?.toObject?.() ?? item) ? { afterQuantityState: captureInventoryItemQuantityState(item?.toObject?.() ?? item) } : {}),
+      ...(candidate.beforeQuantityState ? { beforeQuantityState: candidate.beforeQuantityState } : {})
     }
   };
 }
@@ -541,6 +545,19 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
 
   hookRegistered = true;
   registerSourceDepletionSocket();
+  Hooks.on("preUpdateItem", (item, changes, options, userId) => {
+    if (!isCurrentUserHook(userId) || !isCharacterItem(item) || !pendingTransfer || pendingTransfer.expiresAt < Date.now()) return;
+    const data = item?.toObject?.() ?? item;
+    const source = globalThis.fromUuidSync?.(pendingTransfer.sourceItemUuid);
+    const sourceData = source?.toObject?.() ?? source;
+    if (!isInventoryMaterialItemData(data) || !sourceData || !inventoryTransferIdentityMatches(item, pendingTransfer.expectedIdentity)) return;
+    const changedCount = changes?.["system.quantity"] ?? changes?.system?.quantity;
+    if (changedCount === undefined || Number(changedCount) !== Number(data.system.quantity) + Number(sourceData.system?.quantity)) return;
+    if (readInventoryItemUnitWeight(data) !== readInventoryItemUnitWeight(sourceData)
+      || JSON.stringify(readInventoryItemUnitPrice(data)) !== JSON.stringify(readInventoryItemUnitPrice(sourceData))) return false;
+    pendingTransfer.beforeQuantityState = captureInventoryItemQuantityState(data);
+    Object.assign(changes, buildInventoryItemQuantityPatch(data, Number((itemQuantityOf(item) + pendingTransfer.expectedQuantity).toFixed(12))));
+  });
   const onItemChange = async (item, changes = {}, options = {}, userId = "") => {
     const handledTransfer = await handleAcceptedPartyInventoryItem(item, {
       eventType: "updateItem",

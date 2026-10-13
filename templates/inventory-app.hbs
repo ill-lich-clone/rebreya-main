@@ -392,14 +392,14 @@
                       </button>
                       <p>
                         <span>Кол-во</span>
-                        <strong>{{rmNum quantity}}</strong>
+                        <strong>{{#if isMaterial}}{{rmNum quantity 12}}{{else}}{{rmNum quantity}}{{/if}}</strong>
                       </p>
                       <p>
                         <span>Вес</span>
-                        <strong>{{rmNum totalWeight}} фнт.</strong>
+                        <strong>{{#if isMaterial}}{{rmNum totalWeight 12}}{{else}}{{rmNum totalWeight}}{{/if}} фнт.</strong>
                       </p>
                       <p>
-                        <span>1 шт.</span>
+                        <span>{{#if isMaterial}}1 ед.{{else}}1 шт.{{/if}}</span>
                         <strong>{{#if priceLabel}}{{priceLabel}}{{else}}-{{/if}}</strong>
                       </p>
                     </div>
@@ -409,10 +409,10 @@
                     </button>
                     <div class="rm-compact-item__service-actions" hidden>
                       {{#if ../canDropInventoryItems}}
-                        <button type="button" data-action="take-item-self" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
+                        <button type="button" data-action="take-item-self" data-source-type="{{sourceType}}" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
 
                         {{#if canSell}}
-                          <button type="button" data-action="sell-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
+                          <button type="button" data-action="sell-item" data-source-type="{{sourceType}}" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
                         {{/if}}
 
                         {{#if ../canDismantleInventory}}
@@ -428,7 +428,7 @@
                       {{/if}}
 
                       {{#if ../canManage}}
-                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="edit-item-quantity" data-source-type="{{sourceType}}" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
                           <i class="fa-solid fa-pen"></i>
                           <span>Изменить количество</span>
                         </button>

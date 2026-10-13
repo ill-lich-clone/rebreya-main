@@ -1,9 +1,14 @@
 import { consumeTreatWoundsKitOnce } from "../application/treat-wounds-kit-consumption.js?v=1.4.372";
-import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.368-hero-performance";
-import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
-import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.280";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.368-hero-performance";
+import {
+  isInventoryMaterialItemData, readInventoryItemQuantity, readInventoryItemUnitWeight,
+  readInventoryItemUnitPrice, withInventoryItemQuantity, buildInventoryItemQuantityPatch,
+  inventoryMaterialQuantitiesMatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch
+} from "./inventory-material-quantity.js?v=1.4.376";
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.376";
+import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.376";
+import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.376";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.376";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.376";
 import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
@@ -23,7 +28,7 @@ import {
   normalizeGroupSupplyCoverage,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./group-context-service.js?v=1.4.375";
+} from "./group-context-service.js?v=1.4.376";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
@@ -33,7 +38,7 @@ import {
   getInventoryDismantleBlockReason,
   resolveInventoryDismantleMinimumQuantity,
   resolveInventoryDismantleOutputs
-} from "./inventory-ingress-descriptor.js?v=1.4.268";
+} from "./inventory-ingress-descriptor.js?v=1.4.376";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -47,7 +52,7 @@ import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-
 import {
   buildTransportFuelInventorySnapshot,
   normalizeTransportFuelSelector
-} from "./transport-fuel-item.js";
+} from "./transport-fuel-item.js?v=1.4.376";
 import {
   normalizeTransportFuelConsumption,
   resolveTransportFuelConsumption
@@ -262,8 +267,31 @@ function normalizeInventoryMutationJournal(value) {
   };
 }
 
-function inventoryQuantitiesMatch(left, right) {
+function inventoryQuantitiesMatch(left, right, itemData = null) {
+  if (isInventoryMaterialItemData(itemData)) return inventoryMaterialQuantitiesMatch(left, right);
   return Math.abs(toNumber(left, 0) - toNumber(right, 0)) <= 1e-9;
+}
+
+function roundStockQuantity(value) {
+  return Number(Number(value).toFixed(12));
+}
+
+function setInventoryItemQuantityData(itemData, quantity) {
+  Object.assign(itemData, withInventoryItemQuantity(itemData, quantity));
+  return itemData;
+}
+
+function inventoryQuantityStateMatches(itemData, state) {
+  if (!state) return true;
+  const sorted = (_key, value) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value;
+  return JSON.stringify(captureInventoryItemQuantityState(itemData), sorted) === JSON.stringify(state, sorted);
+}
+
+function inventoryReceiptQuantityPatch(itemData, receipt, phase) {
+  const state = receipt[`${phase}QuantityState`];
+  return state ? buildInventoryItemQuantityRestorePatch(state)
+    : buildInventoryItemQuantityPatch(itemData, receipt[`${phase}Quantity`]);
 }
 
 function inventoryAcquisitionHistoriesMatch(left, right) {
@@ -343,7 +371,13 @@ function normalizeCraftResourceRequest(value = {}, { requireProjectId = true } =
     predominantMaterialId,
     predominantMaterialLb,
     baseRawMaterialId,
-    baseRawQuantity
+    baseRawQuantity,
+    ...(nested.materialAccountingVersion === 2 || source.materialAccountingVersion === 2 ? {
+      materialAccountingVersion: 2,
+      predominantUnitWeightLb: Number(nested.predominantUnitWeightLb ?? source.predominantUnitWeightLb),
+      baseRawUnitWeightLb: Number(nested.baseRawUnitWeightLb ?? source.baseRawUnitWeightLb),
+      ...(source.materialLots ? { materialLots: foundry.utils.deepClone(source.materialLots) } : {})
+    } : {})
   };
 }
 
@@ -363,12 +397,17 @@ function normalizeCraftSpendRequest(projectId, spend = {}) {
 }
 
 function collectCraftMaterialResources(request) {
+  if (request.materialAccountingVersion === 2) {
+    for (const [amount, weight] of [[request.predominantMaterialLb, request.predominantUnitWeightLb], [request.baseRawQuantity, request.baseRawUnitWeightLb]]) {
+      if (amount > 0 && (!(weight > 0) || !Number.isFinite(weight))) throw new Error("Craft material unit weight must be positive and pinned.");
+    }
+  }
   const resourcesBySourceId = new Map();
   const resources = [
     {
       resource: "predominant",
       sourceId: request.predominantMaterialId,
-      quantity: request.predominantMaterialLb
+      quantity: request.materialAccountingVersion === 2 ? roundStockQuantity(request.predominantMaterialLb / request.predominantUnitWeightLb) : request.predominantMaterialLb
     },
     {
       resource: "baseRaw",
@@ -381,7 +420,7 @@ function collectCraftMaterialResources(request) {
     const component = foundry.utils.deepClone(resource);
     const existing = resourcesBySourceId.get(resource.sourceId);
     if (existing) {
-      existing.quantity = roundCraftQuantity(existing.quantity + resource.quantity);
+      existing.quantity = roundStockQuantity(existing.quantity + resource.quantity);
       existing.components.push(component);
       continue;
     }
@@ -394,22 +433,22 @@ function collectCraftMaterialResources(request) {
 }
 
 function takeCraftMaterialComponents(pendingComponents, quantity) {
-  let remaining = roundCraftQuantity(quantity);
+  let remaining = roundStockQuantity(quantity);
   const allocated = [];
   for (const component of pendingComponents) {
-    if (remaining <= 1e-9) {
+    if (remaining <= 0) {
       break;
     }
-    const available = roundCraftQuantity(component.quantity);
+    const available = roundStockQuantity(component.quantity);
     if (available <= 0) {
       continue;
     }
-    const taken = roundCraftQuantity(Math.min(available, remaining));
+    const taken = roundStockQuantity(Math.min(available, remaining));
     allocated.push({ ...foundry.utils.deepClone(component), quantity: taken });
-    component.quantity = roundCraftQuantity(available - taken);
-    remaining = roundCraftQuantity(remaining - taken);
+    component.quantity = roundStockQuantity(available - taken);
+    remaining = roundStockQuantity(remaining - taken);
   }
-  if (remaining > 1e-9) {
+  if (remaining > 0) {
     throw new Error("Craft material components do not match their total quantity.");
   }
   return allocated;
@@ -626,7 +665,11 @@ function itemsCanMergeInInventory(sourceItem, acceptedItem) {
     ? Boolean(sourceIdentity && acceptedIdentity && sourceIdentity === acceptedIdentity)
     : itemsCanRepresentSameTransfer(sourceItem, acceptedItem);
   return sameStack
-    && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem);
+    && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem)
+    && (!isInventoryMaterialItemData(sourceItem?.toObject?.() ?? sourceItem)
+      || (isInventoryMaterialItemData(acceptedItem?.toObject?.() ?? acceptedItem)
+        && readInventoryItemUnitWeight(sourceItem?.toObject?.() ?? sourceItem) === readInventoryItemUnitWeight(acceptedItem?.toObject?.() ?? acceptedItem)
+        && JSON.stringify(readInventoryItemUnitPrice(sourceItem?.toObject?.() ?? sourceItem)) === JSON.stringify(readInventoryItemUnitPrice(acceptedItem?.toObject?.() ?? acceptedItem))));
 }
 
 export function captureInventoryTransferIdentity(item) {
@@ -676,6 +719,7 @@ function normalizeInventoryTransferIdentity(value) {
 
 export function inventoryTransferIdentityMatches(item, expectedIdentity) {
   const actualIdentity = captureInventoryTransferIdentity(item);
+  if (actualIdentity && !expectedIdentity?.materialUnit) delete actualIdentity.materialUnit;
   const normalizedExpected = normalizeInventoryTransferIdentity(expectedIdentity);
   return Boolean(actualIdentity && normalizedExpected)
     && JSON.stringify(actualIdentity) === JSON.stringify(normalizedExpected);
@@ -683,9 +727,9 @@ export function inventoryTransferIdentityMatches(item, expectedIdentity) {
 
 function normalizeInventoryTransferTargetReceipt(value, targetItemUuid, expectedQuantity) {
   const safeTargetItemUuid = cleanId(targetItemUuid);
-  const beforeQuantity = roundNumber(value?.beforeQuantity, 2);
-  const afterQuantity = roundNumber(value?.afterQuantity, 2);
-  const delta = roundNumber(value?.delta, 2);
+  const beforeQuantity = roundStockQuantity(value?.beforeQuantity);
+  const afterQuantity = roundStockQuantity(value?.afterQuantity);
+  const delta = roundStockQuantity(value?.delta);
   if (!value
     || typeof value.created !== "boolean"
     || typeof value.beforeQuantity !== "number"
@@ -1337,7 +1381,7 @@ function buildEmptyTransportSnapshot({ warning = "", canManage = false } = {}) {
 }
 
 function getRawQuantity(itemData) {
-  return Math.max(0, toNumber(foundry.utils.getProperty(itemData, "system.quantity"), 1));
+  return readInventoryItemQuantity(itemData);
 }
 
 function buildTransportFuelSnapshot(activeVehicle, groupActor) {
@@ -1408,6 +1452,7 @@ function buildTransportFuelSnapshot(activeVehicle, groupActor) {
 }
 
 function getItemWeight(itemData) {
+  if (isInventoryMaterialItemData(itemData)) return readInventoryItemUnitWeight(itemData);
   return Math.max(0, toNumber(foundry.utils.getProperty(itemData, "system.weight.value"), 0));
 }
 
@@ -1582,10 +1627,12 @@ function isMagicalInventoryItem(itemData) {
 
 export function resolveInventorySaleQuote(itemData, quantity = 1) {
   const currentQuantity = getRawQuantity(itemData);
+  const material = isInventoryMaterialItemData(itemData);
   const sellQuantity = currentQuantity > 0
-    ? Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)))
+    ? material ? Math.min(currentQuantity, Math.max(0, roundStockQuantity(toNumber(quantity, 1))))
+      : Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)))
     : 0;
-  const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+  const unitCopper = priceToCopper(readInventoryItemUnitPrice(itemData));
   if (isMagicalInventoryItem(itemData)) {
     return {
       eligible: false,
@@ -1770,7 +1817,7 @@ function buildLegacyInventorySourceMergeGroups(actor) {
   const groups = new Map();
   for (const sourceItem of actor?.items?.contents ?? []) {
     const sourceItemData = sanitizeEmbeddedItemData(sourceItem.toObject?.() ?? sourceItem);
-    const quantity = roundNumber(getRawQuantity(sourceItemData), 2);
+    const quantity = isInventoryMaterialItemData(sourceItemData) ? roundStockQuantity(getRawQuantity(sourceItemData)) : roundNumber(getRawQuantity(sourceItemData), 2);
     if (quantity <= 0) {
       continue;
     }
@@ -1778,7 +1825,8 @@ function buildLegacyInventorySourceMergeGroups(actor) {
     const key = getLegacyInventoryMergeKey(sourceItemData);
     const existing = groups.get(key);
     if (existing) {
-      existing.quantity = roundNumber(existing.quantity + quantity, 2);
+      if (isInventoryMaterialItemData(sourceItemData) && !itemsCanMergeInInventory(existing.itemData, sourceItemData)) throw new Error("Материалы с разным весом или ценой единицы требуют отдельного переноса.");
+      existing.quantity = isInventoryMaterialItemData(sourceItemData) ? roundStockQuantity(existing.quantity + quantity) : roundNumber(existing.quantity + quantity, 2);
       continue;
     }
 
@@ -2224,19 +2272,22 @@ export class InventoryService {
   }
 
   async #depleteInventoryItem(item, quantity) {
-    const currentQuantity = getRawQuantity(item.toObject());
+    const itemData = item.toObject();
+    const currentQuantity = getRawQuantity(itemData);
     if (currentQuantity <= 0) {
       throw new Error("Inventory item quantity must be greater than zero before depletion.");
     }
-    const safeQuantity = Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
-    const nextQuantity = roundNumber(currentQuantity - safeQuantity, 2);
+    const material = isInventoryMaterialItemData(itemData);
+    const safeQuantity = material ? Math.min(currentQuantity, roundStockQuantity(toNumber(quantity, 1)))
+      : Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    if (safeQuantity <= 0) throw new Error("Inventory depletion quantity must be positive.");
+    const nextQuantity = material ? roundStockQuantity(currentQuantity - safeQuantity)
+      : roundNumber(currentQuantity - safeQuantity, 2);
     if (nextQuantity <= 0) {
       await item.delete();
     }
     else {
-      await item.update({
-        "system.quantity": nextQuantity
-      });
+      await item.update(buildInventoryItemQuantityPatch(itemData, nextQuantity));
     }
 
     return safeQuantity;
@@ -2359,8 +2410,8 @@ export class InventoryService {
     const quantity = getRawQuantity(item.toObject());
     return {
       item,
-      applied: inventoryQuantitiesMatch(quantity, receipt.afterQuantity),
-      before: inventoryQuantitiesMatch(quantity, receipt.beforeQuantity)
+      applied: inventoryQuantitiesMatch(quantity, receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState),
+      before: inventoryQuantitiesMatch(quantity, receipt.beforeQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.beforeQuantityState)
     };
   }
 
@@ -2421,27 +2472,28 @@ export class InventoryService {
     const receipts = [];
     const receiptByItemId = new Map();
     for (const resource of collectCraftMaterialResources(request)) {
-      const items = this.#findMaterialInventoryItems(actor, resource.sourceId);
+      const unitWeight = request.predominantMaterialId === resource.sourceId ? request.predominantUnitWeightLb : request.baseRawUnitWeightLb;
+      const items = this.#findMaterialInventoryItems(actor, resource.sourceId).filter(item => request.materialAccountingVersion !== 2 || readInventoryItemUnitWeight(item.toObject()) === unitWeight);
       if (!items.length) {
         throw new Error(`Craft material '${resource.sourceId}' was not found in party inventory.`);
       }
-      let remaining = roundCraftQuantity(resource.quantity);
+      let remaining = roundStockQuantity(resource.quantity);
       const pendingComponents = resource.components.map((component) => foundry.utils.deepClone(component));
       for (const item of items) {
-        if (remaining <= 1e-9) {
+        if (remaining <= 0) {
           break;
         }
         const existing = receiptByItemId.get(item.id);
         const beforeQuantity = existing?.afterQuantity
-          ?? roundCraftQuantity(getRawQuantity(item.toObject()));
-        const quantity = roundCraftQuantity(Math.min(beforeQuantity, remaining));
+          ?? roundStockQuantity(getRawQuantity(item.toObject()));
+        const quantity = roundStockQuantity(Math.min(beforeQuantity, remaining));
         if (quantity <= 0) {
           continue;
         }
-        const afterQuantity = roundCraftQuantity(beforeQuantity - quantity);
+        const afterQuantity = roundStockQuantity(beforeQuantity - quantity);
         const components = takeCraftMaterialComponents(pendingComponents, quantity);
         if (existing) {
-          existing.quantity = roundCraftQuantity(existing.quantity + quantity);
+          existing.quantity = roundStockQuantity(existing.quantity + quantity);
           existing.delta = existing.quantity;
           existing.afterQuantity = afterQuantity;
           existing.components.push(...components);
@@ -2456,14 +2508,15 @@ export class InventoryService {
             itemUuid: cleanId(item.uuid),
             beforeQuantity,
             afterQuantity,
-            delta: quantity
+            delta: quantity,
+            ...(request.materialAccountingVersion === 2 ? { itemData: item.toObject(), materialAccountingVersion: 2, beforeQuantityState: captureInventoryItemQuantityState(item.toObject()), afterQuantityState: captureInventoryItemQuantityState(withInventoryItemQuantity(item.toObject(), afterQuantity)) } : {})
           };
           receipts.push(receipt);
           receiptByItemId.set(item.id, receipt);
         }
-        remaining = roundCraftQuantity(remaining - quantity);
+        remaining = roundStockQuantity(remaining - quantity);
       }
-      if (remaining > 1e-9) {
+      if (remaining > 0) {
         throw new Error(`Not enough craft material '${resource.sourceId}' in party inventory.`);
       }
     }
@@ -2476,18 +2529,18 @@ export class InventoryService {
       ?? null;
   }
 
-  async #updateCraftItemQuantity(item, quantity, execution) {
+  async #updateCraftItemQuantity(item, quantity, execution, state = null) {
     try {
       await this.#awaitCraftExecution(
         execution,
-        () => item.update({ "system.quantity": roundCraftQuantity(quantity) })
+        () => item.update(state ? buildInventoryItemQuantityRestorePatch(state) : buildInventoryItemQuantityPatch(item.toObject(), roundStockQuantity(quantity)))
       );
     }
     catch (error) {
       if (this.#isCraftExecutionContextError(error)) {
         throw error;
       }
-      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), quantity)) {
+      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), quantity, item.toObject())) {
         throw error;
       }
     }
@@ -2500,14 +2553,14 @@ export class InventoryService {
       throw this.#inventoryReconciliationError("Craft reservation source item disappeared.");
     }
     const currentQuantity = getRawQuantity(item.toObject());
-    if (inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+    if ((inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
       return null;
     }
-    if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+    if (!(inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.beforeQuantityState))) {
       throw this.#inventoryReconciliationError("Craft reservation source quantity changed before debit.");
     }
-    await this.#updateCraftItemQuantity(item, receipt.afterQuantity, execution);
-    if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+    await this.#updateCraftItemQuantity(item, receipt.afterQuantity, execution, receipt.afterQuantityState);
+    if (!(inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
       throw this.#inventoryReconciliationError("Craft reservation debit was not observed.");
     }
     return null;
@@ -2520,14 +2573,14 @@ export class InventoryService {
       throw this.#inventoryReconciliationError("Craft reservation source item disappeared before compensation.");
     }
     const currentQuantity = getRawQuantity(item.toObject());
-    if (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+    if ((inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.beforeQuantityState))) {
       return;
     }
-    if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+    if (!(inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
       throw this.#inventoryReconciliationError("Craft reservation source changed before compensation.");
     }
-    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity, execution);
-    if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) {
+    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity, execution, receipt.beforeQuantityState);
+    if (!(inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.beforeQuantityState))) {
       throw this.#inventoryReconciliationError("Craft reservation compensation was not observed.");
     }
   }
@@ -2545,31 +2598,43 @@ export class InventoryService {
     const receipts = [];
     const receiptByTarget = new Map();
 
-    for (const resource of collectCraftMaterialResources(request)) {
-      const item = this.#findMaterialInventoryItem(actor, resource.sourceId);
-      const targetKey = item ? `item:${item.id}` : `source:${resource.sourceId}`;
+    const resources = request.materialAccountingVersion === 2 && request.materialLots ? request.materialLots : collectCraftMaterialResources(request);
+    if (request.materialLots) {
+      const expected = collectCraftMaterialResources(request);
+      for (const resource of expected) {
+        const total = roundStockQuantity(resources.filter(lot => lot.sourceId === resource.sourceId).reduce((sum, lot) => sum + lot.quantity, 0));
+        if (!inventoryMaterialQuantitiesMatch(total, resource.quantity)) throw new Error("Craft refund lots do not match the unspent reservation.");
+      }
+      if (resources.some(lot => !expected.some(resource => resource.sourceId === lot.sourceId) || !isInventoryMaterialItemData(lot.itemData) || !(lot.quantity > 0))) throw new Error("Invalid craft refund lot.");
+    }
+    for (const resource of resources) {
+      const originalItem = resource.itemData ? this.#craftReceiptItem(actor, resource) : null;
+      const item = resource.itemData ? (originalItem && itemsCanMergeInInventory(originalItem, resource.itemData) ? originalItem : this.#findInventoryMergeCandidate(actor, resource.itemData)) : this.#findMaterialInventoryItem(actor, resource.sourceId);
+      const targetKey = item ? `item:${item.id}` : `source:${resource.sourceId}:${resource.itemId ?? ""}`;
       const existing = receiptByTarget.get(targetKey);
       if (existing) {
-        existing.quantity = roundCraftQuantity(existing.quantity + resource.quantity);
+        existing.quantity = roundStockQuantity(existing.quantity + resource.quantity);
         existing.delta = existing.quantity;
-        existing.afterQuantity = roundCraftQuantity(existing.beforeQuantity + existing.quantity);
-        existing.components.push(...resource.components);
+        existing.afterQuantity = roundStockQuantity(existing.beforeQuantity + existing.quantity);
+        existing.components ??= [];
+        existing.components.push(...(resource.components ?? []));
+        if (existing.afterQuantityState) existing.afterQuantityState = captureInventoryItemQuantityState(withInventoryItemQuantity(item?.toObject() ?? existing.itemData, existing.afterQuantity));
         if (existing.itemData) {
-          foundry.utils.setProperty(existing.itemData, "system.quantity", existing.afterQuantity);
+          setInventoryItemQuantityData(existing.itemData, existing.afterQuantity);
         }
         continue;
       }
 
-      const beforeQuantity = item ? roundCraftQuantity(getRawQuantity(item.toObject())) : 0;
-      const afterQuantity = roundCraftQuantity(beforeQuantity + resource.quantity);
+      const beforeQuantity = item ? roundStockQuantity(getRawQuantity(item.toObject())) : 0;
+      const afterQuantity = roundStockQuantity(beforeQuantity + resource.quantity);
       let itemData = null;
       if (!item) {
         const receiptIndex = receipts.length;
-        itemData = await this.#awaitCraftExecution(
+        itemData = resource.itemData ? sanitizeEmbeddedItemData(resource.itemData) : await this.#awaitCraftExecution(
           execution,
           () => this.buildModelItemData("material", resource.sourceId, resource.quantity)
         );
-        foundry.utils.setProperty(itemData, "system.quantity", afterQuantity);
+        setInventoryItemQuantityData(itemData, afterQuantity);
         foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
           id: mutationId,
           kind: "craft-release",
@@ -2585,7 +2650,8 @@ export class InventoryService {
         itemData,
         beforeQuantity,
         afterQuantity,
-        delta: resource.quantity
+        delta: resource.quantity,
+        ...(request.materialAccountingVersion === 2 ? { beforeQuantityState: item ? captureInventoryItemQuantityState(item.toObject()) : null, afterQuantityState: captureInventoryItemQuantityState(withInventoryItemQuantity(item?.toObject() ?? itemData, afterQuantity)) } : {})
       };
       receipts.push(receipt);
       receiptByTarget.set(targetKey, receipt);
@@ -2616,7 +2682,7 @@ export class InventoryService {
           }
         }
       }
-      if (!item || !inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+      if (!item || !(inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
         throw this.#inventoryReconciliationError("Craft release item creation was not observed.");
       }
       return {
@@ -2629,13 +2695,13 @@ export class InventoryService {
       throw this.#inventoryReconciliationError("Craft release target item disappeared.");
     }
     const currentQuantity = getRawQuantity(item.toObject());
-    if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
-      if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+    if (!(inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
+      if (!(inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.beforeQuantityState))) {
         throw this.#inventoryReconciliationError("Craft release target quantity changed before credit.");
       }
-      await this.#updateCraftItemQuantity(item, receipt.afterQuantity, execution);
+      await this.#updateCraftItemQuantity(item, receipt.afterQuantity, execution, receipt.afterQuantityState);
     }
-    if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+    if (!(inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
       throw this.#inventoryReconciliationError("Craft release credit was not observed.");
     }
     return null;
@@ -2650,7 +2716,7 @@ export class InventoryService {
       if (!item) {
         return;
       }
-      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+      if (!(inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
         throw this.#inventoryReconciliationError("Created craft release item changed before compensation.");
       }
       try {
@@ -2671,13 +2737,13 @@ export class InventoryService {
       throw this.#inventoryReconciliationError("Craft release target disappeared before compensation.");
     }
     const currentQuantity = getRawQuantity(item.toObject());
-    if (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+    if ((inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.beforeQuantityState))) {
       return;
     }
-    if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+    if (!(inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, item.toObject()) && inventoryQuantityStateMatches(item.toObject(), receipt.afterQuantityState))) {
       throw this.#inventoryReconciliationError("Craft release target changed before compensation.");
     }
-    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity, execution);
+    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity, execution, receipt.beforeQuantityState);
   }
 
   #craftReceiptAppliedCount(record) {
@@ -2801,7 +2867,7 @@ export class InventoryService {
     if (record.phase !== "committed") {
       record = await this.#checkpointCraftMutationRecord(execution, record.id, record.phase, "committed");
     }
-    const result = record.receipts.map(({ itemData: _itemData, ...receipt }) => receipt);
+    const result = record.receipts.map(({ itemData, ...receipt }) => ({ ...receipt, ...(receipt.materialAccountingVersion === 2 ? { itemData } : {}) }));
     await this.#finishCraftMutationRecord(execution, record.id, { ok: true, value: result });
     return foundry.utils.deepClone(result);
   }
@@ -2882,7 +2948,7 @@ export class InventoryService {
       throw new Error(`Craft gear '${output.sourceId}' has no source document data.`);
     }
     const itemData = sanitizeEmbeddedItemData(sourceData);
-    foundry.utils.setProperty(itemData, "system.quantity", output.quantity);
+    setInventoryItemQuantityData(itemData, output.quantity);
     foundry.utils.setProperty(itemData, "system.equipped", false);
     clearCraftOutputAttunement(itemData);
     itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
@@ -2929,12 +2995,12 @@ export class InventoryService {
     return match ? Number(match[1]) : null;
   }
 
-  async #compensateCreatedMutationItem(actor, mutationId, expectedQuantity) {
+  async #compensateCreatedMutationItem(actor, mutationId, expectedQuantity, expectedQuantityState = null) {
     const created = this.#findMutationItem(actor, mutationId);
     if (!created) {
       return;
     }
-    if (!inventoryQuantitiesMatch(getRawQuantity(created.toObject()), expectedQuantity)) {
+    if (!inventoryQuantitiesMatch(getRawQuantity(created.toObject()), expectedQuantity, created.toObject()) || !inventoryQuantityStateMatches(created.toObject(), expectedQuantityState)) {
       throw this.#inventoryReconciliationError("Created inventory target changed before compensation.");
     }
     try {
@@ -2956,7 +3022,7 @@ export class InventoryService {
       sourceActorId: cleanId(inventoryActor?.id),
       sourceItemId: cleanId(itemId),
       targetActorId: cleanId(targetActor?.id),
-      quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+      quantity: roundStockQuantity(toNumber(quantity, 1))
     });
     this.#claimSimpleMutationFingerprint(operationId, fingerprint);
     const record = await this.mutationJournal.find(operationId);
@@ -3040,14 +3106,16 @@ export class InventoryService {
     if (beforeQuantity <= 0) {
       throw new Error("Inventory item quantity must be greater than zero to take it.");
     }
-    const takeQuantity = Math.max(0.01, Math.min(beforeQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    const takeQuantity = isInventoryMaterialItemData(itemData) ? Math.min(beforeQuantity, roundStockQuantity(toNumber(quantity, 1))) : Math.max(0.01, Math.min(beforeQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    if (takeQuantity <= 0) throw new Error("Количество должно быть положительным.");
     const sourceReceipt = {
       itemId: item.id,
       beforeQuantity,
-      afterQuantity: roundNumber(beforeQuantity - takeQuantity, 2),
-      delta: takeQuantity
+      afterQuantity: roundStockQuantity(beforeQuantity - takeQuantity),
+      delta: takeQuantity,
+      ...(isInventoryMaterialItemData(itemData) ? { beforeQuantityState: captureInventoryItemQuantityState(itemData), afterQuantityState: captureInventoryItemQuantityState(withInventoryItemQuantity(itemData, roundStockQuantity(beforeQuantity - takeQuantity))) } : {})
     };
-    foundry.utils.setProperty(itemData, "system.quantity", takeQuantity);
+    setInventoryItemQuantityData(itemData, takeQuantity);
     foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
       id: operationId,
       kind: "take"
@@ -3102,7 +3170,8 @@ export class InventoryService {
       }
     }
     if (!createdItem
-      || !inventoryQuantitiesMatch(getRawQuantity(createdItem.toObject()), takeQuantity)) {
+      || !inventoryQuantitiesMatch(getRawQuantity(createdItem.toObject()), takeQuantity, createdItem.toObject())
+      || (isInventoryMaterialItemData(itemData) && !inventoryQuantityStateMatches(createdItem.toObject(), captureInventoryItemQuantityState(itemData)))) {
       await this.#finishSimpleFailure(
         terminalRecord,
         this.#simpleTransferError(
@@ -3149,7 +3218,7 @@ export class InventoryService {
       }
       try {
         this.#assertSourceDepletionAuthority();
-        await this.#compensateCreatedMutationItem(targetActor, operationId, takeQuantity);
+        await this.#compensateCreatedMutationItem(targetActor, operationId, takeQuantity, isInventoryMaterialItemData(itemData) ? captureInventoryItemQuantityState(itemData) : null);
         this.#assertSourceDepletionAuthority();
       }
       catch (rollbackError) {
@@ -3227,8 +3296,9 @@ export class InventoryService {
       if (beforeQuantity <= 0) {
         throw new Error("Inventory item quantity must be greater than zero to take it.");
       }
-      const takeQuantity = Math.max(0.01, Math.min(beforeQuantity, roundNumber(toNumber(quantity, 1), 2)));
-      foundry.utils.setProperty(itemData, "system.quantity", takeQuantity);
+      const takeQuantity = isInventoryMaterialItemData(itemData) ? Math.min(beforeQuantity, roundStockQuantity(toNumber(quantity, 1))) : Math.max(0.01, Math.min(beforeQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    if (takeQuantity <= 0) throw new Error("Количество должно быть положительным.");
+      setInventoryItemQuantityData(itemData, takeQuantity);
       foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
         id: operationId,
         kind: "take"
@@ -3244,7 +3314,7 @@ export class InventoryService {
         sourceReceipt: {
           itemId: item.id,
           beforeQuantity,
-          afterQuantity: roundNumber(beforeQuantity - takeQuantity, 2),
+          afterQuantity: roundStockQuantity(beforeQuantity - takeQuantity),
           delta: takeQuantity
         }
       });
@@ -3495,8 +3565,8 @@ export class InventoryService {
       const currentData = item.toObject();
       const currentQuantity = getRawQuantity(currentData);
       const currentHistory = readInventoryAcquisitionHistory(currentData);
-      const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
-      const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+      const quantityIsBefore = (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, receipt.beforeQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.beforeQuantityState));
+      const quantityIsAfter = (inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, receipt.afterQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.afterQuantityState));
       const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
         currentHistory,
         receipt.beforeAcquisitionHistory
@@ -3509,7 +3579,7 @@ export class InventoryService {
         if (!(quantityIsBefore && historyIsBefore)) {
           throw this.#inventoryReconciliationError("Inventory dismantle material quantity changed.");
         }
-        const patch = { "system.quantity": receipt.afterQuantity };
+        const patch = inventoryReceiptQuantityPatch(item.toObject(), receipt, "after");
         if (hasAcquisitionHistory) {
           patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.afterAcquisitionHistory;
         }
@@ -3518,7 +3588,7 @@ export class InventoryService {
         }
         catch (error) {
           const observed = item.toObject();
-          if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity)
+          if (!(inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity, receipt.afterQuantityState ? observed : null) && inventoryQuantityStateMatches(observed, receipt.afterQuantityState))
             || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
               readInventoryAcquisitionHistory(observed),
               receipt.afterAcquisitionHistory
@@ -3528,7 +3598,7 @@ export class InventoryService {
     }
     const observedTarget = item?.toObject?.() ?? {};
     if (!item
-      || !inventoryQuantitiesMatch(getRawQuantity(observedTarget), receipt.afterQuantity)
+      || !(inventoryQuantitiesMatch(getRawQuantity(observedTarget), receipt.afterQuantity, receipt.afterQuantityState ? observedTarget : null) && inventoryQuantityStateMatches(observedTarget, receipt.afterQuantityState))
       || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
         readInventoryAcquisitionHistory(observedTarget),
         receipt.afterAcquisitionHistory
@@ -3637,7 +3707,7 @@ export class InventoryService {
     const currentQuantity = getRawQuantity(currentData);
     const currentHistory = readInventoryAcquisitionHistory(currentData);
     if (receipt.created) {
-      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)
+      if (!(inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, receipt.afterQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.afterQuantityState))
         || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
           currentHistory,
           receipt.afterAcquisitionHistory
@@ -3656,8 +3726,8 @@ export class InventoryService {
       }
       return;
     }
-    const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
-    const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+    const quantityIsBefore = (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, receipt.beforeQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.beforeQuantityState));
+    const quantityIsAfter = (inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, receipt.afterQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.afterQuantityState));
     const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
       currentHistory,
       receipt.beforeAcquisitionHistory
@@ -3670,7 +3740,7 @@ export class InventoryService {
     if (!(quantityIsAfter && historyIsAfter)) {
       throw this.#inventoryReconciliationError("Merged dismantle material changed before compensation.");
     }
-    const patch = { "system.quantity": receipt.beforeQuantity };
+    const patch = inventoryReceiptQuantityPatch(item.toObject(), receipt, "before");
     if (hasAcquisitionHistory) {
       patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.beforeAcquisitionHistory;
     }
@@ -3679,14 +3749,14 @@ export class InventoryService {
     }
     catch (error) {
       const observed = item.toObject();
-      if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+      if (!(inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity, receipt.beforeQuantityState ? observed : null) && inventoryQuantityStateMatches(observed, receipt.beforeQuantityState))
         || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
           readInventoryAcquisitionHistory(observed),
           receipt.beforeAcquisitionHistory
         ))) throw error;
     }
     const observed = item.toObject();
-    if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+    if (!(inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity, receipt.beforeQuantityState ? observed : null) && inventoryQuantityStateMatches(observed, receipt.beforeQuantityState))
       || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
         readInventoryAcquisitionHistory(observed),
         receipt.beforeAcquisitionHistory
@@ -3703,6 +3773,7 @@ export class InventoryService {
     const fractionalRecords = state.records.filter((record) => {
       const afterQuantity = Number(record?.targetReceipt?.afterQuantity);
       return record?.kind === "dismantle"
+        && record?.materialAccountingVersion !== 2
         && record?.phase === "prepared"
         && cleanId(record?.actorId) === actorId
         && Number.isFinite(afterQuantity)
@@ -3766,7 +3837,7 @@ export class InventoryService {
         : actor.items.get(cleanId(receipt.itemId));
       if (receipt.created) {
         if (targetItem) {
-          if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), coercedAfterQuantity)) {
+          if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), coercedAfterQuantity, targetItem.toObject())) {
             throw this.#inventoryReconciliationError(
               `Legacy fractional dismantle '${record.id}' created target changed before repair.`
             );
@@ -3805,9 +3876,9 @@ export class InventoryService {
               await targetItem.update({ "system.quantity": receipt.beforeQuantity });
             }
             catch (error) {
-              if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) throw error;
+              if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity, targetItem.toObject())) throw error;
             }
-            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) {
+            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity, targetItem.toObject())) {
               throw this.#inventoryReconciliationError(
                 `Legacy fractional dismantle '${record.id}' merge target was not restored.`
               );
@@ -3853,9 +3924,11 @@ export class InventoryService {
       const blockReason = getInventoryDismantleBlockReason(itemData);
       if (blockReason) throw new Error(blockReason);
       const currentQuantity = getRawQuantity(itemData);
+      if (currentQuantity <= 0) throw new Error("Inventory dismantle source quantity must be greater than zero.");
       const breakQuantity = Math.max(1, Math.min(currentQuantity, requestedQuantity));
       const minimumQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
-      if (minimumQuantity !== null && breakQuantity < minimumQuantity) {
+      if (minimumQuantity === null) throw new Error("Для этого предмета не найден подходящий материал или представимый выход.");
+      if (breakQuantity < minimumQuantity) {
         throw new Error(
           `Из выбранного количества не получается целой единицы материала. Нужно разобрать минимум ${minimumQuantity} шт.`
         );
@@ -3880,6 +3953,7 @@ export class InventoryService {
         record = await this.mutationJournal.start({
           id: operationId,
           kind: "dismantle",
+          materialAccountingVersion: 2,
           phase: "committed",
           request,
           actorId: inventoryActor.id,
@@ -3938,12 +4012,13 @@ export class InventoryService {
       record = await this.mutationJournal.start({
         id: operationId,
         kind: "dismantle",
+        materialAccountingVersion: 2,
         phase: "prepared",
         request,
         actorId: inventoryActor.id,
         itemName: item.name,
         materialName: material.name,
-        materialWeight: output.quantity,
+        materialWeight: readInventoryItemUnitWeight(itemData) * breakQuantity * 0.5,
         sourceFolderId: routing.sourceFolderId,
         rulesRevision: routing.rulesRevision,
         matchedRuleId: routing.matchedRuleId,
@@ -3960,8 +4035,12 @@ export class InventoryService {
           itemId: target?.id ?? "",
           created: !target,
           beforeQuantity: targetBeforeQuantity,
-          afterQuantity: roundNumber(targetBeforeQuantity + output.quantity, 2),
+          afterQuantity: roundStockQuantity(targetBeforeQuantity + output.quantity),
           delta: output.quantity,
+          beforeQuantityState: target ? captureInventoryItemQuantityState(target.toObject()) : null,
+          afterQuantityState: captureInventoryItemQuantityState(
+            withInventoryItemQuantity(target?.toObject?.() ?? materialItemData, targetBeforeQuantity + output.quantity)
+          ),
           folderId: routing.destinationFolderId,
           beforeAcquisitionHistory,
           afterAcquisitionHistory
@@ -4297,7 +4376,7 @@ export class InventoryService {
         };
       }
       let itemData = sanitizeEmbeddedItemData(target.itemData);
-      foundry.utils.setProperty(itemData, "system.quantity", target.quantity);
+      setInventoryItemQuantityData(itemData, target.quantity);
       const candidate = this.#findInventoryMergeCandidate(actor, itemData, {
         folderState,
         folderId: target.folderId,
@@ -4329,7 +4408,11 @@ export class InventoryService {
         itemId: candidate?.id ?? "",
         created: !candidate,
         beforeQuantity,
-        afterQuantity: roundNumber(beforeQuantity + target.quantity, 2),
+        afterQuantity: roundStockQuantity(beforeQuantity + target.quantity),
+        ...(isInventoryMaterialItemData(itemData) ? {
+          beforeQuantityState: candidate ? captureInventoryItemQuantityState(candidate.toObject()) : null,
+          afterQuantityState: captureInventoryItemQuantityState(withInventoryItemQuantity(candidate?.toObject?.() ?? itemData, beforeQuantity + target.quantity))
+        } : {}),
         delta: target.quantity,
         beforeAcquisitionHistory,
         afterAcquisitionHistory,
@@ -4405,7 +4488,7 @@ export class InventoryService {
         }
       }
       const itemData = item?.toObject?.() ?? {};
-      if (!inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity)
+      if (!(inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity, receipt.afterQuantityState ? itemData : null) && inventoryQuantityStateMatches(itemData, receipt.afterQuantityState))
         || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
           readInventoryAcquisitionHistory(itemData),
           receipt.afterAcquisitionHistory
@@ -4417,8 +4500,8 @@ export class InventoryService {
       if (!item) throw this.#inventoryReconciliationError("Inventory ingress merge target disappeared.");
       const currentData = item.toObject();
       const currentQuantity = getRawQuantity(currentData);
-      const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
-      const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+      const quantityIsBefore = (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, receipt.beforeQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.beforeQuantityState));
+      const quantityIsAfter = (inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, receipt.afterQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.afterQuantityState));
       const currentHistory = readInventoryAcquisitionHistory(currentData);
       const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
         currentHistory,
@@ -4432,7 +4515,7 @@ export class InventoryService {
         if (!(quantityIsBefore && historyIsBefore)) {
           throw this.#inventoryReconciliationError("Inventory ingress merge target quantity changed.");
         }
-        const patch = { "system.quantity": receipt.afterQuantity };
+        const patch = inventoryReceiptQuantityPatch(item.toObject(), receipt, "after");
         if (hasAcquisitionHistory) {
           patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.afterAcquisitionHistory;
         }
@@ -4441,7 +4524,7 @@ export class InventoryService {
         }
         catch (error) {
           const observed = item.toObject();
-          if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity)
+          if (!(inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity, receipt.afterQuantityState ? observed : null) && inventoryQuantityStateMatches(observed, receipt.afterQuantityState))
             || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
               readInventoryAcquisitionHistory(observed),
               receipt.afterAcquisitionHistory
@@ -4637,7 +4720,7 @@ export class InventoryService {
       let item = this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex);
       if (!item) return;
       const itemData = item.toObject();
-      if (!inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity)
+      if (!(inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity, receipt.afterQuantityState ? itemData : null) && inventoryQuantityStateMatches(itemData, receipt.afterQuantityState))
         || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
           readInventoryAcquisitionHistory(itemData),
           receipt.afterAcquisitionHistory
@@ -4664,8 +4747,8 @@ export class InventoryService {
     const currentData = item.toObject();
     const currentQuantity = getRawQuantity(currentData);
     const currentHistory = readInventoryAcquisitionHistory(currentData);
-    const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
-    const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+    const quantityIsBefore = (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity, receipt.beforeQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.beforeQuantityState));
+    const quantityIsAfter = (inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity, receipt.afterQuantityState ? currentData : null) && inventoryQuantityStateMatches(currentData, receipt.afterQuantityState));
     const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
       currentHistory,
       receipt.beforeAcquisitionHistory
@@ -4678,7 +4761,7 @@ export class InventoryService {
     if (!(quantityIsAfter && historyIsAfter)) {
       throw this.#inventoryReconciliationError("Inventory ingress merge target changed before rollback.");
     }
-    const patch = { "system.quantity": receipt.beforeQuantity };
+    const patch = inventoryReceiptQuantityPatch(item.toObject(), receipt, "before");
     if (hasAcquisitionHistory) {
       patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.beforeAcquisitionHistory;
     }
@@ -4687,14 +4770,14 @@ export class InventoryService {
     }
     catch (error) {
       const observed = item.toObject();
-      if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+      if (!(inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity, receipt.beforeQuantityState ? observed : null) && inventoryQuantityStateMatches(observed, receipt.beforeQuantityState))
         || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
           readInventoryAcquisitionHistory(observed),
           receipt.beforeAcquisitionHistory
         ))) throw error;
     }
     const observed = item.toObject();
-    if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+    if (!(inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity, receipt.beforeQuantityState ? observed : null) && inventoryQuantityStateMatches(observed, receipt.beforeQuantityState))
       || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
         readInventoryAcquisitionHistory(observed),
         receipt.beforeAcquisitionHistory
@@ -5167,7 +5250,7 @@ export class InventoryService {
     const source = await this.#applyCatalogItemIcon(sanitizeEmbeddedItemData(itemData));
     const targetQuantity = quantity === null
       ? Math.max(0, getRawQuantity(source))
-      : Math.max(0, roundNumber(toNumber(quantity, 0), 2));
+      : Math.max(0, isInventoryMaterialItemData(source) ? roundStockQuantity(toNumber(quantity, 0)) : roundNumber(toNumber(quantity, 0), 2));
     if (targetQuantity <= 0) {
       return null;
     }
@@ -5175,20 +5258,18 @@ export class InventoryService {
     const mergeCandidate = this.#findInventoryMergeCandidate(actor, source);
 
     if (mergeCandidate) {
-      const nextQuantity = roundNumber(getRawQuantity(mergeCandidate.toObject()) + targetQuantity, 2);
-      await mergeCandidate.update({
-        "system.quantity": nextQuantity
-      });
+      const nextQuantity = roundStockQuantity(getRawQuantity(mergeCandidate.toObject()) + targetQuantity);
+      await mergeCandidate.update(buildInventoryItemQuantityPatch(mergeCandidate.toObject(), nextQuantity));
       return mergeCandidate;
     }
 
-    foundry.utils.setProperty(source, "system.quantity", targetQuantity);
+    setInventoryItemQuantityData(source, targetQuantity);
     const [created] = await actor.createEmbeddedDocuments("Item", [source]);
     return created ?? null;
   }
 
   #buildMaterialItemData(material, quantity) {
-    return {
+    return withInventoryItemQuantity({
       name: material.name,
       type: "loot",
       img: "icons/commodities/materials/slime-thick-blue.webp",
@@ -5200,13 +5281,13 @@ export class InventoryService {
         unidentified: {
           description: ""
         },
-        quantity: Math.max(0.01, roundNumber(quantity, 2)),
+        quantity: 1,
         price: {
-          value: Math.max(0, roundNumber(toNumber(material.priceGold, 0), 2)),
+          value: Math.max(0, toNumber(material.priceGold, 0)),
           denomination: "gp"
         },
         weight: {
-          value: Math.max(0.01, roundNumber(toNumber(material.weight, 1), 2)),
+          value: toNumber(material.weight, 0),
           units: "lb"
         },
         type: {
@@ -5224,7 +5305,7 @@ export class InventoryService {
           predominantMaterialName: material.name
         }
       }
-    };
+    }, quantity);
   }
 
   #buildGearItemData(gearItem, quantity) {
@@ -5328,9 +5409,10 @@ export class InventoryService {
 
   #buildInventoryEntry(model, item) {
     const itemData = item.toObject();
-    const quantity = roundNumber(getRawQuantity(itemData), 2);
-    const weightEach = roundNumber(getItemWeight(itemData), 2);
-    const totalWeight = roundNumber(quantity * weightEach, 2);
+    const material = isInventoryMaterialItemData(itemData);
+    const quantity = material ? getRawQuantity(itemData) : roundNumber(getRawQuantity(itemData), 2);
+    const weightEach = material ? getItemWeight(itemData) : roundNumber(getItemWeight(itemData), 2);
+    const totalWeight = roundNumber(quantity * weightEach, material ? 12 : 2);
     let {
       sourceFlags,
       sourceType,
@@ -5375,7 +5457,8 @@ export class InventoryService {
       quantity
     });
 
-    const priceCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+    const unitPrice = readInventoryItemUnitPrice(itemData);
+    const priceCopper = priceToCopper(unitPrice);
     const dismantleMinQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
 
     return {
@@ -5386,9 +5469,10 @@ export class InventoryService {
         ? normalizeInventoryIconPath(item.img)
         : (matchedGear ? resolveGearItemIcon(matchedGear) : normalizeInventoryIconPath(item.img)),
       quantity,
+      isMaterial: material,
       weightEach,
       totalWeight,
-      priceLabel: formatPriceLabel(foundry.utils.getProperty(itemData, "system.price") ?? {}),
+      priceLabel: formatPriceLabel(unitPrice),
       priceCopper,
       sourceType,
       sourceTypeLabel,
@@ -5971,6 +6055,7 @@ export class InventoryService {
       });
     };
 
+    const sourceMergeGroups = buildLegacyInventorySourceMergeGroups(legacyActor);
     const sourceCurrency = buildCurrencySnapshot(legacyActor);
     const currencyAlreadyApplied = Number(pairState.currencyAppliedAt) > 0
       || Number(getLegacyInventoryCurrencyPairState(groupActor, pairKey).appliedAt) > 0;
@@ -6003,20 +6088,24 @@ export class InventoryService {
     let mergedItems = 0;
     let createdItems = 0;
 
-    for (const { key, itemData: sourceItemData, quantity: sourceTotalQuantity } of buildLegacyInventorySourceMergeGroups(legacyActor).values()) {
-      const targetItem = mergeIndex.get(key) ?? null;
+    for (const { key, itemData: sourceItemData, quantity: sourceTotalQuantity } of sourceMergeGroups.values()) {
+      let targetItem = mergeIndex.get(key) ?? null;
+      if (isInventoryMaterialItemData(sourceItemData)) {
+        const candidates = collectionValues(groupActor.items).filter(item => getLegacyInventoryMergeKey(item.toObject()) === key && itemsCanMergeInInventory(item, sourceItemData));
+        targetItem = candidates.find(item => toNumber(getLegacyInventoryItemPairState(item, pairKey, key).quantityApplied, 0) > 0) ?? candidates[0] ?? null;
+      }
       const appliedQuantity = Math.max(
         toNumber(getLegacyInventoryMergePairState(context.groupState, pairKey).itemsByKey?.[key]?.quantityApplied, 0),
         toNumber(targetItem ? getLegacyInventoryItemPairState(targetItem, pairKey, key).quantityApplied : 0, 0)
       );
-      const remainingQuantity = roundNumber(sourceTotalQuantity - appliedQuantity, 2);
+      const remainingQuantity = isInventoryMaterialItemData(sourceItemData) ? roundStockQuantity(sourceTotalQuantity - appliedQuantity) : roundNumber(sourceTotalQuantity - appliedQuantity, 2);
       if (remainingQuantity <= 0) {
         continue;
       }
 
       const itemAppliedAt = Date.now();
       if (targetItem) {
-        const nextQuantity = roundNumber(getRawQuantity(targetItem.toObject?.() ?? targetItem) + remainingQuantity, 2);
+        const nextQuantity = isInventoryMaterialItemData(sourceItemData) ? roundStockQuantity(getRawQuantity(targetItem.toObject?.() ?? targetItem) + remainingQuantity) : roundNumber(getRawQuantity(targetItem.toObject?.() ?? targetItem) + remainingQuantity, 2);
         const itemPairs = foundry.utils.deepClone(targetItem.flags?.[MODULE_ID]?.legacyInventoryItemMergePairs ?? {});
         itemPairs[pairKey] = {
           ...(itemPairs[pairKey] ?? {}),
@@ -6027,7 +6116,7 @@ export class InventoryService {
           }
         };
         await targetItem.update({
-          "system.quantity": nextQuantity,
+          ...buildInventoryItemQuantityPatch(targetItem.toObject(), nextQuantity),
           [`flags.${MODULE_ID}.legacyInventoryItemMergePairs`]: itemPairs
         });
         await persistPairProgress((nextPairState) => {
@@ -6042,7 +6131,7 @@ export class InventoryService {
         continue;
       }
 
-      foundry.utils.setProperty(sourceItemData, "system.quantity", remainingQuantity);
+      setInventoryItemQuantityData(sourceItemData, remainingQuantity);
       sourceItemData.flags = sourceItemData.flags && typeof sourceItemData.flags === "object" ? sourceItemData.flags : {};
       sourceItemData.flags[MODULE_ID] = sourceItemData.flags[MODULE_ID] && typeof sourceItemData.flags[MODULE_ID] === "object"
         ? sourceItemData.flags[MODULE_ID]
@@ -6296,8 +6385,9 @@ export class InventoryService {
 
   async buildModelItemData(sourceType, sourceId, quantity = 1) {
     const model = await this.moduleApi.getModel();
-    const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
     const normalizedSourceType = normalizeInventorySourceType(sourceType);
+    const safeQuantity = normalizedSourceType === "material"
+      ? roundStockQuantity(toNumber(quantity, 1)) : Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
 
     if (normalizedSourceType === "material") {
       const material = model.materialById?.get(sourceId) ?? null;
@@ -6325,7 +6415,7 @@ export class InventoryService {
       }
 
       const itemData = sanitizeEmbeddedItemData(document.toObject());
-      foundry.utils.setProperty(itemData, "system.quantity", safeQuantity);
+      setInventoryItemQuantityData(itemData, safeQuantity);
       itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
       itemData.flags[MODULE_ID] = {
         ...(itemData.flags[MODULE_ID] ?? {}),
@@ -6439,12 +6529,12 @@ export class InventoryService {
     const narrativeRow = cleanId(row.narrativeVariantId) !== "";
     const safeQuantity = narrativeRow || hasLootgenNarrative(row.itemData)
       ? 1
-      : Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
+      : row.sourceType === "material" || isInventoryMaterialItemData(row.itemData) ? roundStockQuantity(toNumber(row.quantity, 1)) : Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     if (allowPersistedItemData && row.itemData && typeof row.itemData === "object") {
       const persistedItemData = sanitizeEmbeddedItemData(row.itemData);
       if (persistedItemData.flags?.[MODULE_ID]) delete persistedItemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG];
       if (row.runtimeGraph) foundry.utils.setProperty(persistedItemData, `flags.${MODULE_ID}.${RUNTIME_ITEM_GRAPH_FLAG}`, foundry.utils.deepClone(row.runtimeGraph));
-      foundry.utils.setProperty(persistedItemData, "system.quantity", safeQuantity);
+      setInventoryItemQuantityData(persistedItemData, safeQuantity);
       persistedItemData.name = formatDurabilityItemName(
         persistedItemData.name,
         persistedItemData.flags?.[MODULE_ID]?.durability
@@ -6459,7 +6549,7 @@ export class InventoryService {
         sourceDocumentId: cleanId(row.sourceDocumentId)
       });
       itemData = sanitizeEmbeddedItemData(sourceData);
-      foundry.utils.setProperty(itemData, "system.quantity", safeQuantity);
+      setInventoryItemQuantityData(itemData, safeQuantity);
       foundry.utils.setProperty(itemData, "system.equipped", false);
       clearCraftOutputAttunement(itemData);
       itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
@@ -6944,15 +7034,14 @@ export class InventoryService {
       throw new Error("Предмет не найден в партийном инвентаре.");
     }
 
-    const safeQuantity = roundNumber(toNumber(nextQuantity, 0), 2);
+    const safeQuantity = isInventoryMaterialItemData(item.toObject())
+      ? roundStockQuantity(toNumber(nextQuantity, 0)) : roundNumber(toNumber(nextQuantity, 0), 2);
     if (safeQuantity <= 0) {
       await item.delete();
       return null;
     }
 
-    await item.update({
-      "system.quantity": safeQuantity
-    });
+    await item.update(buildInventoryItemQuantityPatch(item.toObject(), safeQuantity));
 
     return item;
   }
@@ -7000,7 +7089,7 @@ export class InventoryService {
         inventoryActorId: actor.id,
         itemId: cleanId(itemId),
         mutationId: operationId,
-        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2)),
+        quantity: roundStockQuantity(toNumber(quantity, 1)),
         targetActorId: targetActor.id
       });
     }
@@ -7014,7 +7103,7 @@ export class InventoryService {
         inventoryActorUuid: actor.uuid,
         itemId: cleanId(itemId),
         targetActorUuid: targetActor.uuid,
-        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+        quantity: roundStockQuantity(toNumber(quantity, 1))
       });
       return {
         requested: true,
@@ -7039,7 +7128,7 @@ export class InventoryService {
         inventoryActorId: actor.id,
         itemId: cleanId(itemId),
         mutationId: operationId,
-        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+        quantity: roundStockQuantity(toNumber(quantity, 1))
       });
     }
     if (!this.canManagePartyInventory(actor)) {
@@ -7047,7 +7136,7 @@ export class InventoryService {
       this.#emitInventoryItemActionRequest("sell", {
         inventoryActorUuid: actor.uuid,
         itemId: cleanId(itemId),
-        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+        quantity: roundStockQuantity(toNumber(quantity, 1))
       });
       return {
         requested: true,
@@ -7208,7 +7297,7 @@ export class InventoryService {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
+    const safeQuantity = sourceType === "material" ? roundStockQuantity(toNumber(quantity, 1)) : Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
     const itemData = await this.buildModelItemData(sourceType, sourceId, safeQuantity);
     return this.#commitDirectInventoryIngress({
       actor,
@@ -7227,7 +7316,7 @@ export class InventoryService {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
+    const safeQuantity = row.sourceType === "material" || isInventoryMaterialItemData(row.itemData) ? roundStockQuantity(toNumber(row.quantity, 1)) : Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     const itemData = await this.buildLootgenItemData(row);
     return this.#commitDirectInventoryIngress({
       actor,
@@ -7369,10 +7458,10 @@ export class InventoryService {
     }
     if (!record) {
       if (beforePrepare) await beforePrepare();
-      const requestedQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
+      const requestedQuantity = roundStockQuantity(toNumber(quantity, 1));
       const itemData = await buildItemData(requestedQuantity);
-      const safeQuantity = hasLootgenNarrative(itemData) ? 1 : requestedQuantity;
-      if (hasLootgenNarrative(itemData)) foundry.utils.setProperty(itemData, "system.quantity", 1);
+      const safeQuantity = hasLootgenNarrative(itemData) ? 1 : isInventoryMaterialItemData(itemData) ? getRawQuantity(itemData) : Math.max(0.01, roundNumber(requestedQuantity, 2));
+      if (hasLootgenNarrative(itemData)) setInventoryItemQuantityData(itemData, 1);
       const composition = preparedLootgenFingerprint ? readLootgenPreparedComposition(itemData) : null;
       if (composition && safeQuantity !== 1) throw new Error("Prepared lootgen graph quantity must be one.");
       const candidate = this.#findInventoryMergeCandidate(actor, itemData);
@@ -7398,7 +7487,7 @@ export class InventoryService {
           itemId: candidate?.id ?? "",
           created: !candidate,
           beforeQuantity,
-          afterQuantity: roundNumber(beforeQuantity + safeQuantity, 2),
+          afterQuantity: roundStockQuantity(beforeQuantity + safeQuantity),
           delta: safeQuantity
         }
       });
@@ -7437,10 +7526,10 @@ export class InventoryService {
             throw this.#inventoryReconciliationError("Inventory grant target quantity changed.");
           }
           try {
-            await item.update({ "system.quantity": record.targetReceipt.afterQuantity });
+            await item.update(buildInventoryItemQuantityPatch(item.toObject(), record.targetReceipt.afterQuantity));
           }
           catch (error) {
-            if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), record.targetReceipt.afterQuantity)) throw error;
+            if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), record.targetReceipt.afterQuantity, item.toObject())) throw error;
           }
         }
       }
@@ -7569,23 +7658,36 @@ export class InventoryService {
     );
   }
 
+  async #craftStockRequest(request, rawRequest, record, actor) {
+    if (record) return record.accountingBasis ?? request;
+    if (request.materialAccountingVersion === 2) return request;
+    const nested = rawRequest.reservation ?? rawRequest.materialReservation ?? rawRequest;
+    if (nested.materialAccountingVersion === 1 || rawRequest.materialAccountingVersion === 1) return request;
+    const model = await this.moduleApi.getModel?.();
+    const weight = id => Number(model?.materialById?.get?.(id)?.weightLb ?? model?.materialById?.get?.(id)?.weight
+      ?? model?.materials?.find(row => row.id === id)?.weightLb ?? model?.materials?.find(row => row.id === id)?.weight
+      ?? (this.#findMaterialInventoryItem(actor, id) ? readInventoryItemUnitWeight(this.#findMaterialInventoryItem(actor, id).toObject()) : 1));
+    return { ...request, materialAccountingVersion: 2, predominantUnitWeightLb: weight(request.predominantMaterialId), baseRawUnitWeightLb: weight(request.baseRawMaterialId) };
+  }
+
   async getCraftResourceAvailability(request = {}) {
     const normalizedRequest = normalizeCraftResourceRequest(request, { requireProjectId: false });
     const requestedGroupId = cleanId(request?.groupId);
     const actor = requestedGroupId
       ? this.moduleApi.groupContextService?.resolveForGroup?.(requestedGroupId)?.groupActor ?? null
       : await this.getInventoryActor({ create: false });
-    const rows = collectCraftMaterialResources(normalizedRequest).map((resource) => {
+    const stockRequest = await this.#craftStockRequest(normalizedRequest, request, null, actor);
+    const rows = collectCraftMaterialResources(stockRequest).map((resource) => {
       const available = actor
-        ? this.#findMaterialInventoryItems(actor, resource.sourceId).reduce((total, item) => (
-          roundCraftQuantity(total + Math.max(0, getRawQuantity(item.toObject())))
+        ? this.#findMaterialInventoryItems(actor, resource.sourceId).filter(item => stockRequest.materialAccountingVersion !== 2 || readInventoryItemUnitWeight(item.toObject()) === (stockRequest.predominantMaterialId === resource.sourceId ? stockRequest.predominantUnitWeightLb : stockRequest.baseRawUnitWeightLb)).reduce((total, item) => (
+          roundStockQuantity(total + Math.max(0, getRawQuantity(item.toObject())))
         ), 0)
         : 0;
       return {
         sourceId: resource.sourceId,
         required: resource.quantity,
         available,
-        sufficient: available + 1e-9 >= resource.quantity,
+        sufficient: available >= resource.quantity,
         components: foundry.utils.deepClone(resource.components)
       };
     });
@@ -7613,10 +7715,13 @@ export class InventoryService {
       this.#assertCraftMutationScope(record, execution, "Craft reservation");
     }
     else {
-      const receipts = this.#prepareCraftDebitReceipts(actor, request);
+      const stockRequest = await this.#craftStockRequest(request, quote, null, actor);
+      const receipts = this.#prepareCraftDebitReceipts(actor, stockRequest);
       record = await this.#startCraftMutationRecord(execution, {
         id: operationId,
         kind: "craft-reservation",
+        materialAccountingVersion: stockRequest.materialAccountingVersion ?? 1,
+        accountingBasis: stockRequest,
         phase: "prepared",
         actorId: actor.id,
         groupId: execution.groupId,
@@ -7766,10 +7871,13 @@ export class InventoryService {
       this.#assertCraftMutationScope(record, execution, "Craft release");
     }
     else {
-      const receipts = await this.#prepareCraftCreditReceipts(actor, request, operationId, execution);
+      const stockRequest = await this.#craftStockRequest(request, source, null, actor);
+      const receipts = await this.#prepareCraftCreditReceipts(actor, stockRequest, operationId, execution);
       record = await this.#startCraftMutationRecord(execution, {
         id: operationId,
         kind: "craft-release",
+        materialAccountingVersion: stockRequest.materialAccountingVersion ?? 1,
+        accountingBasis: stockRequest,
         phase: "prepared",
         actorId: actor.id,
         groupId: execution.groupId,
@@ -7875,7 +7983,7 @@ export class InventoryService {
           }
         }
       }
-      if (!item || !inventoryQuantitiesMatch(getRawQuantity(item.toObject()), output.quantity)) {
+      if (!item || !inventoryQuantitiesMatch(getRawQuantity(item.toObject()), output.quantity, item.toObject())) {
         throw this.#inventoryReconciliationError("Craft output creation was not observed.");
       }
 
@@ -8840,7 +8948,7 @@ export class InventoryService {
           const materialName = cleanId(result?.materialName);
           const materialQuantity = Math.max(0, toNumber(result?.materialWeight, 0));
           if (materialName && materialQuantity > 0) {
-            materialTotals.set(materialName, roundNumber((materialTotals.get(materialName) ?? 0) + materialQuantity, 2));
+            materialTotals.set(materialName, roundStockQuantity((materialTotals.get(materialName) ?? 0) + materialQuantity));
           }
         }
       }
@@ -8981,7 +9089,7 @@ export class InventoryService {
     const safeTransferId = cleanId(transferId);
     const safeTargetItemUuid = cleanId(targetItemUuid);
     const normalizedIdentity = normalizeInventoryTransferIdentity(expectedIdentity);
-    const safeExpectedQuantity = roundNumber(Number(expectedQuantity), 2);
+    const safeExpectedQuantity = roundStockQuantity(Number(expectedQuantity));
     const normalizedTargetReceipt = normalizeInventoryTransferTargetReceipt(
       targetReceipt,
       safeTargetItemUuid,
@@ -9025,8 +9133,8 @@ export class InventoryService {
     }
     if (!inventoryTransferIdentityMatches(sourceItem, normalizedIdentity)
       || !inventoryTransferIdentityMatches(itemDocument, normalizedIdentity)
-      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), safeExpectedQuantity)
-      || !inventoryQuantitiesMatch(getRawQuantity(itemDocument.toObject()), normalizedTargetReceipt.afterQuantity)) {
+      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), safeExpectedQuantity, sourceItem.toObject())
+      || !inventoryQuantitiesMatch(getRawQuantity(itemDocument.toObject()), normalizedTargetReceipt.afterQuantity, itemDocument.toObject())) {
       return {
         handled: false,
         reason: "capturedTransferMismatch"
@@ -9110,7 +9218,7 @@ export class InventoryService {
     const targetActorUuid = cleanId(payload?.targetActorUuid);
     const safeSenderId = cleanId(senderId);
     const expectedIdentity = normalizeInventoryTransferIdentity(payload?.expectedIdentity);
-    const expectedQuantity = roundNumber(Number(payload?.expectedQuantity), 2);
+    const expectedQuantity = roundStockQuantity(Number(payload?.expectedQuantity));
     const targetReceipt = normalizeInventoryTransferTargetReceipt(
       payload?.targetReceipt,
       targetItemUuid,
@@ -9191,9 +9299,9 @@ export class InventoryService {
     const { targetItem } = await this.#resolveSourceDepletionParticipants(request, sourceActor.id);
     if (!itemsCanRepresentSameTransfer(sourceItem, targetItem)
       || !inventoryTransferIdentityMatches(sourceItem, request.expectedIdentity)
-      || !inventoryTransferIdentityMatches(targetItem, request.expectedIdentity)
-      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity)
-      || !inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), request.targetReceipt.afterQuantity)) {
+      || !inventoryTransferIdentityMatches(targetItem, request.expectedIdentity) || (isInventoryMaterialItemData(sourceItem.toObject()) && !itemsCanMergeInInventory(sourceItem, targetItem))
+      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity, sourceItem.toObject())
+      || !inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), request.targetReceipt.afterQuantity, targetItem.toObject())) {
       throw new Error("Полученный предмет не совпадает с captured identity или quantity исходного предмета склада.");
     }
     return this.#awaitSourceDepletionAuthority(() => this.mutationJournal.start({
@@ -9245,9 +9353,9 @@ export class InventoryService {
     const { targetActor, targetItem } = await this.#resolveSourceDepletionParticipants(request, sourceActor.id);
     if (!itemsCanRepresentSameTransfer(sourceItem, targetItem)
       || !inventoryTransferIdentityMatches(sourceItem, request.expectedIdentity)
-      || !inventoryTransferIdentityMatches(targetItem, request.expectedIdentity)
-      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity)
-      || !inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), request.targetReceipt.afterQuantity)) {
+      || !inventoryTransferIdentityMatches(targetItem, request.expectedIdentity) || (isInventoryMaterialItemData(sourceItem.toObject()) && !itemsCanMergeInInventory(sourceItem, targetItem))
+      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity, sourceItem.toObject())
+      || !inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), request.targetReceipt.afterQuantity, targetItem.toObject())) {
       throw this.#simpleTransferError(
         "transfer-manual-review",
         "Received item no longer matches the captured source transfer.",
@@ -9345,7 +9453,7 @@ export class InventoryService {
         if (!isItemDocument(sourceItem)
           || cleanId(sourceActor?.id) !== cleanId(record.sourceActorId)
           || !inventoryTransferIdentityMatches(sourceItem, request.expectedIdentity)
-          || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity)) {
+          || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity, sourceItem.toObject())) {
           throw this.#inventoryReconciliationError("Party inventory source changed after depletion was prepared.");
         }
         try {
@@ -9438,7 +9546,7 @@ export class InventoryService {
 
     const action = cleanId(payload.action);
     const itemId = cleanId(payload.itemId);
-    const quantity = Math.max(0.01, roundNumber(toNumber(payload.quantity, 1), 2));
+    const quantity = roundStockQuantity(toNumber(payload.quantity, 1));
     if (action === "delete") {
       return this.#deleteInventoryItemFromActor(inventoryActor, itemId);
     }

@@ -1,12 +1,12 @@
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.376";
 import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
 import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.292";
-import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
-import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.368-hero-performance";
+import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.376";
+import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.376";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.370";
-import { readStorageState } from "./storage-service.js?v=1.4.370";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.376";
+import { readStorageState } from "./storage-service.js?v=1.4.376";
 import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,

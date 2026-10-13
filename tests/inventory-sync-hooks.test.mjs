@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { withInventoryItemQuantity, readInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 
 import {
   buildPartyInventoryItemDragData,
@@ -11,6 +12,38 @@ import {
 } from "../scripts/data/inventory-service.js";
 
 const SOCKET_CHANNEL = "module.rebreya-main";
+
+test("native material merge rescales weight and price before accepted-transfer reconciliation", async () => {
+  const previous = { game: globalThis.game, fromUuid: globalThis.fromUuid, fromUuidSync: globalThis.fromUuidSync };
+  const base = { name: "Adamant", type: "loot", flags: { "rebreya-main": { sourceType: "material", sourceId: "adamant", materialId: "adamant" } }, system: { quantity: 1, weight: { value: 10, units: "lb" }, price: { value: 500, denomination: "gp" } } };
+  const source = { ...withInventoryItemQuantity(base, 0.05), id: "source", uuid: "Actor.group.Item.source", parent: { type: "group" }, toObject() { return structuredClone({ name: this.name, type: this.type, flags: this.flags, system: this.system }); } };
+  const target = { ...structuredClone(base), id: "target", uuid: "Actor.hero.Item.target", parent: { type: "character" }, toObject: source.toObject };
+  const hooks = {};
+  let receipt;
+  const api = { inventoryService: { async handleAcceptedPartyInventoryItem(_item, transfer) { receipt = transfer.targetReceipt; return { handled: true, actorId: "group", targetActorId: "hero" }; } }, refreshInventoryViews: async () => {} };
+  globalThis.game = { user: { id: "gm", isGM: true }, users: { activeGM: { id: "gm", active: true } } };
+  globalThis.fromUuidSync = () => source;
+  globalThis.fromUuid = async () => null;
+  try {
+    registerInventorySyncHooks(api, { Hooks: { on(name, callback) { hooks[name] = callback; } }, force: true });
+    buildPartyInventoryItemDragData(source.uuid, source);
+    const changes = { "system.quantity": 2 };
+    hooks.preUpdateItem(target, changes, {}, "gm");
+    for (const [path, value] of Object.entries(changes)) {
+      const parts = path.split("."); let cursor = target;
+      for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
+      cursor[parts.at(-1)] = structuredClone(value);
+    }
+    assert.equal(target.system.quantity, 2);
+    assert.equal(readInventoryItemQuantity(target.toObject()), 1.05);
+    assert.equal(target.system.quantity * target.system.weight.value, 10.5);
+    assert.equal(target.system.quantity * target.system.price.value, 525);
+    await handleAcceptedPartyInventoryItem(target, { eventType: "updateItem", changes }, "gm", api);
+    assert.equal(receipt.beforeQuantity, 1);
+    assert.equal(receipt.delta, 0.05);
+    assert.equal(receipt.beforeQuantityState.weight.value, 10);
+  } finally { Object.assign(globalThis, previous); }
+});
 
 test("container mechanics updates refresh the exact owning actor scope", async () => {
   const listeners = {};
@@ -322,6 +355,7 @@ test("inventory sync hooks coalesce affected Actor ids through the existing hook
   assert.deepEqual(Object.keys(hooks.listeners).sort(), [
     "createItem",
     "deleteItem",
+    "preUpdateItem",
     "updateActor",
     "updateItem"
   ]);

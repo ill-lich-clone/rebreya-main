@@ -1,4 +1,5 @@
 import test from "node:test";
+import { withInventoryItemQuantity, readInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "../scripts/data/inventory-weight.js";
 
 test("warehouse profile preserves physical load and accounts for nested, metric and unknown containers", () => {
@@ -2121,6 +2122,27 @@ test("mergeLegacyInventoryIntoGroup merges matching sourceType and sourceId quan
   }
   finally {
     fixture.restore();
+  }
+});
+
+test("legacy inventory merge preserves new material fragments and does not merge an authored weight variant", async () => {
+  for (const authoredWeight of [630, 700]) {
+    const base = { name: "Claw", type: "loot", flags: { [MODULE_ID]: { sourceType: "material", sourceId: "claw", materialId: "claw" } }, system: { quantity: 1, weight: { value: 630, units: "lb" }, price: { value: 10000, denomination: "gp" } } };
+    const targetData = withInventoryItemQuantity({ ...base, system: { ...base.system, weight: { value: authoredWeight, units: "lb" } } }, 1);
+    const sourceData = withInventoryItemQuantity(base, 0.000793650794);
+    const groupItem = createItem({ id: "group-claw", ...targetData, quantity: targetData.system.quantity, extra: { system: targetData.system } });
+    const legacyItem = createItem({ id: "legacy-claw", ...sourceData, quantity: sourceData.system.quantity, extra: { system: sourceData.system } });
+    let registryWrites = 0;
+    const { fixture, service, groupActor } = createLegacyMergeFixture({ groupItems: [groupItem], legacyItems: [legacyItem], onSetRegistry: async () => { if (++registryWrites === 2) throw new Error("registry write failed after material credit"); } });
+    try {
+      await assert.rejects(service.mergeLegacyInventoryIntoGroup(groupActor.id), /registry write failed after material credit/);
+      await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+      assert.equal(groupActor.items.contents.length, authoredWeight === 630 ? 1 : 2);
+      const actualWeight = groupActor.items.contents.reduce((sum, item) => sum + item.system.quantity * item.system.weight.value, 0);
+      assert.ok(Math.abs(actualWeight - (authoredWeight + sourceData.system.weight.value)) < 1e-9);
+      assert.equal(groupActor.items.contents.reduce((sum, item) => sum + readInventoryItemQuantity(item.toObject()), 0), 1.000793650794);
+      for (const item of groupActor.items.contents) assert.ok(Number.isInteger(item.system.quantity));
+    } finally { fixture.restore(); }
   }
 });
 

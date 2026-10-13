@@ -1,5 +1,6 @@
+import { buildInventoryItemQuantityPatch, isInventoryMaterialItemData } from "./inventory-material-quantity.js?v=1.4.376";
 import { MODULE_ID } from "../constants.js";
-import { buildTransportFuelInventorySnapshot } from "./transport-fuel-item.js";
+import { buildTransportFuelInventorySnapshot } from "./transport-fuel-item.js?v=1.4.376";
 import { resolveTransportFuelConsumption } from "./transport-fuel-consumption.js";
 
 const PAYLOAD_KEYS = Object.freeze(["appliedMiles", "groupActorId"]);
@@ -119,19 +120,25 @@ export class TransportFuelService {
       };
     }
 
-    const consumed = roundQuantity(Math.min(fuel.quantity, required));
-    const shortage = roundQuantity(Math.max(0, required - consumed));
+    const stockPrecision = fuel.stacks.some(stack => {
+      const item = context.groupActor.items?.get?.(stack.itemId) ?? context.groupActor.items?.contents?.find(entry => entry.id === stack.itemId);
+      return isInventoryMaterialItemData(item?.toObject?.() ?? item);
+    }) ? 12 : 2;
+    const roundStock = value => Number(Number(value).toFixed(stockPrecision));
+    const consumed = roundStock(Math.min(fuel.quantity, required));
+    const shortage = roundStock(Math.max(0, required - consumed));
     let remaining = consumed;
     const updates = [];
     for (const stack of fuel.stacks) {
       if (remaining <= 0) break;
-      const stackConsumed = roundQuantity(Math.min(stack.quantity, remaining));
+      const stackConsumed = roundStock(Math.min(stack.quantity, remaining));
       if (stackConsumed <= 0) continue;
+      const item = context.groupActor.items?.get?.(stack.itemId) ?? context.groupActor.items?.contents?.find(entry => entry.id === stack.itemId);
       updates.push({
         _id: stack.itemId,
-        "system.quantity": roundQuantity(stack.quantity - stackConsumed)
+        ...buildInventoryItemQuantityPatch(item?.toObject?.() ?? item, roundStock(stack.quantity - stackConsumed))
       });
-      remaining = roundQuantity(remaining - stackConsumed);
+      remaining = roundStock(remaining - stackConsumed);
     }
     try {
       if (updates.length > 0) {
@@ -143,7 +150,8 @@ export class TransportFuelService {
           for (const patch of updates) {
             const item = items?.get?.(patch._id)
               ?? items?.contents?.find?.((entry) => entry?.id === patch._id);
-            await item?.update?.({ "system.quantity": patch["system.quantity"] });
+            const { _id, ...quantityPatch } = patch;
+            await item?.update?.(quantityPatch);
           }
         }
       }

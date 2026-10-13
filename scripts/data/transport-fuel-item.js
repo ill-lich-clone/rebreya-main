@@ -1,3 +1,4 @@
+import { readInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.376";
 import { MODULE_ID } from "../constants.js";
 import { cleanText, collectionValues, finiteNumber } from "../shared/foundry-values.js";
 
@@ -86,7 +87,7 @@ export function buildTransportFuelInventorySnapshot(items, value) {
         return {
           itemId: cleanText(item?.id ?? source._id ?? source.id),
           itemUuid: cleanText(item?.uuid ?? source.uuid),
-          quantity: Math.max(0, finiteNumber(item?.system?.quantity ?? source.system?.quantity, 0)),
+          quantity: readInventoryItemQuantity(source),
           name: cleanText(item?.name ?? source.name),
           img: cleanText(item?.img ?? source.img),
           type: cleanText(item?.type ?? source.type)

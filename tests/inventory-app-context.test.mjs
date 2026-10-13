@@ -498,6 +498,49 @@ function createFakeControl({ dataset = {}, value = "", disabled = false, closest
   return control;
 }
 
+test("manual dismantle UI reports skip and leaves success notification absent", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  const notices = [];
+  globalThis.ui = { notifications: { info: text => notices.push(text), error: text => notices.push(text) } };
+  globalThis.Dialog = class {
+    constructor(config) { this.config = config; }
+    render() { const root = createFakeElement(); root.querySelector = () => ({ value: "20" }); this.config.buttons.confirm.callback(root); }
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?skip-test=${Date.now()}`);
+  const button = createFakeControl({ dataset: { itemId: "ammo", itemName: "Ammo", quantity: "20", minQuantity: "1" } });
+  const root = createFakeElement();
+  root.querySelectorAll = selector => selector === "[data-action='break-item']" ? [button] : [];
+  root.querySelector = () => null;
+  const api = createModuleApi({ inventorySnapshot: createFolderInventorySnapshot(), calls: [] });
+  api.breakInventoryItemToMaterial = async () => ({ skipped: true, breakQuantity: 0, materialWeight: 0, itemName: "Ammo" });
+  const app = new InventoryApp(api);
+  app.element = root;
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(button);
+    assert.deepEqual(notices, ["Разбор пропущен входящим фильтром. Предмет остался в инвентаре."]);
+  } finally { globalThis.Dialog = previousDialog; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+
+test("material quantity UI preserves tiny relative edits and sends no mutation on cancel", async () => {
+  const restoreFoundry = installFoundryApplicationStub(); const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog, previousUi = globalThis.ui;
+  const writes = []; let answer = "+0.000000000001";
+  globalThis.ui = { notifications: { info() {}, error(message) { throw new Error(message); } } };
+  globalThis.Dialog = class { constructor(config) { this.config = config; } render() { const root = createFakeElement(); root.querySelector = () => ({ value: answer }); if (answer === null) this.config.buttons.cancel.callback(); else this.config.buttons.confirm.callback(root); } };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?tiny-edit=${Date.now()}`);
+  const button = createFakeControl({ dataset: { itemId: "scrap", itemName: "Scrap", sourceType: "material", quantity: "0.000793650794" } });
+  const root = createFakeElement(); root.querySelectorAll = selector => selector === "[data-action='edit-item-quantity']" ? [button] : []; root.querySelector = () => null;
+  const api = createModuleApi({ inventorySnapshot: createFolderInventorySnapshot(), calls: [] });
+  api.updateInventoryItemQuantity = async (id, quantity) => writes.push([id, quantity]);
+  const app = new InventoryApp(api); app.element = root;
+  try { await app._onRender({}, {}); await dispatchClick(button); answer = null; await dispatchClick(button); assert.deepEqual(writes, [["scrap", 0.000793650795]]); }
+  finally { globalThis.Dialog = previousDialog; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+
 async function dispatchClick(button, { required = true } = {}) {
   const listener = button.listeners.click?.[0];
   if (!listener) {
@@ -950,7 +993,7 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.doesNotMatch(itemMeta, /\{\{rmNum quantity\}\}/u);
   assert.doesNotMatch(itemMeta, /\{\{priceLabel\}\}/u);
   assert.doesNotMatch(itemMeta, /\{\{rmNum totalWeight\}\}/u);
-  assert.match(itemBranch, /data-action="show-item-acquisition-history"[\s\S]*?<span>1 шт\.<\/span>/u);
+  assert.match(itemBranch, /data-action="show-item-acquisition-history"[\s\S]*?<span>\{\{#if isMaterial\}\}1 ед\.\{\{else\}\}1 шт\.\{\{\/if\}\}<\/span>/u);
   assert.doesNotMatch(itemBranch, /Цена за 1 шт\./u);
   const toolbarEnd = template.indexOf("</section>", template.indexOf('class="rm-compact-toolbar"'));
   const pinnedIndex = template.indexOf('class="rm-inventory-pinned-folders"');

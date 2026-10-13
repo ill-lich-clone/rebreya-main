@@ -14,7 +14,7 @@ function clone(value) {
 }
 
 function createModel() {
-  const iron = { id: "iron", name: "Железо", type: "Металл" };
+  const iron = { id: "iron", name: "Железо", type: "Металл", weight: 1 };
   const sword = {
     id: "gear-sword-1",
     name: "Железный меч",
@@ -198,7 +198,7 @@ test("normalizes rarity variants, weight units, copper and durability states", (
   assert.equal(buildInventoryIngressDescriptor(ineligible, { model }).durabilityState, "ineligible");
 });
 
-test("resolves frozen canonical dismantle outputs with the 50 percent floor rule", () => {
+test("resolves frozen canonical dismantle outputs with the 50 percent mass rule", () => {
   const model = createModel();
   const swordData = createSwordData();
   const outputs = resolveInventoryDismantleOutputs(swordData, 2, { model });
@@ -215,7 +215,7 @@ test("resolves frozen canonical dismantle outputs with the 50 percent floor rule
   assert.equal("document" in outputs[0], false);
 });
 
-test("dismantle outputs stay within dnd5e integer Item quantity", () => {
+test("dismantle output is fractional catalog quantity before native projection", () => {
   const model = createModel();
   const itemData = createSwordData();
   itemData.system.weight = { value: 1, units: "lb" };
@@ -226,14 +226,14 @@ test("dismantle outputs stay within dnd5e integer Item quantity", () => {
     sourceType: "material",
     sourceId: "iron",
     name: "Железо",
-    quantity: 1
+    quantity: 1.5
   }]);
   itemData.system.quantity = 1;
-  assert.equal(canResolveInventoryDismantle(itemData, { model }), false);
-  assert.deepEqual(resolveInventoryDismantleOutputs(itemData, 1, { model }), []);
+  assert.equal(canResolveInventoryDismantle(itemData, { model }), true);
+  assert.equal(resolveInventoryDismantleOutputs(itemData, 1, { model })[0].quantity, 0.5);
 });
 
-test("dismantle minimum quantity is the first stack size that yields one whole material unit", async () => {
+test("dismantle minimum allows a single light source Item", async () => {
   const descriptorModule = await import(
     `../scripts/data/inventory-ingress-descriptor.js?minimum-quantity=${Date.now()}`
   );
@@ -245,13 +245,39 @@ test("dismantle minimum quantity is the first stack size that yields one whole m
 
   assert.equal(
     descriptorModule.resolveInventoryDismantleMinimumQuantity(itemData, { model }),
-    2
+    1
   );
   itemData.system.quantity = 1;
   assert.equal(
     descriptorModule.resolveInventoryDismantleMinimumQuantity(itemData, { model }),
-    null
+    1
   );
+  itemData.system.quantity = 0;
+  assert.equal(descriptorModule.resolveInventoryDismantleMinimumQuantity(itemData, { model }), null);
+});
+
+test("ammo salvage conserves half-pound mass across catalog unit weights", () => {
+  for (const weight of [0.5, 1, 10, 450, 630]) {
+    const model = createModel();
+    model.materialById.get("iron").weight = weight;
+    const ammo = createSwordData();
+    ammo.type = "consumable";
+    ammo.system.quantity = 20;
+    ammo.system.weight = { value: 0.05, units: "lb" };
+    assert.equal(canResolveInventoryDismantle(ammo, { model }), true);
+    const [output] = resolveInventoryDismantleOutputs(ammo, 20, { model });
+    assert.ok(Math.abs(output.quantity * weight - 0.5) <= 1e-8);
+    assert.deepEqual(Object.keys(output), ["sourceType", "sourceId", "name", "quantity"]);
+  }
+});
+
+test("dismantle rejects unknown material weight without inventing a unit", () => {
+  for (const weight of [undefined, 0, -1, NaN]) {
+    const model = createModel();
+    model.materialById.get("iron").weight = weight;
+    assert.equal(canResolveInventoryDismantle(createSwordData(), { model }), false);
+    assert.deepEqual(resolveInventoryDismantleOutputs(createSwordData(), 1, { model }), []);
+  }
 });
 
 test("returns no dismantle output for zero weight, unknown material, material or container", () => {

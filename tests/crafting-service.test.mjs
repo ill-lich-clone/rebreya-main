@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { withInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
@@ -920,6 +921,7 @@ test("cancellation releases only unspent reservation once", async () => {
       projectId: project.id,
       mutationId: "cancel-1:release",
       remaining: {
+        materialAccountingVersion: 2, predominantUnitWeightLb: 1, baseRawUnitWeightLb: 0.1,
         predominantMaterialId: "iron",
         predominantMaterialLb: 0.05,
         baseRawMaterialId: "smith-base-raw",
@@ -931,6 +933,37 @@ test("cancellation releases only unspent reservation once", async () => {
   finally {
     fixture.restore();
   }
+});
+
+test("heavy material partial cancellation reconciles rounding across pinned refund lots", async () => {
+  const units = 0.001111111111;
+  const itemData = withInventoryItemQuantity({ name: "Plate", type: "loot", flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron", materialId: "iron" } }, system: { quantity: 1, weight: { value: 450, units: "lb" }, price: { value: 40000, denomination: "gp" } } }, units);
+  const project = buildV2Project({ reservation: { materialAccountingVersion: 2, predominantUnitWeightLb: 450, baseRawUnitWeightLb: 0.1, predominantMaterialId: "iron", predominantMaterialLbReserved: 0.5, predominantMaterialLbSpent: 0.25, baseRawMaterialId: "smith-base-raw", baseRawQuantityReserved: 0, baseRawQuantitySpent: 0, receipts: [{ sourceId: "iron", itemId: "plate", quantity: units, itemData, components: [{ resource: "predominant", quantity: units }] }] } });
+  const fixture = installFixture({ craftState: { version: 2, counter: 1, projects: [project] } });
+  try {
+    await fixture.service.cancelProject(project.id, { mutationId: "heavy-cancel" });
+    const remaining = fixture.calls.release[0].remaining;
+    assert.equal(remaining.predominantMaterialLb, 0.25);
+    assert.equal(remaining.materialLots[0].quantity, 0.000555555556);
+    assert.equal(remaining.materialLots[0].itemData.system.price.value, itemData.system.price.value);
+  } finally { fixture.restore(); }
+});
+
+test("unmarked prepared craft approval without a stock receipt resumes with legacy accounting", async () => {
+  let failReserve = true;
+  const fixture = installFixture({ onInventoryOperation: async kind => { if (kind === "reserve" && failReserve) { failReserve = false; throw new Error("reserve interrupted"); } } });
+  try {
+    await assert.rejects(approveDefaultProject(fixture), /reserve interrupted/);
+    const journal = fixture.settingsStore[SETTINGS_KEYS.CRAFT_MUTATION_JOURNAL];
+    const record = journal.records.find(row => row.phase === "prepared");
+    assert.ok(record);
+    for (const source of [record.project.reservation, record.reservationRequest]) {
+      delete source.materialAccountingVersion; delete source.predominantUnitWeightLb; delete source.baseRawUnitWeightLb;
+    }
+    await approveDefaultProject(fixture);
+    assert.equal(fixture.calls.reserve.at(-1).quote.materialAccountingVersion, 1);
+    assert.equal(fixture.calls.reserve.at(-1).quote.predominantMaterialLb, record.reservationRequest.predominantMaterialLb);
+  } finally { fixture.restore(); }
 });
 
 test("a cancelled project returns an explicit no-receipt block for scheduled work", async () => {

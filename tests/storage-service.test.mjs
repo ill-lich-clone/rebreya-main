@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { withInventoryItemQuantity, readInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 
 import {
   STORAGE_UPDATED_HOOK,
@@ -15,6 +16,22 @@ import {
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
 import { normalizeLootgenForm } from "../scripts/data/lootgen-generator.js";
+
+test("storage material partial claim keeps native pieces and a persistent idempotent receipt", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("fractional");
+  await service.configure(token, { state: "opened" });
+  const itemData = withInventoryItemQuantity({ name: "Adamant", type: "loot", system: { quantity: 1, weight: { value: 10, units: "lb" }, price: { value: 500, denomination: "gp" } }, flags: { "rebreya-main": { sourceType: "material", sourceId: "adamant", materialId: "adamant" } } }, 0.05);
+  await service.depositRow(token, { rowId: "scrap", quantity: 0.05, itemData });
+  const result = await service.claim(token, { rowId: "scrap", quantity: 0.02, mutationId: "part" });
+  const retry = await service.claim(token, { rowId: "scrap", quantity: 0.02, mutationId: "part" });
+  assert.equal(result.quantity, 0.02);
+  assert.equal(readInventoryItemQuantity(result.row.itemData), 0.02);
+  assert.equal(readStorageState(token).manualRows[0].quantity, 0.03);
+  assert.equal(readInventoryItemQuantity(readStorageState(token).manualRows[0].itemData), 0.03);
+  assert.equal(retry.changed, true);
+  assert.equal(retry.row, null);
+});
 
 test("depositing currency preserves claimed balances and rejects overflow without Item rows", async () => {
   const token = createStorageToken("currency-deposit");

@@ -107,6 +107,15 @@ function overrides() {
   });
 }
 
+test("exact Dreadnought ammunition sources bind distinct materials and preserve the literal category", () => {
+  const names = ["Боеприпасы из клешней Дредноута (20)", "Боеприпасы из панцирной пластины Дредноута (20)", "Иные боеприпасы Дредноута"];
+  const rows = names.map((name, index) => ({ rowNumber: index + 2, cells: { Название: name, "Тип снаряжения": "Боеприпас", Цена: "500 зм", Ранг: "2", Вес: "1/20 фнт", "Преобладающий материал (источник)": "Астральный дредноут" } }));
+  const keys = names.map(name => `боеприпас|${name.toLowerCase()}`);
+  const result = adaptBaseGear({ snapshot: { ...baseSnapshot, rows }, referenceIndex: { gearByKey: new Map(keys.map((key, index) => [key, { sourceKey: key, canonicalName: names[index], equipmentType: "Боеприпас", sourceRef: `sheet!A${index + 2}` }])), resolveStableGearId: reference => reference.sourceKey }, overrides: { identities: {}, enrichment: {} }, materials: [{ id: "material-123", name: "Клешни дредноута" }, { id: "material-121", name: "Панцирная пластина дредноута" }], diagnostics: [] });
+  assert.deepEqual(result.items.map(row => row.predominantMaterialId), ["material-123", "material-121", null]);
+  assert.ok(result.items.every(row => row.predominantMaterialName === "Астральный дредноут"));
+});
+
 test("reference index resolves only exact canonical source keys and source coordinates", () => {
   const index = buildEquipmentReferenceIndex({
     snapshots: { equipmentReferences: referenceSnapshot },

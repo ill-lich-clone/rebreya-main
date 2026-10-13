@@ -1,7 +1,7 @@
 import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./lootgen-item-descriptor.js?v=1.4.268";
 import { sha256Hex } from "../shared/sha256.js?v=1.4.268";
-import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.368-hero-performance";
-import { RUNTIME_ITEM_GRAPH_FLAG } from "./runtime-item-graph.js?v=1.4.257";
+import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.376";
+import { RUNTIME_ITEM_GRAPH_FLAG } from "./runtime-item-graph.js?v=1.4.376";
 
 const MODULE_ID="rebreya-main";
 export const LOOTGEN_COMPOSITION_FLAG="lootgenComposition";

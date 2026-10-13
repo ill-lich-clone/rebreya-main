@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { withInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 
 import {
   buildTransportFuelInventorySnapshot,
@@ -17,6 +18,14 @@ const compendiumCoal = {
     "rebreya-main": { sourceType: "good", sourceId: "liquid-coal" }
   }
 };
+
+test("material fuel snapshot reports logical units of a native fragment", () => {
+  const item = withInventoryItemQuantity({ ...warehouseCoal("fragment", 1), flags: { "rebreya-main": {
+    sourceType: "material", sourceId: "coal", materialId: "coal"
+  } }, system: { quantity: 1, weight: { value: 10, units: "lb" }, price: { value: 5, denomination: "gp" } } }, 0.05);
+  const snapshot = buildTransportFuelInventorySnapshot([item], buildTransportFuelSelector(item));
+  assert.equal(snapshot.quantity, 0.05);
+});
 
 function warehouseCoal(itemId, quantity) {
   return {

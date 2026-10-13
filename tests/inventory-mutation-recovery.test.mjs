@@ -12,6 +12,9 @@ import {
 import { InventoryIngressPlanner } from "../scripts/application/inventory-ingress-planner.js";
 import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
 import { readInventoryAcquisitionHistory } from "../scripts/data/inventory-acquisition-history.js";
+import {
+  readInventoryItemQuantity, withInventoryItemQuantity, captureInventoryItemQuantityState, isInventoryMaterialItemData
+} from "../scripts/data/inventory-material-quantity.js";
 
 const previousActor = globalThis.Actor;
 const previousItem = globalThis.Item;
@@ -691,7 +694,7 @@ test("folder batch skips non-dismantlable Items and performs no child writes for
   finally { fixture.restore(); }
 });
 
-test("manual dismantle publishes and enforces the minimum whole-output quantity", async () => {
+test("manual dismantle publishes minimum one and credits a fractional light-item output", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = {
     gear: [],
@@ -733,17 +736,15 @@ test("manual dismantle publishes and enforces the minimum whole-output quantity"
   try {
     const snapshot = await fixture.service.getInventorySnapshot({ groupActorId: group.id });
     const entry = snapshot.items.find((item) => item.itemId === source.id);
-    assert.equal(entry?.dismantleMinQuantity, 2);
+    assert.equal(entry?.dismantleMinQuantity, 1);
     assert.equal(entry?.canDismantle, true);
-    await assert.rejects(
-      fixture.service.breakItemToMaterial(source.id, 1),
-      /минимум 2/u
-    );
-    assert.equal(source.system.quantity, 3);
-    assert.equal(
-      fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL]?.records,
-      undefined
-    );
+    const result = await fixture.service.breakItemToMaterial(source.id, 1);
+    assert.equal(result.materialWeight, 0.5);
+    assert.equal(source.system.quantity, 2);
+    const credited = group.items.contents.find((item) => item.id !== source.id);
+    assert.equal(credited.system.quantity, 1);
+    assert.equal(readInventoryItemQuantity(credited.toObject()), 0.5);
+    assert.equal(credited.system.weight.value, 0.5);
   }
   finally {
     fixture.restore();
@@ -1115,7 +1116,7 @@ test("manual dismantle restores a missing credited material before retrying sour
   }
 });
 
-test("manual dismantle repairs legacy fractional credits before applying a new integer result", async () => {
+test("manual dismantle repairs legacy invalid credits before applying new native integer pieces", async () => {
   const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
   const model = {
     gear: [],
@@ -1259,10 +1260,12 @@ test("manual dismantle repairs legacy fractional credits before applying a new i
       quantity: 3
     });
 
-    assert.equal(result.materialWeight, 1);
+    assert.equal(result.materialWeight, 1.5);
     assert.equal(group.items.contents.length, 1);
     assert.equal(group.items.contents[0].name, silver.name);
-    assert.equal(group.items.contents[0].system.quantity, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+    assert.equal(readInventoryItemQuantity(group.items.contents[0].toObject()), 1.5);
+    assert.equal(group.items.contents[0].system.quantity * group.items.contents[0].system.weight.value, 1.5);
     assert.equal(group.createEmbeddedDocumentsCalls, 1);
     const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
     for (const mutationId of [firstMutationId, secondMutationId]) {
@@ -1401,10 +1404,12 @@ test("manual dismantle accepts a missing legacy merge target already removed wit
       quantity: 3
     });
 
-    assert.equal(result.materialWeight, 1);
+    assert.equal(result.materialWeight, 1.5);
     assert.equal(group.items.contents.length, 1);
     assert.equal(group.items.contents[0].name, silver.name);
-    assert.equal(group.items.contents[0].system.quantity, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+    assert.equal(readInventoryItemQuantity(group.items.contents[0].toObject()), 1.5);
+    assert.equal(group.items.contents[0].system.quantity * group.items.contents[0].system.weight.value, 1.5);
     const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
     for (const mutationId of [firstMutationId, secondMutationId]) {
       const record = records.find((entry) => entry.id === mutationId);
@@ -2014,7 +2019,8 @@ function setProperty(source, path, value) {
   let cursor = source;
   for (const [index, part] of parts.entries()) {
     if (index === parts.length - 1) {
-      cursor[part] = value;
+      if (part.startsWith("-=")) delete cursor[part.slice(2)];
+      else cursor[part] = value;
     }
     else {
       cursor[part] ??= {};
@@ -2055,6 +2061,11 @@ function createItem({
     weight: { value: 1 }
   };
   itemSystem.quantity = quantity ?? itemSystem.quantity;
+  if (isInventoryMaterialItemData({flags}) && !Number.isSafeInteger(itemSystem.quantity)) {
+    const projected = withInventoryItemQuantity({system:itemSystem,flags,type}, itemSystem.quantity);
+    Object.assign(itemSystem, projected.system);
+    flags = projected.flags;
+  }
   Object.assign(item, {
     ...clone(extraData),
     id,
@@ -2078,6 +2089,7 @@ function createItem({
     },
     async update(patch) {
       if (failUpdate) throw new Error("source update failed");
+      if (Object.hasOwn(patch, "system.quantity")) assert.equal(Number.isSafeInteger(patch["system.quantity"]), true, "dnd5e native quantity must be integer");
       applyPatch(this, patch);
       onUpdate?.(this, clone(patch));
       if (throwAfterUpdateOnce && !updateAckLost) {
@@ -2170,6 +2182,7 @@ function createActor({
     async createEmbeddedDocuments(_documentName, documents, options = {}) {
       this.createEmbeddedDocumentsCalls += 1;
       const created = documents.map((document, index) => {
+        assert.equal(Number.isSafeInteger(document.system?.quantity ?? 1), true, "dnd5e created native quantity must be integer");
         const { _id, id: _ignoredId, name, type, img, flags, system, ...extraData } = clone(document);
         return createItem({
           id: options.keepId && _id ? _id : `created-${this.items.contents.length + index + 1}`,
@@ -2239,11 +2252,55 @@ function dismantleSource({ id, materialId, quantity = 1, failUpdate = false } = 
 function materialStack({ id, material, quantity }) {
   return createItem({
     id, name: material.name, type: "loot", quantity,
+    system: { quantity, weight: { value: material.weight, units: "lb" }, price: { value: material.priceGold ?? 0, denomination: "gp" } },
     flags: { [MODULE_ID]: {
       sourceType: "material", sourceId: material.id, materialId: material.id, predominantMaterialId: material.id
     } }
   });
 }
+
+test("v2 craft reserves predominant pounds as catalog units, combines base units and refunds pinned stock", async () => {
+  const material = { id: "adamant", name: "Adamant", weight: 10, priceGold: 500 };
+  const stock = materialStack({ id: "v2-adamant", material, quantity: 0.1 });
+  const group = createActor({ id: "v2-group", type: "group", managed: true, items: [stock] });
+  const fixture = installFixture({ group, actors: [group], moduleApi: { getModel: async () => ({ materials: [material] }) } });
+  const request = { projectId: "v2-project", materialAccountingVersion: 2, predominantUnitWeightLb: 10, baseRawUnitWeightLb: 10,
+    predominantMaterialId: "adamant", predominantMaterialLb: 0.5, baseRawMaterialId: "adamant", baseRawQuantity: 0.02 };
+  try {
+    const availability = await fixture.service.getCraftResourceAvailability(request);
+    assert.equal(availability.rows[0].required, 0.07);
+    const receipts = await fixture.service.reserveCraftResourcesOnce(request, "v2-reserve");
+    assert.equal(readInventoryItemQuantity(stock.toObject()), 0.03);
+    assert.equal(receipts[0].delta, 0.07);
+    material.weight = 630;
+    await fixture.service.releaseCraftReservationOnce(request.projectId, { ...request, predominantMaterialLb: 0.25, baseRawQuantity: 0.01 }, "v2-release");
+    assert.equal(readInventoryItemQuantity(stock.toObject()), 0.065);
+    assert.ok(Number.isInteger(stock.system.quantity));
+    assert.equal(stock.system.quantity * stock.system.weight.value, 0.65);
+    assert.equal(stock.system.quantity * stock.system.price.value, 32.5);
+  } finally { fixture.restore(); }
+});
+
+test("v2 craft refund recreates the original priced lot instead of repricing from the catalog", async () => {
+  const material = { id: "adamant", name: "Adamant", weight: 10, priceGold: 500 };
+  const stock = materialStack({ id: "authored-adamant", material: { ...material, priceGold: 600 }, quantity: 0.05 });
+  const group = createActor({ id: "refund-group", type: "group", managed: true, items: [stock] });
+  const fixture = installFixture({ group, actors: [group], moduleApi: { getModel: async () => ({ materials: [material] }) } });
+  const request = { projectId: "authored-project", materialAccountingVersion: 2, predominantUnitWeightLb: 10, baseRawUnitWeightLb: 10,
+    predominantMaterialId: "adamant", predominantMaterialLb: 0.5, baseRawMaterialId: "adamant", baseRawQuantity: 0 };
+  try {
+    const receipts = await fixture.service.reserveCraftResourcesOnce(request, "authored-reserve");
+    await stock.delete();
+    const remaining = { ...request, materialLots: [{ sourceId: "adamant", itemId: stock.id, itemData: receipts[0].itemData, quantity: 0.05 }] };
+    await fixture.service.releaseCraftReservationOnce(request.projectId, remaining, "authored-release");
+    await fixture.service.releaseCraftReservationOnce(request.projectId, remaining, "authored-release");
+    assert.equal(group.items.contents.length, 1);
+    const refunded = group.items.contents[0];
+    assert.equal(readInventoryItemQuantity(refunded.toObject()), 0.05);
+    assert.equal(refunded.system.quantity * refunded.system.weight.value, 0.5);
+    assert.equal(refunded.system.quantity * refunded.system.price.value, 30);
+  } finally { fixture.restore(); }
+});
 
 function batchPricedItem(id, { priceValue = 1, flags = {} } = {}) {
   return createItem({
@@ -3464,6 +3521,7 @@ test("filtered dismantle creates only canonical root material output", async () 
     name: iron.name,
     type: "loot",
     quantity: 1,
+    system: { quantity: 1, weight: { value: iron.weight, units: "lb" }, price: { value: iron.priceGold, denomination: "gp" } },
     flags: {
       [MODULE_ID]: {
         sourceType: "material",
@@ -4439,7 +4497,7 @@ test("all craft Once APIs stay pinned to the captured group instead of the curre
       quantity: 1
     }], "captured-output", executionOptions);
 
-    assert.equal(ironA.system.quantity, 4.5);
+    assert.equal(readInventoryItemQuantity(ironA.toObject()), 4.5);
     assert.equal(ironB.system.quantity, 50);
     assert.equal(groupA.items.contents.filter((item) => item.name === sourceData.name).length, 1);
     assert.equal(groupB.items.contents.filter((item) => item.name === sourceData.name).length, 0);
@@ -4499,7 +4557,7 @@ test("craft reservation retry observes an update completed after the old guard b
       }),
       /execution context changed/iu
     );
-    assert.equal(iron.system.quantity, 4);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 4);
     assert.equal(updateCalls, 1);
     const prepared = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
       .find((record) => record.id === "guarded-reserve");
@@ -4512,7 +4570,7 @@ test("craft reservation retry observes an update completed after the old guard b
       assertExecutionContext: () => true
     });
     assert.equal(result.length, 1);
-    assert.equal(iron.system.quantity, 4);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 4);
     assert.equal(updateCalls, 1);
     const committed = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
       .find((record) => record.id === "guarded-reserve");
@@ -5299,8 +5357,8 @@ test("craft reservation atomically debits fractional predominant and base raw ma
         afterQuantity: 2.16667
       }
     ]);
-    assert.equal(iron.system.quantity, 2.75);
-    assert.equal(baseRaw.system.quantity, 2.16667);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 2.75);
+    assert.equal(readInventoryItemQuantity(baseRaw.toObject()), 2.16667);
 
     const spend = {
       predominantMaterialLb: 0.25,
@@ -5327,8 +5385,8 @@ test("craft reservation atomically debits fractional predominant and base raw ma
       await fixture.service.releaseCraftReservationOnce("project-atomic", remaining, "release-atomic"),
       releaseReceipts
     );
-    assert.equal(iron.system.quantity, 3.75);
-    assert.equal(baseRaw.system.quantity, 2.38889);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 3.75);
+    assert.equal(readInventoryItemQuantity(baseRaw.toObject()), 2.38889);
   }
   finally {
     fixture.restore();
@@ -5384,7 +5442,7 @@ test("craft resource availability reads and coalesces canonical material stacks 
         ]
       }]
     });
-    assert.equal(iron.system.quantity, 1);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 1);
     assert.equal(ironSecond.system.quantity, 2);
     assert.equal(wrongType.system.quantity, 999);
     assert.equal(fixture.settingsWrites.length, 0);
@@ -5457,7 +5515,7 @@ test("craft reservation debits one material requirement across multiple canonica
     }, "reserve-multi-stack");
 
     assert.equal(first.system.quantity, 0);
-    assert.equal(second.system.quantity, 1.5);
+    assert.equal(readInventoryItemQuantity(second.toObject()), 1.5);
     assert.equal(receipts.length, 2);
     assert.equal(receipts.reduce((total, receipt) => total + receipt.quantity, 0), 2.5);
   }
@@ -5607,7 +5665,7 @@ test("craft reserve and release coalesce the same canonical material into one re
     assert.equal(reserved[0].sourceId, "iron");
     assert.equal(reserved[0].quantity, 1);
     assert.equal(reserved[0].delta, 1);
-    assert.equal(iron.system.quantity, 1);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 1);
 
     const released = await fixture.service.releaseCraftReservationOnce(
       "project-coalesced",
@@ -5618,7 +5676,7 @@ test("craft reserve and release coalesce the same canonical material into one re
     assert.equal(released[0].sourceId, "iron");
     assert.equal(released[0].quantity, 1);
     assert.equal(released[0].delta, 1);
-    assert.equal(iron.system.quantity, 2);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 2);
     assert.equal(group.items.contents.length, 1);
   }
   finally {
@@ -5696,15 +5754,15 @@ test("craft reservation compensates completed material steps in reverse after a 
       fixture.service.reserveCraftResourcesOnce(quote, "reserve-failure"),
       /source update failed/u
     );
-    assert.equal(iron.system.quantity, 4);
-    assert.equal(failingBaseRaw.system.quantity, 2);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 4);
+    assert.equal(readInventoryItemQuantity(failingBaseRaw.toObject()), 2);
 
     await assert.rejects(
       fixture.service.reserveCraftResourcesOnce(quote, "reserve-failure"),
       /source update failed/u
     );
-    assert.equal(iron.system.quantity, 4);
-    assert.equal(failingBaseRaw.system.quantity, 2);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 4);
+    assert.equal(readInventoryItemQuantity(failingBaseRaw.toObject()), 2);
   }
   finally {
     fixture.restore();
@@ -5745,7 +5803,7 @@ test("craft reservation survives an applied update throw and durable journal ack
 
     assert.equal(journalAckLost, true);
     assert.deepEqual(retry, first);
-    assert.equal(iron.system.quantity, 1);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 1);
     const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL]
       .records.find((entry) => entry.id === "reserve-ambiguous");
     assert.equal(record.terminal, true);
@@ -5815,8 +5873,8 @@ test("craft reservation compensates both applied receipts in actual reverse orde
       ["base-reverse", 1],
       ["iron-reverse", 4]
     ]);
-    assert.equal(iron.system.quantity, 4);
-    assert.equal(baseRaw.system.quantity, 1);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 4);
+    assert.equal(readInventoryItemQuantity(baseRaw.toObject()), 1);
 
     await assert.rejects(
       fixture.service.reserveCraftResourcesOnce(quote, "reserve-reverse-order"),
@@ -5855,15 +5913,15 @@ test("craft release does not mint material when a later refund step fails", asyn
       fixture.service.releaseCraftReservationOnce("project-release-failure", remaining, "release-failure"),
       /source update failed/u
     );
-    assert.equal(iron.system.quantity, 3);
-    assert.equal(failingBaseRaw.system.quantity, 1.5);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 3);
+    assert.equal(readInventoryItemQuantity(failingBaseRaw.toObject()), 1.5);
 
     await assert.rejects(
       fixture.service.releaseCraftReservationOnce("project-release-failure", remaining, "release-failure"),
       /source update failed/u
     );
-    assert.equal(iron.system.quantity, 3);
-    assert.equal(failingBaseRaw.system.quantity, 1.5);
+    assert.equal(readInventoryItemQuantity(iron.toObject()), 3);
+    assert.equal(readInventoryItemQuantity(failingBaseRaw.toObject()), 1.5);
   }
   finally {
     fixture.restore();
@@ -6545,4 +6603,141 @@ test("separate prepared character grants keep distinct hosts and upgrade links",
       assert.equal(child.flags[MODULE_ID].installedUpgrade.hostItemId,host.id);
     }
   }finally{fixture.restore();}
+});
+
+test("real-weight ammo dismantle conserves mass and value for fractional catalog units", async () => {
+  for (const [quantity, weight] of [[20,0.5],[40,1]]) {
+    const adamant={id:'adamant',name:'Adamant',type:'Metal',weight:10,priceGold:500};
+    const source=dismantleSource({id:'adamant-ammo',materialId:adamant.id,quantity});
+    source.type='consumable';source.system.weight={value:0.05,units:'lb'};
+    const group=createActor({id:'adamant-group',type:'group',managed:true,items:[source]});
+    const fixture=installFixture({group,actors:[group],moduleApi:{getModel:async()=>dismantleModel(adamant)}});
+    try {
+      const request={inventoryActorId:group.id,itemId:source.id,quantity,mutationId:'adamant-break'};
+      const result=await fixture.service.executeDismantleMutation(request);
+      assert.equal(result.materialWeight,weight);
+      assert.equal(result.breakQuantity,quantity);
+      assert.equal(group.items.contents.length,1);
+      const credited=group.items.contents[0];
+      assert.equal(credited.system.quantity,1);
+      assert.equal(credited.system.quantity*credited.system.weight.value,weight);
+      assert.equal(credited.system.quantity*credited.system.price.value,weight*50);
+      assert.equal(readInventoryItemQuantity(credited.toObject()),weight/10);
+      assert.deepEqual(await fixture.service.executeDismantleMutation(request),result);
+      assert.equal(group.createEmbeddedDocumentsCalls,1);
+      const snapshot=await fixture.service.getInventorySnapshot({groupActorId:group.id});
+      assert.equal(snapshot.items[0].quantity,weight/10);
+      assert.equal(snapshot.items[0].totalWeight,weight);
+    } finally {fixture.restore();}
+  }
+});
+
+test("fractional dismantle merge failure restores exact native projection and provenance", async () => {
+  const adamant={id:'adamant',name:'Adamant',type:'Metal',weight:10,priceGold:500};
+  const source=dismantleSource({id:'failing-ammo',materialId:adamant.id,quantity:40,failUpdate:true});
+  source.system.weight={value:0.05,units:'lb'};
+  const target=createItem({id:'old-adamant',name:adamant.name,quantity:1,system:{quantity:1,weight:{value:10,units:'lb'},price:{value:500,denomination:'gp'}},flags:{[MODULE_ID]:{sourceType:'material',sourceId:adamant.id,materialId:adamant.id}}});
+  const before=captureInventoryItemQuantityState(target.toObject());
+  const group=createActor({id:'compensation-group',type:'group',managed:true,items:[source,target]});
+  const fixture=installFixture({group,actors:[group],moduleApi:{getModel:async()=>dismantleModel(adamant)}});
+  try {
+    await assert.rejects(fixture.service.executeDismantleMutation({inventoryActorId:group.id,itemId:source.id,quantity:20,mutationId:'fraction-compensation'}),/source update failed/u);
+    assert.equal(source.system.quantity,40);
+    assert.deepEqual(captureInventoryItemQuantityState(target.toObject()),before);
+    assert.deepEqual(readInventoryAcquisitionHistory(target.toObject()),{version:1,entries:[]});
+    assert.equal(group.items.contents.length,2);
+  } finally {fixture.restore();}
+});
+
+test("new fractional prepared credit survives legacy repair and resumes exactly once", async () => {
+  const adamant={id:'adamant',name:'Adamant',type:'Metal',weight:10,priceGold:500};
+  const source=dismantleSource({id:'pending-ammo',materialId:adamant.id,quantity:20});source.system.weight={value:0.05,units:'lb'};
+  const group=createActor({id:'pending-fraction-group',type:'group',managed:true,items:[source]});
+  let interrupted=false;
+  const fixture=installFixture({group,actors:[group],moduleApi:{getModel:async()=>dismantleModel(adamant)},beforeSettingsSet({key,value}) {
+    if (!interrupted && key===SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL && value.records?.some(row=>row.id==='pending-fraction'&&row.phase==='target-credited')) {interrupted=true;throw new Error('credit checkpoint interrupted');}
+  }});
+  try {
+    const request={inventoryActorId:group.id,itemId:source.id,quantity:20,mutationId:'pending-fraction'};
+    await assert.rejects(fixture.service.executeDismantleMutation(request),/checkpoint interrupted/u);
+    const record=fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records.find(row=>row.id===request.mutationId);
+    assert.equal(record.materialAccountingVersion,2);
+    assert.equal(record.phase,'prepared');
+    assert.equal(source.system.quantity,20);
+    const result=await fixture.service.executeDismantleMutation(request);
+    assert.equal(result.materialWeight,0.5);
+    assert.equal(group.items.contents.length,1);
+    assert.equal(readInventoryItemQuantity(group.items.contents[0].toObject()),0.05);
+    assert.equal(group.createEmbeddedDocumentsCalls,1);
+  } finally {fixture.restore();}
+});
+
+test("empty dismantle source is rejected before journal and target credit", async () => {
+  const iron={id:'iron',name:'Iron',weight:1,priceGold:1};
+  const source=dismantleSource({id:'empty-source',materialId:iron.id,quantity:0});
+  const group=createActor({id:'empty-source-group',type:'group',managed:true,items:[source]});
+  const fixture=installFixture({group,actors:[group],moduleApi:{getModel:async()=>dismantleModel(iron)}});
+  try {
+    await assert.rejects(fixture.service.executeDismantleMutation({inventoryActorId:group.id,itemId:source.id,quantity:1,mutationId:'empty-break'}));
+    assert.equal(group.createEmbeddedDocumentsCalls,0);
+    assert.equal(fixture.settingsWrites.length,0);
+  } finally {fixture.restore();}
+});
+
+test("dismantle does not merge into a material with different authored unit weight or price", async () => {
+  for(const [weight,price] of [[20,500],[10,600]]) {
+    const mat={id:'adamant',name:'Adamant',weight:10,priceGold:500};
+    const source=dismantleSource({id:'protected-source',materialId:mat.id,quantity:20});source.system.weight={value:0.05,units:'lb'};
+    const target=createItem({id:'authored-target',name:mat.name,quantity:1,system:{quantity:1,weight:{value:weight,units:'lb'},price:{value:price,denomination:'gp'}},flags:{[MODULE_ID]:{sourceType:'material',sourceId:mat.id,materialId:mat.id}}});
+    const before=target.toObject();
+    const group=createActor({id:'authored-group',type:'group',managed:true,items:[source,target]});
+    const fixture=installFixture({group,actors:[group],moduleApi:{getModel:async()=>dismantleModel(mat)}});
+    try {
+      await fixture.service.executeDismantleMutation({inventoryActorId:group.id,itemId:source.id,quantity:20,mutationId:'authored-break'});
+      assert.deepEqual(target.toObject(),before);
+      assert.equal(group.items.contents.length,2);
+      const scrap=group.items.contents.find(item=>item.id!==target.id);
+      assert.equal(scrap.system.quantity*scrap.system.weight.value,0.5);
+      assert.equal(scrap.system.quantity*scrap.system.price.value,25);
+    } finally {fixture.restore();}
+  }
+});
+
+test("auto-ingress dismantle and folder batch retain fractional pounds for heavy material units", async () => {
+  const mat={id:'heavy-material',name:'Heavy material',weight:630,priceGold:10000};
+  const source=dismantleSource({id:'folder-ammo',materialId:mat.id,quantity:20});source.system.weight={value:0.05,units:'lb'};
+  const group=createActor({id:'fraction-ingress-group',type:'group',managed:true,items:[source],flags:{[MODULE_ID]:{
+    inventoryFolders:{version:1,folders:[{id:'ammo',name:'Ammo',parentId:null}],itemFolderIds:{[source.id]:'ammo'}},
+    inventoryIngressRules:{version:1,revision:1,rules:[{id:'auto-break',name:'Auto break',conditions:[{field:'sourceId',operator:'is',value:'ingress-ammo'}],action:{type:'dismantle'}}]}
+  }}});
+  const fixture=createInventoryIngressFixture({group,model:dismantleModel(mat)});
+  try {
+    const itemData=source.toObject();itemData.flags[MODULE_ID].sourceId='ingress-ammo';itemData.flags[MODULE_ID].gearId='ingress-ammo';
+    const rows=[{sourceKey:'ingress-ammo-row',quantity:20,itemData,legacyFolderId:null,container:null}];
+    const serializedPlan=await serializeIngressPlan(fixture.planner,{groupActorId:group.id,rows});
+    await fixture.service.commitInventoryIngressBatch({groupActorId:group.id,batchMutationId:'fraction-ingress',sourceOrigin:'lootgen',serializedPlan},{resolveRows:async()=>clone(rows),debitRow:async()=>{}});
+    const ingressed=group.items.contents.find(item=>item.id!==source.id);
+    assert.ok(Math.abs(ingressed.system.quantity*ingressed.system.weight.value-0.5)<1e-8);
+    const result=await fixture.service.executeInventoryFolderBatch({groupActorId:group.id,folderId:'ammo',action:'dismantle',includeDescendants:false,operationId:'fraction-folder'});
+    assert.equal(result.totals.materials[0].quantity,0.5);
+    assert.equal(result.processed[0].materialWeight,0.5);
+  } finally {fixture.restore();}
+});
+
+test("tiny material credit cannot debit source after a history-only partial target update", async () => {
+  const mat={id:'tiny-material',name:'Tiny material',weight:10,priceGold:500};
+  const source=dismantleSource({id:'tiny-source',materialId:mat.id,quantity:1});source.system.weight={value:2e-11,units:'lb'};
+  const targetData=withInventoryItemQuantity({name:mat.name,type:'loot',system:{quantity:1,weight:{value:10,units:'lb'},price:{value:500,denomination:'gp'}},flags:{[MODULE_ID]:{sourceType:'material',sourceId:mat.id,materialId:mat.id}}},1.05);
+  let initialState;
+  const target=createItem({id:'tiny-target',name:mat.name,quantity:targetData.system.quantity,system:targetData.system,flags:targetData.flags,onUpdate(item) {
+    item.system.quantity=initialState.quantity;item.system.weight=clone(initialState.weight);item.system.price=clone(initialState.price);item.flags[MODULE_ID].materialQuantity=clone(initialState.materialQuantityFlag);
+  }});
+  initialState=captureInventoryItemQuantityState(target.toObject());
+  const group=createActor({id:'tiny-group',type:'group',managed:true,items:[source,target]});
+  const fixture=installFixture({group,actors:[group],moduleApi:{getModel:async()=>dismantleModel(mat)}});
+  try {
+    await assert.rejects(fixture.service.executeDismantleMutation({inventoryActorId:group.id,itemId:source.id,quantity:1,mutationId:'tiny-credit'}),/credit.*observed|quantity changed/u);
+    assert.equal(source.system.quantity,1);
+    assert.equal(readInventoryItemQuantity(target.toObject()),1.05);
+  } finally {fixture.restore();}
 });

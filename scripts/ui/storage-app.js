@@ -1,4 +1,5 @@
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.370";
+import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.376";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.376";
 import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.370";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
@@ -12,7 +13,7 @@ import {
   parseStorageDragData,
   promptStorageTransferQuantity,
   storageGridColumns
-} from "./storage-transfer-ui.js";
+} from "./storage-transfer-ui.js?v=1.4.376";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
@@ -271,7 +272,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         rowId: clean(row.rowId),
         name: displayName,
         img: clean(row.img ?? row.itemData?.img),
-        quantity: Math.max(1, Number(row.quantity ?? 1)),
+        quantity: isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Number(row.quantity ?? 1)),
         typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет",
         sourceType: clean(row.sourceType),
         sourceId: clean(row.sourceId),
@@ -551,8 +552,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const row = this.#rowById(rowId);
     if (!row) throw new Error("Предмет хранилища уже недоступен.");
     if (row.rowKind === "journal") throw new Error("Записи журнала нельзя перемещать.");
-    const available = Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1);
-    const quantity = await promptStorageTransferQuantity(available);
+    const available = isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1);
+    const quantity = await promptStorageTransferQuantity(available, { material: isInventoryMaterialItemData(row.itemData) });
     if (quantity === null) return false;
     return this.moduleApi.claimStorageRow(
       this.tokenUuid,
@@ -802,7 +803,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       tokenUuid: this.tokenUuid,
       path: this.path,
       rowId: clean(row.rowId),
-      quantity: Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1)
+      quantity: isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1)
     });
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", JSON.stringify(payload));
@@ -837,7 +838,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return;
       }
       const inspected = await this.moduleApi.inspectStorageDepositSource(data);
-      const quantity = await promptStorageTransferQuantity(inspected.available);
+      const quantity = await promptStorageTransferQuantity(inspected.available, { material: inspected.material === true });
       if (quantity === null) return;
       await this.moduleApi.depositStorageItem(
         this.tokenUuid,

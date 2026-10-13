@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { isDurabilityEligible } from "./durability-rules.js";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.376";
+import { readInventoryItemQuantity, readInventoryItemUnitWeight, readInventoryItemUnitPrice } from "./inventory-material-quantity.js?v=1.4.376";
 
 const COPPER_MULTIPLIERS = Object.freeze({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 });
 const DURABILITY_STATES = new Set(["intact", "damaged", "broken", "destroyed"]);
@@ -88,7 +89,7 @@ function sourceKindOf(identity) {
 }
 
 function unitValueCopper(itemData) {
-  const price = itemData?.system?.price;
+  const price = readInventoryItemUnitPrice(itemData);
   const value = Math.max(0, finiteNumber(price?.value) ?? 0);
   const denomination = cleanString(price?.denomination).toLocaleLowerCase() || "gp";
   const multiplier = COPPER_MULTIPLIERS[denomination] ?? COPPER_MULTIPLIERS.gp;
@@ -96,17 +97,7 @@ function unitValueCopper(itemData) {
 }
 
 function unitWeightPounds(itemData) {
-  const weight = itemData?.system?.weight;
-  const value = Math.max(0, finiteNumber(weight?.value ?? weight) ?? 0);
-  const units = cleanString(weight?.units).toLocaleLowerCase() || "lb";
-  const multiplier = units === "kg"
-    ? 2.20462
-    : units === "oz"
-      ? 1 / 16
-      : units === "ton"
-        ? 2000
-        : 1;
-  return rounded(value * multiplier);
+  return readInventoryItemUnitWeight(itemData);
 }
 
 function durabilityStateOf(itemData) {
@@ -154,17 +145,16 @@ export function getInventoryDismantleBlockReason(itemData) {
 
 export function resolveInventoryDismantleMinimumQuantity(itemData, { model } = {}) {
   if (getInventoryDismantleBlockReason(itemData)) return null;
-  const availableQuantity = Math.max(0, Math.floor(finiteNumber(itemData?.system?.quantity) ?? 1));
+  const availableQuantity = Math.max(0, Math.floor(readInventoryItemQuantity(itemData)));
   const unitWeight = unitWeightPounds(itemData);
-  if (availableQuantity <= 0 || unitWeight <= 0 || !resolveMaterialProfile(itemData, model)) return null;
-  let minimumQuantity = Math.max(1, Math.ceil(2 / unitWeight));
+  const materialWeight = finiteNumber(resolveMaterialProfile(itemData, model)?.material?.weight);
+  if (availableQuantity <= 0 || unitWeight <= 0 || !(materialWeight > 0)) return null;
+  const unitOutput = unitWeight * 0.5 / materialWeight;
+  if (!Number.isFinite(unitOutput) || unitOutput > Number.MAX_SAFE_INTEGER || unitOutput <= 0) return null;
+  let minimumQuantity = Math.max(1, Math.ceil(0.5e-12 / unitOutput));
   while (minimumQuantity <= availableQuantity
-    && Math.floor(unitWeight * minimumQuantity * 0.5) <= 0) {
+    && Number((unitOutput * minimumQuantity).toFixed(12)) <= 0) {
     minimumQuantity += 1;
-  }
-  while (minimumQuantity > 1
-    && Math.floor(unitWeight * (minimumQuantity - 1) * 0.5) > 0) {
-    minimumQuantity -= 1;
   }
   return minimumQuantity <= availableQuantity ? minimumQuantity : null;
 }
@@ -178,9 +168,10 @@ export function resolveInventoryDismantleOutputs(itemData, quantity, { model } =
   const safeQuantity = finiteNumber(quantity);
   const unitWeight = unitWeightPounds(itemData);
   const profile = resolveMaterialProfile(itemData, model);
-  if (!(safeQuantity > 0) || unitWeight <= 0 || !profile) return deepFreeze([]);
-  const outputQuantity = Math.floor(unitWeight * safeQuantity * 0.5);
-  if (outputQuantity <= 0) return deepFreeze([]);
+  const materialWeight = finiteNumber(profile?.material?.weight);
+  if (!Number.isSafeInteger(safeQuantity) || safeQuantity <= 0 || unitWeight <= 0 || !(materialWeight > 0)) return deepFreeze([]);
+  const outputQuantity = Number((unitWeight * safeQuantity * 0.5 / materialWeight).toFixed(12));
+  if (!Number.isFinite(outputQuantity) || outputQuantity <= 0 || outputQuantity > Number.MAX_SAFE_INTEGER) return deepFreeze([]);
   const sourceId = cleanString(profile.material.id ?? profile.materialId);
   if (!sourceId) return deepFreeze([]);
   return deepFreeze([{

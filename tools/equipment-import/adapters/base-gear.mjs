@@ -181,6 +181,12 @@ function buildMaterialIdByName(materials) {
   return result;
 }
 
+// Reviewed exact equipment identities: the source category names the creature, not a material.
+const DREADNOUGHT_AMMUNITION_MATERIALS = new Map([
+  ["боеприпас|боеприпасы из клешней дредноута (20)", "material-123"],
+  ["боеприпас|боеприпасы из панцирной пластины дредноута (20)", "material-121"]
+]);
+
 export function adaptBaseGear({ snapshot, referenceIndex, overrides, materials = [], diagnostics = [] }) {
   const materialIdByName = buildMaterialIdByName(materials);
   const items = [];
@@ -219,7 +225,9 @@ export function adaptBaseGear({ snapshot, referenceIndex, overrides, materials =
     const priceRaw = cells["Цена"] ?? "";
     const price = parseCurrency(priceRaw, contextFor(snapshot, row, "Цена"));
     const materialName = optionalSourceText(cells["Преобладающий материал (источник)"]);
-    const materialId = materialIdByName.get(normalizeMaterialName(materialName)) ?? null;
+    const exactMaterialId = DREADNOUGHT_AMMUNITION_MATERIALS.get(sourceKey);
+    const materialId = exactMaterialId && materials.some(material => material.id === exactMaterialId)
+      ? exactMaterialId : materialIdByName.get(normalizeMaterialName(materialName)) ?? null;
     const stableId = resolveStableIdentity({ catalog: "gear", sourceKey, sourceName: name, overrides });
     const generated = {
       id: stableId,

@@ -25,6 +25,23 @@ const storageDrop = {
   quantity: 5
 };
 
+test("whole logical material stocks still prompt for a fractional character or ground transfer", async () => {
+  for (const quantity of [1, 2]) {
+    for (const destination of ["character", "scene"]) {
+      const calls = []; let prompts = 0;
+      const api = { inspectStorageDepositSource: async () => ({ available: quantity, material: true }), claimStorageRow: async (...args) => calls.push(args) };
+      const prompt = async options => { prompts++; assert.equal(options.material, true); return 0.5; };
+      const data = { ...storageDrop, quantity, sceneId: "scene", x: 10, y: 10 };
+      const result = destination === "character"
+        ? await transferStorageDropToCharacter({ type: "character", uuid: "Actor.hero" }, data, api, { prompt })
+        : await transferStorageDropToCanvas({ scene: { id: "scene" } }, data, api, { prompt });
+      assert.equal(prompts, 1);
+      assert.equal(result.quantity, 0.5);
+      assert.equal(calls[0][4].quantity, 0.5);
+    }
+  }
+});
+
 test("NotesLayer leaves JournalEntry and JournalEntryPage drops entirely to Foundry", async () => {
   const calls = [];
   const notes = {};

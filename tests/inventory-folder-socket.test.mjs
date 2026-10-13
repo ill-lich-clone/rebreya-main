@@ -934,11 +934,13 @@ test("partial folder command validates quantity and operation ID and binds authe
     api.inventoryService.moveInventoryItemToFolder=async(payload,context)=>{calls.push({payload,sender:context.sender.id});return{actorId:payload.groupActorId};};
     const payload={groupActorId:"group-a",itemId:"rope",folderId:null,quantity:3,operationId:"split-1",expectedSourceQuantity:10};
     await api.handleSocketMessage(commandRequest(INVENTORY_ITEM_FOLDER_MOVE_COMMAND,fixture.users.playerA.id,payload,"valid-part"));
-    const invalid=[{...payload,quantity:0},{...payload,quantity:"3"},{...payload,quantity:0.000001},{...payload,operationId:""},{...payload,extra:true}];
+    const material={...payload,quantity:0.000793650794,expectedSourceQuantity:0.000793650794,operationId:"material12"};
+    await api.handleSocketMessage(commandRequest(INVENTORY_ITEM_FOLDER_MOVE_COMMAND,fixture.users.playerA.id,material,"valid-material"));
+    const invalid=[{...payload,quantity:0},{...payload,quantity:"3"},{...payload,quantity:0.0000000000001},{...payload,operationId:""},{...payload,extra:true}];
     for(const [index,row]of invalid.entries())await api.handleSocketMessage(commandRequest(INVENTORY_ITEM_FOLDER_MOVE_COMMAND,fixture.users.playerA.id,row,`bad-part-${index}`));
     await api.handleSocketMessage(commandRequest(INVENTORY_ITEM_FOLDER_MOVE_COMMAND,fixture.users.playerB.id,payload,"foreign-part"));
     await flushCommands();
-    assert.equal(calls.length,1);assert.equal(calls[0].sender,fixture.users.playerA.id);assert.deepEqual(calls[0].payload,payload);
+    assert.equal(calls.length,2);assert.equal(resultFor(fixture,"valid-material").ok,true);assert.equal(calls[0].sender,fixture.users.playerA.id);assert.deepEqual(calls[0].payload,payload);
     for(const index of invalid.keys())assert.equal(resultFor(fixture,`bad-part-${index}`).error.code,"invalid-payload");
     assert.equal(resultFor(fixture,"foreign-part").error.code,"unauthorized");
   } finally {fixture.restore();}

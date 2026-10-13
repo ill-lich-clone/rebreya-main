@@ -4,7 +4,7 @@ import {
   promptStorageCoinQuantity,
   promptStorageGroundPileRotation,
   promptStorageTransferQuantity
-} from "../ui/storage-transfer-ui.js?v=1.4.213-furniture-orientation";
+} from "../ui/storage-transfer-ui.js?v=1.4.376";
 import { isPortableStorageContainerItem } from "../data/storage-container-snapshot.js?v=1.4.317";
 
 const registeredHookObjects = new WeakSet();
@@ -78,7 +78,8 @@ export async function transferStorageDropToCharacter(actor, data, moduleApi, { p
   if (typeof moduleApi?.claimStorageRow !== "function") {
     throw new Error("API хранилища Rebreya недоступен.");
   }
-  const quantity = await promptStorageTransferQuantity(payload.quantity, { prompt });
+  const inspected = typeof moduleApi?.inspectStorageDepositSource === "function" ? await moduleApi.inspectStorageDepositSource(payload) : null;
+  const quantity = await promptStorageTransferQuantity(inspected?.available ?? payload.quantity, { prompt, ...(inspected?.material === true ? { material: true } : {}) });
   if (quantity === null) return { handled: true, cancelled: true };
   const result = await moduleApi.claimStorageRow(
     payload.tokenUuid,
@@ -116,7 +117,7 @@ export async function transferStorageDropToCanvas(canvas, data, moduleApi, {
   const inspected = typeof moduleApi?.inspectStorageDepositSource === "function"
     ? await moduleApi.inspectStorageDepositSource(payload)
     : null;
-  const quantity = await promptStorageTransferQuantity(payload.quantity, { prompt });
+  const quantity = await promptStorageTransferQuantity(inspected?.available ?? payload.quantity, { prompt, ...(inspected?.material === true ? { material: true } : {}) });
   if (quantity === null) return { handled: true, cancelled: true };
   const orientation = await promptPlacementRotation(inspected, promptRotation);
   if (orientation.required && orientation.rotation === null) {
@@ -203,7 +204,7 @@ export async function transferFoundryItemDropToCanvas(
     });
     return { handled: true, cancelled: false, quantity, result };
   }
-  const quantity = await promptStorageTransferQuantity(inspected.available, { prompt });
+  const quantity = await promptStorageTransferQuantity(inspected.available, { prompt, ...(inspected.material === true ? { material: true } : {}) });
   if (quantity === null) return { handled: true, cancelled: true };
   const orientation = await promptPlacementRotation(inspected, promptRotation);
   if (orientation.required && orientation.rotation === null) {

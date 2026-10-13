@@ -1,8 +1,8 @@
-import { planItemInstanceMutation } from "../data/item-instance-rules.js";
+import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.376";
 import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
 import { MODULE_ID } from "../constants.js";
 import { REBREYA_TOOLS } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.4.375";
+import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.4.376";
 import {
   buildInventoryFolderSearchIndex,
   buildInventoryFolderTree,
@@ -15,7 +15,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.375";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.376";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
@@ -2865,9 +2865,9 @@ function parseCurrencyInputValue(rawValue, fallback = 0) {
   return Math.max(0, toInteger(text, safeFallback));
 }
 
-function parseQuantityInputValue(rawValue, fallback = 0, { relative = false, min = null } = {}) {
+function parseQuantityInputValue(rawValue, fallback = 0, { relative = false, min = null, precision = 2 } = {}) {
   const text = String(rawValue ?? "").trim().replace(",", ".");
-  const safeFallback = roundNumber(fallback, 2);
+  const safeFallback = roundNumber(fallback, precision);
   const relativeNumberPattern = /^[+-](?:\d+(?:\.\d+)?|\.\d+)$/u;
   const absoluteNumberPattern = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/u;
   const parsed = relative && relativeNumberPattern.test(text)
@@ -2875,7 +2875,7 @@ function parseQuantityInputValue(rawValue, fallback = 0, { relative = false, min
     : absoluteNumberPattern.test(text)
       ? Number(text)
       : safeFallback;
-  const rounded = roundNumber(parsed, 2);
+  const rounded = roundNumber(parsed, precision);
   return min === null ? rounded : Math.max(min, rounded);
 }
 
@@ -3043,7 +3043,7 @@ export async function promptInventoryIngressConfirmation(preview) {
   const content = dismantleRows.map((row) => {
     const outputs = (Array.isArray(row.dismantlePreview) ? row.dismantlePreview : [])
       .map((output) => (
-        `${foundry.utils.escapeHTML(cleanText(output?.name))} × ${foundry.utils.escapeHTML(String(output?.quantity ?? 0))}`
+        `${foundry.utils.escapeHTML(cleanText(output?.name))} × ${foundry.utils.escapeHTML(String(output?.quantity ?? 0))} ед. материала`
       ))
       .join(", ");
     return `
@@ -3446,7 +3446,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = {
     main: {
       root: true,
-      template: `modules/${MODULE_ID}/templates/inventory-app.hbs`
+      template: `modules/${MODULE_ID}/templates/inventory-app.hbs?v=1.4.376`
     }
   };
 
@@ -4339,7 +4339,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const item = (snapshot.allItems ?? snapshot.items ?? []).find(entry => (entry.itemId ?? entry.id) === itemId);
     if (!item) throw new Error("Предмет больше не существует.");
     const result = await promptInventoryPartialTransfer({
-      quantity: item.quantity, step: item.sourceType === "material" ? 0.00001 : 1,
+      quantity: item.quantity, step: item.sourceType === "material" ? 1e-12 : 1,
       folders: snapshot.folders ?? [], folderId, chooseFolder
     });
     if (!result) return null;
@@ -4383,7 +4383,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       actions.push({ label: "Повторить незавершённый перенос", icon: "fa-solid fa-rotate-right",
         callback: () => this.#submitPartialTransfer(this.pendingItemInstanceTransfer) });
     }
-    if (this.canOrganizeInventory && Number(row.dataset.quantity) > (row.dataset.sourceType === "material" ? 0.00001 : 1)) {
+    if (this.canOrganizeInventory && Number(row.dataset.quantity) > (row.dataset.sourceType === "material" ? 1e-12 : 1)) {
       actions.push({ label: "Перенести часть…", icon: "fa-solid fa-arrow-right-arrow-left",
         callback: () => this.#transferInventoryPart(row.dataset.itemId, null, { chooseFolder: true }) });
     }
@@ -7850,7 +7850,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             label: "Новое количество",
             value: currentQuantity,
             min: 0,
-            step: "0.01",
+            step: event.currentTarget.dataset.sourceType === "material" ? "any" : "0.01",
             confirmLabel: "Сохранить",
             allowRelative: true
           });
@@ -7861,6 +7861,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
           const parsedQuantity = parseQuantityInputValue(nextQuantity, currentQuantity, {
             relative: true,
+            precision: event.currentTarget.dataset.sourceType === "material" ? 12 : 2,
             min: 0
           });
           await this.moduleApi.updateInventoryItemQuantity(itemId, parsedQuantity);
@@ -7901,7 +7902,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             Math.min(maxQuantity, toInteger(quantity, minQuantity))
           );
           const result = await this.moduleApi.breakInventoryItemToMaterial(itemId, safeQuantity);
-          ui.notifications?.info(`Разобрано: ${result.breakQuantity} x ${result.itemName} -> ${result.materialWeight} фнт. (${result.materialName}).`);
+          ui.notifications?.info(result?.skipped
+            ? "Разбор пропущен входящим фильтром. Предмет остался в инвентаре."
+            : `Разобрано: ${result.breakQuantity} x ${result.itemName} -> ${result.materialWeight} фнт. (${result.materialName}).`);
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to break inventory item.`, error);
@@ -7914,15 +7917,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       button.addEventListener("click", async (event) => {
         const itemId = event.currentTarget.dataset.itemId;
         const itemName = event.currentTarget.dataset.itemName ?? "предмет";
-        const maxQuantity = Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
+        const material = event.currentTarget.dataset.sourceType === "material";
+        const maxQuantity = material ? toNumber(event.currentTarget.dataset.quantity, 0) : Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
         try {
-          const quantity = maxQuantity > 1
+          const quantity = material || maxQuantity > 1
             ? await promptNumericValue({
               title: `Забрать: ${itemName}`,
               label: `Сколько забрать (1-${maxQuantity})`,
-              value: "1",
-              min: 1,
-              step: "1",
+              value: material ? String(maxQuantity) : "1",
+              min: material ? 1e-12 : 1,
+              step: material ? "any" : "1",
               confirmLabel: "Забрать"
             })
             : 1;
@@ -7930,7 +7934,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          const safeQuantity = Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          const safeQuantity = material ? Math.min(maxQuantity, Number(Number(quantity).toFixed(12))) : Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          if (!(safeQuantity > 0)) throw new Error("Количество должно быть положительным.");
           const result = await this.moduleApi.takeInventoryItemToCharacter(itemId, {
             quantity: safeQuantity
           });
@@ -7950,15 +7955,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       button.addEventListener("click", async (event) => {
         const itemId = event.currentTarget.dataset.itemId;
         const itemName = event.currentTarget.dataset.itemName ?? "предмет";
-        const maxQuantity = Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
+        const material = event.currentTarget.dataset.sourceType === "material";
+        const maxQuantity = material ? toNumber(event.currentTarget.dataset.quantity, 0) : Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
         try {
-          const quantity = maxQuantity > 1
+          const quantity = material || maxQuantity > 1
             ? await promptNumericValue({
               title: `Продать: ${itemName}`,
               label: `Сколько продать (1-${maxQuantity})`,
-              value: "1",
-              min: 1,
-              step: "1",
+              value: material ? String(maxQuantity) : "1",
+              min: material ? 1e-12 : 1,
+              step: material ? "any" : "1",
               confirmLabel: "Продать"
             })
             : 1;
@@ -7966,7 +7972,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          const safeQuantity = Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          const safeQuantity = material ? Math.min(maxQuantity, Number(Number(quantity).toFixed(12))) : Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          if (!(safeQuantity > 0)) throw new Error("Количество должно быть положительным.");
           const result = await this.moduleApi.sellInventoryItem(itemId, safeQuantity);
           ui.notifications?.info(result?.requested
             ? `Запрос на продажу «${itemName}» отправлен мастеру.`

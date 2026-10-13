@@ -61,7 +61,7 @@ Ordinary ItemData проходят без material scaling. На material зап
 
 **Interfaces:** Consumes plain ItemData and MODULE_ID; produces all pure adapter exports above. No Foundry globals or state writes.
 
-- [ ] **Write failing tests** for fractional projection, immutability, zero, invalid scale/version, ordinary gear, legacy unit data, native count edits and canonical identity. Include 100 alternating fractional writes, 450/630-pound units, exact unflagged-state restore, different authored W/P, and distinguishing quantity 0 from 1e-12. Fixture `adamantUnitData` has stable material identity, quantity=1, weight=10 lb, price=500 gp. Pin:
+- [x] **Write failing tests** for fractional projection, immutability, zero, invalid scale/version, ordinary gear, legacy unit data, native count edits and canonical identity. Include 100 alternating fractional writes, 450/630-pound units, exact unflagged-state restore, different authored W/P, and distinguishing quantity 0 from 1e-12. Fixture `adamantUnitData` has stable material identity, quantity=1, weight=10 lb, price=500 gp. Pin:
 
 ```js
 const half = withInventoryItemQuantity(adamantUnitData, 0.05);
@@ -75,10 +75,10 @@ assert.equal(merged.system.quantity * merged.system.weight.value, 10.5);
 assert.equal(merged.system.quantity * merged.system.price.value, 525);
 ```
 
-- [ ] **Run RED:** `node --test tests/inventory-material-quantity.test.mjs`; expected missing-module/export or wrong projection failure.
-- [ ] **Implement** the interfaces, strict metadata validation, weight-unit conversion for materials and exact before/after restore. Normalize quantity before ceil; do not round projected per-piece price/weight to eight or two signs.
-- [ ] **Run GREEN:** same command; all adapter cases pass.
-- [ ] **Update passport and checkpoint** only this task's files after `git diff --check` and substantive diff review.
+- [x] **Run RED:** `node --test tests/inventory-material-quantity.test.mjs`; expected missing-module/export or wrong projection failure.
+- [x] **Implement** the interfaces, strict metadata validation, weight-unit conversion for materials and exact before/after restore. Normalize quantity before ceil; do not round projected per-piece price/weight to eight or two signs.
+- [x] **Run GREEN:** same command; all adapter cases pass.
+- [x] **Update passport and checkpoint** only this task's files after `git diff --check` and substantive diff review.
 
 ### Task 2: Inventory quantity flow, fractional dismantle and recovery
 
@@ -86,13 +86,13 @@ assert.equal(merged.system.quantity * merged.system.price.value, 525);
 
 **Interfaces:** Consumes task 1 exports. Produces unchanged InventoryService public method signatures, fractional catalog output quantity, real-pound result, marked v2 durable records and exact quantity-state recovery.
 
-- [ ] **Write failing owner regressions** for 20/40 real adamant ammo, material weights `[0.5,1,10,450,630]`, min=1, ordinary 4-pound sword→2 iron units, folder/manual/auto-ingress parity, zero-source rejection, skipped filter and marked prepared record. Extend existing create/update fixtures to reject noninteger native quantity. Pin merge/create write-then-throw, source failure, rollback-failure, moved/stale folder, new-prepared retry and a tiny valid material credit that the old 1e-9 quantity comparison would falsely treat as already applied. Native total-weight parity is tested in `group-inventory-migration`.
-- [ ] **Run RED:** `node --test tests/inventory-ingress-descriptor.test.mjs tests/inventory-ingress-planner.test.mjs tests/inventory-mutation-recovery.test.mjs tests/inventory-folder-socket.test.mjs`; expect current floor/unit bug failures.
-- [ ] **Route inventory stock operations through the adapter:** `getRawQuantity`, material weight/price reads, `#buildMaterialItemData`, `buildModelItemData`, `#upsertInventoryItem`, snapshot, quantity edits, sale, ingress/transfer target creation/merge, depletion and existing stock receipt writes. Inventory snapshots retain positive small material quantities; ordinary precision/rules stay unchanged. Classify every direct `system.quantity` write; supply/gear-specific paths remain ordinary unless their stable source actually is material.
-- [ ] **Change resolver and authoritative dismantle:** compute mass ×0.5 then divide by catalog W; validate positive source count and W before journal creation. Preserve output shape and existing blocks; compute representable minimum. Update real-pound folder totals and all success/result fields consistently.
-- [ ] **Make recovery atomic:** target receipts carry logical quantities plus exact native before/after quantity-state and history. `#applyDismantleTargetReceipt` and compensation validate complete observed state, using material-specific quantity comparison instead of ordinary 1e-9 tolerance. Legacy repair accepts only unmarked historical records. Existing terminal retries and existing legacy record requests are not rewritten.
-- [ ] **Run GREEN** with the RED command plus `node --test tests/group-inventory-migration.test.mjs`; all new cases and unchanged legacy fractional repair cases pass.
-- [ ] **Update passport/README and checkpoint** the completed owner behavior; do not broaden into recipe formula changes.
+- [x] **Write failing owner regressions** for 20/40 real adamant ammo, material weights `[0.5,1,10,450,630]`, min=1, ordinary 4-pound sword→2 iron units, folder/manual/auto-ingress parity, zero-source rejection, skipped filter and marked prepared record. Extend existing create/update fixtures to reject noninteger native quantity. Pin merge/create write-then-throw, source failure, rollback-failure, moved/stale folder, new-prepared retry and a tiny valid material credit that the old 1e-9 quantity comparison would falsely treat as already applied. Native total-weight parity is tested in `group-inventory-migration`.
+- [x] **Run RED:** `node --test tests/inventory-ingress-descriptor.test.mjs tests/inventory-ingress-planner.test.mjs tests/inventory-mutation-recovery.test.mjs tests/inventory-folder-socket.test.mjs`; expect current floor/unit bug failures.
+- [x] **Route inventory stock operations through the adapter:** `getRawQuantity`, material weight/price reads, `#buildMaterialItemData`, `buildModelItemData`, `#upsertInventoryItem`, snapshot, quantity edits, sale, ingress/transfer target creation/merge, depletion and existing stock receipt writes. Inventory snapshots retain positive small material quantities; ordinary precision/rules stay unchanged. Classify every direct `system.quantity` write; supply/gear-specific paths remain ordinary unless their stable source actually is material.
+- [x] **Change resolver and authoritative dismantle:** compute mass ×0.5 then divide by catalog W; validate positive source count and W before journal creation. Preserve output shape and existing blocks; compute representable minimum. Update real-pound folder totals and all success/result fields consistently.
+- [x] **Make recovery atomic:** target receipts carry logical quantities plus exact native before/after quantity-state and history. `#applyDismantleTargetReceipt` and compensation validate complete observed state, using material-specific quantity comparison instead of ordinary 1e-9 tolerance. Legacy repair accepts only unmarked historical records. Existing terminal retries and existing legacy record requests are not rewritten.
+- [x] **Run GREEN** with the RED command plus `node --test tests/group-inventory-migration.test.mjs`; all new cases and unchanged legacy fractional repair cases pass.
+- [x] **Update passport/README and checkpoint** the completed owner behavior; do not broaden into recipe formula changes.
 
 ### Task 3: Transfers, Storage/ground, native reconciliation and material fuel
 
@@ -100,13 +100,13 @@ assert.equal(merged.system.quantity * merged.system.price.value, 525);
 
 **Interfaces:** Consumes task 1 logical/native adapter and task 2 stock receipts. Storage row quantity remains logical; embedded ItemData quantity stays native integer. Existing UUID/identity/permission/same-scene/distance checks stay unchanged.
 
-- [ ] **Write failing regressions:** split 0.05 adamant unit into 0.02+0.03 and merge back; Party→character→Storage→ground→Party preserves 0.5 lb/25 gp; idempotent retry; whole+fraction merge; density differences normalize but altered canonical W/P do not merge. Transfer a 0.5-pound fragment of a 630-pound catalog unit through typed folder move with exact logical `quantity` and `expectedSourceQuantity`; five-sign wire validation must not reject it. Strict native integer writes, debit failure compensation, cancel and native accepted-transfer reconciliation are pinned on each new route.
-- [ ] **Run RED:** `node --test tests/inventory-simple-transfer.test.mjs tests/inventory-transfer-imports.test.mjs tests/inventory-sync-hooks.test.mjs tests/storage-transfer-chat.test.mjs tests/storage-transfer-drop.test.mjs tests/storage-transfer-ui.test.mjs tests/storage-ground-pile-service.test.mjs`.
-- [ ] **Integrate** pure quantity writes in Storage `setStorageRowQuantity`, claim/deposit/update and ground-row preparation/merge. Use canonical material identity in comparisons; do not drop scale flags when cloning. Capture/debit/restore logical amounts in inventory import/simple/native transfer receipts. Inventory-sync update events verify the observed full material projection instead of equating changed native count to logical amount; its compensation restores complete quantity-state. Storage UI drag source amounts preserve logical fractions instead of the current 0.01/two-sign clamp; ordinary source rules are unchanged.
-- [ ] **Extend existing typed material quantity precision** to 12 signs, including folder-move `expectedSourceQuantity` and Storage claim/deposit/ground quantities, without extra sender-supplied identity fields. Keep finite/positive/bounded numeric validation and exact key schema; after live source/permission resolution, ordinary Items retain their current precision/count rules and unsupported ordinary amounts are rejected before mutation. Coin, Journal, container and source dismantle quantities remain integer. Pin both validator admission and authoritative source-type rejection in `inventory-folder-socket`, `storage-socket`, `storage-deposit-source` and `storage-transfer-drop` tests.
-- [ ] **Pin material fuel compatibility:** a selector matching a partial material stock reads logical quantity and consumes the same authored amount. Use the adapter for its batched patches and fallback; ordinary fuel behavior, rate and travel formula stay unchanged.
-- [ ] **Run GREEN** with the RED command and `node --test tests/inventory-folder-socket.test.mjs tests/group-command-dispatch.test.mjs tests/storage-socket.test.mjs tests/storage-deposit-source.test.mjs tests/storage-app.test.mjs tests/transport-fuel-item.test.mjs tests/transport-fuel-service.test.mjs tests/transport-fuel-consumption.test.mjs`; new route, authority and ordinary-fuel regression cases pass.
-- [ ] **Update passport and checkpoint** the complete transfer/storage integration.
+- [x] **Write failing regressions:** split 0.05 adamant unit into 0.02+0.03 and merge back; Party→character→Storage→ground→Party preserves 0.5 lb/25 gp; idempotent retry; whole+fraction merge; density differences normalize but altered canonical W/P do not merge. Transfer a 0.5-pound fragment of a 630-pound catalog unit through typed folder move with exact logical `quantity` and `expectedSourceQuantity`; five-sign wire validation must not reject it. Strict native integer writes, debit failure compensation, cancel and native accepted-transfer reconciliation are pinned on each new route.
+- [x] **Run RED:** `node --test tests/inventory-simple-transfer.test.mjs tests/inventory-transfer-imports.test.mjs tests/inventory-sync-hooks.test.mjs tests/storage-transfer-chat.test.mjs tests/storage-transfer-drop.test.mjs tests/storage-transfer-ui.test.mjs tests/storage-ground-pile-service.test.mjs`.
+- [x] **Integrate** pure quantity writes in Storage `setStorageRowQuantity`, claim/deposit/update and ground-row preparation/merge. Use canonical material identity in comparisons; do not drop scale flags when cloning. Capture/debit/restore logical amounts in inventory import/simple/native transfer receipts. Inventory-sync update events verify the observed full material projection instead of equating changed native count to logical amount; its compensation restores complete quantity-state. Storage UI drag source amounts preserve logical fractions instead of the current 0.01/two-sign clamp; ordinary source rules are unchanged.
+- [x] **Extend existing typed material quantity precision** to 12 signs, including folder-move `expectedSourceQuantity` and Storage claim/deposit/ground quantities, without extra sender-supplied identity fields. Keep finite/positive/bounded numeric validation and exact key schema; after live source/permission resolution, ordinary Items retain their current precision/count rules and unsupported ordinary amounts are rejected before mutation. Coin, Journal, container and source dismantle quantities remain integer. Pin both validator admission and authoritative source-type rejection in `inventory-folder-socket`, `storage-socket`, `storage-deposit-source` and `storage-transfer-drop` tests.
+- [x] **Pin material fuel compatibility:** a selector matching a partial material stock reads logical quantity and consumes the same authored amount. Use the adapter for its batched patches and fallback; ordinary fuel behavior, rate and travel formula stay unchanged.
+- [x] **Run GREEN** with the RED command and `node --test tests/inventory-folder-socket.test.mjs tests/group-command-dispatch.test.mjs tests/storage-socket.test.mjs tests/storage-deposit-source.test.mjs tests/storage-app.test.mjs tests/transport-fuel-item.test.mjs tests/transport-fuel-service.test.mjs tests/transport-fuel-consumption.test.mjs`; new route, authority and ordinary-fuel regression cases pass.
+- [x] **Update passport and checkpoint** the complete transfer/storage integration.
 
 ### Task 4: Craft stock units and legacy project compatibility
 
@@ -114,12 +114,12 @@ assert.equal(merged.system.quantity * merged.system.price.value, 525);
 
 **Interfaces:** `normalizeReservation` retains v2 marker and canonical unit weights. New project quote/reservation stores those weights and includes them in its immutable fingerprint. Inventory resource planning converts predominant pounds to catalog units only for v2 new accounting; baseRaw remains catalog units. `reserveCraftResourcesOnce`, `spendCraftReservationOnce`, `releaseCraftReservationOnce`, availability and cancel/recovery carry the pinned accounting basis.
 
-- [ ] **Write failing regressions:** v2 predominant 0.5 lb of adamant reserves 0.05 unit; baseRaw reservation and gold budget match the original quote. Combine same material ID only after unit conversion. Partial spend and cancel return the exact unspent stock; changing current catalog W does not alter a pinned reservation.
-- [ ] **Add legacy and recovery regressions:** an active unmarked project whose old receipt debited 0.5 catalog unit still refunds/spends using that old basis. Existing receipt retries remain exact; completed legacy records are unchanged. New direct stock operation without old receipt uses corrected units. Pin active-GM change, reserve/release write-then-throw, interrupted resume and same-ID components without weakening budget assertions.
-- [ ] **Run RED:** `node --test tests/crafting-service.test.mjs tests/crafting-rules.test.mjs tests/craft-project-processor.test.mjs tests/inventory-mutation-recovery.test.mjs`.
-- [ ] **Implement** version-aware resource conversion in existing `collectCraftMaterialResources`/availability and debit/release planners. Preserve source `predominantMaterialLb`, `baseRawQuantity`, reserved/spent/progress fields and both component totals. Persist actual converted logical quantity plus unit basis in receipts; stock precision is 12 signs while requests retain five. Update fingerprint/normalization only for new versioned reservations; old request-record identity remains compatible.
-- [ ] **Run GREEN** with the RED command; accounting, budget, legacy and interrupted-operation cases pass.
-- [ ] **Update passport/README and checkpoint** version-aware craft stock accounting.
+- [x] **Write failing regressions:** v2 predominant 0.5 lb of adamant reserves 0.05 unit; baseRaw reservation and gold budget match the original quote. Combine same material ID only after unit conversion. Partial spend and cancel return the exact unspent stock; changing current catalog W does not alter a pinned reservation.
+- [x] **Add legacy and recovery regressions:** an active unmarked project whose old receipt debited 0.5 catalog unit still refunds/spends using that old basis. Existing receipt retries remain exact; completed legacy records are unchanged. New direct stock operation without old receipt uses corrected units. Pin active-GM change, reserve/release write-then-throw, interrupted resume and same-ID components without weakening budget assertions.
+- [x] **Run RED:** `node --test tests/crafting-service.test.mjs tests/crafting-rules.test.mjs tests/craft-project-processor.test.mjs tests/inventory-mutation-recovery.test.mjs`.
+- [x] **Implement** version-aware resource conversion in existing `collectCraftMaterialResources`/availability and debit/release planners. Preserve source `predominantMaterialLb`, `baseRawQuantity`, reserved/spent/progress fields and both component totals. Persist actual converted logical quantity plus unit basis in receipts; stock precision is 12 signs while requests retain five. Update fingerprint/normalization only for new versioned reservations; old request-record identity remains compatible.
+- [x] **Run GREEN** with the RED command; accounting, budget, legacy and interrupted-operation cases pass.
+- [x] **Update passport/README and checkpoint** version-aware craft stock accounting.
 
 ### Task 5: Exact Dreadnought bindings and truthful UI
 
@@ -127,13 +127,13 @@ assert.equal(merged.system.quantity * merged.system.price.value, 525);
 
 **Interfaces:** `adaptBaseGear` applies two reviewed exact source bindings when literal category is `Астральный дредноут`; no global material/category alias or expansion of sheet-owned enrichment whitelist. Existing generated IDs remain identical. UI consumes logical snapshot values, real-pound `materialWeight` and unchanged `skipped` result flag.
 
-- [ ] **Write failing import tests:** claws ammo→`material-123`, plating ammo→`material-121`; literal source name, source identity, gear ID, pack 20, price and effect unchanged. Other category rows remain unresolved unless their exact binding exists; missing reviewed material fails clearly.
-- [ ] **Write failing UI tests:** `skipped:true` produces a skip notice and no success toast; decimal quantities below 0.01 remain visible, quantities below native-one are accepted on material partial-transfer/quantity controls; source dismantle min/max remain integer. Cancel sends no mutation.
-- [ ] **Run RED:** `node --test tests/equipment-import-base-gear.test.mjs tests/equipment-import-gear-profiles.test.mjs tests/equipment-import-generated-data.test.mjs tests/inventory-app-context.test.mjs`.
-- [ ] **Implement exact bindings** in import owner and update only the two reviewed generated material IDs. Runtime resolution uses current catalog ID for old ammo instances with empty link; no fuzzy name fallback. Any source compilation update must be deterministic and leave unrelated generated rows untouched.
-- [ ] **Implement precision-aware UI** through existing formatting/adapters. Dismantle result reports pounds; ingress preview material quantity is labelled as catalog units. Exact skip text: `Разбор пропущен входящим фильтром. Предмет остался в инвентаре.` Do not print a successful dismantle for zero debit. Display positive tiny fractions with sufficient decimal precision rather than `0`.
-- [ ] **Run GREEN** with the RED command; verify regression snapshots assert meaningful behavior rather than mirroring implementation.
-- [ ] **Update passport/README and checkpoint** the import/UI fixes.
+- [x] **Write failing import tests:** claws ammo→`material-123`, plating ammo→`material-121`; literal source name, source identity, gear ID, pack 20, price and effect unchanged. Other category rows remain unresolved unless their exact binding exists; missing reviewed material fails clearly.
+- [x] **Write failing UI tests:** `skipped:true` produces a skip notice and no success toast; decimal quantities below 0.01 remain visible, quantities below native-one are accepted on material partial-transfer/quantity controls; source dismantle min/max remain integer. Cancel sends no mutation.
+- [x] **Run RED:** `node --test tests/equipment-import-base-gear.test.mjs tests/equipment-import-gear-profiles.test.mjs tests/equipment-import-generated-data.test.mjs tests/inventory-app-context.test.mjs`.
+- [x] **Implement exact bindings** in import owner and update only the two reviewed generated material IDs. Runtime resolution uses current catalog ID for old ammo instances with empty link; no fuzzy name fallback. Any source compilation update must be deterministic and leave unrelated generated rows untouched.
+- [x] **Implement precision-aware UI** through existing formatting/adapters. Dismantle result reports pounds; ingress preview material quantity is labelled as catalog units. Exact skip text: `Разбор пропущен входящим фильтром. Предмет остался в инвентаре.` Do not print a successful dismantle for zero debit. Display positive tiny fractions with sufficient decimal precision rather than `0`.
+- [x] **Run GREEN** with the RED command; verify regression snapshots assert meaningful behavior rather than mirroring implementation.
+- [x] **Update passport/README and checkpoint** the import/UI fixes.
 
 ### Task 6: Review, release verification and delivery
 
@@ -141,9 +141,9 @@ assert.equal(merged.system.quantity * merged.system.price.value, 525);
 
 **Interfaces:** All previous tasks implement the approved spec; no additional behavior change or schema migration is introduced at this gate.
 
-- [ ] **Perform whole-change review** against all nine specification regressions and the five Review Focus cases. Use an independent reviewer; Gemini 3.8 Flash High through the prescribed Antigravity CLI is the default. Verify its findings in original source; apply corrections only with owner regression tests. Check all direct material quantity reads/writes, native integer writes, recipe budgets and atomic quantity/history restoration.
-- [ ] **Bump release version** and rename/create `scripts/main-<new-version>.js` containing only `import "./main.js";`; synchronize `esmodules`, verify no old entrypoint remains in runtime configuration. Stage only task-owned files.
-- [ ] **Run full runtime checks once after final edits:**
+- [x] **Perform whole-change review** against all nine specification regressions and the five Review Focus cases. Use an independent reviewer; Gemini 3.8 Flash High through the prescribed Antigravity CLI is the default. Verify its findings in original source; apply corrections only with owner regression tests. Check all direct material quantity reads/writes, native integer writes, recipe budgets and atomic quantity/history restoration.
+- [x] **Bump release version** and rename/create `scripts/main-<new-version>.js` containing only `import "./main.js";`; synchronize `esmodules`, verify no old entrypoint remains in runtime configuration. Stage only task-owned files.
+- [x] **Run full runtime checks once after final edits:**
 
 ```powershell
 node --test tests/*.test.mjs
@@ -154,12 +154,38 @@ $json = git ls-files '*.json'
 foreach ($file in $json) { Get-Content -Raw -Encoding UTF8 $file | ConvertFrom-Json | Out-Null }
 ```
 
-- [ ] **Live QA when an authorized test-world session is available:** strict native document creation, 20/40 ammo dismantle, merged scraps, inventory/sheet mass and price, partial native/module transfer, Storage/ground, craft reserve/cancel, reload, GM/player and console errors. Use disposable fixtures and existing public APIs. If no authorized test world is reachable, report that limitation; do not mutate a production world for QA or call Node fixtures live verification.
-- [ ] **Finalize documentation/status**, inspect substantive diff and stat, confirm working-copy ownership and fetched remote state. Re-run only affected checks after review corrections.
-- [ ] **Commit and push** task-owned files to `origin lich_branch`, no force push. Report spec/plan paths, release version, commit(s), test commands and passed/failed counts, Gemini contribution and live-QA coverage/limitation.
+- [x] **Live QA when an authorized test-world session is available:** strict native document creation, 20/40 ammo dismantle, merged scraps, inventory/sheet mass and price, partial native/module transfer, Storage/ground, craft reserve/cancel, reload, GM/player and console errors. Use disposable fixtures and existing public APIs. If no authorized test world is reachable, report that limitation; do not mutate a production world for QA or call Node fixtures live verification.
+- [x] **Finalize documentation/status**, inspect substantive diff and stat, confirm working-copy ownership and fetched remote state. Re-run only affected checks after review corrections.
+- [x] **Commit and push** task-owned files to `origin lich_branch`, no force push. Report spec/plan paths, release version, commit(s), test commands and passed/failed counts, Gemini contribution and live-QA coverage/limitation.
 
 ## Self-Review and Execution Handoff
 
 Coverage: spec regressions 1–2→tasks 1–2; 3–4→tasks 1–3; 5→task 4; 6–7→task 2 plus route tests in task 3; 8–9→task 5; full release verification→task 6. Extra material consumers discovered during planning (native reconciliation, ground piles, material fuel) are included to preserve the approved mass/quantity contract.
 
 Recommended execution: **Native / inline**. Tasks share one adapter and the same InventoryService mutation paths, so sequential implementation with focused tests and one independent whole-change review avoids conflicting drafts. Gemini can draft tests or review scoped excerpts under AGENTS.md; Codex reviews and applies mutations with meaningful side effects. Implementation waits for user plan approval and execution-method selection.
+
+## Результат выполнения — 2026-10-13
+
+Выпуск: **1.4.376**, ветка **lich_branch**. Спецификация: `docs/superpowers/specs/2026-10-13-fractional-material-dismantle-design.md`; план и отчёт: `docs/superpowers/plans/2026-10-13-fractional-material-dismantle.md`.
+
+Разбор возвращает половину исходной массы: 20 боеприпасов по 0,05 фунта дают 0,5 фунта материала; цена пропорциональна каталожной единице. Дроби сохраняются в ручном/автоматическом ingress, папках, native/module transfers, Storage/ground, продаже, топливе и крафте. Два точных источника боеприпасов Дредноута связаны с material-123/material-121. Skip показывает правдивое уведомление без удаления source.
+
+Материалы используют logical units с 12 знаками и native integer physical parts с flag версии 1. Новые craft reservations версии 2 закрепляют W; predominant pounds конвертируются до объединения компонентов, baseRaw units/formulas/budget/progress сохранены. Refund использует исходные authored lots и согласует округление в пределах фактического reserve. Старые unmarked projects, prepared approvals без stock receipt и существующие mutation requests сохраняют прежнюю basis/identity. Legacy merge сохраняет старые keys и completed markers, на retry находит compatible material с durable marker; разные авторские W/P не смешиваются.
+
+Gemini дал проверенные сведения о Storage normalizer/bulk paths и черновики регрессий. Финальный отчёт Gemini не был получен; выполнено независимое локальное ревью. Найденные reviewer-проверками случаи (partial refund quantum, whole-stock material dialogs, tiny target drift, legacy variant retry) исправлены через RED→GREEN и повторно проверены. Дополнительно закреплён legacy prepared approval.
+
+Проверки:
+
+| Команда / проверка | Passed | Failed | Skipped |
+|---|---:|---:|---:|
+| `node --test tests/*.test.mjs` — последний полный прогон | 4603 | 0 | 1 |
+| Профильные legacy migration/simple transfer/recovery после последней правки retry | 228 | 0 | 0 |
+| `node --test tests/crafting-service.test.mjs tests/crafting-rules.test.mjs tests/craft-project-processor.test.mjs tests/inventory-mutation-recovery.test.mjs` — после legacy approval fix | 172 | 0 | 0 |
+| `node --check` всех tracked JS/MJS | 963 | 0 | — |
+| `ConvertFrom-Json` всех tracked JSON | 55 | 0 | — |
+
+После runtime corrections повторены затронутые syntax checks; `git diff HEAD --check` успешен. RED выявлял floor/unit mismatch, decimal stock loss, несовпадение refund quantum, неверную legacy basis и unsafe retry/target drift; эти ошибки устранены. Единственный skipped тест в общем наборе не выдаётся за выполненную проверку.
+
+Живой Foundry QA не выполнен: разрешённая сессия тестового мира недоступна. Проверки native count, UI и GM/player/recovery выполнены Node-фикстурами; это не проверка живого мира.
+
+Runtime import graph обновлён согласованно, прежний main-1.4.375.js сохранён как compatibility forwarder. Все изменения фиксируются и отправляются только в lich_branch; фактический commit указан в итоговом сообщении чата.

@@ -1,5 +1,6 @@
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.376";
 import { MODULE_ID } from "../constants.js";
-import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.376";
 import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.363";
 import {
   markDurabilityBroken,
@@ -311,7 +312,7 @@ function normalizeRowClaimMutations(value) {
     const mutationId = cleanId(entry?.mutationId);
     const rowId = cleanId(entry?.rowId);
     const quantity = Number(entry?.quantity);
-    if (!mutationId || !rowId || !Number.isSafeInteger(quantity) || quantity < 1) continue;
+    if (!mutationId || !rowId || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1e9 || Number(quantity.toFixed(12)) !== quantity) continue;
     byMutationId.set(mutationId, { mutationId, rowId, quantity });
   }
   return Array.from(byMutationId.values());
@@ -398,9 +399,9 @@ function hasUnclaimedManualContent(state) {
   return hasRows || hasCoins;
 }
 
-function requirePositiveQuantity(value) {
+function requirePositiveQuantity(value, itemData = null) {
   const quantity = Number(value);
-  if (!Number.isSafeInteger(quantity) || quantity < 1) {
+  if (isInventoryMaterialItemData(itemData) ? !Number.isFinite(quantity) || quantity <= 0 || quantity > 1e9 || Number(quantity.toFixed(12)) !== quantity : !Number.isSafeInteger(quantity) || quantity < 1) {
     throw new Error("Количество должно быть целым числом не меньше 1.");
   }
   return quantity;
@@ -419,7 +420,7 @@ function setStorageRowQuantity(row, quantity) {
   next.quantity = quantity;
   next.itemData ??= {};
   next.itemData.system ??= {};
-  next.itemData.system.quantity = quantity;
+  next.itemData = withInventoryItemQuantity(next.itemData, quantity);
   return next;
 }
 
@@ -442,9 +443,9 @@ function mergeDepositIntoRows(rows, claimedRowIds, row, stackKey, quantity) {
   if (index < 0) return { rows: nextRows, merged: false, rowId: "" };
 
   const currentQuantity = requirePositiveQuantity(
-    nextRows[index]?.quantity ?? nextRows[index]?.itemData?.system?.quantity ?? 1
+    nextRows[index]?.quantity ?? readInventoryItemQuantity(nextRows[index]?.itemData), nextRows[index]?.itemData
   );
-  nextRows[index] = setStorageRowQuantity(nextRows[index], currentQuantity + quantity);
+  nextRows[index] = setStorageRowQuantity(nextRows[index], Number((currentQuantity + quantity).toFixed(12)));
   return {
     rows: nextRows,
     merged: true,
@@ -993,13 +994,11 @@ export class StorageService {
       throw new Error("Ссылку на журнал нельзя забрать из хранилища.");
     }
 
-    const available = Math.max(1, Math.trunc(Number(
-      row.quantity ?? row.itemData?.system?.quantity ?? 1
-    )) || 1);
+    const available = isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? row.itemData?.system?.quantity ?? 1)) || 1);
     const quantity = request?.quantity === undefined
       ? available
       : Number(request.quantity);
-    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > available) {
+    if ((isInventoryMaterialItemData(row.itemData) ? !Number.isFinite(quantity) || quantity <= 0 || Number(quantity.toFixed(12)) !== quantity : !Number.isSafeInteger(quantity) || quantity < 1) || quantity > available) {
       throw new Error("Количество должно быть целым числом от 1 до доступного остатка.");
     }
 
@@ -1007,16 +1006,16 @@ export class StorageService {
     claimedRow.quantity = quantity;
     claimedRow.itemData ??= {};
     claimedRow.itemData.system ??= {};
-    claimedRow.itemData.system.quantity = quantity;
+    claimedRow.itemData = withInventoryItemQuantity(claimedRow.itemData, quantity);
 
     if (quantity < available) {
-      const remaining = available - quantity;
+      const remaining = Number((available - quantity).toFixed(12));
       const updateRows = (sourceRows) => normalizeRows(sourceRows).map((entry) => {
         if (String(entry?.rowId ?? "").trim() !== rowId) return entry;
         entry.quantity = remaining;
         entry.itemData ??= {};
         entry.itemData.system ??= {};
-        entry.itemData.system.quantity = remaining;
+        entry.itemData = withInventoryItemQuantity(entry.itemData, remaining);
         return entry;
       });
       const state = await this.#write(token, {
@@ -1083,7 +1082,7 @@ export class StorageService {
     if (!STORAGE_DEPOSIT_PRESENTATIONS.has(presentation)) {
       throw new Error("Неизвестный режим добавления предмета в хранилище.");
     }
-    const amount = requirePositiveQuantity(quantity ?? row.quantity ?? row.itemData?.system?.quantity);
+    const amount = requirePositiveQuantity(quantity ?? row.quantity ?? readInventoryItemQuantity(row.itemData), row.itemData);
     const journalRow = isStorageJournalRow(row);
     if (journalRow && amount !== 1) {
       throw new Error("Ссылку на журнал можно добавить только целиком в количестве 1.");
@@ -1185,15 +1184,15 @@ export class StorageService {
 
   async updateRowQuantity(token, rowId, quantity, { path = [] } = {}) {
     const amount = Number(quantity);
-    if (!Number.isSafeInteger(amount) || amount < 1) throw new Error("Количество должно быть целым числом не меньше 1.");
     return this.#mutateEditableRow(token, rowId, (row) => {
       if (isStorageJournalRow(row)) {
         throw new Error("Количество ссылки на журнал изменять нельзя.");
       }
+      requirePositiveQuantity(amount, row.itemData);
       row.quantity = amount;
       row.itemData ??= {};
       row.itemData.system ??= {};
-      row.itemData.system.quantity = amount;
+      row.itemData = withInventoryItemQuantity(row.itemData, amount);
       return row;
     }, { path });
   }

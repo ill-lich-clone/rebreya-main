@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
+import { withInventoryItemQuantity, readInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
 import { StorageGroundPileService } from "../scripts/data/storage-ground-pile-service.js";
 import { readStorageState } from "../scripts/data/storage-service.js";
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
@@ -14,6 +15,24 @@ function applyPatch(target, patch) {
     cursor[parts.at(-1)] = structuredClone(value);
   }
 }
+
+test("ground pile splits and merges fractional material units with native integer ItemData", async () => {
+  const { service, tokens } = createHarness();
+  const itemData = withInventoryItemQuantity({ name: "Adamant", type: "loot", flags: { [MODULE_ID]: {
+    sourceType: "material", sourceId: "adamant", materialId: "adamant"
+  } }, system: { quantity: 1, weight: { value: 10, units: "lb" }, price: { value: 500, denomination: "gp" } } }, 0.05);
+  const row = { rowId: "scrap", sourceType: "material", sourceId: "adamant", name: "Adamant", quantity: 0.05, itemData };
+  for (const [mutationId, quantity] of [["scrap-a", 0.02], ["scrap-b", 0.03]]) {
+    await service.transferToScene({ row, quantity, sceneId: "scene", x: 300, y: 400, mutationId });
+  }
+  const rows = readStorageState(tokens[0]).manualRows;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].quantity, 0.05);
+  assert.equal(readInventoryItemQuantity(rows[0].itemData), 0.05);
+  assert.equal(rows[0].itemData.system.quantity, 1);
+  assert.equal(rows[0].itemData.system.weight.value, 0.5);
+  assert.equal(rows[0].itemData.system.price.value, 25);
+});
 
 function deferred() {
   let resolve;
@@ -261,6 +280,8 @@ const monsterHoof = managedCanonicalRow({
   name: "Копыто чудовища",
   typeLabel: "Материал"
 });
+monsterHoof.itemData.system.weight = { value: 1, units: "lb" };
+monsterHoof.itemData.system.price = { value: 1, denomination: "gp" };
 
 const plateArmor = managedCanonicalRow({
   sourceType: "gear",

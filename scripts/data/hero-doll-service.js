@@ -1,12 +1,12 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
 import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.4.338-hero-doll-menu";
 
-import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.368-hero-performance";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.368-hero-performance";
-import { ItemInstanceError, planItemInstanceMutation } from "./item-instance-rules.js";
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.376";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.376";
+import { ItemInstanceError, planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.376";
 import { normalizeHeroDollPresets, captureHeroDollPresetSlots, heroDollPresetModified } from "./hero-doll-presets.js?v=1.4.364-hero-presets";
-import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.280";
-import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.4.267-native-schema";
+import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.376";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.4.376";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js";
 

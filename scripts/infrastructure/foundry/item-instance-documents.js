@@ -1,11 +1,13 @@
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "../../data/inventory-material-quantity.js?v=1.4.376";
 import { MODULE_ID } from "../../constants.js";
-import { ItemInstanceError } from "../../data/item-instance-rules.js";
-import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.368-hero-performance";
+import { ItemInstanceError } from "../../data/item-instance-rules.js?v=1.4.376";
+import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.376";
 import { createStableGearDocumentId } from "../../data/gear-document-ids.js";
 
 const prefix = `flags.${MODULE_ID}`;
 const get = (object, path) => path.split(".").reduce((value, key) => value?.[key], object);
 const equal = (a, b) => fingerprint(a) === fingerprint(b);
+const quantityStateMatches = (item, state) => !state || equal(captureInventoryItemQuantityState(item.toObject()), state);
 const conflict = (detail = "") => { throw new ItemInstanceError("manual-review", `Затронутые поля предмета изменены; нужна ручная сверка.${detail ? ` ${detail}` : ""}`); };
 const clone = value => value === undefined ? undefined : structuredClone(value);
 
@@ -33,12 +35,12 @@ export class ItemInstanceDocuments {
     if (!sourceItem) throw new ItemInstanceError("item-not-found", "Исходный предмет больше не существует.");
     const data = sourceItem.toObject();
     const flags = data.flags?.[MODULE_ID] ?? {};
-    const material = flags.sourceType === "material";
+    const material = isInventoryMaterialItemData(data);
     const slots = actors.sourceActor.getFlag(MODULE_ID, "heroDoll")?.slots ?? {};
     const uses = [data.system?.uses, ...Object.values(data.system?.activities ?? {}).map(activity => activity?.uses)];
     const limitedUses = uses.some(value => Number(value?.spent) > 0
       || (String(value?.max ?? "").trim() !== "" && Number(value.max) !== 0));
-    return { ...actors, sourceItem, data, quantity: data.system?.quantity ?? 1, step: material ? 0.00001 : 1,
+    return { ...actors, sourceItem, data, quantity: readInventoryItemQuantity(data), step: material ? 1e-12 : 1,
       folderId: actors.sourceActor.getFlag(MODULE_ID, "inventoryFolders")?.itemFolderIds?.[sourceItem.id] ?? null,
       hasContents: ["container", "backpack"].includes(data.type) || Boolean(flags.storageContainer)
         || actors.sourceActor.items.contents.some(item => item.system?.container === sourceItem.id),
@@ -54,16 +56,17 @@ export class ItemInstanceDocuments {
   async prepare(intent, plan, source, context, operation) {
     if (plan.kind === "move" && !context.moveWhole) throw new ItemInstanceError("unsupported-transfer", "Для целого предмета требуется штатный перенос группы.");
     const itemId = plan.preserveSourceId ? intent.sourceItemId : plan.kind === "move" ? "$target" : createStableGearDocumentId(operation.id);
-    const targetData = cleanClone(source.data);
+    const targetData = withInventoryItemQuantity(cleanClone(source.data), plan.quantity);
     targetData._id = itemId;
     targetData.system ??= {};
-    targetData.system.quantity = plan.quantity;
+
     if (intent.sourceActorUuid !== intent.destinationActorUuid) targetData.system.container = null;
     targetData.flags ??= {}; targetData.flags[MODULE_ID] ??= {};
     targetData.flags[MODULE_ID].itemInstanceOrigin = { id: operation.id, fingerprint: operation.fingerprint };
     context.prepareTargetData?.(targetData, source);
     const placement = plan.kind === "noop" ? [] : await context.preparePlacement({ ...source, intent, plan, itemId });
     return { itemId, targetData, sourceBefore: source.quantity,
+      ...(isInventoryMaterialItemData(source.data) ? { sourceQuantityStateBefore: captureInventoryItemQuantityState(source.data), sourceQuantityStateAfter: captureInventoryItemQuantityState(withInventoryItemQuantity(source.data, plan.sourceRemaining)) } : {}),
       sourceMarkerBefore: clone(source.data.flags?.[MODULE_ID]?.itemInstanceDebit ?? null),
       sourceMarkerAfter: { id: operation.id, fingerprint: operation.fingerprint, before: source.quantity, after: plan.sourceRemaining },
       placement: clone(placement) };
@@ -97,10 +100,10 @@ export class ItemInstanceDocuments {
     if (!targetActor.items.get(record.itemId)) conflict();
     const item = sourceActor.items.get(record.intent.sourceItemId);
     if (!item) conflict();
-    const quantity = item.system.quantity, marker = item.getFlag(MODULE_ID, "itemInstanceDebit") ?? null;
-    if (quantity === record.plan.sourceRemaining && equal(marker, record.sourceMarkerAfter)) return;
-    if (quantity !== record.sourceBefore || !equal(marker, record.sourceMarkerBefore)) conflict();
-    await this.#write(context, () => item.update({ "system.quantity": record.plan.sourceRemaining, [`${prefix}.==itemInstanceDebit`]: clone(record.sourceMarkerAfter) }));
+    const quantity = readInventoryItemQuantity(item.toObject()), marker = item.getFlag(MODULE_ID, "itemInstanceDebit") ?? null;
+    if (quantity === record.plan.sourceRemaining && quantityStateMatches(item, record.sourceQuantityStateAfter) && equal(marker, record.sourceMarkerAfter)) return;
+    if (quantity !== record.sourceBefore || !quantityStateMatches(item, record.sourceQuantityStateBefore) || !equal(marker, record.sourceMarkerBefore)) conflict();
+    await this.#write(context, () => item.update({ ...(record.sourceQuantityStateAfter ? buildInventoryItemQuantityRestorePatch(record.sourceQuantityStateAfter) : buildInventoryItemQuantityPatch(item.toObject(), record.plan.sourceRemaining)), [`${prefix}.==itemInstanceDebit`]: clone(record.sourceMarkerAfter) }));
   }
 
   #substitute(value, record) {
@@ -158,8 +161,8 @@ export class ItemInstanceDocuments {
     if (record.plan.kind !== "placement" && !targetActor.items.get(record.itemId)) conflict();
     if (record.plan.kind === "split") {
       const item = sourceActor.items.get(record.intent.sourceItemId);
-      if (item?.system.quantity !== record.plan.sourceRemaining || !equal(item.getFlag(MODULE_ID, "itemInstanceDebit"), record.sourceMarkerAfter)) conflict();
-      if (targetActor.items.get(record.itemId).system.quantity !== record.plan.quantity) conflict();
+      if (readInventoryItemQuantity(item?.toObject?.() ?? item) !== record.plan.sourceRemaining || !quantityStateMatches(item, record.sourceQuantityStateAfter) || !equal(item.getFlag(MODULE_ID, "itemInstanceDebit"), record.sourceMarkerAfter)) conflict();
+      if (readInventoryItemQuantity(targetActor.items.get(record.itemId).toObject()) !== record.plan.quantity || (record.sourceQuantityStateBefore && !quantityStateMatches(targetActor.items.get(record.itemId), captureInventoryItemQuantityState(record.targetData)))) conflict();
     }
     if (record.plan.kind === "move") await context.verifyWhole(record);
     for (const raw of record.placement) {
@@ -197,8 +200,8 @@ export class ItemInstanceDocuments {
     const source = sourceActor.items.get(record.intent.sourceItemId);
     const target = targetActor.items.get(record.itemId);
     if (!source) conflict();
-    const sourceBefore = source.system.quantity === record.sourceBefore && equal(source.getFlag(MODULE_ID, "itemInstanceDebit") ?? null, record.sourceMarkerBefore);
-    const sourceAfter = source.system.quantity === record.plan.sourceRemaining && equal(source.getFlag(MODULE_ID, "itemInstanceDebit"), record.sourceMarkerAfter);
+    const sourceBefore = readInventoryItemQuantity(source.toObject()) === record.sourceBefore && quantityStateMatches(source, record.sourceQuantityStateBefore) && equal(source.getFlag(MODULE_ID, "itemInstanceDebit") ?? null, record.sourceMarkerBefore);
+    const sourceAfter = readInventoryItemQuantity(source.toObject()) === record.plan.sourceRemaining && quantityStateMatches(source, record.sourceQuantityStateAfter) && equal(source.getFlag(MODULE_ID, "itemInstanceDebit"), record.sourceMarkerAfter);
     if (!sourceBefore && !sourceAfter) conflict();
     if (!record.plan.preserveSourceId && !target && !sourceBefore) conflict();
     const steps = [];
@@ -212,7 +215,7 @@ export class ItemInstanceDocuments {
     }
     if (target && !record.plan.preserveSourceId) {
       if (!equal(target.getFlag(MODULE_ID, "itemInstanceOrigin"), record.targetData.flags[MODULE_ID].itemInstanceOrigin)
-        || target.system.quantity !== record.plan.quantity || target.name !== record.targetData.name) conflict();
+        || readInventoryItemQuantity(target.toObject()) !== record.plan.quantity || target.name !== record.targetData.name) conflict();
       // Refuse to delete a target whose non-placement data changed after creation.
       const actual = cleanClone(target.toObject()), expected = cleanClone(record.targetData);
       for (const {step} of steps.filter(entry => entry.document === target)) for (const path of Object.keys(step.before)) {
@@ -222,7 +225,7 @@ export class ItemInstanceDocuments {
       if (!equal(actual, expected)) conflict();
     }
     for (const {step,document,applied} of steps.reverse()) if (applied) await this.#write(context, () => document.update(this.#update(step.before)));
-    if (!record.plan.preserveSourceId && sourceAfter) await this.#write(context, () => source.update({ "system.quantity": record.sourceBefore,
+    if (!record.plan.preserveSourceId && sourceAfter) await this.#write(context, () => source.update({ ...(record.sourceQuantityStateBefore ? buildInventoryItemQuantityRestorePatch(record.sourceQuantityStateBefore) : buildInventoryItemQuantityPatch(source.toObject(), record.sourceBefore)),
       ...this.#update({ [`${prefix}.itemInstanceDebit`]: record.sourceMarkerBefore }) }));
     if (target && !record.plan.preserveSourceId) await this.#write(context, () => target.delete());
   }

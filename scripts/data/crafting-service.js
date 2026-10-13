@@ -483,7 +483,9 @@ function normalizeWorkdayInput(value = {}) {
 
 function projectReservationRemaining(project) {
   const reservation = normalizeReservation(project?.reservation);
-  return {
+  const remaining = {
+    materialAccountingVersion: reservation.materialAccountingVersion ?? 1,
+    ...(reservation.materialAccountingVersion === 2 ? { predominantUnitWeightLb: reservation.predominantUnitWeightLb, baseRawUnitWeightLb: reservation.baseRawUnitWeightLb } : {}),
     predominantMaterialId: reservation.predominantMaterialId,
     predominantMaterialLb: roundFive(Math.max(
       0,
@@ -495,6 +497,34 @@ function projectReservationRemaining(project) {
       reservation.baseRawQuantityReserved - reservation.baseRawQuantitySpent
     ))
   };
+  if (reservation.materialAccountingVersion === 2 && reservation.receipts.some(receipt => receipt.itemData)) {
+    remaining.materialLots = reservation.receipts.filter(receipt => receipt.itemData).map(receipt => ({
+      sourceId: receipt.sourceId, itemId: receipt.itemId, itemData: cloneValue(receipt.itemData), capacity: receipt.quantity,
+      quantity: Number((receipt.components ?? []).reduce((sum, component) => {
+        const predominant = component.resource === "predominant";
+        const reserved = predominant ? reservation.predominantMaterialLbReserved : reservation.baseRawQuantityReserved;
+        const unspent = predominant ? remaining.predominantMaterialLb : remaining.baseRawQuantity;
+        return sum + component.quantity * (reserved > 0 ? unspent / reserved : 0);
+      }, 0).toFixed(12))
+    }));
+    const roundStock = value => Number(Number(value).toFixed(12));
+    for (const sourceId of new Set(remaining.materialLots.map(lot => lot.sourceId))) {
+      const lots = remaining.materialLots.filter(lot => lot.sourceId === sourceId);
+      const expected = roundStock((sourceId === remaining.predominantMaterialId ? roundStock(remaining.predominantMaterialLb / remaining.predominantUnitWeightLb) : 0)
+        + (sourceId === remaining.baseRawMaterialId ? remaining.baseRawQuantity : 0));
+      let difference = roundStock(expected - lots.reduce((sum, lot) => sum + lot.quantity, 0));
+      // Rounded source lots and rounded remaining pounds can differ by a stock quantum.
+      for (const lot of [...lots].reverse()) {
+        const capacity = difference > 0 ? roundStock(lot.capacity - lot.quantity) : lot.quantity;
+        const adjustment = roundStock(Math.sign(difference) * Math.min(Math.abs(difference), Math.max(0, capacity)));
+        lot.quantity = roundStock(lot.quantity + adjustment);
+        difference = roundStock(difference - adjustment);
+      }
+      if (difference !== 0) throw new Error("Craft refund exceeds its reserved material lots.");
+    }
+    remaining.materialLots = remaining.materialLots.filter(lot => lot.quantity > 0).map(({ capacity, ...lot }) => lot);
+  }
+  return remaining;
 }
 
 function projectMatchesIdentity(left, right) {
@@ -911,6 +941,9 @@ export class CraftingService {
       workdaySelection: buildWorkdaySelection(hoursPerDay, ownedWorkshop),
       workshopApproval,
       reservation: {
+        materialAccountingVersion: 2,
+        predominantUnitWeightLb: Number(predominantMaterial.weightLb ?? predominantMaterial.weight),
+        baseRawUnitWeightLb: Number(baseRawMaterial.weightLb ?? baseRawMaterial.weight),
         predominantMaterialId: cleanText(predominantMaterial.id),
         predominantMaterialLbReserved: reservationQuote.predominantMaterialLb,
         predominantMaterialLbSpent: 0,
@@ -1263,6 +1296,9 @@ export class CraftingService {
         project,
         reservationRequest: {
           projectId,
+          materialAccountingVersion: project.reservation.materialAccountingVersion ?? 1,
+          predominantUnitWeightLb: project.reservation.predominantUnitWeightLb,
+          baseRawUnitWeightLb: project.reservation.baseRawUnitWeightLb,
           predominantMaterialId: project.reservation.predominantMaterialId,
           predominantMaterialLb: project.reservation.predominantMaterialLbReserved,
           baseRawMaterialId: project.reservation.baseRawMaterialId,
@@ -1282,7 +1318,7 @@ export class CraftingService {
     if (record.phase === "prepared") {
       const inventoryOptions = this.#inventoryExecutionOptions(record.groupId);
       const receipts = await this.moduleApi.inventoryService.reserveCraftResourcesOnce(
-        record.reservationRequest,
+        { ...record.reservationRequest, materialAccountingVersion: record.project.reservation.materialAccountingVersion ?? 1 },
         `${operationId}:reserve`,
         inventoryOptions
       );
