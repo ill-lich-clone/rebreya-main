@@ -23,7 +23,7 @@ import {
   normalizeGroupSupplyCoverage,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./group-context-service.js?v=1.4.373";
+} from "./group-context-service.js?v=1.4.375";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";

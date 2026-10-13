@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
+import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js?v=1.4.375";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 export const GROUP_TRAVEL_REPLACE_STATE_COMMAND = "group.travel.replaceState";

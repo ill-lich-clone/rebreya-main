@@ -1,5 +1,5 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
+import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js?v=1.4.375";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 export const GROUP_CALENDAR_PATCH_COMMAND = "group.calendar.patch";
@@ -345,6 +345,15 @@ export class CalendarService {
 
   #getCurrentGroupContext(groupActorId = "") {
     const requestedGroupActorId = String(groupActorId ?? "").trim();
+    if (this.groupContextService?.getCalendarContext) {
+      try {
+        return this.groupContextService.getCalendarContext({ groupActorId: requestedGroupActorId });
+      }
+      catch (error) {
+        if (!requestedGroupActorId && GROUP_CONTEXT_FALLBACK_ERRORS.has(error?.message)) return null;
+        throw error;
+      }
+    }
     if (requestedGroupActorId) {
       if (!this.groupContextService?.resolveForGroup) {
         throw new Error("Group context service is unavailable.");
@@ -381,7 +390,7 @@ export class CalendarService {
     return {
       type: "group",
       groupId: groupContext.groupId,
-      state: normalizeCalendarState(groupContext.groupState?.calendar, worldState)
+      state: normalizeCalendarState(groupContext.calendarState ?? groupContext.groupState?.calendar, worldState)
     };
   }
 
@@ -392,7 +401,7 @@ export class CalendarService {
 
     const worldState = this.#getWorldState();
     return this.groupContextService.mutateGroupState(groupActorId, (groupState) => {
-      const currentCalendar = clone(asObject(groupState.calendar));
+      const currentCalendar = asObject(groupState.calendar);
       const currentState = normalizeCalendarState(currentCalendar, worldState);
       const nextState = normalizeCalendarState({ ...currentState, ...clone(patch) }, currentState);
       groupState.calendar = {

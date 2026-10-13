@@ -220,7 +220,8 @@ export function patchSmallTimeDateDisplay(moduleApi = activeModuleApi) {
       dateDisplayElement.textContent = displayDate;
     }
 
-    if (globalThis.game?.ready && globalThis.game?.user?.isGM) {
+    if (globalThis.game?.ready && globalThis.game?.user?.isGM
+      && globalThis.game?.settings?.get?.(SMALLTIME_MODULE_ID, "current-date") !== displayDate) {
       await globalThis.game?.settings?.set?.(SMALLTIME_MODULE_ID, "current-date", displayDate);
     }
 
@@ -250,10 +251,10 @@ export async function refreshSmallTimeSunTimes() {
   }
 }
 
-export async function refreshSmallTimeDateDisplay() {
+export async function refreshSmallTimeDateDisplay({ refreshSunTimes = true } = {}) {
   patchSmallTimeDateDisplay(activeModuleApi);
   patchSmallTimeCalendarTimeSource(activeModuleApi);
-  await refreshSmallTimeSunTimes();
+  if (refreshSunTimes) await refreshSmallTimeSunTimes();
   const SmallTimeApp = getSmallTimeAppClass();
   if (typeof SmallTimeApp?.updateDate !== "function") {
     return false;
@@ -380,7 +381,10 @@ export async function handleSmallTimeWorldTimeUpdate(
 
 export async function syncSmallTimeToCalendarTime(
   moduleApi = activeModuleApi,
-  { refreshSmallTimeDateDisplay: refreshDisplay = refreshSmallTimeDateDisplay } = {}
+  {
+    refreshSmallTimeDateDisplay: refreshDisplay = refreshSmallTimeDateDisplay,
+    refreshSmallTimeSunTimes: refreshSun = refreshSmallTimeSunTimes
+  } = {}
 ) {
   activeModuleApi = moduleApi ?? activeModuleApi;
   if (typeof globalThis.game?.modules?.get === "function" && !isSmallTimeActive()) {
@@ -410,7 +414,7 @@ export async function syncSmallTimeToCalendarTime(
     }
   }
 
-  await refreshSmallTimeSunTimes();
+  await refreshSun();
 
   if (typeof SmallTimeApp?.timeTransition === "function") {
     SmallTimeApp.timeTransition(Math.floor(targetSeconds / 60), {
@@ -418,7 +422,7 @@ export async function syncSmallTimeToCalendarTime(
     });
   }
 
-  await refreshDisplay?.();
+  await refreshDisplay?.({ refreshSunTimes: false });
   return true;
 }
 

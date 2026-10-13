@@ -1039,7 +1039,8 @@ export class CalendarTransitionCoordinator {
 
     let currentGroupId = "";
     try {
-      currentGroupId = cleanText(this.groupContextService.resolveForGroup(groupId)?.groupId);
+      const resolveGroup = this.groupContextService.resolveReferenceForGroup ?? this.groupContextService.resolveForGroup;
+      currentGroupId = cleanText(resolveGroup.call(this.groupContextService, groupId)?.groupId);
     }
     catch (cause) {
       const error = new Error("Calendar transition aborted because its captured Rebreya group is unavailable.");

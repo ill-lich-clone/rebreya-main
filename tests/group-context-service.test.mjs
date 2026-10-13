@@ -13,6 +13,67 @@ import {
   resolvePlayerGroupActor
 } from "../scripts/data/group-context-service.js";
 
+test("group calendar contexts use fresh references without reading archives", () => {
+  const groupA = createGroup("group-a"), groupB = createGroup("group-b");
+  const blocked = () => { throw new Error("Calendar context must not traverse archives"); };
+  const calendarA = { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 49025 };
+  Object.defineProperty(calendarA, "transitionJournal", { enumerable: true, get: blocked });
+  const stateA = { calendar: calendarA };
+  Object.defineProperty(stateA, "downtimeState", { enumerable: true, get: blocked });
+  const registry = { activeGroupActorId: "group-a", groupsById: {
+    "group-a": stateA, "group-b": { calendar: { isoDate: "1200-02-01", timeOfDaySeconds: 3600 } }
+  } };
+  const fixture = installGameFixture({ actors: [groupA, groupB], registry });
+  try {
+    const service = new GroupContextService();
+    const reference = service.resolveReferenceForCurrentUser();
+    assert.equal(reference.groupActor, groupA);
+    assert.equal(reference.groupId, "group-a");
+    assert.equal(Object.hasOwn(reference, "groupState"), false);
+    assert.deepEqual(service.getCalendarContext().calendarState, { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 49025 });
+    registry.activeGroupActorId = "group-b";
+    assert.equal(service.getCalendarContext().groupId, "group-b");
+    assert.equal(service.getCalendarContext().calendarState.timeOfDaySeconds, 3600);
+    assert.equal(service.getCalendarContext({ groupActorId: "group-a" }).groupId, "group-a");
+    assert.equal(service.resolveReferenceForGroup("group-a").groupActor, groupA);
+  } finally { fixture.restore(); }
+});
+
+test("group references preserve player registration, ownership, and actor errors", () => {
+  const owned = createCharacter("character-a", { ownerUserId: "player-1" });
+  const group = createGroup("group-a", [{ actor: owned }]);
+  const other = createGroup("group-b", [{ actor: createCharacter("character-b", { ownerUserId: "player-2" }) }]);
+  const registry = { groupsById: { " group-a ": {} } };
+  const fixture = installGameFixture({ actors: [group, other, owned], registry, user: { id: "player-1", isGM: false } });
+  try {
+    const service = new GroupContextService();
+    const reference = service.resolveReferenceForCurrentUser();
+    assert.equal(reference.groupId, "group-a");
+    assert.deepEqual(reference.memberActorIds, ["character-a"]);
+    assert.equal(reference.canManage, true);
+    assert.throws(() => service.resolveReferenceForGroup("missing"), error => error.message === GROUP_CONTEXT_ERRORS.GROUP_NOT_FOUND);
+    assert.throws(() => service.resolveReferenceForGroup("character-a"), error => error.message === GROUP_CONTEXT_ERRORS.INVALID_GROUP_ACTOR);
+    registry.groupsById = {};
+    assert.throws(() => service.resolveReferenceForCurrentUser(), error => error.message === GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
+    globalThis.game.user = { id: "gm", isGM: true };
+    assert.throws(() => service.resolveReferenceForCurrentUser(), error => error.message === GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP);
+    assert.equal(service.resolveReferenceForGroup("group-a").groupId, "group-a");
+  } finally { fixture.restore(); }
+});
+
+test("calendar contexts retain compatibility with a read-only legacy repository", () => {
+  const group = createGroup("group-a");
+  const fixture = installGameFixture({ actors: [group] });
+  try {
+    const service = new GroupContextService({ groupStateRepository: { read: () => ({
+      activeGroupActorId: "group-a", groupsById: { "group-a": { calendar: { isoDate: "1200-01-10", timeOfDaySeconds: 49025 } } }
+    }) } });
+    assert.equal(service.getCalendarContext().groupId, "group-a");
+    assert.deepEqual(service.getCalendarContext().calendarState, { isoDate: "1200-01-10", timeOfDaySeconds: 49025 });
+    assert.equal(service.resolveForCurrentUser().groupState.calendar.isoDate, "1200-01-10");
+  } finally { fixture.restore(); }
+});
+
 test("group supply coverage migration preserves explicit false and is repeatable", async () => {
   let writes = 0;
   const fixture = installGameFixture({

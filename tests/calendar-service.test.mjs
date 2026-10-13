@@ -6,6 +6,47 @@ import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/consta
 import { CalendarService } from "../scripts/data/calendar-service.js";
 import { GroupContextService } from "../scripts/data/group-context-service.js";
 
+test("calendar snapshots never read group archives and retain world fallback", async () => {
+  const blocked = () => { throw new Error("Clock reads must not traverse group archives"); };
+  const calendar = { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 49025 };
+  Object.defineProperty(calendar, "transitionJournal", { enumerable: true, get: blocked });
+  const group = { calendar };
+  Object.defineProperty(group, "downtimeState", { enumerable: true, get: blocked });
+  const groupsById = { "group-a": group };
+  Object.defineProperty(groupsById, "group-b", { enumerable: true, get: blocked });
+  const state = {
+    [SETTINGS_KEYS.CALENDAR_STATE]: { isoDate: "1300-01-01", timeOfDaySeconds: 3600 },
+    [SETTINGS_KEYS.GROUP_STATE]: { activeGroupActorId: "group-a", groupsById }
+  };
+  await withCalendarHarness(state, ({ calendarService }) => {
+    globalThis.game.settings.get = (_module, key) => state[key];
+    const snapshot = calendarService.getSnapshot();
+    assert.equal(snapshot.isoDate, "1200-01-10");
+    assert.equal(snapshot.timeLabel, "13:37:05");
+    assert.ok(snapshot.cells.some(cell => cell.isoDate === "1200-01-10" && cell.isCurrentDay));
+    assert.ok(snapshot.moon);
+    calendar.timeOfDaySeconds = 50000;
+    assert.equal(calendarService.getSnapshot().timeOfDaySeconds, 50000);
+    state[SETTINGS_KEYS.GROUP_STATE].activeGroupActorId = "";
+    assert.equal(calendarService.getSnapshot().isoDate, "1300-01-01");
+    assert.equal(calendarService.getSnapshot().timeOfDaySeconds, 3600);
+    assert.equal(calendarService.getSnapshot({ groupActorId: "group-a" }).isoDate, "1200-01-10");
+  });
+});
+
+test("calendar time patches preserve journal and custom calendar fields", async () => {
+  const state = { [SETTINGS_KEYS.GROUP_STATE]: { activeGroupActorId: "group-a", groupsById: { "group-a": { calendar: {
+    isoDate: "1200-01-10", transitionJournal: { counter: 1, entries: [{ status: "pending", marker: "keep" }] }, custom: { retained: true }
+  } } } } };
+  await withCalendarHarness(state, async ({ calendarService }) => {
+    const result = await calendarService.setTimeOfDaySeconds(49025);
+    assert.equal(result.timeLabel, "13:37:05");
+    const saved = state[SETTINGS_KEYS.GROUP_STATE].groupsById["group-a"].calendar;
+    assert.deepEqual(saved.transitionJournal, { counter: 1, entries: [{ status: "pending", marker: "keep" }] });
+    assert.deepEqual(saved.custom, { retained: true });
+  });
+});
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }

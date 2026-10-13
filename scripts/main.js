@@ -61,14 +61,14 @@ import {
   normalizeGroupState,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./data/group-context-service.js?v=1.4.373";
+} from "./data/group-context-service.js?v=1.4.375";
 import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
-import { CharacterDowntimeService } from "./data/character-downtime-service.js";
+import { CharacterDowntimeService } from "./data/character-downtime-service.js?v=1.4.375";
 import {
   GROUP_TRAVEL_REPLACE_STATE_COMMAND,
   TravelService,
   normalizeTravelState
-} from "./data/travel-service.js";
+} from "./data/travel-service.js?v=1.4.375";
 import { TravelMapService } from "./data/travel-map-service.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
@@ -95,7 +95,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.373";
+} from "./data/inventory-service.js?v=1.4.375";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -128,8 +128,8 @@ import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
 import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.281";
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
-import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
-import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
+import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js?v=1.4.375";
+import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.375";
 import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
 import {
   EXCLUSIVE_MUTATION_SCHEDULING,
@@ -211,7 +211,7 @@ import {
   buildPublicCitySnapshot,
   buildPublicEconomySnapshot
 } from "./application/public-economy-read-model.js";
-import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
+import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js?v=1.4.375";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
 import { PurchaseBasketJournalRepository } from "./infrastructure/foundry/purchase-basket-journal-repository.js";
@@ -382,9 +382,9 @@ import {
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.327";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.375";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
-import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
+import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.375";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.327";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.374";
@@ -404,7 +404,7 @@ import {
   ALCHEMY_BOMB_MUTATION_COMMAND,
   registerAlchemyBombSocketCommand
 } from "./integrations/alchemy-bomb-socket.js?v=1.4.356";
-import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
+import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js?v=1.4.375";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation";
 import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.370";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
@@ -1634,7 +1634,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.4.373"
+          "./ui/inventory-app.js?v=1.4.375"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -7933,7 +7933,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.373");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.375");
 
       if (!this.inventoryApp) {
         this.inventoryApp = new InventoryApp(this);
@@ -7980,7 +7980,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.373");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.375");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

@@ -151,6 +151,45 @@ function createHarness({
   };
 }
 
+test("calendar execution guards use group references while retaining identity and existence checks", async () => {
+  let guardChecked = false, guardError = null;
+  const harness = createHarness({ callbacks: { refreshGlobalEvents: async (_current, _previous, execution) => {
+    const service = harness.groupContextService;
+    const resolve = service.resolveForGroup;
+    service.resolveForGroup = () => { throw new Error("Guards must not materialize group state"); };
+    const user = globalThis.game.user;
+    const actors = globalThis.game.actors;
+    const getActor = actors.get, contents = actors.contents;
+    try {
+      guardChecked = true;
+      assert.doesNotThrow(() => execution.guard());
+      globalThis.game.user = { ...user, id: "another-gm" };
+      assert.throws(() => execution.guard(), /another GM client/u);
+      globalThis.game.user = { ...user, active: false };
+      assert.throws(() => execution.guard(), /active GM client/u);
+      globalThis.game.user = user;
+      actors.get = () => null;
+      actors.contents = [];
+      assert.throws(() => execution.guard(), /captured Rebreya group is unavailable/u);
+    } catch (error) {
+      guardError = error;
+      throw error;
+    } finally {
+      service.resolveForGroup = resolve;
+      globalThis.game.user = user;
+      actors.get = getActor;
+      actors.contents = contents;
+    }
+    return { changed: false };
+  } } });
+  try {
+    await harness.createCoordinator().moveTo({ toIsoDate: "2026-07-21", processDowntime: false });
+    assert.equal(guardChecked, true);
+    assert.ifError(guardError);
+    assert.equal(harness.calendarService.getSnapshot().isoDate, "2026-07-21");
+  } finally { harness.restore(); }
+});
+
 test("preview enumerates crossed dates chronologically and summarizes affected downtime without mutation", () => {
   const harness = createHarness({
     isoDate: "2026-07-20",

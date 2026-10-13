@@ -10,6 +10,10 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
 export class GroupStateRepository {
   #buildDefaultGroupState;
   #gameProvider;
@@ -33,6 +37,32 @@ export class GroupStateRepository {
 
   read() {
     return this.#normalizeRegistry(clone(this.#readSetting()));
+  }
+
+  readGroupIndex() {
+    const registry = asObject(this.#readSetting());
+    return {
+      activeGroupActorId: String(registry.activeGroupActorId ?? "").trim(),
+      groupActorIds: [...new Set(Object.keys(asObject(registry.groupsById))
+        .map(id => id.trim()).filter(Boolean))]
+    };
+  }
+
+  readCalendarState(groupActorId) {
+    const id = String(groupActorId ?? "").trim();
+    if (!id) return {};
+    const groups = asObject(asObject(this.#readSetting()).groupsById);
+    let group;
+    for (const key of Object.keys(groups)) {
+      if (key.trim() === id) group = groups[key];
+    }
+    const calendar = asObject(asObject(group).calendar);
+    const state = {};
+    for (const key of ["version", "isoDate", "timeOfDaySeconds"]) {
+      const value = calendar[key];
+      if (value !== undefined) state[key] = value;
+    }
+    return clone(state);
   }
 
   mutateRegistry(mutator, { afterCommit = null } = {}) {
@@ -60,17 +90,13 @@ export class GroupStateRepository {
         throw new Error(`Group state not found: ${normalizedGroupActorId}`);
       }
 
-      const groupState = this.#normalizeGroupState(
-        normalizedGroupActorId,
-        existingGroupState ?? this.#buildDefaultGroupState(normalizedGroupActorId)
+      const groupState = existingGroupState ?? this.#normalizeGroupState(
+        normalizedGroupActorId, this.#buildDefaultGroupState(normalizedGroupActorId)
       );
       registry.groupsById[normalizedGroupActorId] = groupState;
 
       const result = await mutator(groupState, registry);
-      registry.groupsById[normalizedGroupActorId] = this.#normalizeGroupState(
-        normalizedGroupActorId,
-        groupState
-      );
+      registry.groupsById[normalizedGroupActorId] = groupState;
       return result;
     }, { afterCommit });
   }

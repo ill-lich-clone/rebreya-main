@@ -12,6 +12,72 @@ import {
   normalizeGroupState
 } from "../scripts/data/group-context-service.js";
 
+test("group clock projections never traverse archives or unrelated group values", () => {
+  const blocked = () => { throw new Error("Archive traversal is forbidden for clock reads"); };
+  const calendar = { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 49025 };
+  Object.defineProperty(calendar, "transitionJournal", { enumerable: true, get: blocked });
+  const group = { calendar };
+  Object.defineProperty(group, "downtimeState", { enumerable: true, get: blocked });
+  const groupsById = { " group-a ": group };
+  Object.defineProperty(groupsById, "group-b", { enumerable: true, get: blocked });
+  const repository = new GroupStateRepository({
+    gameProvider: () => ({ settings: { get: () => ({ activeGroupActorId: " group-a ", groupsById }) } }),
+    normalizeRegistry: blocked, normalizeGroupState: blocked, buildDefaultGroupState
+  });
+
+  assert.deepEqual(repository.readGroupIndex(), { activeGroupActorId: "group-a", groupActorIds: ["group-a", "group-b"] });
+  assert.deepEqual(repository.readCalendarState("group-a"), { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 49025 });
+  assert.deepEqual(repository.readCalendarState("missing"), {});
+});
+
+test("group clock projections are detached and read the latest raw registry", () => {
+  let registry = { activeGroupActorId: "group-a", groupsById: {
+    "group-a": { calendar: { isoDate: "1200-01-10", timeOfDaySeconds: { raw: 49025 } } },
+    " group-a ": { calendar: { isoDate: "1200-01-11", timeOfDaySeconds: { raw: 50000 } } }
+  } };
+  const repository = new GroupStateRepository({ gameProvider: () => ({ settings: { get: () => registry } }) });
+  const projected = repository.readCalendarState(" group-a ");
+  assert.equal(projected.isoDate, "1200-01-11");
+  projected.timeOfDaySeconds.raw = 0;
+  assert.equal(registry.groupsById[" group-a "].calendar.timeOfDaySeconds.raw, 50000);
+  const index = repository.readGroupIndex();
+  index.groupActorIds.push("leaked");
+  registry = { activeGroupActorId: "group-b", groupsById: { "group-b": { calendar: { isoDate: "1200-02-01", timeOfDaySeconds: 3600 } } } };
+  assert.deepEqual(repository.readGroupIndex(), { activeGroupActorId: "group-b", groupActorIds: ["group-b"] });
+  assert.deepEqual(repository.readCalendarState("group-b"), { isoDate: "1200-02-01", timeOfDaySeconds: 3600 });
+});
+
+test("group mutations reuse normalized drafts and preserve journal isolation", async () => {
+  const original = { groupsById: { "group-a": { calendar: {
+    isoDate: "1200-01-10", custom: { retained: true }, transitionJournal: { entries: [{ status: "pending", marker: "keep" }] }
+  } } } };
+  let stored = original, registryNormalizations = 0, groupNormalizations = 0, guards = 0;
+  const repository = new GroupStateRepository({
+    gameProvider: () => ({ settings: { get: () => stored, set: async (_scope, _key, value) => { stored = value; } } }),
+    mutationGateway: createMutationGateway({ assertActiveGm: () => { guards++; } }),
+    normalizeRegistry(value) { registryNormalizations++; return normalizeGroupRegistry(value); },
+    normalizeGroupState(id, value) { groupNormalizations++; return normalizeGroupState(id, value); },
+    buildDefaultGroupState
+  });
+  await repository.mutateGroupState("group-a", (draft, registry) => {
+    draft.calendar.timeOfDaySeconds = 49025;
+    registry.groupsById["group-a"] = { calendar: { isoDate: "discarded replacement" } };
+  });
+  assert.equal(registryNormalizations, 2);
+  assert.equal(groupNormalizations, 0);
+  assert.equal(guards, 2);
+  assert.equal(stored.groupsById["group-a"].calendar.timeOfDaySeconds, 49025);
+  assert.deepEqual(stored.groupsById["group-a"].calendar.transitionJournal, { entries: [{ status: "pending", marker: "keep" }] });
+  assert.deepEqual(stored.groupsById["group-a"].calendar.custom, { retained: true });
+  stored.groupsById["group-a"].calendar.transitionJournal.entries[0].marker = "committed";
+  assert.equal(original.groupsById["group-a"].calendar.transitionJournal.entries[0].marker, "keep");
+  await assert.rejects(repository.mutateGroupState("group-a", draft => {
+    draft.calendar.transitionJournal.entries[0].marker = "uncommitted";
+    throw new Error("rejected draft");
+  }), /rejected draft/u);
+  assert.equal(stored.groupsById["group-a"].calendar.transitionJournal.entries[0].marker, "committed");
+});
+
 function createDeferred() {
   let resolve;
   let reject;

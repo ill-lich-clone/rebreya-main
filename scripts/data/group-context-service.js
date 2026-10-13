@@ -1,5 +1,5 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
-import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js";
+import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js?v=1.4.375";
 
 export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",
@@ -533,17 +533,14 @@ export class GroupContextService {
       && (actor.testUserPermission?.(user, "OWNER") ?? Number(actor.ownership?.[user.id] ?? actor.ownership?.default ?? 0) >= 3));
   }
 
-  resolveForGroup(groupActorId) {
+  resolveReferenceForGroup(groupActorId) {
     const groupActor = this.#requireGroupActor(groupActorId);
-    const registry = this.getRegistry();
-    const groupState = normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id] ?? {});
     const members = getGroupMemberActors(groupActor);
     const memberActorIds = getGroupMemberActorIds(groupActor);
 
     return {
       groupActor,
       groupId: groupActor.id,
-      groupState,
       members,
       memberActorIds,
       canManage: Boolean(globalThis.game?.user?.isGM)
@@ -551,20 +548,51 @@ export class GroupContextService {
     };
   }
 
+  resolveForGroup(groupActorId) {
+    const reference = this.resolveReferenceForGroup(groupActorId);
+    const registry = this.getRegistry();
+    return {
+      ...reference,
+      groupState: normalizeGroupState(reference.groupId, registry.groupsById[reference.groupId] ?? {})
+    };
+  }
+
+  resolveReferenceForCurrentUser() {
+    return this.resolveReferenceForGroup(this.#resolveCurrentGroupActorId());
+  }
+
   resolveForCurrentUser() {
+    return this.resolveForGroup(this.#resolveCurrentGroupActorId());
+  }
+
+  getCalendarContext({ groupActorId = "" } = {}) {
+    const id = cleanId(groupActorId);
+    const reference = id ? this.resolveReferenceForGroup(id) : this.resolveReferenceForCurrentUser();
+    let calendarState = this.#groupStateRepository.readCalendarState?.(reference.groupId);
+    if (!calendarState) {
+      const calendar = asObject(this.getRegistry().groupsById[reference.groupId]?.calendar);
+      calendarState = {};
+      for (const key of ["version", "isoDate", "timeOfDaySeconds"]) {
+        if (calendar[key] !== undefined) calendarState[key] = clone(calendar[key]);
+      }
+    }
+    return { ...reference, calendarState };
+  }
+
+  #resolveCurrentGroupActorId() {
     const user = globalThis.game?.user;
+    const index = this.#groupStateRepository.readGroupIndex?.();
+    const registry = index ?? this.getRegistry();
 
     if (user?.isGM) {
-      const registry = this.getRegistry();
       if (!registry.activeGroupActorId) {
         throw new Error(GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP);
       }
 
-      return this.resolveForGroup(registry.activeGroupActorId);
+      return registry.activeGroupActorId;
     }
 
-    const registry = this.getRegistry();
-    const registeredGroupActors = Object.keys(registry.groupsById)
+    const registeredGroupActors = (index?.groupActorIds ?? Object.keys(registry.groupsById))
       .map((groupActorId) => getActorById(groupActorId))
       .filter((actor) => actor?.type === "group");
     const groupActor = resolvePlayerGroupActor(registeredGroupActors, {
@@ -576,7 +604,7 @@ export class GroupContextService {
       throw new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
     }
 
-    return this.resolveForGroup(groupActor.id);
+    return groupActor.id;
   }
 
   #requireGroupActor(groupActorId) {

@@ -4,14 +4,29 @@ import { readdir, readFile } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
-test("current storage pile release advances the module cache version", async () => {
+test("current clock performance release advances the module cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.374");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.374.js"]);
+  assert.equal(manifest.version, "1.4.375");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.375.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.374.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.375.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
+});
+
+test("clock performance runtime owners share one fresh module URL", async () => {
+  const ownerPattern = /["']([^"'\n]*\/(?:group-context-service|group-state-repository|calendar-service|calendar-transition-coordinator|smalltime-compat|inventory-service|inventory-sync|inventory-app|travel-service|character-downtime-service|transport-group-drop)\.js(?:\?[^"'\n]*)?)["']/gu;
+  const cacheKeys = new Set();
+  let imports = 0;
+  for (const { path, source } of await readJavaScriptTree("../scripts/")) {
+    for (const [, specifier] of source.matchAll(ownerPattern)) {
+      const url = new URL(specifier, `file:///module/${path}`);
+      cacheKeys.add(url.searchParams.get("v"));
+      imports++;
+    }
+  }
+  assert.ok(imports >= 12);
+  assert.deepEqual(cacheKeys, new Set(["1.4.375"]));
 });
 
 test("cached server manifests retain loadable entrypoints across patch releases", async () => {
@@ -101,8 +116,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.374");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.374.js"]);
+  assert.equal(manifest.version, "1.4.375");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.375.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -320,18 +335,18 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.327",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.373",
+    "data/inventory-service.js?v=1.4.375",
     "data/inventory-ingress-descriptor.js?v=1.4.268",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.360",
     "data/native-object-durability-service.js?v=1.4.370",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
-    "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
+    "data/calendar-transition-coordinator.js?v=1.4.375",
     "integrations/durability-hooks.js?v=1.4.370",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.374",
-    "integrations/inventory-sync.js?v=1.4.327",
+    "integrations/inventory-sync.js?v=1.4.375",
     "data/gear-compendium.js?v=1.4.330",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.370",
@@ -407,7 +422,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.374.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.375.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

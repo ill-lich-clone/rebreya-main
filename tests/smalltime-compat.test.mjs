@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 
 import {
   buildRebreyaCalendarTimeComponents,
@@ -8,8 +9,86 @@ import {
   handleSmallTimeWorldTimeUpdate,
   patchSmallTimeCalendarTimeSource,
   patchSmallTimeDateDisplay,
+  refreshSmallTimeDateDisplay,
   syncSmallTimeToCalendarTime
 } from "../scripts/integrations/smalltime-compat.js";
+
+test("smalltime updateDate skips unchanged persistence and still updates the display", async () => {
+  const previous = { game: globalThis.game, document: globalThis.document, SmallTimeApp: globalThis.SmallTimeApp };
+  const element = { textContent: "stale" }, writes = [];
+  let persisted = "Moonday, 5 Frostfall 1200";
+  globalThis.game = { ready: true, user: { isGM: true }, settings: {
+    get(scope, key) { assert.equal(scope, "smalltime"); assert.equal(key, "current-date"); return persisted; },
+    async set(scope, key, value) { persisted = value; writes.push({ scope, key, value }); }
+  } };
+  globalThis.document = { getElementById: () => element };
+  globalThis.SmallTimeApp = { updateDate() {} };
+  try {
+    patchSmallTimeDateDisplay({ getCalendarSnapshot: () => ({ weekdayLabel: "Moonday", day: 5, monthName: "Frostfall", year: 1200 }) });
+    await SmallTimeApp.updateDate();
+    await SmallTimeApp.updateDate();
+    assert.equal(element.textContent, "Moonday, 5 Frostfall 1200");
+    assert.deepEqual(writes, []);
+    persisted = "outdated";
+    await SmallTimeApp.updateDate();
+    assert.deepEqual(writes, [{ scope: "smalltime", key: "current-date", value: "Moonday, 5 Frostfall 1200" }]);
+  } finally { Object.assign(globalThis, previous); }
+});
+
+test("smalltime clock sync calculates sun once before transition and skips a second calculation", async () => {
+  const previous = { game: globalThis.game, SmallTimeApp: globalThis.SmallTimeApp };
+  const calls = [];
+  globalThis.game = { user: { isGM: true }, time: { worldTime: 3600 } };
+  globalThis.SmallTimeApp = { timeTransition: (minutes, options) => calls.push({ minutes, options }) };
+  try {
+    await syncSmallTimeToCalendarTime({ getCalendarSnapshot: () => ({ timeOfDaySeconds: 3600 }) }, {
+      refreshSmallTimeSunTimes: async () => calls.push("sun"),
+      refreshSmallTimeDateDisplay: async options => calls.push({ dateRefreshOptions: options })
+    });
+    assert.deepEqual(calls, ["sun", { minutes: 60, options: { persistDarkness: false } }, { dateRefreshOptions: { refreshSunTimes: false } }]);
+  } finally { Object.assign(globalThis, previous); }
+});
+
+test("smalltime explicit date refresh can skip the sun helper while refreshing the date", async () => {
+  let sunCalls = 0, dateCalls = 0;
+  // Execute the real adapter function with only its Foundry/browser boundaries replaced.
+  const refresh = runInNewContext(`(${refreshSmallTimeDateDisplay.toString()})`, {
+    activeModuleApi: {}, patchSmallTimeDateDisplay() {}, patchSmallTimeCalendarTimeSource() {},
+    refreshSmallTimeSunTimes: async () => { sunCalls++; },
+    getSmallTimeAppClass: () => ({ updateDate: async () => { dateCalls++; } })
+  });
+  assert.equal(await refresh({ refreshSunTimes: false }), true);
+  assert.equal(sunCalls, 0);
+  assert.equal(dateCalls, 1);
+  assert.equal(await refresh(), true);
+  assert.equal(sunCalls, 1);
+  assert.equal(dateCalls, 2);
+});
+
+test("smalltime sequential forward and backward events preserve every delta and supply option", async () => {
+  const previousGame = globalThis.game;
+  const times = [], shifts = [], prompts = [];
+  globalThis.game = { user: { isGM: true } };
+  const options = {
+    moduleApi: {
+      setCalendarTimeOfDay: async (seconds, timeOptions) => times.push({ seconds, options: timeOptions }),
+      shiftCalendarDays: async (days, shiftOptions) => shifts.push({ days, options: shiftOptions })
+    },
+    confirmSupplyConsumption: async days => { prompts.push(days); return true; },
+    refreshSmallTimeDateDisplay: async () => {}
+  };
+  try {
+    await handleSmallTimeWorldTimeUpdate(36060, 60, options);
+    await handleSmallTimeWorldTimeUpdate(122460, 86400, options);
+    await handleSmallTimeWorldTimeUpdate(36060, -86400, options);
+    assert.deepEqual(times, [36060, 36060, 36060].map(seconds => ({ seconds, options: { reason: "smalltime-world-time" } })));
+    assert.deepEqual(prompts, [1]);
+    assert.deepEqual(shifts, [
+      { days: 1, options: { processDowntime: true, processSupplies: true, processDailyCycles: true, consumeSupplies: true, applyEnergy: true, processCraft: false, reason: "smalltime-world-time" } },
+      { days: -1, options: { processDowntime: false, processSupplies: false, processDailyCycles: false, consumeSupplies: false, applyEnergy: false, reason: "smalltime-world-time" } }
+    ]);
+  } finally { globalThis.game = previousGame; }
+});
 
 test("smalltime date display is built from the Rebreya calendar snapshot", () => {
   assert.equal(
