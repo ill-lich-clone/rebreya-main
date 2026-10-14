@@ -371,7 +371,7 @@
                           <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-item-sheet" data-item-id="{{itemId}}">{{name}}</button>
                         {{else}}
                           {{#if canOpenEntry}}
-                            <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">{{name}}</button>
+                            <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-item-source" data-item-id="{{itemId}}" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">{{name}}</button>
                           {{else}}
                             <strong class="rm-compact-item__name">{{name}}</strong>
                           {{/if}}

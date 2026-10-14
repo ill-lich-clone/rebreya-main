@@ -1,5 +1,5 @@
-﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js?v=1.4.376";
+import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
+import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js?v=1.4.377";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 export const GROUP_CALENDAR_PATCH_COMMAND = "group.calendar.patch";

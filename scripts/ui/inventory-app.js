@@ -1,8 +1,9 @@
-import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.376";
+import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.377";
 import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
 import { MODULE_ID } from "../constants.js";
+import { canViewItem } from "../infrastructure/foundry/item-source-resolver.js?v=1.4.377";
 import { REBREYA_TOOLS } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.4.376";
+import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.4.377";
 import {
   buildInventoryFolderSearchIndex,
   buildInventoryFolderTree,
@@ -15,7 +16,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.376";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.377";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
@@ -63,6 +64,16 @@ export async function openInventoryItem(item, {
   await item?.sheet?.render?.(true);
   bringAppToFront(item?.sheet);
   return "sheet";
+}
+
+export async function openInventoryItemSource(item, { moduleApi, hints = {}, openViewer } = {}) {
+  if (isJournalRecordItem(item)) return openInventoryItem(item, { moduleApi, openViewer });
+  let source = null;
+  try { source = await moduleApi.resolveItemSource?.(item, hints) ?? null; }
+  catch { /* An unavailable external source still permits the inventory Item sheet. */ }
+  const target = canViewItem(source) ? source : (canViewItem(item) ? item : null);
+  if (!target) return null;
+  return openInventoryItem(target, { moduleApi });
 }
 
 const KNOWN_GROUP_CONTEXT_ERROR_MESSAGES = new Set([
@@ -3446,7 +3457,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = {
     main: {
       root: true,
-      template: `modules/${MODULE_ID}/templates/inventory-app.hbs?v=1.4.376`
+      template: `modules/${MODULE_ID}/templates/inventory-app.hbs?v=1.4.377`
     }
   };
 
@@ -5360,7 +5371,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #openItemSheet(itemId) {
     const actor = await this.moduleApi.inventoryService.getInventoryActor({
-      create: true,
+      create: false,
       groupActorId: this.inventoryActorId
     });
     const item = actor?.items.get(itemId) ?? null;
@@ -5369,6 +5380,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     await openInventoryItem(item, { moduleApi: this.moduleApi });
+  }
+
+  async #openItemSource(itemId, hints = {}) {
+    const groupActorId = this.inventoryActorId;
+    const actor = await this.moduleApi.inventoryService.getInventoryActor({ create: false, groupActorId });
+    const item = actor?.items.get(itemId) ?? null;
+    if (!item) throw new Error("Предмет уже не найден в складе.");
+    if (!await openInventoryItemSource(item, { moduleApi: this.moduleApi, hints })) {
+      throw new Error("Нет доступа к карточке предмета.");
+    }
   }
 
   async #createInventoryItem() {
@@ -7806,22 +7827,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelectorAll("[data-action='open-compendium-entry']").forEach((button) => {
+    element.querySelectorAll("[data-action='open-item-source']").forEach((button) => {
       button.addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const { sourceType, sourceId, sourceName } = event.currentTarget.dataset;
-        const normalizedSourceType = normalizeInventorySourceType(sourceType);
+        const { itemId, sourceType, sourceId, sourceName } = event.currentTarget.dataset;
         try {
-          const document = await this.moduleApi.openTradeEntry(normalizedSourceType, sourceId, sourceName);
-          bringAppToFront(document?.sheet);
-          if (!document) {
-            ui.notifications?.warn("Не удалось найти запись в компендии.");
-          }
+          await this.#openItemSource(itemId, { sourceType, sourceId, sourceName });
         }
         catch (error) {
-          console.error(`${MODULE_ID} | Failed to open inventory compendium entry '${normalizedSourceType}:${sourceId}'.`, error);
-          ui.notifications?.error("Не удалось открыть запись предмета.");
+          console.error(`${MODULE_ID} | Failed to open inventory item source '${itemId}'.`, error);
+          ui.notifications?.error(error.message || "Не удалось открыть запись предмета.");
+          await this.render?.({ force: true });
         }
       }, listenerOptions);
     });

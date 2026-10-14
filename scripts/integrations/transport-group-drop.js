@@ -1,5 +1,5 @@
 import { MODULE_ID, TRANSPORT_COMPENDIUM_ID } from "../constants.js";
-import { isManagedPartyGroup } from "../data/group-context-service.js?v=1.4.376";
+import { isManagedPartyGroup } from "../data/group-context-service.js?v=1.4.377";
 
 const registeredHookObjects = new WeakSet();
 const TRANSPORT_UUID_PATTERN = new RegExp(

@@ -290,12 +290,27 @@ test("world and compendium item deposits copy without mutating their source", as
       createRowId: () => "copy-row"
     });
     assert.equal(source.mode, "copy");
+    assert.equal(source.row.itemData.flags?.[MODULE_ID]?.itemSourceUuid, item.uuid);
     assert.equal(source.canUserMove({ id: "anyone" }), true);
     const receipt = await source.consume(1);
     assert.deepEqual(receipt, { kind: "copy" });
     await source.restore(receipt);
     assert.equal(item.system.quantity >= 1, true);
   }
+});
+
+test("display source metadata leaves storage stack keys and other source flags intact", async () => {
+  const { item } = createEmbeddedItem({ sourceId: "" });
+  item.flags = { custom: { note: "keep" } };
+  const resolve = () => resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, { fromUuid: async () => item, createRowId: () => "row" });
+  const before = await resolve();
+  item.flags[MODULE_ID] = { itemSourceUuid: "Item.original" };
+  const after = await resolve();
+  assert.equal(before.row.stackKey, after.row.stackKey);
+  assert.equal(after.row.itemData.flags[MODULE_ID].itemSourceUuid, "Item.original");
+  assert.deepEqual(after.row.itemData.flags.custom, { note: "keep" });
+  item.flags.custom.note = "different";
+  assert.notEqual((await resolve()).row.stackKey, before.row.stackKey);
 });
 
 test("Lootgen template Items cannot enter ordinary storage rows", async () => {

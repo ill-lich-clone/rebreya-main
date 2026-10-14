@@ -1,5 +1,5 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
-import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js?v=1.4.376";
+import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js?v=1.4.377";
 
 export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",

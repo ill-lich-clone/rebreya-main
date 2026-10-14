@@ -6,7 +6,7 @@ import {
 import {
   buildTransportFuelSelector,
   normalizeTransportFuelSelector
-} from "./transport-fuel-item.js?v=1.4.376";
+} from "./transport-fuel-item.js?v=1.4.377";
 import { normalizeTransportFuelConsumption } from "./transport-fuel-consumption.js";
 import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
 

@@ -1,5 +1,6 @@
-import { normalizeInventoryMaterialProjection } from "./inventory-material-quantity.js?v=1.4.376";
+import { normalizeInventoryMaterialProjection } from "./inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
+import { stripItemSourceUuidFromFlags } from "./item-source-reference.js?v=1.4.377";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 
 function stackState(row) {
@@ -21,6 +22,7 @@ function stackState(row) {
     delete state.itemData.system.quantity;
     delete state.itemData.system.container;
     if (state.itemData.flags?.[MODULE_ID]) delete state.itemData.flags[MODULE_ID].lootgenChat;
+    state.itemData.flags = stripItemSourceUuidFromFlags(state.itemData.flags ?? {});
   }
   return state;
 }

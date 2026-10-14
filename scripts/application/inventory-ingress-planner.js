@@ -1,4 +1,4 @@
-import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js?v=1.4.376";
+import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js?v=1.4.377";
 
 export const INVENTORY_INGRESS_PLAN_VERSION = 1;
 const versionForRows = rows => rows.some(row => row.identity?.compositionKey) ? 2 : INVENTORY_INGRESS_PLAN_VERSION;

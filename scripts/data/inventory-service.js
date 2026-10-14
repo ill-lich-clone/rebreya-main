@@ -1,14 +1,15 @@
 import { consumeTreatWoundsKitOnce } from "../application/treat-wounds-kit-consumption.js?v=1.4.372";
+import { preserveItemSourceUuid } from "./item-source-reference.js?v=1.4.377";
 import {
   isInventoryMaterialItemData, readInventoryItemQuantity, readInventoryItemUnitWeight,
   readInventoryItemUnitPrice, withInventoryItemQuantity, buildInventoryItemQuantityPatch,
   inventoryMaterialQuantitiesMatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch
-} from "./inventory-material-quantity.js?v=1.4.376";
-import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.376";
-import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.376";
-import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.376";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.376";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.376";
+} from "./inventory-material-quantity.js?v=1.4.377";
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
+import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.377";
+import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.377";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.377";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.377";
 import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
@@ -28,7 +29,7 @@ import {
   normalizeGroupSupplyCoverage,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./group-context-service.js?v=1.4.376";
+} from "./group-context-service.js?v=1.4.377";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
@@ -38,7 +39,7 @@ import {
   getInventoryDismantleBlockReason,
   resolveInventoryDismantleMinimumQuantity,
   resolveInventoryDismantleOutputs
-} from "./inventory-ingress-descriptor.js?v=1.4.376";
+} from "./inventory-ingress-descriptor.js?v=1.4.377";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -52,7 +53,7 @@ import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-
 import {
   buildTransportFuelInventorySnapshot,
   normalizeTransportFuelSelector
-} from "./transport-fuel-item.js?v=1.4.376";
+} from "./transport-fuel-item.js?v=1.4.377";
 import {
   normalizeTransportFuelConsumption,
   resolveTransportFuelConsumption
@@ -1756,8 +1757,8 @@ function clampEnergyCurrent(memberState, actorDocument = null) {
   };
 }
 
-function sanitizeEmbeddedItemData(itemData) {
-  const source = foundry.utils.deepClone(itemData);
+function sanitizeEmbeddedItemData(itemData, { sourceUuid = "" } = {}) {
+  const source = sourceUuid ? preserveItemSourceUuid(itemData, { sourceUuid }) : foundry.utils.deepClone(itemData);
   delete source._id;
   delete source.folder;
   delete source.sort;
@@ -2940,7 +2941,7 @@ export class InventoryService {
     if (isMagicalInventoryItem(sourceData)) {
       throw new Error("Magic items cannot be created as craft outputs.");
     }
-    return foundry.utils.deepClone(sourceData);
+    return preserveItemSourceUuid(sourceData, { sourceUuid: documentUuid });
   }
 
   #buildCraftOutputItemData(sourceData, output, mutationId, outputIndex) {
@@ -5479,7 +5480,7 @@ export class InventoryService {
       sourceId,
       sourceName: item.name,
       acquisitionHistory: readInventoryAcquisitionHistory(itemData),
-      canOpenEntry: sourceType === "material" || sourceType === "gear" || sourceType === "magicItem",
+      canOpenEntry: true,
       isJournalRecord: isJournalRecordItem(item),
       itemTypeLabel,
       materialLabel,
@@ -6414,7 +6415,7 @@ export class InventoryService {
         throw new Error("Магический предмет не найден в компендиуме.");
       }
 
-      const itemData = sanitizeEmbeddedItemData(document.toObject());
+      const itemData = sanitizeEmbeddedItemData(document.toObject(), { sourceUuid: document.uuid });
       setInventoryItemQuantityData(itemData, safeQuantity);
       itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
       itemData.flags[MODULE_ID] = {
@@ -8745,7 +8746,7 @@ export class InventoryService {
       || saved.nativeImportSource.actorUuid !== sourceActor?.uuid || existing.requestedFolderId !== normalizeInventoryFolderTarget(folderId))) {
       throw this.#simpleTransferError("graph-manual-review", "Источник или назначение переноса изменились.");
     }
-    const itemData = saved ? foundry.utils.deepClone(saved.itemData) : sanitizeEmbeddedItemData(itemDocument.toObject());
+    const itemData = saved ? foundry.utils.deepClone(saved.itemData) : sanitizeEmbeddedItemData(itemDocument.toObject(), { sourceUuid: itemDocument.uuid });
     let nativeImportSource = saved?.nativeImportSource ?? null;
     if (sourceActor && !saved) {
       if (itemDocument.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId) throw new Error("Сначала снимите усовершенствование с предмета.");

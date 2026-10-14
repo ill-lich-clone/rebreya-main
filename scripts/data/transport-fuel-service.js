@@ -1,6 +1,6 @@
-import { buildInventoryItemQuantityPatch, isInventoryMaterialItemData } from "./inventory-material-quantity.js?v=1.4.376";
+import { buildInventoryItemQuantityPatch, isInventoryMaterialItemData } from "./inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
-import { buildTransportFuelInventorySnapshot } from "./transport-fuel-item.js?v=1.4.376";
+import { buildTransportFuelInventorySnapshot } from "./transport-fuel-item.js?v=1.4.377";
 import { resolveTransportFuelConsumption } from "./transport-fuel-consumption.js";
 
 const PAYLOAD_KEYS = Object.freeze(["appliedMiles", "groupActorId"]);

@@ -1,13 +1,13 @@
-import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.376";
-import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.376";
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
-import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.376";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.376";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.377";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.377";
 import {
   buildStorageTokenState,
   readStorageCoinDenomination,
   readStorageState
-} from "./storage-service.js?v=1.4.376";
+} from "./storage-service.js?v=1.4.377";
 import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import {
   deriveGroundPilePresentation,

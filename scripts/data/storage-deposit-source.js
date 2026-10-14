@@ -1,21 +1,22 @@
-import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "./inventory-material-quantity.js?v=1.4.376";
-import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.376";
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "./inventory-material-quantity.js?v=1.4.377";
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.376";
+import { preserveItemSourceUuid, stripItemSourceUuidFromFlags } from "./item-source-reference.js?v=1.4.377";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.377";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.376";
+} from "./storage-service.js?v=1.4.377";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
   isStorageJournalRow,
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.317";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.376";
-import { parseStorageDragData } from "../ui/storage-transfer-ui.js?v=1.4.376";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.377";
+import { parseStorageDragData } from "../ui/storage-transfer-ui.js?v=1.4.377";
 import { deriveGroundPilePresentation } from "./storage-pile-presentation.js?v=1.4.370";
 
 function clone(value) {
@@ -98,7 +99,7 @@ function canonicalItemStackKey(item) {
     type: clean(data.type ?? item?.type),
     img: clean(data.img ?? item?.img),
     system: data.system,
-    flags: data.flags ?? {}
+    flags: stripItemSourceUuidFromFlags(data.flags ?? {})
   }));
 }
 
@@ -122,7 +123,7 @@ function itemQuantity(item) {
 }
 
 function buildItemRow(item, available, createRowId) {
-  const data = itemData(item);
+  const data = preserveItemSourceUuid(itemData(item), { sourceUuid: item?.uuid });
   Object.assign(data, withInventoryItemQuantity(data, available));
   const origin = canonicalOrigin(item);
   return {
@@ -475,7 +476,7 @@ async function resolveStorageRowSource(sourceRef, {
     type: clean(row.itemData?.type ?? row.sourceType),
     img: clean(row.img),
     system: { ...(clone(row.itemData?.system) ?? {}), quantity: 1 },
-    flags: clone(row.itemData?.flags) ?? {}
+    flags: stripItemSourceUuidFromFlags(row.itemData?.flags ?? {})
   }));
   depositRow.quantity = available;
   depositRow.itemData ??= {};

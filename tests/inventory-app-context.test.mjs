@@ -3218,7 +3218,7 @@ test("InventoryApp item service menu exposes stock actions without duplicate ope
   const dom = installMinimalDom();
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?item-menu=${Date.now()}`);
   const buttonsBySelector = new Map([
-    ["[data-action='open-compendium-entry']", createFakeElement()],
+    ["[data-action='open-item-source']", createFakeElement()],
     ["[data-action='open-item-sheet']", createFakeElement()],
     ["[data-action='edit-item-quantity']", createFakeElement()],
     ["[data-action='break-item']", createFakeElement()],
@@ -3316,6 +3316,79 @@ test("openInventoryItem opens exact Journal records in the read-only viewer and 
   finally {
     restoreFoundry();
   }
+});
+
+test("generic inventory source clicks render source or permitted fallback once and preserve Journal viewer", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { id: "player" }, packs: new Map() };
+  try {
+    const { openInventoryItemSource } = await import(`../scripts/ui/inventory-app.js?generic-link=${Date.now()}`);
+    assert.equal(typeof openInventoryItemSource, "function");
+    const calls = [];
+    const inventoryItem = { documentName: "Item", uuid: "Actor.group.Item.copy", flags: {}, testUserPermission: () => true, sheet: { render: () => calls.push("fallback") } };
+    const source = { documentName: "Item", uuid: "Item.original", testUserPermission: () => true, sheet: { render: () => calls.push("source") } };
+    const hints = { sourceType: "alchemyProduct", sourceId: "alchemy-7" };
+    const api = { resolveItemSource: async (item, received) => { assert.equal(item, inventoryItem); assert.deepEqual(received, hints); calls.push("resolve"); return source; } };
+    assert.equal(await openInventoryItemSource(inventoryItem, { moduleApi: api, hints }), "sheet");
+    assert.deepEqual(calls, ["resolve", "source"]);
+    for (const resolve of [async () => null, async () => { throw new Error("source failed"); }, async () => ({ ...source, testUserPermission: () => false })]) {
+      calls.length = 0;
+      api.resolveItemSource = resolve;
+      assert.equal(await openInventoryItemSource(inventoryItem, { moduleApi: api }), "sheet");
+      assert.deepEqual(calls, ["fallback"]);
+    }
+    inventoryItem.testUserPermission = () => false;
+    calls.length = 0;
+    api.resolveItemSource = async () => null;
+    assert.equal(await openInventoryItemSource(inventoryItem, { moduleApi: api }), null);
+    assert.deepEqual(calls, []);
+    const journal = { uuid: "Actor.group.Item.journal", flags: { "rebreya-main": { journalRecord: { version: 1, sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" } } } };
+    api.resolveItemSource = () => assert.fail("journal must retain its viewer");
+    api.readJournalRecord = async uuid => { assert.equal(uuid, journal.uuid); return { name: "Notes", pages: [] }; };
+    assert.equal(await openInventoryItemSource(journal, { moduleApi: api, openViewer: async snapshot => calls.push(snapshot.name) }), "journal");
+    assert.deepEqual(calls, ["Notes"]);
+  } finally { globalThis.game = previousGame; restoreFoundry(); }
+});
+
+test("inventory source button reads the captured group without actor creation or render-time search", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const notices = [];
+  globalThis.game = { user: { id: "player" }, packs: new Map() };
+  globalThis.ui = { notifications: { error: value => notices.push(value), warn: value => notices.push(value) } };
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?source-button=${Date.now()}`);
+    const button = createFakeElement({ dataset: { itemId: "copy", sourceType: "custom", sourceId: "copy", sourceName: "Custom" } });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = selector => selector === "[data-action='open-item-source']" ? [button] : [];
+    const calls = [];
+    const item = { documentName: "Item", uuid: "Actor.group-a.Item.copy", flags: {}, testUserPermission: () => true, sheet: { render: () => calls.push("sheet") } };
+    const api = createModuleApi({ calls: [] });
+    const app = new InventoryApp(api);
+    let selectedGroupId = "group-a";
+    Object.defineProperty(app, "inventoryActorId", { get: () => selectedGroupId });
+    app.element = root;
+    api.inventoryService = { getInventoryActor: async options => { calls.push(options); selectedGroupId = "group-b"; return { items: new Map([["copy", item]]) }; } };
+    api.resolveItemSource = async (liveItem, hints) => { assert.equal(liveItem, item); assert.equal(hints.sourceType, "custom"); calls.push("resolve"); return null; };
+    await app._onRender({}, {});
+    assert.deepEqual(calls, []);
+    await dispatchClick(button);
+    assert.deepEqual(calls, [{ create: false, groupActorId: "group-a" }, "resolve", "sheet"]);
+    assert.deepEqual(notices, []);
+    api.inventoryService.getInventoryActor = async options => { assert.equal(options.create, false); return null; };
+    await dispatchClick(button);
+    assert.equal(notices.length, 1);
+  } finally { globalThis.game = previousGame; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+
+test("inventory item source buttons carry live Item identity alongside source hints", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-action="open-item-source"[^>]*data-item-id="\{\{itemId\}\}"/u);
+  assert.doesNotMatch(template, /data-action="open-compendium-entry"/u);
 });
 
 test("InventoryApp item context menu is layered above the highest Foundry window", async () => {

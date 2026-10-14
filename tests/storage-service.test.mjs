@@ -1102,6 +1102,26 @@ test("storage stacks equivalent generated items despite roll identity and quanti
   assert.equal(rows[0].itemData.system.quantity, 3);
 });
 
+test("storage display provenance merges legacy rows and retains existing target source", async () => {
+  for (const targetSource of [null, "Item.original-target"]) {
+    const service = new StorageService();
+    const token = createStorageToken(`source-stack-${targetSource ? "existing" : "legacy"}`);
+    const row = { rowId: "existing", stackKey: "same-source", name: "Стрела", quantity: 3, itemData: { name: "Стрела", type: "consumable", system: { quantity: 3 } } };
+    if (targetSource) row.itemData.flags = { "rebreya-main": { itemSourceUuid: targetSource } };
+    await service.configure(token, { state: "opened", manualRows: [row] });
+    const incoming = structuredClone(row);
+    incoming.rowId = "incoming"; incoming.quantity = 2; incoming.itemData.system.quantity = 2;
+    incoming.itemData.flags = { "rebreya-main": { itemSourceUuid: "Item.incoming-source" } };
+    const result = await service.depositRow(token, incoming);
+    assert.equal(result.merged, true);
+    const rows = readStorageState(token).manualRows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].quantity, 5);
+    assert.equal(rows[0].itemData.system.quantity, 5);
+    assert.equal(rows[0].itemData.flags?.["rebreya-main"]?.itemSourceUuid, targetSource || undefined);
+  }
+});
+
 test("storage deposits preserve distinct durability, charges and upgrades from the same source", async (t) => {
   const original = {
     rowId: "first", stackKey: "gear:sword", sourceId: "sword", name: "Меч", quantity: 1,

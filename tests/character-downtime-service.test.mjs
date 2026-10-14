@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
-import { CharacterDowntimeService } from "../scripts/data/character-downtime-service.js?v=1.4.376";
+import { CharacterDowntimeService } from "../scripts/data/character-downtime-service.js?v=1.4.377";
 
 function createActor({ id = "actor-a", name = "Hero", type = "character" } = {}) {
   return {

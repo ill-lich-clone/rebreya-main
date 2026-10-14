@@ -1,6 +1,7 @@
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.376";
+import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { buildHeldItemWornUpdate } from "../integrations/held-items.js";
+import { collectItemSourceUuids, preserveItemSourceUuid } from "./item-source-reference.js?v=1.4.377";
 const MODULE_ID = "rebreya-main";
 export const RUNTIME_ITEM_GRAPH_FLAG = "runtimeItemGraph";
 const conflict = () => { const error = new Error("Состав предмета изменился или перенесён частично; нужна сверка экземпляров."); error.code = "graph-manual-review"; throw error; };
@@ -15,17 +16,19 @@ const matchesPreparedValue = (actual, expected) => {
 /** Detached transport snapshot of live Documents, not a catalogue rebuild or another world repository. */
 export function captureRuntimeItemGraph(actor, root) {
   const items = Array.from(actor.items.contents ?? actor.items.values());
-  const nodes = [], visited = new Set();
+  const nodes = [], visited = new Set(), sourceUuidsByItemId = {};
   const visit = item => {
     if (!item || visited.has(item.id) || nodes.length >= 200) conflict();
     visited.add(item.id); const data = item.toObject(); nodes.push(data);
+    const [sourceUuid] = collectItemSourceUuids(data);
+    if (sourceUuid) sourceUuidsByItemId[item.id] = sourceUuid;
     const installed = data.flags?.[MODULE_ID]?.itemUpgrades?.installed ?? [];
     const childIds = new Set(installed.map(entry => entry.itemId));
     for (const child of items) if (child.system?.container === item.id) childIds.add(child.id);
     for (const id of childIds) visit(actor.items.get(id));
   };
   visit(root);
-  return { version: 1, rootId: root.id, nodes };
+  return { version: 1, rootId: root.id, nodes, ...(Object.keys(sourceUuidsByItemId).length ? { sourceUuidsByItemId } : {}) };
 }
 
 export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId = null, parentContainerId = null } = {}) {
@@ -34,8 +37,10 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actor
   const ids = new Map(graph.nodes.map(node => [node._id, createStableGearDocumentId(`${operationId}:${node._id}`)]));
   if (ids.size !== graph.nodes.length || graph.nodes.some(node => typeof node._id !== "string" || !node._id)) conflict();
   const documents = graph.nodes.map(node => {
-    const data = clone(node._id === graph.rootId ? rootData ?? node : node);
     const sourceId = node._id;
+    const input = node._id === graph.rootId ? rootData ?? node : node;
+    const sourceUuid = graph.sourceUuidsByItemId?.[sourceId];
+    const data = sourceUuid ? preserveItemSourceUuid(input, { sourceUuid }) : clone(input);
     for (const key of ["_id", "_stats", "folder", "sort", "ownership"]) delete data[key];
     data._id = ids.get(sourceId); data.system ??= {}; data.flags ??= {}; data.flags[MODULE_ID] ??= {};
     // dnd5e assigns a blank identifier during creation and discards fields absent from loot's schema.

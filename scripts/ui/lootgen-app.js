@@ -1,7 +1,7 @@
-import { getLootgenContainerSummary } from "./lootgen-container-preview.js?v=1.4.376";
+import { getLootgenContainerSummary } from "./lootgen-container-preview.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
 import { resolveLootgenItemValue as resolveLegacyItemValue } from "../data/item-value.js?v=1.4.250";
-import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.376";
+import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.377";
 import {
   buildLootgenRowIdentity,
   normalizeBrokenEquipmentChance,

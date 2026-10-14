@@ -1,7 +1,7 @@
-import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "../../data/inventory-material-quantity.js?v=1.4.376";
+import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "../../data/inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../../constants.js";
-import { ItemInstanceError } from "../../data/item-instance-rules.js?v=1.4.376";
-import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.376";
+import { ItemInstanceError } from "../../data/item-instance-rules.js?v=1.4.377";
+import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.377";
 import { createStableGearDocumentId } from "../../data/gear-document-ids.js";
 
 const prefix = `flags.${MODULE_ID}`;

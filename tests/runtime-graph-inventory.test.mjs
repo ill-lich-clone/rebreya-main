@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeInstanceDocumentsFixture } from "./helpers/item-instance-documents-fixture.mjs";
-import { captureRuntimeItemGraph } from "../scripts/data/runtime-item-graph.js";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "../scripts/data/runtime-item-graph.js";
 import { InventoryIngressPlanner } from "../scripts/application/inventory-ingress-planner.js";
 import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
 import { buildInventoryIngressDescriptor } from "../scripts/data/inventory-ingress-descriptor.js";
@@ -23,6 +23,10 @@ test("character import moves an upgraded container into a folder and resumes sou
       compilerCache: new InventoryIngressRuleCompilerCache(), confirm: async () => ({ rootOverrideSourceKeys: [] })
     });
     const bag = f.hero.items.get("bag"), child = f.hero.items.get("inside"), remove = child.delete.bind(child);
+    bag.flags["rebreya-main"] ??= {};
+    bag.flags["rebreya-main"].itemSourceUuid = "Item.original-bag";
+    child.data.name = "Renamed child";
+    child.data._stats = { compendiumSource: "Compendium.thirdparty.items.Item.original-child" };
     child.delete = async () => { await remove(); f.failAt("delete", "before"); };
     const options = { groupActorId: f.group.id, folderId: "bag" };
     await assert.rejects(f.api.inventoryService.importDroppedItem({ uuid: bag.uuid, mutationId: "import-tree" }, options), /fault delete before/);
@@ -31,16 +35,32 @@ test("character import moves an upgraded container into a folder and resumes sou
     await f.api.inventoryService.importDroppedItem({ uuid: bag.uuid }, options);
     assert.equal(f.hero.items.contents.length, 0);
     assert.equal(f.group.items.contents.length, 4);
-    const root = f.group.items.contents.find(i => i.name === "Bag"), upgrade = f.group.items.contents.find(i => i.name === "Upgrade"), inside = f.group.items.contents.find(i => i.name === "Contents");
+    const root = f.group.items.contents.find(i => i.name === "Bag"), upgrade = f.group.items.contents.find(i => i.name === "Upgrade"), inside = f.group.items.contents.find(i => i.name === "Renamed child");
     assert.equal(root.system.currency.gp, 7);
+    assert.equal(root.flags["rebreya-main"].itemSourceUuid, "Item.original-bag");
     assert.equal(root.flags["rebreya-main"].itemUpgrades.installed[0].itemId, upgrade.id);
     assert.equal(upgrade.flags["rebreya-main"].installedUpgrade.hostItemId, root.id);
     assert.equal(upgrade.flags["rebreya-main"].installedUpgrade.hostActorId, f.group.id);
     assert.equal(inside.system.container, root.id);
     assert.equal(inside.system.quantity, 3);
     assert.equal(inside.flags.custom.note, "keep");
+    assert.equal(inside.flags["rebreya-main"].itemSourceUuid, "Compendium.thirdparty.items.Item.original-child");
     assert.equal(f.group.flags["rebreya-main"].inventoryFolders.itemFolderIds[root.id], "bag");
   } finally { f.restore(); }
+});
+
+test("fresh graph provenance keeps source nodes exact and leaves legacy prepared graphs unchanged", () => {
+  const source = { _id: "child", name: "Renamed", type: "loot", system: { quantity: 1 }, _stats: { compendiumSource: "Compendium.thirdparty.items.Item.original" } };
+  const item = { id: source._id, toObject: () => structuredClone(source) };
+  const graph = captureRuntimeItemGraph({ items: { contents: [item], get: () => item } }, item);
+  assert.deepEqual(graph.nodes, [source]);
+  const fresh = buildRuntimeGraphDocuments(graph, "fresh-source-copy").documents[0];
+  assert.equal(fresh.flags["rebreya-main"].itemSourceUuid, source._stats.compendiumSource);
+  assert.equal(fresh._stats, undefined);
+  const legacy = { version: 1, rootId: source._id, nodes: [structuredClone(source)] };
+  const old = buildRuntimeGraphDocuments(legacy, "legacy-prepared-copy").documents[0];
+  assert.equal(old.flags["rebreya-main"].itemSourceUuid, undefined);
+  assert.deepEqual(legacy.nodes, [source]);
 });
 
 test("party take moves a nested upgraded tree once and resumes an interrupted source deletion",async()=>{

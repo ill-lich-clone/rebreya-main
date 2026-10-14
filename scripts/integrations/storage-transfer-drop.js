@@ -4,7 +4,7 @@ import {
   promptStorageCoinQuantity,
   promptStorageGroundPileRotation,
   promptStorageTransferQuantity
-} from "../ui/storage-transfer-ui.js?v=1.4.376";
+} from "../ui/storage-transfer-ui.js?v=1.4.377";
 import { isPortableStorageContainerItem } from "../data/storage-container-snapshot.js?v=1.4.317";
 
 const registeredHookObjects = new WeakSet();

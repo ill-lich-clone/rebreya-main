@@ -1,4 +1,4 @@
-import { readInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.376";
+import { readInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
 import { cleanText, collectionValues, finiteNumber } from "../shared/foundry-values.js";
 

@@ -616,10 +616,36 @@ test("manual inventory item data preserves unit economics and never falls back t
     assert.equal(snapshot.items[0].sourceId, "manual-entry-1");
     assert.equal(snapshot.items[0].itemTypeLabel, "Прочее");
     assert.equal(snapshot.items[0].materialLabel, "Ткань");
+    assert.equal(snapshot.items[0].canOpenEntry, true);
+    assert.equal(snapshot.items[0].quantity, 3);
+    assert.equal(snapshot.items[0].weightEach, 2.5);
+    assert.equal(snapshot.items[0].priceCopper, 400);
   }
   finally {
     fixture.restore();
   }
+});
+
+test("every real inventory Item has a source link regardless of economic type", async () => {
+  const fixture = installInventoryFixture();
+  const model = { materials: [], gear: [], materialById: new Map(), materialByGoodId: new Map(), gearById: new Map() };
+  const types = ["alchemyProduct", "manual", "custom", "futureProduct", "supply", "material", "gear", "magicItem", ""];
+  const items = types.map((sourceType, index) => createItem({ id: `source-${index}`, name: `Source ${index}`, type: "loot", flags: { [MODULE_ID]: { sourceType } }, extra: { system: { quantity: 2, weight: { value: 1, units: "lb" }, price: { value: 3, denomination: "gp" } } } }));
+  const groupActor = createActor({ id: "source-links", name: "Party", type: "group", isOwner: true, items });
+  const service = new InventoryService({ getModel: async () => model, groupContextService: { resolveForCurrentUser: () => ({ groupActor }) } });
+  try {
+    game.actors.contents.push(groupActor);
+    const snapshot = await service.getInventorySnapshot();
+    assert.equal(snapshot.items.length, types.length);
+    for (const row of snapshot.items) {
+      assert.equal(row.canOpenEntry, true, row.sourceType);
+      assert.equal(row.quantity, 2);
+      assert.equal(row.weightEach, 1);
+      assert.equal(row.priceCopper, 300);
+    }
+    assert.equal(snapshot.items.find(row => row.itemId === "source-1").sourceType, "manual");
+    assert.equal(snapshot.items.find(row => row.itemId === "source-2").sourceType, "custom");
+  } finally { fixture.restore(); }
 });
 
 test("inventory add catalog projects canonical model and managed-pack icons without creating documents", async () => {

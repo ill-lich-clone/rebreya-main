@@ -325,6 +325,68 @@ function ingressItemData(sourceId, quantity = 1) {
   };
 }
 
+test("fresh document ingress preserves world and compendium source UUIDs before cleanup", async () => {
+  for (const [uuid, compendiumSource] of [["Item.world-source", null], ["Compendium.thirdparty.items.Item.source", null], ["Item.world-copy", "Compendium.thirdparty.items.Item.original"]]) {
+    const source = createItem({ id: "source", name: "Custom source", quantity: 3 });
+    source.uuid = uuid;
+    const readSource = source.toObject.bind(source);
+    source.toObject = () => ({ ...readSource(), _stats: { compendiumSource }, ownership: { default: 3 } });
+    const before = source.toObject();
+    const group = createActor({ id: "source-link-group", type: "group", managed: true });
+    const created = [];
+    const create = group.createEmbeddedDocuments.bind(group);
+    group.createEmbeddedDocuments = async (type, rows, ...rest) => { created.push(...clone(rows)); return create(type, rows, ...rest); };
+    const f = installFixture({ group, actors: [group], uuidDocuments: new Map([[uuid, source]]) });
+    try {
+      await f.service.importDroppedItem({ uuid, mutationId: "source-link-import" }, { groupActorId: group.id });
+      const target = group.items.contents[0];
+      assert.equal(target.flags[MODULE_ID].itemSourceUuid, compendiumSource || uuid);
+      assert.deepEqual(source.toObject(), before);
+      assert.equal(created[0]._stats, undefined);
+      assert.equal(created[0].ownership, undefined);
+      assert.deepEqual(target.system, source.system);
+      assert.deepEqual(captureInventoryTransferIdentity(target), captureInventoryTransferIdentity(source));
+      assert.equal(target.flags[MODULE_ID].nativeImportSource, undefined);
+    } finally { f.restore(); }
+  }
+});
+
+test("display provenance does not split compatible inventory stacks or rewrite target source", async () => {
+  const data = ingressItemData("shared", 2);
+  data.flags[MODULE_ID].itemSourceUuid = "Item.original-target";
+  const target = createItem({ id: "existing", name: data.name, quantity: 2 });
+  Object.assign(target, clone(data));
+  const group = createActor({ id: "source-merge-group", type: "group", managed: true, items: [target] });
+  const f = installFixture({ group, actors: [group] });
+  try {
+    const incoming = ingressItemData("shared", 3);
+    incoming.flags[MODULE_ID].itemSourceUuid = "Item.incoming-source";
+    const identity = captureInventoryTransferIdentity(incoming);
+    const plain = clone(incoming); delete plain.flags[MODULE_ID].itemSourceUuid;
+    assert.deepEqual(captureInventoryTransferIdentity(plain), identity);
+    const rows = [{ sourceKey: "source-row", quantity: 3, itemData: incoming, legacyFolderId: null, container: null }];
+    const serializedPlan = await serializeIngressPlan(f.planner, group.id, rows);
+    await f.service.commitInventoryIngressBatch({ groupActorId: group.id, batchMutationId: "source-merge", sourceOrigin: "import", serializedPlan }, { resolveRows: async () => clone(rows), debitRow: async () => {} });
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(target.system.quantity, 5);
+    assert.equal(target.flags[MODULE_ID].itemSourceUuid, "Item.original-target");
+  } finally { f.restore(); }
+});
+
+test("persisted ingress ItemData is not retroactively enriched with source metadata", async () => {
+  const group = createActor({ id: "legacy-source-group", type: "group", managed: true });
+  const f = installFixture({ group, actors: [group] });
+  try {
+    const data = ingressItemData("legacy-source", 2);
+    data.flags.core = { sourceId: "Compendium.thirdparty.items.Item.original" };
+    const before = clone(data);
+    const persisted = await f.service.buildLootgenItemData({ sourceType: "gear", sourceId: "legacy-source", quantity: 2, itemData: data }, { allowPersistedItemData: true });
+    assert.equal(persisted.flags[MODULE_ID].itemSourceUuid, undefined);
+    assert.deepEqual(persisted.flags, data.flags);
+    assert.deepEqual(data, before);
+  } finally { f.restore(); }
+});
+
 async function serializeIngressPlan(planner, groupActorId, rows) {
   const preview = await planner.preview({
     groupActorId,
