@@ -6,6 +6,7 @@ import {getItemHeldHands,isItemEquipped} from "./held-items.js?v=1.4.383";
 const states=new WeakMap(),requests=new WeakMap(),viewSelections=new WeakMap(),tabBindings=new WeakMap(),values=collection=>Array.from(collection?.contents??collection?.values?.()??collection??[]);
 const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const labels={top:"Верх","bottom-1":"Низ 1","bottom-2":"Низ 2","side-1":"Сторона 1","side-2":"Сторона 2",barrel:"Ствол"};
+const mountHalfSize=93.5;
 const owner=item=>Boolean(item?.actor??item?.parent) && (globalThis.game?.user?.isGM || item.isOwner===true || (item.actor??item.parent)?.testUserPermission?.(game.user,"OWNER"));
 const errorText=error=>error?.message??"Компонент недоступен.";
 function localize(key,fallback){const value=globalThis.game?.i18n?.localize?.(key);return value && value!==key?value:fallback;}
@@ -82,7 +83,7 @@ export function getWeaponModMountPositions(host){
 export function getWeaponModConnectorPoints(host,mountIds){
  const positions=getWeaponModMountPositions(host),bottom=positions[mountIds.find(id=>id.startsWith("bottom-"))],barrel=mountIds.includes("barrel")&&positions.barrel;
  if(mountIds.length!==2 || !bottom || !barrel)return [];
- const from=[bottom.x*10,bottom.y*6-110],to=[barrel.x*10,barrel.y*6+110],middle=(from[1]+to[1])/2;
+ const from=[bottom.x*10,bottom.y*6-mountHalfSize],to=[barrel.x*10,barrel.y*6+mountHalfSize],middle=(from[1]+to[1])/2;
  return [from,[from[0],middle],[to[0],middle],to];
 }
 export function bindWeaponModSubtabs(root,app,{enabled=true,signal}={}){
@@ -113,19 +114,20 @@ export function createWeaponModPanelHtml(item,projection,blueprint){
   scale=Math.min(bounds.w/blueprint.width,bounds.h/blueprint.height),image={w:blueprint.width*scale,h:blueprint.height*scale};
  image.x=bounds.x+(bounds.w-image.w)/2;image.y=bounds.y+(bounds.h-image.h)/2;
  const arrows=host.mountIds.map(id=>{const p=positions[id],anchor=blueprint.anchors[id],x=image.x+anchor.x*image.w,y=image.y+anchor.y*image.h,
-   dx=x-p.x*10,dy=y-p.y*6,ratio=Math.min(1,110/Math.max(Math.abs(dx),Math.abs(dy)));return `<line x1="${p.x*10+dx*ratio}" y1="${p.y*6+dy*ratio}" x2="${x}" y2="${y}"/>`;}).join(""),
-  links=attachments.map(child=>{const points=getWeaponModConnectorPoints(host,child.mountIds);return points.length?`<path data-wm-link="${escape(child.itemId)}" d="M${points.map(point=>point.join(",")).join(" L")}"/>`:"";}).join(""),
+   dx=x-p.x*10,dy=y-p.y*6,ratio=Math.min(1,mountHalfSize/Math.max(Math.abs(dx),Math.abs(dy)));return `<line x1="${p.x*10+dx*ratio}" y1="${p.y*6+dy*ratio}" x2="${x}" y2="${y}"/>`;}).join(""),
+  links=attachments.map(child=>{const points=getWeaponModConnectorPoints(host,child.mountIds);return points.length?`<path data-wm-link="${escape(child.itemId)}" d="M${points.map(point=>point.join(",")).join(" L")}"/><g class="rm-wm__lock" data-wm-lock="${escape(child.itemId)}" transform="translate(${(points[1][0]+points[2][0])/2},${points[1][1]})"><path d="M-6,-2v-7a6,6 0 0 1 12,0v7"/><rect x="-10" y="-2" width="20" height="17" rx="2"/><path d="M0,4v5"/></g>`:"";}).join(""),
   slots=host.mountIds.map(id=>{
    const p=positions[id],child=attachments.find(child=>child.mountIds.includes(id)),primary=child?.mountIds[0]===id,document=child?.item,
     name=document?.name??child?.sourceId,
-    content=child?`<img src="${escape(document?.img||"icons/svg/item-bag.svg")}" alt="" draggable="false"><span class="rm-wm__name">${escape(name)}</span>${!primary?`<span class="rm-wm__linked" title="Связано: ${escape(name)}" aria-label="Связано">↔</span>`:""}`:'<span class="rm-wm__empty">＋ Пусто</span>';
-   return `<button type="button" class="rm-wm__mount ${child?"is-filled":"is-empty"}" style="left:${p.x}%;top:${p.y}%" data-wm-mount="${id}" ${primary?`data-main-child="${escape(child.itemId)}"`:""} ${child?`data-wm-child="${escape(child.itemId)}" title="${escape(name)}"`:""} aria-label="${escape(labels[id]+(child?": "+name:": выбрать обвес"))}">${content}<strong>${labels[id]}</strong></button>`;
+    content=child?`<img src="${escape(document?.img||"icons/svg/item-bag.svg")}" alt="" draggable="false">`:'<span class="rm-wm__empty" aria-hidden="true">＋</span>',
+    caption=`<span class="rm-wm__caption" aria-hidden="true"><strong>${labels[id]}</strong>${child?`<span class="rm-wm__name">${escape(name)}${!primary?'<span class="rm-wm__linked" aria-label="Связано"> ↔</span>':""}</span>`:""}</span>`;
+   return `<button type="button" class="rm-wm__mount ${child?"is-filled":"is-empty"}" style="left:${p.x}%;top:${p.y}%" data-wm-mount="${id}" ${primary?`data-main-child="${escape(child.itemId)}"`:""} ${child?`data-wm-child="${escape(child.itemId)}"`:""} aria-label="${escape(labels[id]+(child?": "+name:": выбрать обвес"))}">${content}${caption}</button>`;
   }).join(""),
   counted=modernizedParts.filter(part=>part.profile?.countsTowardLimit!==false).length,
   parts=modernizedParts.map(part=>`<button type="button" class="rm-wm__part" data-wm-open="${escape(part.itemId)}">${escape(part.item?.name??part.sourceId)}${part.profile?.countsTowardLimit===false?" · вне лимита":""}</button>`).join(""),
   legacy=diagnostics.map(row=>`<li>${escape(row.reason??"Связь компонента требует сверки мастера.")}${row.itemId?` <button type="button" data-wm-legacy="${escape(row.itemId)}">Открыть / снять старый обвес</button>`:""}</li>`).join("");
  return `<section class="rm-wm" data-weapon-mod-panel data-host-id="${escape(item.id)}">
- <fieldset class="rm-wm__diagram"><legend>${escape(localize("REBREYA.WeaponMods.Title","Оружейные обвесы"))}</legend><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__arrows">${arrows}${links}</svg><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__art"><image href="${escape(blueprint.img)}" x="${image.x}" y="${image.y}" width="${image.w}" height="${image.h}"/></svg>${slots}</fieldset>
+ <fieldset class="rm-wm__diagram"><legend>${escape(localize("REBREYA.WeaponMods.Title","Оружейные обвесы"))}</legend><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__arrows">${arrows}</svg><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__art"><image href="${escape(blueprint.img)}" x="${image.x}" y="${image.y}" width="${image.w}" height="${image.h}"/></svg><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__connections">${links}</svg>${slots}</fieldset>
  <p class="rm-wm__activation">Установка — бонусное действие · снятие — действие</p>
  ${host.family!=="crossbow"?`<div class="rm-wm__modern"><header><strong>Модернизированные части · ${counted}/3</strong><button type="button" data-wm-modern>${escape(localize("REBREYA.WeaponMods.Rebuild","Пересборка · 500 зм"))}</button></header><div class="rm-wm__parts">${parts||"Части не установлены"}</div></div>`:""}
  ${host.quantity!==1?'<p role="status">Для установки разделите оружие на отдельные экземпляры.</p>':""}${legacy?`<ul class="rm-wm__diagnostics">${legacy}</ul>`:""}

@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isInstalledWeaponMod } from "../data/weapon-mod-rules.js?v=1.4.389";
-import {bindWeaponModPanel,installWeaponModWithChoices} from "./weapon-mod-panel.js?v=1.4.390";
+import {bindWeaponModPanel,installWeaponModWithChoices} from "./weapon-mod-panel.js?v=1.4.391";
 import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.4.389";
 import {
   getInstalledActorUpgradeItemIds,

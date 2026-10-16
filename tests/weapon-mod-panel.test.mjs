@@ -61,7 +61,7 @@ test("drag preview highlights only compatible mounts for a real owned available 
 test("filled mount cards fit the diagram at narrow and wide sheet sizes without overlapping",()=>{
  const layout=required(module,"getWeaponModMountPositions"),catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog);
  for(const width of [400,788]){
-  const height=width*.6,rects=Object.values(layout(host)).map(point=>({left:width*(point.x/100-.11),right:width*(point.x/100+.11),top:height*point.y/100-width*.11,bottom:height*point.y/100+width*.11}));
+  const height=width*.6,rects=Object.values(layout(host)).map(point=>({left:width*(point.x/100-.0935),right:width*(point.x/100+.0935),top:height*point.y/100-width*.0935,bottom:height*point.y/100+width*.0935}));
   for(const rect of rects){assert.ok(rect.left>=0);assert.ok(rect.right<=width);assert.ok(rect.top>=0);assert.ok(rect.bottom<=height);}
   for(let i=0;i<rects.length;i++)for(let j=i+1;j<rects.length;j++){const a=rects[i],b=rects[j];assert.ok(a.right<=b.left || b.right<=a.left || a.bottom<=b.top || b.bottom<=a.top);}
  }
@@ -69,8 +69,8 @@ test("filled mount cards fit the diagram at narrow and wide sheet sizes without 
 test("a two-mount child uses one clear orthogonal link between card edges without crossing another mount",()=>{
  const host=getHost(makeItem("vintovka"),makeCatalog()),positions=required(module,"getWeaponModMountPositions")(host),
   points=required(module,"getWeaponModConnectorPoints")(host,["bottom-1","barrel"]),rect=id=>({x:positions[id].x*10,y:positions[id].y*6});
- assert.equal(points.length,4);assert.deepEqual(points[0],[rect("bottom-1").x,rect("bottom-1").y-110]);
- assert.deepEqual(points.at(-1),[rect("barrel").x,rect("barrel").y+110]);
+ assert.equal(points.length,4);assert.deepEqual(points[0],[rect("bottom-1").x,rect("bottom-1").y-93.5]);
+ assert.deepEqual(points.at(-1),[rect("barrel").x,rect("barrel").y+93.5]);
  for(let i=1;i<points.length;i++)assert.ok(points[i][0]===points[i-1][0] || points[i][1]===points[i-1][1]);
  assert.ok(points[1][1]<rect("bottom-2").y-110);assert.ok(points[1][1]>rect("barrel").y+110);
 });
@@ -85,6 +85,19 @@ test("mods template adds two local sub-tabs and filled tiles retain full images 
  assert.match(html,/<fieldset[^>]*rm-wm__diagram/);assert.match(html,/<legend[^>]*>Оружейные обвесы/);
  assert.equal((html.match(/src="bayonet.png"/g)??[]).length,2);assert.equal((html.match(/data-main-child="child"/g)??[]).length,1);
  assert.match(html,/data-wm-link="child"/);assert.equal(html.includes("Одна часть за пересборку"),false);
+});
+test("mount captions show mount and item above the uncovered image only on hover or keyboard focus, with one centered link lock",async()=>{
+ const host=getHost(makeItem("vintovka"),makeCatalog()),blueprint={img:"weapon.png",width:1000,height:400,anchors:Object.fromEntries(host.mountIds.map(id=>[id,{x:.5,y:.5}]))},
+  html=required(module,"createWeaponModPanelHtml")({id:"host"},{host,attachments:[{itemId:"child",sourceId:"shtyk",mountIds:["bottom-1","barrel"],item:{name:"Штык",img:"bayonet.png"}}]},blueprint),
+  mounts=html.match(/<button[^>]*data-wm-mount[\s\S]*?<\/button>/g),css=await readFile(new URL("../styles/main.css",import.meta.url),"utf8");
+ assert.equal(mounts.length,6);for(const mount of mounts){assert.match(mount,/<span class="rm-wm__caption"[^>]*><strong>/);assert.doesNotMatch(mount,/\btitle=/);}
+ assert.match(mounts.find(mount=>mount.includes('data-wm-mount="bottom-1"')),/rm-wm__caption[^>]*><strong>Низ 1<\/strong><span class="rm-wm__name">Штык/);
+ assert.equal((html.match(/data-wm-lock="child"/g)??[]).length,1);assert.match(html,/data-wm-lock="child" transform="translate\(640,369\)"/);
+ assert.match(css,/\.rm-wm \.rm-wm__mount\{[^}]*width:18\.7%[^}]*overflow:visible/);
+ assert.match(css,/\.rm-wm__caption\{[^}]*bottom:calc\(100% \+ 5px\)[^}]*background:transparent[^}]*visibility:hidden/);
+ assert.match(css,/\.rm-wm__mount:is\(:hover,:focus-visible\)[^}]*\.rm-wm__caption\{visibility:visible/);
+ assert.match(css,/\[data-wm-mount\^="side-"\]>\.rm-wm__caption\{left:0;transform:none/);
+ assert.match(css,/\[data-wm-mount="barrel"\]>\.rm-wm__caption\{left:auto;right:0;transform:none/);
 });
 test("local sub-tab choice survives sheet rerender and ordinary-only sheets keep enhancements visible",()=>{
  const app={},makeRoot=()=>{
