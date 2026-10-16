@@ -4,16 +4,16 @@ import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.4.292";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js?v=1.4.383";
-import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.378";
+import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.385";
 import { getWeaponModHostDescriptor, getWeaponModEffectiveHost, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.383";
-import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.379";
+import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.377";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.381";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.4.383";
-import { resolveWeaponModActivity } from "./weapon-mod-activities.js?v=1.4.384";
+import { resolveWeaponModActivity, getWeaponModGrenadeCandidate, buildWeaponModGrenadeActivity, reconcileWeaponModActivities } from "./weapon-mod-activities.js?v=1.4.385";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";
@@ -283,6 +283,7 @@ export class ItemUpgradeService {
     this.moduleApi = moduleApi;
     this.getManifest = getManifest;
     this.getWeaponModCatalog = getWeaponModCatalog;
+    this.resolveWeaponModGrenadeRule = context => this.moduleApi.combatAttackService.promptWeaponModGrenadeRule(context);
   }
 
   async getWeaponModsProjection(item) {
@@ -308,18 +309,112 @@ export class ItemUpgradeService {
     };
     guard();
     const intent={...payload,mode:"weapon-mod-activity",sourceActorUuid:payload.actorUuid,destinationActorUuid:payload.actorUuid};
-    const workflow=new ItemInstanceWorkflow({documents:new ItemInstanceDocuments(),journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.inventoryService.mutationCoordinator});
+    const documents=new ItemInstanceDocuments(),workflow=new ItemInstanceWorkflow({documents,journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.inventoryService.mutationCoordinator});
     const result=await workflow.runBatch(intent,{sender,assertAuthority:guard,authorize:({sourceActor:actor})=>{
       if(!(sender?.id && (sender.isGM || actor.testUserPermission?.(sender,"OWNER"))))throw new Error("Недостаточно прав на оружие.");
-    },prepareBatch:async({sourceActor:actor})=>{
+    },prepareBatch:async(actors,operation)=>{
+      const actor=actors.sourceActor;
       const host=actor.items.get(payload.hostItemId),catalog=await this.getWeaponModCatalog();
       if(!host || Number(host.system.quantity)!==1)throw new Error("Оружие больше недоступно.");
-      const mods=readWeaponMods(host,id=>actor.items.get(id),catalog),definition=resolveWeaponModActivity(host,mods,payload);
-      const plan=await this.moduleApi.combatAttackService.planWeaponModActivity({actor,host,definition,decision:payload.decision});
-      return {steps:[{intent,plan:{kind:"placement",preserveSourceId:true},placement:plan.placement}],value:plan.value};
+      const mods=readWeaponMods(host,id=>actor.items.get(id),catalog),definition=resolveWeaponModActivity(host,mods,payload,{sources:catalog.gearById});
+      let prepared;
+      if(["launcher-fire","launcher-shot"].includes(definition.marker.action))prepared=await this.#prepareWeaponModLauncherShot({actor,host,definition,payload,intent,operation,catalog,sender});
+      else if(definition.marker.action==="launcher-load")prepared=await this.#prepareWeaponModLauncherLoad({actor,actors,host,definition,payload,intent,operation,documents,catalog});
+      else {
+        const plan=await this.moduleApi.combatAttackService.planWeaponModActivity({actor,host,definition,decision:payload.decision,sender});
+        prepared={steps:[{intent,plan:{kind:"placement",preserveSourceId:true},placement:plan.placement}],value:plan.value};
+      }
+      return {...prepared,value:{...prepared.value,hostName:host.name,componentName:definition.mod.item.name,
+        activation:structuredClone(host.system.activities.get?.(payload.activityId)?.activation??host.system.activities[payload.activityId]?.activation)}};
     }});
+    if(!result.shot)await this.#publishWeaponModAction(intent,result,sender,guard);
+    if(result.shot?.phase==="published")await this.#cleanupWeaponModGrenade(payload.actorUuid,result.shot,guard);
     await this.moduleApi.itemUpgradeAutomationService?.requestSync?.(payload.actorUuid);
     return result;
+  }
+
+  async #prepareWeaponModLauncherShot({actor,host,definition,payload,intent,operation,catalog,sender}){
+    const decision=payload.decision,path=`flags.${MODULE_ID}.weaponModShot`,before=weaponModFlag(host,"weaponModShot")??null,
+      placement=[],launcher=definition.mod.item,options={sources:catalog.gearById,allowedSourceIds:definition.effect.grenadeSourceIds};
+    let shot,grenadeSource;
+    if(definition.marker.action==="launcher-fire" && decision?.kind==="launcher-prepare"){
+      if(before?.phase==="consumed")throw new Error("Сначала восстановите карточку предыдущего выстрела.");
+      const grenade=actor.items.get(decision.grenadeItemId),candidate=getWeaponModGrenadeCandidate(grenade,options);
+      if(!candidate.available || candidate.quantity!==1 || grenade.system.container!==launcher.id)throw new Error("Выберите одну загруженную гранату.");
+      const source=catalog.gearById.get(candidate.sourceId),rule=await this.resolveWeaponModGrenadeRule({actor,host,launcher,source});
+      if(!rule){const error=new Error("Выстрел отменён мастером; граната не израсходована.");error.code="weapon-mod-cancelled";throw error;}
+      const data=buildWeaponModGrenadeActivity(definition.marker,source,rule),raw=host.toObject().system.activities,
+        current=raw instanceof Map?[...raw.values()]:Object.values(raw??{}),matched=current.find(entry=>entry._id===data._id),
+        reconciled=reconcileWeaponModActivities(matched?[matched]:[],[data]);
+      if(reconciled.diagnostics.length)throw new Error("Сохранена авторская формула гранаты; нужна сверка мастера.");
+      const activities={...Object.fromEntries(current.map(entry=>[entry._id,entry])),[data._id]:reconciled.activities[0]},profilesPath=`flags.${MODULE_ID}.weaponModGrenadeActivities`,profiles=weaponModFlag(host,"weaponModGrenadeActivities")??[],
+        profile={childItemId:launcher.id,projectileSourceId:source.id,profileSignature:profileSignature(source.explosive),rule,approvedByUserId:globalThis.game.user.id,approvalReceiptId:operation.id};
+      shot={phase:"prepared",actorUuid:actor.uuid,hostItemId:host.id,childItemId:launcher.id,grenadeItemId:grenade.id,projectileSourceId:source.id,
+        profileSignature:profile.profileSignature,rule,approvedByUserId:profile.approvedByUserId,approvalReceiptId:operation.id,ownerUserId:sender.id,
+        prepareOperationId:payload.operationId,activityId:data._id,cardId:createStableGearDocumentId(`weapon-mod-shot:${actor.uuid}:${sender.id}:${payload.operationId}`)};
+      grenadeSource=grenade.toObject();
+      placement.push({actor:"source",itemId:host.id,before:{"system.activities":raw,[profilesPath]:profiles.length?profiles:null},
+        after:{"system.activities":activities,[profilesPath]:[...profiles.filter(entry=>!(entry.childItemId===profile.childItemId && entry.projectileSourceId===profile.projectileSourceId && profileSignature(entry.rule)===profileSignature(rule))),profile]}});
+    }else{
+      if(!before || before.actorUuid!==actor.uuid || before.hostItemId!==host.id || before.childItemId!==launcher.id || before.ownerUserId!==sender.id
+        || before.activityId!==payload.activityId || before.prepareOperationId!==decision?.prepareOperationId)throw new Error("Подготовленный выстрел изменился.");
+      const approval=await this.moduleApi.inventoryService.mutationJournal.find(before.approvalReceiptId);
+      if(!approval?.terminal || !approval.result?.ok || profileSignature(approval.result.value.shot)!==profileSignature({...before,phase:"prepared"}))throw new Error("Нет подтверждённого решения мастера для этого выстрела.");
+      if(decision.kind==="launcher-consume"){
+        if(before.phase!=="prepared" || before.grenadeItemId!==decision.grenadeItemId)throw new Error("Граната этого выстрела уже израсходована.");
+        const grenade=actor.items.get(before.grenadeItemId),candidate=getWeaponModGrenadeCandidate(grenade,options);
+        if(!candidate.available || candidate.quantity!==1 || grenade.system.container!==launcher.id || candidate.sourceId!==before.projectileSourceId
+          || profileSignature(candidate.profile)!==before.profileSignature)throw new Error("Загруженная граната изменилась.");
+        const raw=grenade.toObject(),after=deepClone(raw);
+        if(this.#weaponModGrenadeSignature(raw)!==this.#weaponModGrenadeSignature(approval.result.value.grenadeSource))throw new Error("Экземпляр гранаты изменён после подготовки выстрела.");
+        shot={...before,phase:"consumed"};
+        after.system.quantity=0;after.system.container=null;after.flags[MODULE_ID].weaponModSpent={prepareOperationId:shot.prepareOperationId,cardId:shot.cardId,sourceId:shot.projectileSourceId};
+        const fields=data=>Object.fromEntries(["name","type","img","system","effects","flags","sort","folder"].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]));
+        placement.push({actor:"source",itemId:grenade.id,before:fields(raw),after:fields(after)});
+      }else if(decision.kind==="launcher-ack"){
+        const card=globalThis.game.messages?.get?.(decision.cardId),record=card?.getFlag?.(MODULE_ID,"weaponModShot")??card?.flags?.[MODULE_ID]?.weaponModShot;
+        if(before.phase!=="consumed" || decision.cardId!==before.cardId || profileSignature(record)!==profileSignature(before))throw new Error("Не подтверждена нативная карточка этого выстрела.");
+        shot={...before,phase:"published"};
+      }else throw new Error("Неизвестное действие гранатомёта.");
+    }
+    placement.push({actor:"source",itemId:host.id,before:{[path]:before},after:{[path]:shot}});
+    return {steps:[{intent,plan:{kind:"placement",preserveSourceId:true},placement}],value:{hostItemId:host.id,childItemId:launcher.id,action:decision.kind,shot,...(grenadeSource?{grenadeSource}:{})}};
+  }
+
+  #weaponModGrenadeSignature(data){
+    const source=deepClone(data);if(!source)return null;
+    delete source._stats;if(source.folder==null)delete source.folder;if(!source.system?.container)delete source.system.container;
+    return profileSignature(source);
+  }
+
+  async #cleanupWeaponModGrenade(actorUuid,shot,guard){
+    guard();const actor=await globalThis.fromUuid(actorUuid),grenade=actor?.items.get(shot.grenadeItemId);
+    if(!grenade)return;
+    const expected={prepareOperationId:shot.prepareOperationId,cardId:shot.cardId,sourceId:shot.projectileSourceId};
+    const approval=await this.moduleApi.inventoryService.mutationJournal.find(shot.approvalReceiptId),snapshot=deepClone(approval?.result?.value?.grenadeSource);
+    if(!snapshot)throw new Error("Нет исходного экземпляра гранаты для сверки.");
+    snapshot.system.quantity=0;snapshot.system.container=null;snapshot.flags[MODULE_ID].weaponModSpent=expected;
+    if(Number(grenade.system.quantity)!==0 || grenade.system.container || weaponModFlag(grenade,"gearId")!==shot.projectileSourceId
+      || this.#weaponModGrenadeSignature(grenade.toObject())!==this.#weaponModGrenadeSignature(snapshot))throw new Error("Израсходованная граната изменена; требуется сверка мастера.");
+    guard();try{await grenade.delete();}catch(error){guard();if(actor.items.get(shot.grenadeItemId))throw error;}guard();
+  }
+
+  async #prepareWeaponModLauncherLoad({actor,actors,host,definition,payload,intent,operation,documents,catalog}){
+    const grenade=payload.decision?.kind==="launcher-load"?actor.items.get(payload.decision.grenadeItemId):null,launcher=definition.mod.item,
+      options={sources:catalog.gearById,allowedSourceIds:definition.effect.grenadeSourceIds},candidate=getWeaponModGrenadeCandidate(grenade,options),items=getActorItems(actor);
+    if(!grenade || !candidate.available || !Number.isSafeInteger(candidate.quantity) || candidate.quantity<1
+      || weaponModFlag(grenade,"installedWeaponMod") || weaponModFlag(grenade,INSTALLED_UPGRADE_FLAG)
+      || weaponModFlag(actor.items.get(grenade.system.container),"installedWeaponMod")
+      || grenade.system.container===launcher.id || items.some(item=>item.system?.container===grenade.id))throw new Error(candidate.reason||"Выберите доступную гранату в инвентаре владельца.");
+    const loaded=items.filter(item=>item.system?.container===launcher.id);
+    if(loaded.some(item=>!getWeaponModGrenadeCandidate(item,options).available || !Number.isSafeInteger(Number(item.system.quantity)) || Number(item.system.quantity)<1))throw new Error("Содержимое гранатомёта требует проверки мастера.");
+    const count=loaded.reduce((sum,item)=>sum+Number(item.system.quantity),0);
+    if(count>=definition.effect.capacity)throw new Error("Гранатомёт вмещает до 6 гранат.");
+    const childIntent={...intent,sourceItemId:grenade.id,quantity:1,targetFolderId:null,heroSlotId:null,expectedSourceQuantity:null},source=await documents.readSource(childIntent,actors),
+      plan=planItemInstanceMutation({source,quantity:1,sameActor:true,sameFolder:false,forHeroSlot:false}),prepared=await documents.prepare(childIntent,plan,source,{
+        preparePlacement:({itemId})=>[{actor:"source",itemId,before:{"system.container":grenade.system.container??null},after:{"system.container":launcher.id}}]
+      },operation);
+    return {steps:[{...prepared,intent:childIntent,plan}],value:{hostItemId:host.id,childItemId:launcher.id,grenadeItemId:prepared.itemId,loaded:count+1,action:"launcher-load"}};
   }
 
   async approveWeaponModernization(payload,{sender=globalThis.game?.user,assertAuthority=null}={}){
@@ -429,15 +524,17 @@ export class ItemUpgradeService {
         return {steps,value:{itemId,sourceRemaining,changed:true,hostName:current.name,componentName:component.name}};
       }});
     await this.#publishWeaponModAction(intent,result,sender,guard);
+    await this.moduleApi.itemUpgradeAutomationService?.requestSync?.(actor);
     return result;
   }
 
   async #publishWeaponModAction(intent,result,sender,guard){
     const id=createStableGearDocumentId(`weapon-mod-card:${sender.id}:${intent.mode}:${intent.operationId}`),existing=()=>globalThis.game?.messages?.get?.(id);
     if(existing())return;
-    const modernize=intent.mode==="weapon-mod-modernize",activation={type:modernize?"special":intent.mode==="weapon-mod-install"?"bonus":"action",value:modernize?0:1};
+    const modernize=intent.mode==="weapon-mod-modernize",utility=intent.mode==="weapon-mod-activity",activation=utility?result.activation:{type:modernize?"special":intent.mode==="weapon-mod-install"?"bonus":"action",value:modernize?0:1};
+    const labels={aim:"прицеливание","stop-aim":"прицеливание прекращено","flashlight-toggle":result.enabled?"фонарик включён":"фонарик выключен","launcher-load":"заряжена одна граната"};
     const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
-    const data={_id:id,speaker:{actor:intent.sourceActorUuid.split(".").at(-1)},content:`<p>${escape(result.hostName)}: ${escape(result.componentName)} — ${modernize?"пересборка, списано 500 зм":activation.type==="bonus"?"установка, бонусное действие":"снятие, действие"}.</p>`,
+    const data={_id:id,speaker:{actor:intent.sourceActorUuid.split(".").at(-1)},content:`<p>${escape(result.hostName)}: ${escape(result.componentName)} — ${utility?escape(labels[result.action]??result.action):modernize?"пересборка, списано 500 зм":activation.type==="bonus"?"установка, бонусное действие":"снятие, действие"}.</p>`,
       flags:{[MODULE_ID]:{weaponModAction:{operationId:intent.operationId,activation,...(modernize?{costCp:50000}:{}),hostItemId:intent.hostItemId,componentItemId:result.itemId}}}};
     guard();
     try{await globalThis.ChatMessage.create(data,{keepId:true});}catch(error){guard();if(!existing())throw error;}

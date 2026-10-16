@@ -10,7 +10,7 @@
   {"sourceId":"obrezka-stvola","requires":[],"effects":[{"kind":"saw-off","form":"short","removeProperty":"two","dieSteps":-1},{"kind":"range-add","normal":-10,"long":-10}]},
   {"sourceId":"opticheskiy-pritsel","requires":[],"effects":[{"kind":"aim","mode":"scope","maximumMovedFeet":0,"ignoreHalfCover":true,"rangeMultiplier":2}]},
   {"sourceId":"pistoletnaya-rukoyat","requires":[],"effects":[{"kind":"attack-bonus","value":1}]},
-  {"sourceId":"podstvol-nyy-granatomet","requires":["firearm"],"effects":[{"kind":"grenade-launcher","capacity":6,"rangeFeet":90,"loadActivation":"action"}]},
+  {"sourceId":"podstvol-nyy-granatomet","requires":["firearm"],"effects":[{"kind":"grenade-launcher","capacity":6,"rangeFeet":90,"loadActivation":"action","grenadeSourceIds":["granata-bumerang","malaya-oskolochnaya-granata","oskolochnaya-granat","ottalkivayushchaya-granata","svetoshumovaya-granata","takticheskaya-oskolochnaya-granata","tsepnaya-granata","velikaya-oskolochnaya-granata"]}]},
   {"sourceId":"podvodnyy-klapan","requires":["firearm"],"effects":[{"kind":"underwater","rangeMultiplier":0.5}]},
   {"sourceId":"priklad","requires":[],"effects":[{"kind":"attack-bonus","value":1,"conditions":["not-prone"]}]},
   {"sourceId":"rasshirennaya-oboyma","requires":[],"excludes":["giganskaya-oboyma"],"effects":[{"kind":"magazine","multiplier":1.5}]},

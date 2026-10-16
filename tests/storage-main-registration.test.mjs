@@ -148,21 +148,21 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.377",
     "data/storage-ground-pile-service.js?v=1.4.377",
-    "data/storage-container-item-service.js?v=1.4.379",
-    "data/storage-deposit-source.js?v=1.4.377",
-    "data/storage-command-service.js?v=1.4.377",
+    "data/storage-container-item-service.js?v=1.4.385",
+    "data/storage-deposit-source.js?v=1.4.385",
+    "data/storage-command-service.js?v=1.4.385",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.377",
-    "combat/hooks.js?v=1.4.384",
+    "combat/hooks.js?v=1.4.385",
     "integrations/storage-transfer-drop.js?v=1.4.377",
-    "integrations/storage-token-drop.js?v=1.4.377",
+    "integrations/storage-token-drop.js?v=1.4.385",
     "integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
   for (const importPath of [
     "storage-service.js?v=1.4.377",
-    "storage-deposit-source.js?v=1.4.377",
+    "storage-deposit-source.js?v=1.4.385",
     "storage-access.js?v=1.4.197-door-trigger-target"
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);

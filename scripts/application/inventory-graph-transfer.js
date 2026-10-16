@@ -1,4 +1,4 @@
-import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.4.379";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.4.385";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";
 
 export const INVENTORY_GRAPH_TRANSFER_KIND = "inventory-graph-transfer-v1";

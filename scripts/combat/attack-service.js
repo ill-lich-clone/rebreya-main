@@ -1,6 +1,7 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
-import { getWeaponModAmmoConfiguration } from "../data/weapon-mod-rules.js?v=1.4.383";
+import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.383";
+import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.4.385";
 import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.384";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { measureStorageTokenDistance } from "../data/storage-access.js";
@@ -903,6 +904,7 @@ export class CombatAttackService {
     this._reactionTriggerSequence = 0;
     this._reactionTriggerContexts = new Map();
     this._weaponModDeferred = new WeakSet();
+    this._weaponModUtilityRequests=new Map();
   }
 
   getWeaponModAttackConditions(activity,target,config={}) {
@@ -910,7 +912,7 @@ export class CombatAttackService {
     const contributions=this.moduleApi.itemUpgradeAutomationService?.project?.(actor,host)?.contributions??[];
     const aim=getWeaponModAimState(host,combat,contributions),movement=actor?.getFlag?.(MODULE_ID,"weaponModMovement")??actor?.flags?.[MODULE_ID]?.weaponModMovement;
     const movingNow=Boolean(combat && combat.combatant?.actor?.uuid===actor?.uuid && movement?.combatId===combat.id && movement.round===combat.round && movement.turn===combat.turn);
-    const nativeProficiency=host?.system?.prof?.hasProficiency,legacyProficiency=host?.system?.proficient;
+    const nativeProficiency=this.moduleApi.itemUpgradeAutomationService?.getWeaponModActivityProficiency?.(activity)??host?.system?.prof?.hasProficiency,legacyProficiency=host?.system?.proficient;
     const targetUuid=target?.document?.uuid??target?.uuid??null,visibility=config.workflow?.targetVisibility?.get?.(targetUuid);
     const water=actor?.getFlag?.(MODULE_ID,"underwater")??actor?.flags?.[MODULE_ID]?.underwater??globalThis.canvas?.scene?.getFlag?.(MODULE_ID,"underwater");
     const known={movedFeet:movingNow && Number.isFinite(movement.feet)?movement.feet:aim?.movedFeet??null,
@@ -919,6 +921,96 @@ export class CombatAttackService {
       underwater:actor?.statuses?.has?.("underwater")?true:typeof water==="boolean"?water:null,aimMode:aim?.mode??null};
     const decision=config.rebreyaWeaponModDecisions?.find(entry=>entry.targetUuid===targetUuid);
     return decision?resolveWeaponModConditions(known,decision,{targetUuid,attackMessageId:config.rebreyaWeaponModAttackMessageId??null}):known;
+  }
+
+  getManagedWeaponModActivityDefinition(activity){
+    const marker=activity?.flags?.[MODULE_ID]?.weaponModActivity??activity?.getFlag?.(MODULE_ID,"weaponModActivity");
+    if(!marker)return null;
+    const actor=activity?.actor??activity?.item?.actor??activity?.item?.parent,host=actor?.items?.get?.(activity?.item?.id),catalog=this.moduleApi.itemUpgradeAutomationService?.weaponModCatalog;
+    if(!host || !catalog)throw new Error("Действие обвеса больше недоступно.");
+    const mods=readWeaponMods(host,id=>actor.items.get(id),catalog),definition=resolveWeaponModActivity(host,mods,{childItemId:marker.childItemId,activityId:activity.id??activity._id},{sources:catalog.gearById});
+    if(weaponModProfileSignature(marker)!==weaponModProfileSignature(definition.marker))throw new Error("Связь действия обвеса изменилась.");
+    return {...definition,host,actor};
+  }
+
+  async promptWeaponModChoice(title,entries){
+    if(entries.length===1)return entries[0].id;
+    if(!entries.length)throw new Error("Нет подходящих доступных экземпляров.");
+    const dialog=globalThis.foundry?.applications?.api?.DialogV2;
+    if(!dialog?.wait)throw new Error("Выберите экземпляр: окно выбора недоступно.");
+    const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+    const result=await dialog.wait({window:{title},content:`<label>Экземпляр <select name="choice">${entries.map(entry=>`<option value="${escape(entry.id)}">${escape(entry.name)}</option>`).join("")}</select></label>`,
+      buttons:[{action:"apply",label:"Выбрать",default:true,callback:(_event,button)=>button.form.elements.namedItem("choice").value},{action:"cancel",label:"Отмена",callback:()=>false}],close:()=>false});
+    return typeof result==="string" && entries.some(entry=>entry.id===result)?result:null;
+  }
+
+  async promptWeaponModGrenadeRule({source}){
+    if(!globalThis.game.user?.isGM)throw new Error("Недостающие правила гранаты подтверждает активный мастер.");
+    const dialog=globalThis.foundry?.applications?.api?.DialogV2;
+    if(!dialog?.wait)throw new Error("Окно решения мастера недоступно; граната не израсходована.");
+    const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char])),profile=source.explosive;
+    return dialog.wait({window:{title:`Гранатомёт: ${source.name}`},content:`<p>Сл ${profile.saveDc}, радиус ${profile.radius} фт. ${escape(profile.propertiesText)} Задержка: ${escape(profile.delay)}.</p>
+      <label>Спасбросок ${profile.saveAbility?escape(profile.saveAbility):'<select name="ability"><option value="">Выберите</option>'+["str","dex","con","int","wis","cha"].map(value=>`<option value="${value}">${value.toUpperCase()}</option>`).join("")+'</select>'}</label>
+      <label>Урон при успехе <select name="onSave"><option value="">Выберите</option><option value="none">Нет урона</option><option value="half">Половина</option><option value="full">Полный</option></select></label>
+      <label><input type="checkbox" name="manual"> Особые свойства, задержку и выбор целей разрешаю вручную по описанию гранаты.</label>`,
+      buttons:[{action:"apply",label:"Подготовить",default:true,callback:(_event,button)=>{const elements=button.form.elements;
+        return {saveAbility:profile.saveAbility??elements.namedItem("ability").value,onSave:elements.namedItem("onSave").value,manualSpecial:elements.namedItem("manual").checked};}},
+      {action:"cancel",label:"Отмена",callback:()=>false}],close:()=>false});
+  }
+
+  deferWeaponModUtility(activity){
+    const definition=this.getManagedWeaponModActivityDefinition(activity);
+    if(!definition || ["bayonet-attack","launcher-shot"].includes(definition.marker.action))return null;
+    const {actor,host,mod,marker,effect}=definition,key=`${actor.uuid}:${host.id}:${activity.id??activity._id}`;
+    let state=this._weaponModUtilityRequests.get(key);
+    if(state?.running)return false;
+    state??={operationId:globalThis.crypto.randomUUID(),payload:null};state.running=true;this._weaponModUtilityRequests.set(key,state);
+    void(async()=>{
+      if(!state.payload){
+        let decision=null;
+        if(marker.action==="aim"){
+          const known=this.getWeaponModAttackConditions(activity,null,{});
+          if(known.movedFeet==null){decision=await this.promptWeaponModConditions(activity,null,known,[{field:"movedFeet"}]);if(!decision){this._weaponModUtilityRequests.delete(key);return;}}
+        }else if(marker.action==="flashlight-toggle" && !mod.item.getFlag?.(MODULE_ID,"weaponModLight")?.enabled){
+          const tokens=Array.from(actor.getActiveTokens?.(true,true)??[]).map(token=>token.document??token).filter(token=>token.actor?.uuid===actor.uuid);
+          if(actor.token?.actor?.uuid===actor.uuid && !tokens.some(token=>token.uuid===actor.token.uuid))tokens.push(actor.token);
+          const tokenUuid=await this.promptWeaponModChoice("Токен фонарика",tokens.map(token=>({id:token.uuid,name:token.name??actor.name})));
+          if(!tokenUuid){this._weaponModUtilityRequests.delete(key);return;}decision={kind:"light-token",tokenUuid};
+        }else if(marker.action==="launcher-fire"){
+          const previous=host.getFlag?.(MODULE_ID,"weaponModShot");
+          if(previous?.phase==="consumed"){
+            if(previous.ownerUserId!==globalThis.game.user.id)throw new Error("Карточку предыдущего выстрела восстанавливает стрелок.");
+            state.shot=previous;
+          }else{
+            const catalog=this.moduleApi.itemUpgradeAutomationService.weaponModCatalog,items=Array.from(actor.items?.contents??actor.items?.values?.()??[]),
+              entries=items.filter(item=>item.system?.container===mod.itemId && Number(item.system.quantity)===1
+                && getWeaponModGrenadeCandidate(item,{sources:catalog.gearById,allowedSourceIds:effect.grenadeSourceIds}).available).map(item=>({id:item.id,name:item.name}));
+            const grenadeItemId=await this.promptWeaponModChoice("Граната для выстрела",entries);
+            if(!grenadeItemId){this._weaponModUtilityRequests.delete(key);return;}decision={kind:"launcher-prepare",grenadeItemId};
+          }
+        }else if(marker.action==="launcher-load"){
+          const catalog=this.moduleApi.itemUpgradeAutomationService.weaponModCatalog,items=Array.from(actor.items?.contents??actor.items?.values?.()??[]),
+            entries=items.filter(item=>{
+              const candidate=getWeaponModGrenadeCandidate(item,{sources:catalog.gearById,allowedSourceIds:effect.grenadeSourceIds}),container=actor.items.get(item.system?.container);
+              return candidate.available && candidate.quantity>0 && !container?.getFlag?.(MODULE_ID,"installedWeaponMod");
+            }).map(item=>({id:item.id,name:`${item.name} ×${item.system.quantity}`}));
+          const grenadeItemId=await this.promptWeaponModChoice("Граната для загрузки",entries);
+          if(!grenadeItemId){this._weaponModUtilityRequests.delete(key);return;}decision={kind:"launcher-load",grenadeItemId};
+        }
+        state.payload={actorUuid:actor.uuid,hostItemId:host.id,childItemId:mod.itemId,activityId:activity.id??activity._id,operationId:state.operationId,decision};
+      }
+      const result=state.shot?{shot:state.shot}:await this.moduleApi.useWeaponModActivity(state.payload);
+      if(result.shot){
+        const native=host.system.activities.get?.(result.shot.activityId);
+        if(!native?.use)throw new Error("Действие гранаты обновляется. Повторите выстрел для продолжения без повторного расхода.");
+        await native.use({rebreyaWeaponModShot:result.shot});
+      }
+      this._weaponModUtilityRequests.delete(key);
+    })().catch(error=>{
+      if(error.code==="weapon-mod-cancelled")this._weaponModUtilityRequests.delete(key);
+      globalThis.ui?.notifications?.warn?.(error.message);
+    }).finally(()=>state.running=false);
+    return false;
   }
 
   hydrateWeaponModAttackConditions(config,message={}) {
@@ -944,8 +1036,23 @@ export class CombatAttackService {
     return {normal,long,distanceFeet:distance,allowed:distance<=Math.max(normal,long),disadvantage:distance>normal};
   }
 
-  planWeaponModActivity({actor,host,definition,decision}) {
+  getWeaponModLightConfiguration(effect,token){
+    const units=token.parent?.grid?.units??"ft";
+    return {bright:convertFeetToUnits(effect.bright,units),dim:convertFeetToUnits(effect.dim,units),angle:60};
+  }
+
+  async planWeaponModActivity({actor,host,definition,decision,sender}) {
     const {marker,effect}=definition,path=`flags.${MODULE_ID}.weaponModAim`,before=host.getFlag?.(MODULE_ID,"weaponModAim")??host.flags?.[MODULE_ID]?.weaponModAim??null;
+    if(effect.kind==="flashlight"){
+      const child=definition.mod.item,lightPath=`flags.${MODULE_ID}.weaponModLight`,previous=child.getFlag?.(MODULE_ID,"weaponModLight")??null;
+      let next={enabled:false,tokenUuid:previous?.tokenUuid??null};
+      if(!previous?.enabled){
+        const token=decision?.kind==="light-token"?await globalThis.fromUuid?.(decision.tokenUuid):null;
+        if(!token || token.actor?.uuid!==actor.uuid || !token.parent?.uuid || (!sender?.isGM && sender?.viewedScene!==token.parent.id))throw new Error("Выберите один токен владельца оружия на своей сцене.");
+        next={enabled:true,tokenUuid:token.uuid};
+      }
+      return {placement:[{actor:"source",itemId:child.id,before:{[lightPath]:previous},after:{[lightPath]:next}}],value:{hostItemId:host.id,childItemId:child.id,action:marker.action,enabled:next.enabled}};
+    }
     if(effect.kind!=="aim")throw new Error("Действие обвеса пока не поддерживается.");
     let after=null;
     if(marker.action==="aim"){
@@ -3807,6 +3914,11 @@ export class CombatAttackService {
 
   getActivityAvailability(activity) {
     try {
+      if(activity?.flags?.[MODULE_ID]?.weaponModActivity){
+        try{const definition=this.getManagedWeaponModActivityDefinition(activity);
+          if(definition.marker.action==="bayonet-attack")return this.#getHeldWeaponActivityBlock(activity)??this.#activityAvailable();
+        }catch(error){return this.#activityUnavailable("weaponModUnavailable",error.message);}
+      }
       const areaFireBlock = this.#getFirearmAreaFireActivityBlock(activity);
       if (areaFireBlock) {
         return areaFireBlock;
@@ -3842,6 +3954,20 @@ export class CombatAttackService {
   }
 
   applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    if(activity?.flags?.[MODULE_ID]?.weaponModActivity){
+      try{const utility=this.deferWeaponModUtility(activity);if(utility!==null)return utility;}
+      catch(error){globalThis.ui?.notifications?.warn?.(error.message);return false;}
+    }
+    if(activity?.flags?.[MODULE_ID]?.weaponModActivity?.action==="bayonet-attack"){
+      try{this.getManagedWeaponModActivityDefinition(activity);return this.#ensureHeldWeaponActivity(activity);}
+      catch(error){globalThis.ui?.notifications?.warn?.(error.message);return false;}
+    }
+    if(activity?.flags?.[MODULE_ID]?.weaponModActivity?.action==="launcher-shot"){
+      try{this.getManagedWeaponModActivityDefinition(activity);
+        if(!usageConfig.rebreyaWeaponModShot)throw new Error("Выберите гранату через действие «Выстрелить гранатой».");
+        return this.#ensureHeldWeaponActivity(activity);
+      }catch(error){globalThis.ui?.notifications?.warn?.(error.message);return false;}
+    }
     const firearmUtilityResult = this.#applyFirearmUtilityActivity(activity);
     if (firearmUtilityResult !== null) {
       return firearmUtilityResult;
@@ -3913,6 +4039,12 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      if(activity.flags?.[MODULE_ID]?.weaponModActivity){
+        try{this.getManagedWeaponModActivityDefinition(activity);}
+        catch(error){globalThis.ui?.notifications?.warn?.(error.message);return false;}
+        if(!this.deferWeaponModAttack(activity,config,dialog,message,"rollAttack"))return false;
+        return this.moduleApi.itemUpgradeAutomationService?.rolls.preRollAttack(config)!==false;
+      }
       this.hydrateWeaponModAttackConditions(config,message);
       if(!this.deferWeaponModAttack(activity,config,dialog,message,"rollAttack"))return false;
       if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollAttack(config) === false) return false;
@@ -3977,6 +4109,7 @@ export class CombatAttackService {
 
   applyDnd5ePostAttackRoll(rolls = [], context = {}) {
     const activity = context?.subject ?? null;
+    if(activity?.flags?.[MODULE_ID]?.weaponModActivity)return true;
     if (!this.#isWeaponAttackActivity(activity)) {
       return true;
     }

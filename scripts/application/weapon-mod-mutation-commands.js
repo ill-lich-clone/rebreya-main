@@ -12,7 +12,11 @@ export function isValidWeaponModernizationInstallPayload(p){return exact(p,base,
 export function isValidWeaponModernizationApprovalPayload(p){const keys=["actorUuid","hostItemId","sourceId","profileSignature","operationId"];
   return exact(p,keys) && keys.filter(key=>key!=="profileSignature").every(key=>text(p[key])) && typeof p.profileSignature==="string" && p.profileSignature.length>0 && p.profileSignature.length<=16384;}
 export function isValidWeaponModActivityPayload(p){const keys=["actorUuid","hostItemId","childItemId","activityId","operationId","decision"];
-  return exact(p,keys) && keys.filter(key=>key!=="decision").every(key=>text(p[key])) && (p.decision===null || isValidWeaponModAttackDecision(p.decision));}
+  return exact(p,keys) && keys.filter(key=>key!=="decision").every(key=>text(p[key])) && (p.decision===null || isValidWeaponModAttackDecision(p.decision)
+    || exact(p.decision,["kind","tokenUuid"]) && p.decision.kind==="light-token" && text(p.decision.tokenUuid)
+    || exact(p.decision,["kind","grenadeItemId"]) && ["launcher-load","launcher-prepare"].includes(p.decision.kind) && text(p.decision.grenadeItemId)
+    || exact(p.decision,["kind","prepareOperationId","grenadeItemId"]) && p.decision.kind==="launcher-consume" && text(p.decision.prepareOperationId) && text(p.decision.grenadeItemId)
+    || exact(p.decision,["kind","prepareOperationId","cardId"]) && p.decision.kind==="launcher-ack" && text(p.decision.prepareOperationId) && text(p.decision.cardId));}
 export function registerWeaponModCommands(moduleApi,bus){
   const authorize=async(p,{sender})=>{
     const actor=await globalThis.fromUuid(p.actorUuid);

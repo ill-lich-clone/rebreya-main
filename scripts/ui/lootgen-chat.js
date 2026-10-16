@@ -1,4 +1,4 @@
-import { getLootgenContainerSummary, renderLootgenContainerPreview } from "./lootgen-container-preview.js?v=1.4.377";
+import { getLootgenContainerSummary, renderLootgenContainerPreview } from "./lootgen-container-preview.js?v=1.4.385";
 import { MODULE_ID } from "../constants.js";
 
 const COIN_MULTIPLIERS = {

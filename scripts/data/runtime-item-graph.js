@@ -16,6 +16,10 @@ const matchesPreparedValue = (actual, expected) => {
 /** Physical links only: unsupported/custom rules remain transferable without granting effects. */
 export function getRuntimeWeaponModChildren(host,items) {
   const data=host.toObject?.() ?? host,hostId=host.id ?? host._id,flags=data.flags?.[MODULE_ID],state=flags?.weaponMods;
+  if(flags?.weaponModShot?.phase==="consumed"){
+    const error=new Error("Сначала восстановите карточку выстрела гранатомёта; затем оружие можно переносить или изменять.");
+    error.code="pending-weapon-mod-shot";throw error;
+  }
   const actorId=host.actor?.id ?? host.parent?.id,children=[],seen=new Set(),sources=new Set(),mounts=new Set();
   if(state!=null) {
     if(state.version!==1 || !Array.isArray(state.attachments) || !Array.isArray(state.modernizedParts)

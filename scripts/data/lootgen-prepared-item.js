@@ -2,7 +2,7 @@ import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./
 import { weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
 import { sha256Hex } from "../shared/sha256.js?v=1.4.268";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
-import { RUNTIME_ITEM_GRAPH_FLAG, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.379";
+import { RUNTIME_ITEM_GRAPH_FLAG, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
 
 const MODULE_ID="rebreya-main";
 export const LOOTGEN_COMPOSITION_FLAG="lootgenComposition";

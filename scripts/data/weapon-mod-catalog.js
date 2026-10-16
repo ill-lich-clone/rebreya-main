@@ -30,7 +30,7 @@ export function buildWeaponModCatalog(gear,definitions,hosts) {
       sourceRef:source.sourceRef,profile,profileSignature:weaponModProfileSignature(base),available:Boolean(rule),
       reason:rule?"":"Нет проверенного правила для этого вида компонента."};
   }).sort((a,b)=>a.sourceId.localeCompare(b.sourceId));
-  return {rows,hosts:structuredClone(hosts)};
+  return {rows,hosts:structuredClone(hosts),gearById:byId};
 }
 export function getWeaponModCandidate(item,catalog) {
   const sourceId=weaponModFlag(item,"gearId"), row=catalog?.rows?.find(row=>row.sourceId===sourceId);
@@ -43,7 +43,7 @@ export function getWeaponModCandidate(item,catalog) {
 let cataloguePromise;
 export function loadWeaponModCatalog() {
   cataloguePromise ??= Promise.all(["gear","weapon-mod-rules","weapon-mod-hosts"].map(async name=>{
-    const response=await fetch(`modules/rebreya-main/data/${name}.json?v=1.4.378`,{cache:"no-store"});
+    const response=await fetch(`modules/rebreya-main/data/${name}.json?v=1.4.385`,{cache:"no-store"});
     if(!response.ok)throw new Error(`weapon-mod-catalog: load ${name}: ${response.status}`);
     return response.json();
   })).then(args=>buildWeaponModCatalog(...args)).catch(error=>{cataloguePromise=undefined;throw error;});
