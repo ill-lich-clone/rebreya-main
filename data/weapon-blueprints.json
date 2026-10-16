@@ -1,0 +1,1128 @@
+{
+  "version": 1,
+  "blueprints": [
+    {
+      "gearId": "antimaterial-naya-vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/antimaterial-naya-vintovka.png",
+      "width": 2167,
+      "height": 726,
+      "anchors": {
+        "top": {
+          "x": 0.45,
+          "y": 0.35
+        },
+        "bottom-1": {
+          "x": 0.64,
+          "y": 0.53
+        },
+        "bottom-2": {
+          "x": 0.76,
+          "y": 0.53
+        },
+        "side-1": {
+          "x": 0.45,
+          "y": 0.44
+        },
+        "side-2": {
+          "x": 0.64,
+          "y": 0.44
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.41
+        }
+      }
+    },
+    {
+      "gearId": "antimaterial-nyy-revol-ver",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/antimaterial-nyy-revol-ver.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.49,
+          "y": 0.13
+        },
+        "bottom-1": {
+          "x": 0.66,
+          "y": 0.42
+        },
+        "bottom-2": {
+          "x": 0.78,
+          "y": 0.42
+        },
+        "side-1": {
+          "x": 0.49,
+          "y": 0.275
+        },
+        "side-2": {
+          "x": 0.66,
+          "y": 0.275
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.28
+        }
+      }
+    },
+    {
+      "gearId": "arbalet-legkiy",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/arbalet-legkiy.png",
+      "width": 1536,
+      "height": 1024,
+      "anchors": {
+        "top": {
+          "x": 0.51,
+          "y": 0.31
+        },
+        "bottom-1": {
+          "x": 0.55,
+          "y": 0.61
+        }
+      }
+    },
+    {
+      "gearId": "arbalet-ruchnoy",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/arbalet-ruchnoy.png",
+      "width": 1536,
+      "height": 1024,
+      "anchors": {
+        "top": {
+          "x": 0.55,
+          "y": 0.25
+        },
+        "bottom-1": {
+          "x": 0.66,
+          "y": 0.55
+        }
+      }
+    },
+    {
+      "gearId": "arbalet-tyazhelyy",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/arbalet-tyazhelyy.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.5,
+          "y": 0.31
+        },
+        "bottom-1": {
+          "x": 0.59,
+          "y": 0.64
+        }
+      }
+    },
+    {
+      "gearId": "arkebuza",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/arkebuza.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.4,
+          "y": 0.27
+        },
+        "bottom-1": {
+          "x": 0.68,
+          "y": 0.58
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.39
+        }
+      }
+    },
+    {
+      "gearId": "avtomaticheskaya-vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/avtomaticheskaya-vintovka.png",
+      "width": 1983,
+      "height": 793,
+      "anchors": {
+        "top": {
+          "x": 0.48,
+          "y": 0.18
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.41
+        },
+        "bottom-2": {
+          "x": 0.8099999999999999,
+          "y": 0.41
+        },
+        "side-1": {
+          "x": 0.48,
+          "y": 0.295
+        },
+        "side-2": {
+          "x": 0.69,
+          "y": 0.295
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.3
+        }
+      }
+    },
+    {
+      "gearId": "avtomaticheskiy-pistolet",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/avtomaticheskiy-pistolet.png",
+      "width": 1672,
+      "height": 941,
+      "anchors": {
+        "top": {
+          "x": 0.5,
+          "y": 0.14
+        },
+        "bottom-1": {
+          "x": 0.67,
+          "y": 0.43
+        },
+        "bottom-2": {
+          "x": 0.79,
+          "y": 0.43
+        },
+        "side-1": {
+          "x": 0.5,
+          "y": 0.28500000000000003
+        },
+        "side-2": {
+          "x": 0.67,
+          "y": 0.28500000000000003
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.23
+        }
+      }
+    },
+    {
+      "gearId": "derrindzher",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/derrindzher.png",
+      "width": 1536,
+      "height": 1024,
+      "anchors": {
+        "top": {
+          "x": 0.58,
+          "y": 0.18
+        },
+        "bottom-1": {
+          "x": 0.72,
+          "y": 0.47
+        },
+        "barrel": {
+          "x": 0.93,
+          "y": 0.29
+        }
+      }
+    },
+    {
+      "gearId": "dragun",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/dragun.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.48,
+          "y": 0.25
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.6
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.39
+        }
+      }
+    },
+    {
+      "gearId": "drobovik",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/drobovik.png",
+      "width": 1942,
+      "height": 809,
+      "anchors": {
+        "top": {
+          "x": 0.48,
+          "y": 0.28
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.57
+        },
+        "bottom-2": {
+          "x": 0.8099999999999999,
+          "y": 0.57
+        },
+        "side-1": {
+          "x": 0.48,
+          "y": 0.425
+        },
+        "side-2": {
+          "x": 0.69,
+          "y": 0.425
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.35
+        }
+      }
+    },
+    {
+      "gearId": "dvukhstvol-nyy-drobovik",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/dvukhstvol-nyy-drobovik.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.44,
+          "y": 0.28
+        },
+        "bottom-1": {
+          "x": 0.68,
+          "y": 0.56
+        },
+        "bottom-2": {
+          "x": 0.8,
+          "y": 0.56
+        },
+        "side-1": {
+          "x": 0.44,
+          "y": 0.42000000000000004
+        },
+        "side-2": {
+          "x": 0.68,
+          "y": 0.42000000000000004
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.39
+        }
+      }
+    },
+    {
+      "gearId": "garmata",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/garmata.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.44,
+          "y": 0.18
+        },
+        "bottom-1": {
+          "x": 0.62,
+          "y": 0.73
+        },
+        "bottom-2": {
+          "x": 0.74,
+          "y": 0.73
+        },
+        "side-1": {
+          "x": 0.44,
+          "y": 0.45499999999999996
+        },
+        "side-2": {
+          "x": 0.62,
+          "y": 0.45499999999999996
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.45
+        }
+      }
+    },
+    {
+      "gearId": "gauss-pulemyot",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/gauss-pulemyot.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.46,
+          "y": 0.2
+        },
+        "bottom-1": {
+          "x": 0.67,
+          "y": 0.53
+        },
+        "bottom-2": {
+          "x": 0.79,
+          "y": 0.53
+        },
+        "side-1": {
+          "x": 0.46,
+          "y": 0.365
+        },
+        "side-2": {
+          "x": 0.67,
+          "y": 0.365
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.35
+        }
+      }
+    },
+    {
+      "gearId": "gauss-vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/gauss-vintovka.png",
+      "width": 2172,
+      "height": 724,
+      "anchors": {
+        "top": {
+          "x": 0.47,
+          "y": 0.26
+        },
+        "bottom-1": {
+          "x": 0.67,
+          "y": 0.57
+        },
+        "bottom-2": {
+          "x": 0.79,
+          "y": 0.57
+        },
+        "side-1": {
+          "x": 0.47,
+          "y": 0.415
+        },
+        "side-2": {
+          "x": 0.67,
+          "y": 0.415
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.42
+        }
+      }
+    },
+    {
+      "gearId": "karabin",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/karabin.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.49,
+          "y": 0.23
+        },
+        "bottom-1": {
+          "x": 0.7,
+          "y": 0.48
+        },
+        "bottom-2": {
+          "x": 0.82,
+          "y": 0.48
+        },
+        "side-1": {
+          "x": 0.49,
+          "y": 0.355
+        },
+        "side-2": {
+          "x": 0.7,
+          "y": 0.355
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.34
+        }
+      }
+    },
+    {
+      "gearId": "kolestsovyy-pistolet",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/kolestsovyy-pistolet.png",
+      "width": 2048,
+      "height": 768,
+      "anchors": {
+        "top": {
+          "x": 0.38,
+          "y": 0.3
+        },
+        "bottom-1": {
+          "x": 0.66,
+          "y": 0.5
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.39
+        }
+      }
+    },
+    {
+      "gearId": "kremnevyy-pistolet",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/kremnevyy-pistolet.png",
+      "width": 1536,
+      "height": 1024,
+      "anchors": {
+        "top": {
+          "x": 0.53,
+          "y": 0.21
+        },
+        "bottom-1": {
+          "x": 0.67,
+          "y": 0.49
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.34
+        }
+      }
+    },
+    {
+      "gearId": "lazernaya-vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/lazernaya-vintovka.png",
+      "width": 1916,
+      "height": 821,
+      "anchors": {
+        "top": {
+          "x": 0.47,
+          "y": 0.24
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.6
+        },
+        "bottom-2": {
+          "x": 0.8099999999999999,
+          "y": 0.6
+        },
+        "side-1": {
+          "x": 0.47,
+          "y": 0.42
+        },
+        "side-2": {
+          "x": 0.69,
+          "y": 0.42
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.41
+        }
+      }
+    },
+    {
+      "gearId": "miniakula",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/miniakula.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.43,
+          "y": 0.27
+        },
+        "bottom-1": {
+          "x": 0.54,
+          "y": 0.82
+        },
+        "bottom-2": {
+          "x": 0.66,
+          "y": 0.82
+        },
+        "side-1": {
+          "x": 0.43,
+          "y": 0.5449999999999999
+        },
+        "side-2": {
+          "x": 0.54,
+          "y": 0.5449999999999999
+        },
+        "barrel": {
+          "x": 0.88,
+          "y": 0.55
+        }
+      }
+    },
+    {
+      "gearId": "mnogostvol-nyy-kremnevyy-pistolet",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/mnogostvol-nyy-kremnevyy-pistolet.png",
+      "width": 1536,
+      "height": 1024,
+      "anchors": {
+        "top": {
+          "x": 0.54,
+          "y": 0.22
+        },
+        "bottom-1": {
+          "x": 0.73,
+          "y": 0.51
+        },
+        "barrel": {
+          "x": 0.94,
+          "y": 0.36
+        }
+      }
+    },
+    {
+      "gearId": "mnogozaryadnyy-arbalet",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/mnogozaryadnyy-arbalet.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.46,
+          "y": 0.17
+        },
+        "bottom-1": {
+          "x": 0.59,
+          "y": 0.66
+        }
+      }
+    },
+    {
+      "gearId": "mushket",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/mushket.png",
+      "width": 2172,
+      "height": 724,
+      "anchors": {
+        "top": {
+          "x": 0.4,
+          "y": 0.34
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.48
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.35
+        }
+      }
+    },
+    {
+      "gearId": "mushketon",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/mushketon.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.44,
+          "y": 0.27
+        },
+        "bottom-1": {
+          "x": 0.64,
+          "y": 0.63
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.38
+        }
+      }
+    },
+    {
+      "gearId": "obrez",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/obrez.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.53,
+          "y": 0.27
+        },
+        "bottom-1": {
+          "x": 0.73,
+          "y": 0.51
+        },
+        "bottom-2": {
+          "x": 0.85,
+          "y": 0.51
+        },
+        "side-1": {
+          "x": 0.53,
+          "y": 0.39
+        },
+        "side-2": {
+          "x": 0.73,
+          "y": 0.39
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.35
+        }
+      }
+    },
+    {
+      "gearId": "ognemyot",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/ognemyot.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.7,
+          "y": 0.51
+        },
+        "bottom-1": {
+          "x": 0.78,
+          "y": 0.7
+        },
+        "bottom-2": {
+          "x": 0.88,
+          "y": 0.7
+        },
+        "side-1": {
+          "x": 0.7,
+          "y": 0.605
+        },
+        "side-2": {
+          "x": 0.78,
+          "y": 0.605
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.57
+        }
+      }
+    },
+    {
+      "gearId": "perenosnaya-pushka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/perenosnaya-pushka.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.48,
+          "y": 0.22
+        },
+        "bottom-1": {
+          "x": 0.68,
+          "y": 0.63
+        },
+        "bottom-2": {
+          "x": 0.8,
+          "y": 0.63
+        },
+        "side-1": {
+          "x": 0.48,
+          "y": 0.425
+        },
+        "side-2": {
+          "x": 0.68,
+          "y": 0.425
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.42
+        }
+      }
+    },
+    {
+      "gearId": "pistolet",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/pistolet.png",
+      "width": 1536,
+      "height": 1024,
+      "anchors": {
+        "top": {
+          "x": 0.53,
+          "y": 0.1
+        },
+        "bottom-1": {
+          "x": 0.67,
+          "y": 0.4
+        },
+        "bottom-2": {
+          "x": 0.79,
+          "y": 0.4
+        },
+        "side-1": {
+          "x": 0.53,
+          "y": 0.25
+        },
+        "side-2": {
+          "x": 0.67,
+          "y": 0.25
+        },
+        "barrel": {
+          "x": 0.93,
+          "y": 0.22
+        }
+      }
+    },
+    {
+      "gearId": "poluavtomaticheskaya-vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/poluavtomaticheskaya-vintovka.png",
+      "width": 1983,
+      "height": 793,
+      "anchors": {
+        "top": {
+          "x": 0.44,
+          "y": 0.3
+        },
+        "bottom-1": {
+          "x": 0.68,
+          "y": 0.56
+        },
+        "bottom-2": {
+          "x": 0.8,
+          "y": 0.56
+        },
+        "side-1": {
+          "x": 0.44,
+          "y": 0.43000000000000005
+        },
+        "side-2": {
+          "x": 0.68,
+          "y": 0.43000000000000005
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.41
+        }
+      }
+    },
+    {
+      "gearId": "revol-ver",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/revol-ver.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.46,
+          "y": 0.1
+        },
+        "bottom-1": {
+          "x": 0.67,
+          "y": 0.39
+        },
+        "bottom-2": {
+          "x": 0.79,
+          "y": 0.39
+        },
+        "side-1": {
+          "x": 0.46,
+          "y": 0.245
+        },
+        "side-2": {
+          "x": 0.67,
+          "y": 0.245
+        },
+        "barrel": {
+          "x": 0.94,
+          "y": 0.23
+        }
+      }
+    },
+    {
+      "gearId": "ruchnitsa",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/ruchnitsa.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.51,
+          "y": 0.28
+        },
+        "bottom-1": {
+          "x": 0.7,
+          "y": 0.6
+        },
+        "bottom-2": {
+          "x": 0.82,
+          "y": 0.6
+        },
+        "side-1": {
+          "x": 0.51,
+          "y": 0.44
+        },
+        "side-2": {
+          "x": 0.7,
+          "y": 0.44
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.4
+        }
+      }
+    },
+    {
+      "gearId": "ruchnoy-granatomyot",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/ruchnoy-granatomyot.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.48,
+          "y": 0.2
+        },
+        "bottom-1": {
+          "x": 0.67,
+          "y": 0.63
+        },
+        "bottom-2": {
+          "x": 0.79,
+          "y": 0.63
+        },
+        "side-1": {
+          "x": 0.48,
+          "y": 0.41500000000000004
+        },
+        "side-2": {
+          "x": 0.67,
+          "y": 0.41500000000000004
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.35
+        }
+      }
+    },
+    {
+      "gearId": "samodel-noe-rpu",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/samodel-noe-rpu.png",
+      "width": 2172,
+      "height": 724,
+      "anchors": {
+        "top": {
+          "x": 0.46,
+          "y": 0.21
+        },
+        "bottom-1": {
+          "x": 0.68,
+          "y": 0.62
+        },
+        "bottom-2": {
+          "x": 0.8,
+          "y": 0.62
+        },
+        "side-1": {
+          "x": 0.46,
+          "y": 0.415
+        },
+        "side-2": {
+          "x": 0.68,
+          "y": 0.415
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.36
+        }
+      }
+    },
+    {
+      "gearId": "tesla-vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/tesla-vintovka.png",
+      "width": 1983,
+      "height": 793,
+      "anchors": {
+        "top": {
+          "x": 0.44,
+          "y": 0.21
+        },
+        "bottom-1": {
+          "x": 0.68,
+          "y": 0.58
+        },
+        "bottom-2": {
+          "x": 0.8,
+          "y": 0.58
+        },
+        "side-1": {
+          "x": 0.44,
+          "y": 0.39499999999999996
+        },
+        "side-2": {
+          "x": 0.68,
+          "y": 0.39499999999999996
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.4
+        }
+      }
+    },
+    {
+      "gearId": "tyazhelaya-vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/tyazhelaya-vintovka.png",
+      "width": 2172,
+      "height": 724,
+      "anchors": {
+        "top": {
+          "x": 0.46,
+          "y": 0.33
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.55
+        },
+        "bottom-2": {
+          "x": 0.8099999999999999,
+          "y": 0.55
+        },
+        "side-1": {
+          "x": 0.46,
+          "y": 0.44000000000000006
+        },
+        "side-2": {
+          "x": 0.69,
+          "y": 0.44000000000000006
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.42
+        }
+      }
+    },
+    {
+      "gearId": "tyazhelyy-pistolet",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/tyazhelyy-pistolet.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.49,
+          "y": 0.12
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.4
+        },
+        "bottom-2": {
+          "x": 0.8099999999999999,
+          "y": 0.4
+        },
+        "side-1": {
+          "x": 0.49,
+          "y": 0.26
+        },
+        "side-2": {
+          "x": 0.69,
+          "y": 0.26
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.25
+        }
+      }
+    },
+    {
+      "gearId": "uravnitel",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/uravnitel.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.46,
+          "y": 0.2
+        },
+        "bottom-1": {
+          "x": 0.68,
+          "y": 0.64
+        },
+        "bottom-2": {
+          "x": 0.8,
+          "y": 0.64
+        },
+        "side-1": {
+          "x": 0.46,
+          "y": 0.42000000000000004
+        },
+        "side-2": {
+          "x": 0.68,
+          "y": 0.42000000000000004
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.4
+        }
+      }
+    },
+    {
+      "gearId": "vintovka",
+      "img": "modules/rebreya-main/assets/weapon-blueprints/vintovka.png",
+      "width": 2172,
+      "height": 724,
+      "anchors": {
+        "top": {
+          "x": 0.45,
+          "y": 0.39
+        },
+        "bottom-1": {
+          "x": 0.64,
+          "y": 0.56
+        },
+        "bottom-2": {
+          "x": 0.76,
+          "y": 0.56
+        },
+        "side-1": {
+          "x": 0.45,
+          "y": 0.47500000000000003
+        },
+        "side-2": {
+          "x": 0.64,
+          "y": 0.47500000000000003
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.42
+        }
+      }
+    }
+  ],
+  "fallbacks": {
+    "primitive": {
+      "img": "modules/rebreya-main/assets/weapon-blueprints/fallback-primitive.png",
+      "width": 2172,
+      "height": 724,
+      "anchors": {
+        "top": {
+          "x": 0.42,
+          "y": 0.28
+        },
+        "bottom-1": {
+          "x": 0.69,
+          "y": 0.53
+        },
+        "barrel": {
+          "x": 0.96,
+          "y": 0.36
+        }
+      }
+    },
+    "advanced": {
+      "img": "modules/rebreya-main/assets/weapon-blueprints/fallback-advanced.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.49,
+          "y": 0.26
+        },
+        "bottom-1": {
+          "x": 0.7,
+          "y": 0.55
+        },
+        "bottom-2": {
+          "x": 0.82,
+          "y": 0.55
+        },
+        "side-1": {
+          "x": 0.49,
+          "y": 0.405
+        },
+        "side-2": {
+          "x": 0.7,
+          "y": 0.405
+        },
+        "barrel": {
+          "x": 0.95,
+          "y": 0.38
+        }
+      }
+    },
+    "crossbow": {
+      "img": "modules/rebreya-main/assets/weapon-blueprints/fallback-crossbow.png",
+      "width": 1774,
+      "height": 887,
+      "anchors": {
+        "top": {
+          "x": 0.51,
+          "y": 0.26
+        },
+        "bottom-1": {
+          "x": 0.65,
+          "y": 0.62
+        }
+      }
+    }
+  }
+}

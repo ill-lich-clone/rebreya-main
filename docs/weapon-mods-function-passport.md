@@ -1,5 +1,9 @@
 # Оружейные обвесы и модернизированные части
 
+## Чертежи
+
+Владелец `scripts/data/weapon-blueprints.js`, manifest `data/weapon-blueprints.json`, raster originals `assets/weapon-blueprints/`. `buildWeaponBlueprintIndex(manifest,hosts)` проверяет coverage каждого текущего host, уникальность IDs/paths, размеры и нормализованные anchors всех поддержанных mounts; число host не зашито. `getWeaponBlueprint(index,item,catalog)` возвращает individual для known host, family fallback только для неизвестного поддержанного оружия; unrelated item получает null. `loadWeaponBlueprints(hosts)` кеширует один Promise manifest fetch, при ошибке допускает повтор; filesystem scan отсутствует, Item.img не меняется. Focused `weapon-blueprints.test.mjs`: coverage/anchors, все41 файла и разные hashes, fallback policy, concurrent fetch once. Individual38 +fallback3 визуально проверены в контактной таблице.
+
 ## Цели, глушители и разброс
 
 Владельцы: pure `weapon-mod-roll-modifiers.js`, прежний `CombatAttackService` и `CurseUpgradeDamageAdapter`. Focused: `weapon-mod-target-effects.test.mjs`, commands, combat, curse, absorption, automation tests.

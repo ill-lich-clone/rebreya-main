@@ -232,11 +232,11 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 
 **Interfaces:** `getWeaponBlueprint(gearId,family,manifest) -> {img,anchors,fallback}`; manifest `{version:1,entries:[{gearId,img,anchors:{[mountId]:{x,y}}}],fallbacks:{primitive,advanced,crossbow}}`. x/y — конечные числа 0…1 относительно изображения. Координаты рамок задаёт layout семейства T11, стрелки идут к anchors конкретного чертежа.
 
-- [ ] **1. RED:** `every known host has an individual blueprint`, `anchors match supported mounts`, `fallback is only for unknown host`: coverage всех текущих firearm/crossbow IDs; отсутствие файла/anchor, дубликаты gearId и одинаковые hashes известных изображений отклоняются. Не фиксировать 38 как вечный runtime максимум.
-- [ ] **2. Run:** `node --test tests/weapon-blueprints.test.mjs`; FAIL на отсутствующих assets/manifest.
-- [ ] **3. Implement:** прочитать ImageGen skill перед генерацией; создать по одному индивидуальному raster-чертежу на оружие в едином стиле, горизонтальный вид, светлые линии, прозрачный фон, без подписей/рамок/стрелок. Промпты учитывать существующую форму и особенности оружия, не переименовывать один силуэт 38 раз. Вести compact manifest выполнения по gearId и сохранять исходные tool outputs. Назначить anchors после визуальной проверки каждого изображения. Не требовать от модели генерации текста интерфейса и не выполнять Python-редактирование картинок.
-- [ ] **4. GREEN:** test + визуальная контактная таблица всех 38 изображений и проверка отличимости/ориентации. Автоматический hash не заменяет эту проверку. Manifest читается один раз; runtime не сканирует файловую систему ради каждого листа.
-- [ ] **5. Commit gate R:** `feat: add individual weapon blueprint artwork`.
+- [x] **1. RED:** `every known host has an individual blueprint`, `anchors match supported mounts`, `fallback is only for unknown host`: coverage всех текущих firearm/crossbow IDs; отсутствие файла/anchor, дубликаты gearId и одинаковые hashes известных изображений отклоняются. Не фиксировать 38 как вечный runtime максимум.
+- [x] **2. Run:** `node --test tests/weapon-blueprints.test.mjs`; FAIL на отсутствующих assets/manifest.
+- [x] **3. Implement:** прочитать ImageGen skill перед генерацией; создать по одному индивидуальному raster-чертежу на оружие в едином стиле, горизонтальный вид, светлые линии, прозрачный фон, без подписей/рамок/стрелок. Промпты учитывать существующую форму и особенности оружия, не переименовывать один силуэт 38 раз. Вести compact manifest выполнения по gearId и сохранять исходные tool outputs. Назначить anchors после визуальной проверки каждого изображения. Не требовать от модели генерации текста интерфейса и не выполнять Python-редактирование картинок.
+- [x] **4. GREEN:** test + визуальная контактная таблица всех 38 изображений и проверка отличимости/ориентации. Автоматический hash не заменяет эту проверку. Manifest читается один раз; runtime не сканирует файловую систему ради каждого листа.
+- [x] **5. Commit gate R:** `feat: add individual weapon blueprint artwork`.
 
 ### Task 11: T11. Чертёж и полный каталог в существующей вкладке МОДЫ
 
