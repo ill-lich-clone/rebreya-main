@@ -1,6 +1,6 @@
 # Проверка оружейных обвесов
 
-Дата: 2026-10-16. Проверяемая реализация: release `1.4.389` с T12 исправлениями после `51e76f21`, ветка `lich_branch`. [Спецификация](superpowers/specs/2026-10-16-weapon-attachments-design.md), [план](superpowers/plans/2026-10-16-weapon-attachments.md), [паспорт](weapon-mods-function-passport.md).
+Дата: 2026-10-16. Проверяемая реализация: commit `4bc7eb1ddb181e57c8f6c12432cf81336ff9d76e`, release `1.4.389`, ветка `lich_branch`. [Спецификация](superpowers/specs/2026-10-16-weapon-attachments-design.md), [план](superpowers/plans/2026-10-16-weapon-attachments.md), [паспорт](weapon-mods-function-passport.md).
 
 ## Автоматические результаты
 
@@ -131,3 +131,5 @@ Fresh-context whole-feature correctness review (`138be70a..51e76f21`) завер
 Также закрыты Minor замечания о механике/креплениях в каталоге и drag preview. Дополнительная локальная проверка закрепила снятие document listeners на native close. Stylesheet cache epoch обновлён вместе с manifest/entrypoint до389; прежние owner URL вне затронутого cohort и исторические forwarders сохранены. Live world evidence и изображения reviewer не проверял; их границы приведены отдельно выше.
 
 Согласованный Git-процесс: scoped commits/push в lich_branch; main/master не изменялись, force push отсутствует. Спецификация/план и паспорт входят в репозиторий. Merge/PR не запрашивались.
+
+Реализация T1–T12: `5dc28e56` → `4bc7eb1d`; отдельный artwork checkpoint `522a183b`, UI `51e76f21`, окончательные исправления `4bc7eb1d`. Runtime commit отправлен в origin/lich_branch; проверены clean checkout и `HEAD...origin/lich_branch = 0 0`. Последующий commit только уточняет этот отчёт и completion плана.
