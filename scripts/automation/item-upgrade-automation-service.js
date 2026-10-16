@@ -1,14 +1,14 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.4.385";
+import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.4.386";
 import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
 import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.279";
-import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.384";
+import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.386";
 import { loadWeaponModCatalog } from "../data/weapon-mod-catalog.js?v=1.4.385";
 import { readWeaponMods } from "../data/weapon-mod-rules.js?v=1.4.383";
 import { buildWeaponModContributions, projectWeaponModItem } from "./weapon-mod-projections.js?v=1.4.383";
-import { getWeaponModAimState } from "./weapon-mod-roll-modifiers.js?v=1.4.384";
+import { getWeaponModAimState } from "./weapon-mod-roll-modifiers.js?v=1.4.386";
 import { buildWeaponModActivities, buildWeaponModBayonetProfile, reconcileWeaponModActivities } from "../data/weapon-mod-activities.js?v=1.4.385";
 import { getItemHeldHands } from "../integrations/held-items.js?v=1.4.383";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
@@ -242,6 +242,16 @@ export class ItemUpgradeAutomationService {
   applyWeaponModActivityRuntime(item){
     for(const activity of values(item.system?.activities)){
       this.#applyWeaponModLauncherRuntime(activity);
+      if(getFlag(item,"weaponMods") && !activity.flags?.[MODULE_ID]?.weaponModActivity && activity.type==="attack" && typeof activity.rollDamage==="function"
+        && this.weaponModActivityRuntime.get(activity)?.rollDamage!==activity.rollDamage){
+        const original=activity.rollDamage,service=this;
+        activity.rollDamage=async function(config={},dialog={},message={}){
+          const prepared=await service.moduleApi.combatAttackService?.prepareWeaponModDamageUse?.(this,config,message);
+          if(prepared?.cancelled)return;
+          const next=prepared?.damageContext?{...message,data:{...message.data,flags:{...message.data?.flags,[MODULE_ID]:{...message.data?.flags?.[MODULE_ID],weaponModDamageContext:prepared.damageContext}}}}:message;
+          return original.call(this,config,dialog,next);
+        };this.weaponModActivityRuntime.set(activity,{rollDamage:activity.rollDamage});
+      }
       if(activity.flags?.[MODULE_ID]?.weaponModActivity?.action!=="bayonet-attack" || typeof activity.getAttackData!=="function")continue;
       if(this.weaponModActivityRuntime.get(activity)?.getAttackData===activity.getAttackData)continue;
       const service=this,wrapper=function(config){

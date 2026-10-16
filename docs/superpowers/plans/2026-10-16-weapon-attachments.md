@@ -207,11 +207,13 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 
 ### Task 9: T9. Глушители и правила сопротивлений конкретной цели
 
+Уточнение по каноническому `weapon-property-glossary.js` («Разброс»): сверловки используют тот же подтверждённый бросок атаки против КД окружающих существ. Базовый радиус5 фт., сильная сверловка10; слабая добавляет только фактический модификатор характеристики исходной атаки к исходной scatterDamage. Обычные бонусы урона и дополнительный бросок атаки/патроны не добавляются. Для большого Token GM явно выбирает одно занимаемое5-футовое пространство. Это отдельный путь, automatic/semi cones45/30 не меняются. `buildWeaponModScatterPlan` остаётся pure; actual targets/одна native DamageRoll/receipt обслуживает прежний Combat owner. Exact decision `scatter` содержит attackMessageId, primaryTargetUuid (nullable), originPoint (nullable{x,y}), abilityModifier (nullable finite). Pending/rolling/result хранятся в закрытой GM-карточке, native damage application сохраняет владельца HP. Native skill/target receipts тоже закрытые: скрытые наблюдатели не записываются в публичную карточку атаки.
+
 **Files:** Modify `scripts/combat/attack-service.js`, `scripts/combat/curse-upgrade-damage.js`, `scripts/automation/weapon-mod-roll-modifiers.js`; Create `tests/weapon-mod-target-effects.test.mjs`.
 
 **Interfaces:** `buildWeaponModTargetDecision({host,attack,target,conditions}) -> {suppressionCheck,damageRule,needsDecision,diagnostics}` в pure roll module. `damageRule={ignoreNonmagicalResistance,treatNonmagicalImmunityAsResistance}` передаётся существующему packet adapter только для подтверждённой цели/атаки; suppression workflow хранит attack/target/child IDs и result в существующей карточке/operation receipt. Fixture дополняется `makeTargetCase(sourceId,{attackTotal=24,...conditions}={})` с этим input DTO. Decision T9 для commands T3 — exact `{kind:'target-effects',targetUuid,attackMessageId,targetVisible,canHear,hiddenFromTarget,materialTarget}`, где unknown boolean представлен null; здесь UUID/сообщение обязательны. Authoritative executor проверяет их связь с атакой, заполняет только unknown conditions и принимает materialTarget только от authenticated GM.
 
-- [ ] **1. RED:** `silencer ammo and thirty feet`, `improved silencer ten feet`, `perception DC uses actual attack total`, `material versus immaterial target`, `save and resistance apply once`:
+- [x] **1. RED:** `silencer ammo and thirty feet`, `improved silencer ten feet`, `perception DC uses actual attack total`, `material versus immaterial target`, `save and resistance apply once`:
   ```js
   assert.equal(buildWeaponModTargetDecision(makeTargetCase('glushitel',{attackTotal:24})).suppressionCheck.dc, 22);
   assert.equal(basicSilencer.radiusFeet, 30); assert.equal(improvedSilencer.radiusFeet, 10);
@@ -219,10 +221,10 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
   assert.equal(buildWeaponModTargetDecision(makeTargetCase('uplotnitel-snaryadov',{materialTarget:false})).damageRule.treatNonmagicalImmunityAsResistance, true);
   ```
   Закрепить hearing/hidden/target-known null → decision, отсутствие выдуманного creature-type classifier, подходящие патроны, отмену perception prompt, успех/провал проверки, multi-target/associated roll и MIDI/native packet без повторного снятия resistance или полного раскрытия Token всем существам.
-- [ ] **2. Run:** `node --test tests/weapon-mod-target-effects.test.mjs`; FAIL.
-- [ ] **3. Implement:** after confirmed attack roll добавить проверку для конкретного слышащего наблюдателя; rounding половины следует общему правилу dnd5e. Решение о материальности запрашивает GM, если достоверного признака нет. При отсутствующем GM сохранить pending решение без применения спорного эффекта; повтор/отмена не создают новый выстрел, расход или проверку. Не заменять весь damage engine и не менять глобальные resistances цели.
-- [ ] **4. GREEN:** новый test + `node --test tests/curse-upgrade-damage.test.mjs tests/item-upgrade-absorption.test.mjs tests/combat-attack-service.test.mjs`.
-- [ ] **5. Commit gate R:** `feat: resolve suppression and ammunition resistance effects`.
+- [x] **2. Run:** `node --test tests/weapon-mod-target-effects.test.mjs`; FAIL.
+- [x] **3. Implement:** after confirmed attack roll добавить проверку для конкретного слышащего наблюдателя; rounding половины следует общему правилу dnd5e. Решение о материальности запрашивает GM, если достоверного признака нет. При отсутствующем GM сохранить pending решение без применения спорного эффекта; повтор/отмена не создают новый выстрел, расход или проверку. Не заменять весь damage engine и не менять глобальные resistances цели.
+- [x] **4. GREEN:** новый test + `node --test tests/curse-upgrade-damage.test.mjs tests/item-upgrade-absorption.test.mjs tests/combat-attack-service.test.mjs`.
+- [x] **5. Commit gate R:** `feat: resolve suppression and ammunition resistance effects`.
 
 ### Task 10: T10. Полный набор индивидуальных чертежей
 

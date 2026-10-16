@@ -13,6 +13,7 @@ test("attachment, approval and activity commands accept only exact typed payload
   assert.equal(approval(a),true);assert.equal(approval({...a,approvedByUserId:"gm"}),false);
   const use={actorUuid:base.actorUuid,hostItemId:"weapon",childItemId:"mod",activityId:"aim",operationId:"use",decision:null};
   assert.equal(activity(use),true);assert.equal(activity({...use,decision:{arbitrary:true}}),false);
+  assert.equal(activity({...use,decision:{kind:"target-effects",targetUuid:"Token.t",attackMessageId:"attack",targetVisible:null,canHear:true,hiddenFromTarget:true,materialTarget:null}}),true);
   for(const decision of [{kind:"launcher-prepare",grenadeItemId:"grenade"},{kind:"launcher-consume",prepareOperationId:"p",grenadeItemId:"g"},{kind:"launcher-ack",prepareOperationId:"p",cardId:"c"}]){
     assert.equal(activity({...use,decision}),true);assert.equal(activity({...use,decision:{...decision,approvedByUserId:"forged"}}),false);
   }

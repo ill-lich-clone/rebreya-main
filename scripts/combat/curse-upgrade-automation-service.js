@@ -1,8 +1,8 @@
 import { MODULE_ID } from "../constants.js";
-import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.4.385";
+import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.4.386";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { CurseUpgradeSaveAdapter } from "./curse-upgrade-saves.js";
-import { CurseUpgradeDamageAdapter } from "./curse-upgrade-damage.js?v=1.4.255";
+import { CurseUpgradeDamageAdapter } from "./curse-upgrade-damage.js?v=1.4.386";
 import { CurseUpgradeAttackAdapter } from "./curse-upgrade-attacks.js";
 
 const IDS = Object.freeze({

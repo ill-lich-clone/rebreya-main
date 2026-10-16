@@ -55,3 +55,8 @@ export function makeAttackCase(sourceId,overrides={}){
 }
 export const makeCandidate = (sourceId, overrides = {}) => ({ ...getCandidate(makeItem(sourceId), makeCatalog()), ...overrides });
 export const makeInstalled = (sourceId, itemId, mountIds = []) => ({ itemId, sourceId, mountIds, profile: makeCandidate(sourceId).profile });
+export function makeTargetCase(sourceId,{attackTotal=24,...conditions}={}){
+  const input=makeAttackCase(sourceId);
+  return {...input,attack:{type:"ranged",isFirearm:true,total:attackTotal,messageId:"attack",ammunitionFamily:"rifle"},
+    target:{uuid:"Scene.s.Token.observer",actorUuid:"Actor.target"},conditions:{distanceFeet:20,targetVisible:true,canHear:true,hiddenFromTarget:true,materialTarget:true,...conditions}};
+}

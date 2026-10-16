@@ -308,6 +308,8 @@ export class ItemUpgradeService {
       return assertAuthority?.();
     };
     guard();
+    if(payload.decision?.kind==="target-effects")return this.moduleApi.combatAttackService.resolveWeaponModTargetEffects(payload,{sender,assertAuthority:guard});
+    if(payload.decision?.kind==="scatter")return this.moduleApi.combatAttackService.resolveWeaponModScatter(payload,{sender,assertAuthority:guard});
     const intent={...payload,mode:"weapon-mod-activity",sourceActorUuid:payload.actorUuid,destinationActorUuid:payload.actorUuid};
     const documents=new ItemInstanceDocuments(),workflow=new ItemInstanceWorkflow({documents,journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.inventoryService.mutationCoordinator});
     const result=await workflow.runBatch(intent,{sender,assertAuthority:guard,authorize:({sourceActor:actor})=>{

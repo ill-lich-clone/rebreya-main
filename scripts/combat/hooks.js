@@ -544,6 +544,12 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasAttackService) {
+    for(const event of ["createChatMessage","updateChatMessage"])Hooks.on(event,message=>{
+      moduleApi.combatAttackService.handleWeaponModAttackMessage?.(message)?.catch(error=>{
+        console.error(`${MODULE_ID} | Weapon mod target resolution failed.`,error);
+        globalThis.ui?.notifications?.warn?.(error.message);
+      });
+    });
     Hooks.on("updateItem", (item, changed, options = {}) => {
       if (options?.[MODULE_ID]?.firearmPropertySync === true) {
         return;

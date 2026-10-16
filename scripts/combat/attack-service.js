@@ -2,9 +2,10 @@ import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.383";
 import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.4.385";
-import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.384";
+import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.386";
+import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { measureStorageTokenDistance } from "../data/storage-access.js";
+import { measureStorageTokenDistance, storageTokenFootprintCenters, measureStorageGridDistance } from "../data/storage-access.js";
 import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
 import { createDnd5eItemData } from "../data/gear-compendium.js?v=1.4.330";
 import {
@@ -905,6 +906,7 @@ export class CombatAttackService {
     this._reactionTriggerContexts = new Map();
     this._weaponModDeferred = new WeakSet();
     this._weaponModUtilityRequests=new Map();
+    this._weaponModDamageWarnings=new WeakSet();
   }
 
   getWeaponModAttackConditions(activity,target,config={}) {
@@ -931,6 +933,324 @@ export class CombatAttackService {
     const mods=readWeaponMods(host,id=>actor.items.get(id),catalog),definition=resolveWeaponModActivity(host,mods,{childItemId:marker.childItemId,activityId:activity.id??activity._id},{sources:catalog.gearById});
     if(weaponModProfileSignature(marker)!==weaponModProfileSignature(definition.marker))throw new Error("Связь действия обвеса изменилась.");
     return {...definition,host,actor};
+  }
+
+  getWeaponModAttackContext(message,activityUuid=null){
+    const uuid=message?.getFlag?.("dnd5e","activity.uuid")??message?.flags?.dnd5e?.activity?.uuid;
+    const candidates=Array.from(message?.rolls??[]).filter(roll=>{
+      const context=roll.options?.rebreyaWeaponModAttack;
+      return context?.nonce && context.activityUuid===uuid && (!activityUuid || context.activityUuid===activityUuid) && Number.isFinite(roll.total);
+    });
+    return candidates.length===1?{context:candidates[0].options.rebreyaWeaponModAttack,roll:candidates[0],message}:null;
+  }
+
+  tagWeaponModAttack(config){
+    const activity=config.subject,host=activity?.item,actor=activity?.actor??host?.actor??host?.parent,catalog=this.moduleApi.itemUpgradeAutomationService?.weaponModCatalog;
+    if(!actor || !catalog || !isFirearmItem(host) || activity.flags?.[MODULE_ID]?.weaponModActivity || activity.attack?.type?.value==="melee")return;
+    const mods=readWeaponMods(host,id=>actor.items.get(id),catalog),components=[...mods.attachments,...mods.modernizedParts].filter(mod=>mod.profile.effects.some(effect=>["silencer","nonmagical-resistance","scatter-radius","scatter-ability-modifier"].includes(effect.kind)))
+      .map(mod=>({itemId:mod.itemId,sourceId:mod.sourceId,profileSignature:weaponModProfileSignature(mod.profile)}));
+    if(!components.length)return;
+    const tokens=Array.from(actor.getActiveTokens?.(true,true)??[]).map(token=>token.document??token),controlled=tokens.filter(token=>token.object?.controlled??token.controlled),
+      source=actor.token??(tokens.length===1?tokens[0]:controlled.length===1?controlled[0]:null),ammunition=this.#resolveFirearmAmmoState(host).ammunition,
+      subtype=inferRebreyaWeaponAmmunitionSubtype({lichWeaponPropertyValues:{ammunition}})||host.system.ammunition?.type||inferRebreyaWeaponAmmunitionSubtype(host),
+      family=({rebreyaMusket:"musket",rebreyaPistol:"pistol",rebreyaRifle:"rifle",rebreyaShotgun:"shotgun"})[subtype]??null,
+      targetUuids=Array.from(config.targets??config.workflow?.targets??globalThis.game.user?.targets??[]).map(target=>target.document?.uuid??target.uuid).filter(Boolean);
+    for(const roll of config.rolls??[]){
+      roll.options??={};const previous=roll.options.rebreyaWeaponModAttack;
+      if(previous?.actorUuid===actor.uuid && previous.hostItemId===host.id && previous.activityUuid===activity.uuid)continue;
+      roll.options.rebreyaWeaponModAttack={nonce:globalThis.crypto.randomUUID(),actorUuid:actor.uuid,hostItemId:host.id,activityUuid:activity.uuid,
+        sourceTokenUuid:source?.uuid??null,ammunitionFamily:family,targetUuids,components,
+        abilityModifier:Number.isFinite(roll.data?.mod)?roll.data.mod:null,scatterDamage:host.getFlag?.(MODULE_ID,"lichWeaponPropertyValues")?.scatterDamage??null};
+    }
+  }
+
+  getWeaponModDamageContext(messageOrId,targetUuid,activityUuid=null){
+    const message=typeof messageOrId==="string"?globalThis.game.messages?.get?.(messageOrId):messageOrId;
+    const scoped=message?.getFlag?.(MODULE_ID,"weaponModDamageContext")??message?.flags?.[MODULE_ID]?.weaponModDamageContext;
+    if(scoped){const attack=this.getWeaponModAttackContext(game.messages.get(scoped.attackMessageId),activityUuid??scoped.activityUuid);
+      if(attack?.context.nonce===scoped.attackNonce)return {...scoped,targetUuid};}
+    const candidates=[...new Map([...message?.getAssociatedRolls?.("attack")??[],message].filter(Boolean).map(message=>[message.id,message])).values()]
+      .map(message=>this.getWeaponModAttackContext(message,activityUuid)).filter(Boolean);
+    const distinct=new Map();
+    for(const candidate of candidates.sort((a,b)=>Number(b.message.getFlag?.("dnd5e","roll.type")==="attack")-Number(a.message.getFlag?.("dnd5e","roll.type")==="attack")))if(!distinct.has(candidate.context.nonce))distinct.set(candidate.context.nonce,candidate);
+    if(distinct.size!==1)return null;
+    const {context,message:attack}=[...distinct.values()][0];return {attackMessageId:attack.id,attackNonce:context.nonce,activityUuid:context.activityUuid,targetUuid};
+  }
+
+  async prepareWeaponModDamageUse(activity,config={},message={}){
+    if(!this.#isWeaponAttackActivity(activity) || !isFirearmItem(activity.item) || activity.flags?.[MODULE_ID]?.weaponModActivity)return null;
+    const ids=[config.midiOptions?.workflow?.itemCardId,config.workflow?.itemCardId,message.data?.flags?.dnd5e?.originatingMessage,
+      message.data?.["flags.dnd5e.originatingMessage"],config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId].filter(Boolean);
+    let context;for(const id of ids){context=this.getWeaponModDamageContext(id,"",activity.uuid);if(context)break;}
+    if(!context)return null;
+    const attack=this.getWeaponModAttackContext(game.messages.get(context.attackMessageId),activity.uuid),catalog=this.moduleApi.itemUpgradeAutomationService?.weaponModCatalog;
+    for(const component of attack.context.components){
+      const row=catalog?.rows.find(row=>row.sourceId===component.sourceId);
+      if(!row?.profile.effects.some(effect=>effect.kind==="nonmagical-resistance"))continue;
+      if(!attack.context.targetUuids.length)throw new Error("Для эффекта снаряда требуется конкретная цель подтверждённой атаки.");
+      for(const targetUuid of attack.context.targetUuids){
+        const id=createStableGearDocumentId(`weapon-mod-target:${attack.context.nonce}:${component.itemId}:${targetUuid}`),existing=game.messages.get(id)?.getFlag?.(MODULE_ID,"weaponModTargetReceipt");
+        if(existing?.status==="resolved")continue;
+        const payload={actorUuid:attack.context.actorUuid,hostItemId:attack.context.hostItemId,childItemId:component.itemId,activityId:activity.id,
+          operationId:globalThis.crypto.randomUUID(),decision:{kind:"target-effects",targetUuid,attackMessageId:context.attackMessageId,targetVisible:null,canHear:null,hiddenFromTarget:null,materialTarget:null}},
+          result=isActiveGmClient(game)?await this.resolveWeaponModTargetEffects(payload):await this.moduleApi.useWeaponModActivity(payload);
+        if(result.cancelled)return {cancelled:true};
+      }
+    }
+    const {targetUuid:_target,...damageContext}=context;return {damageContext};
+  }
+
+  warnWeaponModDamageLimit(actor,options){
+    if(this._weaponModDamageWarnings.has(options))return;this._weaponModDamageWarnings.add(options);
+    globalThis.ui?.notifications?.warn?.(`Особые сопротивления MIDI у «${actor.name??"цели"}» требуют ручного расчёта эффекта обвеса мастером.`);
+  }
+
+  getWeaponModDamageRule(actor,options={}){
+    const input=options.rebreyaWeaponModDamage;if(!input?.targetUuid)return null;
+    const attack=this.getWeaponModAttackContext(globalThis.game.messages?.get?.(input.attackMessageId),input.activityUuid);
+    if(!attack || attack.context.nonce!==input.attackNonce)return null;
+    const receipts=Array.from(globalThis.game.messages?.values?.()??globalThis.game.messages?.contents??[]).flatMap(message=>{
+      const state=message.getFlag?.(MODULE_ID,"weaponModTargetReceipt")??message.flags?.[MODULE_ID]?.weaponModTargetReceipt;
+      const author=message.author??game.users.get(message.user?.id??message.user);
+      if(!author?.isGM || state?.status!=="resolved" || state.targetActorUuid!==actor.uuid || state.attackMessageId!==input.attackMessageId || state.attackNonce!==input.attackNonce
+        || state.activityUuid!==input.activityUuid || state.actorUuid!==attack.context.actorUuid || state.hostItemId!==attack.context.hostItemId
+        || !(state.targetUuid===input.targetUuid || input.targetUuid===actor.uuid))return [];
+      const component=attack.context.components?.find(entry=>entry.itemId===state.childItemId);
+      return component?.sourceId===state.sourceId && component.profileSignature===state.profileSignature?[state]:[];
+    });
+    if(new Set(receipts.map(state=>state.targetUuid)).size!==1)return null;
+    const rules=receipts.map(state=>state.result?.damageRule).filter(rule=>rule?.ignoreNonmagicalResistance || rule?.treatNonmagicalImmunityAsResistance);
+    return rules.length?{ignoreNonmagicalResistance:rules.some(rule=>rule.ignoreNonmagicalResistance),treatNonmagicalImmunityAsResistance:rules.some(rule=>rule.treatNonmagicalImmunityAsResistance)}:null;
+  }
+
+  getWeaponModScatterHits(attack){
+    return Array.from(game.messages?.values?.()??game.messages?.contents??[]).flatMap(message=>{
+      const state=message.getFlag?.(MODULE_ID,"weaponModScatterReceipt"),author=message.author??game.users.get(message.user?.id??message.user);
+      if(!author?.isGM || state?.status!=="resolved" || state.attackNonce!==attack.context.nonce || state.attackMessageId!==attack.message.id
+        || state.actorUuid!==attack.context.actorUuid || state.hostItemId!==attack.context.hostItemId || state.activityUuid!==attack.context.activityUuid)return [];
+      const component=attack.context.components.find(component=>component.itemId===state.childItemId);
+      return component?.sourceId===state.sourceId && component.profileSignature===state.profileSignature?state.result?.hits??[]:[];
+    });
+  }
+
+  getWeaponModTargetConditions(actor,context,target){
+    const source=actor.token?.uuid===context.sourceTokenUuid?actor.token:Array.from(actor.getActiveTokens?.(true,true)??[]).map(token=>token.document??token).find(token=>token.uuid===context.sourceTokenUuid);
+    const sameScene=source?.parent?.uuid && source.parent.uuid===target?.parent?.uuid;
+    const distance=sameScene?measureStorageTokenDistance(source,target):NaN;
+    const position=token=>token?{uuid:token.uuid,sceneUuid:token.parent?.uuid,x:token.x,y:token.y,width:token.width,height:token.height}:null;
+    return {distanceFeet:Number.isFinite(distance)?convertUnitsToFeet(distance,source.parent.grid?.units??"ft"):null,positionSignature:weaponModProfileSignature([position(source),position(target)]),
+      targetVisible:null,canHear:target?.actor?.statuses?.has?.("deafened")?false:null,hiddenFromTarget:null,materialTarget:null};
+  }
+
+  async promptWeaponModTargetConditions({decision,conditions,needsDecision,target}){
+    const fields=needsDecision.map(row=>row.field);
+    if(fields.includes("distanceFeet"))throw new Error("Для проверки глушителя нужны точные токены стрелка и наблюдателя на одной сцене.");
+    const dialog=globalThis.foundry?.applications?.api?.DialogV2;if(!dialog?.wait)throw new Error("Окно решения мастера недоступно; эффект ожидает решения.");
+    const labels={canHear:"Наблюдатель может слышать стрелка",hiddenFromTarget:"Стрелок скрыт от этого наблюдателя",materialTarget:"Противник материален",targetVisible:"Цель видна"};
+    const response=await dialog.wait({window:{title:"Условия эффекта обвеса"},content:fields.map(field=>`<label>${labels[field]} <select name="${field}"><option value="">Выберите</option><option value="true">Да</option><option value="false">Нет</option></select></label>`).join(""),
+      buttons:[{action:"apply",label:"Подтвердить",default:true,callback:(_event,button)=>Object.fromEntries(fields.map(field=>[field,button.form.elements.namedItem(field).value]))},
+        {action:"cancel",label:"Отмена",callback:()=>false}],close:()=>false});
+    if(!response)return null;
+    const choice={...decision};for(const field of fields){if(!["true","false"].includes(response[field]))throw new Error("Мастер должен выбрать явное решение для каждого неизвестного условия.");choice[field]=response[field]==="true";}
+    return resolveWeaponModTargetConditions(conditions,choice,{targetUuid:target.uuid,attackMessageId:decision.attackMessageId,allowMaterialDecision:true});
+  }
+
+  async #writeWeaponModTargetReceipt(receipt,before,next,patch,guard,key="weaponModTargetReceipt"){
+    guard();if(weaponModProfileSignature(receipt.getFlag(MODULE_ID,key))!==weaponModProfileSignature(before))throw new Error("Решение по этой атаке изменилось; нужна сверка мастера.");
+    try{await receipt.update({[`flags.${MODULE_ID}.${key}`]:next,...patch});}
+    catch(error){guard();if(weaponModProfileSignature(receipt.getFlag(MODULE_ID,key))!==weaponModProfileSignature(next))throw error;}
+    guard();
+  }
+
+  async resolveWeaponModScatter(payload,{sender=globalThis.game.user,assertAuthority=null}={}){
+    const authorityId=game.user?.id,guard=()=>{if(!isActiveGmClient(game) || game.user.id!==authorityId)throw new Error("Активный мастер изменился.");assertAuthority?.();};guard();
+    if(!isValidWeaponModScatterDecision(payload.decision))throw new Error("Неверное решение о разбросе.");
+    const actor=await globalThis.fromUuid(payload.actorUuid);
+    if(!actor || !(sender?.isGM || actor.testUserPermission?.(sender,"OWNER")))throw new Error("Нет прав на оружие стрелка.");
+    return this.moduleApi.inventoryService.mutationCoordinator.run(`inventory-organization:${actor.id}`,async()=>{
+      guard();const host=actor.items.get(payload.hostItemId),message=game.messages.get(payload.decision.attackMessageId),
+        activityUuid=`${host?.uuid}.Activity.${payload.activityId}`,attack=this.getWeaponModAttackContext(message,activityUuid),
+        catalog=this.moduleApi.itemUpgradeAutomationService?.weaponModCatalog;
+      if(!host || !isFirearmItem(host) || !attack || attack.context.actorUuid!==actor.uuid || attack.context.hostItemId!==host.id)throw new Error("Нет подтверждённой атаки для разброса.");
+      const mod=readWeaponMods(host,id=>actor.items.get(id),catalog).modernizedParts.find(mod=>mod.itemId===payload.childItemId),
+        snapshot=attack.context.components.find(entry=>entry.itemId===payload.childItemId);
+      if(!mod?.profile.effects.some(effect=>["scatter-radius","scatter-ability-modifier"].includes(effect.kind)) || snapshot?.sourceId!==mod.sourceId
+        || snapshot.profileSignature!==weaponModProfileSignature(mod.profile))throw new Error("Сверловка этой атаки изменилась.");
+      const binding={actorUuid:actor.uuid,hostItemId:host.id,childItemId:mod.itemId,sourceId:mod.sourceId,profileSignature:snapshot.profileSignature,
+        attackMessageId:message.id,attackNonce:attack.context.nonce,activityUuid},key="weaponModScatterReceipt",
+        id=createStableGearDocumentId(`weapon-mod-scatter:${attack.context.nonce}:${mod.itemId}`);
+      let receipt=game.messages.get(id),state=receipt?.getFlag?.(MODULE_ID,key);
+      if(receipt){
+        const author=receipt.author??game.users.get(receipt.user?.id??receipt.user);
+        if(!author?.isGM || !state || Object.entries(binding).some(([key,value])=>state[key]!==value))throw new Error("Карточка разброса не совпадает с атакой.");
+        if(state.status==="resolved" || state.status==="cancelled" && state.operationId===payload.operationId)return {...state.result,receiptId:id,replayed:true};
+        if(state.status==="rolling")throw new Error("Бросок разброса начался без подтверждённого результата; нужна ручная сверка без повторного броска.");
+      }
+      const candidates=[];for(const uuid of attack.context.targetUuids??[]){const token=await globalThis.fromUuid(uuid);if(token?.actor)candidates.push(token);}
+      let primaryUuid=payload.decision.primaryTargetUuid;
+      if(!primaryUuid)primaryUuid=await this.promptWeaponModChoice("Исходная цель разброса",candidates.map(token=>({id:token.uuid,name:token.name??token.actor.name??token.id})));
+      if(!primaryUuid)return {cancelled:true};
+      const primary=candidates.find(token=>token.uuid===primaryUuid);if(!primary)throw new Error("Исходная цель отсутствует в подтверждённой атаке.");
+      const points=storageTokenFootprintCenters(primary),pointKey=point=>`${point.x},${point.y}`;
+      let originPoint=payload.decision.originPoint;
+      if(!originPoint){
+        const chosen=await this.promptWeaponModChoice("Пространство попадания (5 футов)",points.map((point,index)=>({id:pointKey(point),name:`Клетка ${index+1} (${point.x}, ${point.y})`})));
+        if(!chosen)return {cancelled:true};originPoint=points.find(point=>pointKey(point)===chosen);
+      }
+      if(!points.some(point=>pointKey(point)===pointKey(originPoint)))throw new Error("Выбранное пространство не принадлежит исходной цели.");
+      let abilityModifier=Number.isFinite(attack.roll.data?.mod)?attack.roll.data.mod:attack.context.abilityModifier;
+      if(payload.decision.abilityModifier!==null){
+        if(Number.isFinite(abilityModifier)?abilityModifier!==payload.decision.abilityModifier:!sender.isGM)throw new Error("Модификатор исходной атаки не подтверждён.");
+        abilityModifier=payload.decision.abilityModifier;
+      }
+      const contributions=mod.profile.effects.map(effect=>({...effect,scope:"weapon-mod",hostItemId:host.id,sourceId:mod.sourceId})),
+        scatterDamage=attack.context.scatterDamage??host.getFlag(MODULE_ID,"lichWeaponPropertyValues")?.scatterDamage,
+        tokens=Array.from(primary.parent.tokens?.contents??primary.parent.tokens?.values?.()??[]).filter(token=>token.actor && token.uuid!==primary.uuid),
+        positions=()=>weaponModProfileSignature([primary,...tokens].map(token=>[token.uuid,token.x,token.y,token.width,token.height,token.actor.system?.attributes?.ac?.value])),
+        positionBefore=positions(),targets=tokens.map(token=>({uuid:token.uuid,actorUuid:token.actor.uuid,ac:token.actor.system?.attributes?.ac?.value,
+          distanceFeet:convertUnitsToFeet(Math.min(...storageTokenFootprintCenters(token).map(point=>measureStorageGridDistance(originPoint,point,{sceneGrid:primary.parent.grid}))),primary.parent.grid.units??"ft")})),
+        build=()=>buildWeaponModScatterPlan({host,attack:attack.roll,scatterDamage,abilityModifier,contributions,targets});
+      let plan=build();
+      if(plan.needsDecision.some(row=>row.field==="abilityModifier")){
+        const dialog=globalThis.foundry?.applications?.api?.DialogV2;
+        if(!dialog?.wait)throw new Error("Модификатор исходной атаки должен подтвердить мастер.");
+        const choice=await dialog.wait({window:{title:"Модификатор исходной атаки"},content:'<label>Фактический модификатор <input name="modifier" type="number" required></label>',
+          buttons:[{action:"apply",label:"Подтвердить",callback:(_event,button)=>button.form.elements.namedItem("modifier").value},{action:"cancel",label:"Отмена",callback:()=>null}],close:()=>null});
+        guard();if(choice===null)return {cancelled:true};
+        if(String(choice).trim()==="" || !Number.isFinite(Number(choice)))throw new Error("Нужен числовой модификатор исходной атаки.");
+        abilityModifier=Number(choice);plan=build();
+      }
+      if(plan.needsDecision.length)throw new Error("КД окружающих существ не определена; разброс требует ручного разрешения мастером.");
+      if(positions()!==positionBefore)throw new Error("Цели разброса изменились; повторите выбор.");
+      const hits=plan.targets.filter(target=>target.hit);
+      if(receipt && (state.primaryTargetUuid!==primary.uuid || weaponModProfileSignature(state.originPoint)!==weaponModProfileSignature(originPoint)
+        || state.abilityModifier!==abilityModifier || state.damageFormula!==plan.damageFormula))throw new Error("Условия начатого разброса изменились; нужна ручная сверка.");
+      if(!receipt){
+        state={version:1,...binding,status:"pending",operationId:payload.operationId,primaryTargetUuid:primary.uuid,originPoint,abilityModifier,damageFormula:plan.damageFormula,result:null};
+        const whisper=Array.from(game.users.values?.()??game.users.contents??[]).filter(user=>user.isGM).map(user=>user.id);
+        guard();try{receipt=await ChatMessage.create({_id:id,user:game.user.id,whisper,content:"<p>Разброс ожидает броска урона.</p>",flags:{[MODULE_ID]:{[key]:state}}},{keepId:true});}
+        catch(error){guard();receipt=game.messages.get(id);if(!receipt || weaponModProfileSignature(receipt.getFlag(MODULE_ID,key))!==weaponModProfileSignature(state))throw error;}guard();
+      }
+      let roll=null;
+      if(hits.length){
+        const next={...state,status:"rolling"};await this.#writeWeaponModTargetReceipt(receipt,state,next,{},guard,key);state=next;
+        const type=this.#resolveFirearmDamageType(host);roll=await new CONFIG.Dice.DamageRoll(plan.damageFormula,actor.getRollData?.()??{},
+          {type,types:[type],properties:Array.from(host.system.properties??[])}).evaluate();guard();
+        if(!Number.isFinite(roll.total))throw new Error("Результат разброса не подтверждён; нужна ручная сверка.");
+      }
+      const result={hits,damageTotal:roll?.total??0,damageFormula:plan.damageFormula,radiusFeet:plan.radiusFeet},next={...state,status:"resolved",result,nativeRollJSON:roll?.toJSON()??null},
+        names=hits.map(hit=>{const token=tokens.find(token=>token.uuid===hit.uuid);return String(token?.name??token?.actor?.name??token?.id).replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));});
+      await this.#writeWeaponModTargetReceipt(receipt,state,next,{content:`<p>Разброс: ${result.damageTotal}. Попадания: ${names.join(", ")||"нет"}. Примените урон к этим целям через обычную карточку урона.</p>`,
+        ...(roll?{rolls:[Roll.fromJSON(roll.toJSON())]}:{}),"flags.dnd5e.messageType":"roll","flags.dnd5e.roll.type":"damage","flags.dnd5e.activity.uuid":activityUuid,
+        [`flags.${MODULE_ID}.weaponModDamageContext`]:{attackMessageId:message.id,attackNonce:attack.context.nonce,activityUuid}},guard,key);
+      return {...result,receiptId:id,replayed:false};
+    });
+  }
+
+  async resolveWeaponModTargetEffects(payload,{sender=globalThis.game.user,assertAuthority=null}={}){
+    const authorityId=globalThis.game.user?.id,guard=()=>{if(!isActiveGmClient(globalThis.game) || game.user.id!==authorityId)throw new Error("Активный мастер изменился.");assertAuthority?.();};guard();
+    const actor=await globalThis.fromUuid(payload.actorUuid);
+    if(!actor || !(sender?.isGM || actor.testUserPermission?.(sender,"OWNER")))throw new Error("Нет прав на оружие стрелка.");
+    return this.moduleApi.inventoryService.mutationCoordinator.run(`inventory-organization:${actor.id}`,async()=>{
+      guard();const host=actor.items.get(payload.hostItemId),message=globalThis.game.messages?.get?.(payload.decision.attackMessageId),
+        expectedUuid=`${host?.uuid}.Activity.${payload.activityId}`,attack=this.getWeaponModAttackContext(message,expectedUuid),catalog=this.moduleApi.itemUpgradeAutomationService?.weaponModCatalog,
+        activity=host?.system.activities?.get?.(payload.activityId)??host?.system.activities?.[payload.activityId];
+      if(!host || !activity || !isFirearmItem(host) || !attack || attack.context.actorUuid!==actor.uuid || attack.context.hostItemId!==host.id
+        || activity.type!=="attack" || activity.attack?.type?.value==="melee")throw new Error("Нет подтверждённой огнестрельной атаки для этого эффекта.");
+      const mod=readWeaponMods(host,id=>actor.items.get(id),catalog).attachments.find(mod=>mod.itemId===payload.childItemId),snapshot=attack.context.components?.find(entry=>entry.itemId===payload.childItemId);
+      if(!mod || snapshot?.sourceId!==mod.sourceId || snapshot.profileSignature!==weaponModProfileSignature(mod.profile))throw new Error("Обвес этой атаки изменился; автоматическое разрешение недоступно.");
+      const target=await globalThis.fromUuid(payload.decision.targetUuid);
+      if(!target?.actor)throw new Error("Выберите конкретный токен наблюдателя или цели.");
+      const materialOnly=mod.profile.effects.some(effect=>effect.kind==="nonmagical-resistance");
+      if(materialOnly && !attack.context.targetUuids?.includes(target.uuid) && !this.getWeaponModScatterHits(attack).some(hit=>hit.uuid===target.uuid && hit.actorUuid===target.actor.uuid))throw new Error("Этот токен не относится к целям подтверждённой атаки.");
+      let conditions=resolveWeaponModTargetConditions(this.getWeaponModTargetConditions(actor,attack.context,target),payload.decision,
+        {targetUuid:target.uuid,attackMessageId:message.id,allowMaterialDecision:sender.isGM});
+      const contributions=mod.profile.effects.map((effect,index)=>({...effect,scope:"weapon-mod",hostItemId:host.id,childItemId:mod.itemId,sourceId:mod.sourceId,effectKey:String(index)})),
+        evaluate=()=>buildWeaponModTargetDecision({host:{id:host.id,isFirearm:true},attack:{type:"ranged",isFirearm:true,total:attack.roll.total,messageId:message.id,ammunitionFamily:attack.context.ammunitionFamily},
+          target:{uuid:target.uuid},contributions,conditions});
+      let result=evaluate();
+      const id=createStableGearDocumentId(`weapon-mod-target:${attack.context.nonce}:${mod.itemId}:${target.uuid}`),binding={actorUuid:actor.uuid,hostItemId:host.id,childItemId:mod.itemId,sourceId:mod.sourceId,
+        profileSignature:snapshot.profileSignature,attackMessageId:message.id,attackNonce:attack.context.nonce,activityUuid:expectedUuid,targetUuid:target.uuid,targetActorUuid:target.actor.uuid},
+        existing=()=>globalThis.game.messages?.get?.(id);
+      let receipt=existing(),state=receipt?.getFlag?.(MODULE_ID,"weaponModTargetReceipt");
+      if(receipt){
+        const author=receipt.author??game.users.get(receipt.user?.id??receipt.user);
+        if(!author?.isGM || !state || Object.entries(binding).some(([key,value])=>state[key]!==value))throw new Error("Карточка решения не совпадает с атакой.");
+        if(state.status==="resolved" || state.status==="cancelled" && state.operationId===payload.operationId)return {...state.result,receiptId:id,replayed:true};
+        if(state.status==="rolling")throw new Error("Проверка уже началась, но её результат не подтверждён. Требуется ручная сверка; повторного броска не будет.");
+      }else{
+        state={version:1,...binding,operationId:payload.operationId,approvedByUserId:game.user.id,status:"pending",conditions,result:null};
+        const users=Array.from(game.users?.values?.()??game.users?.contents??[]),knownTarget=attack.context.targetUuids?.includes(target.uuid),whisper=users.filter(user=>user.isGM
+          || target.actor.testUserPermission?.(user,"OWNER") || knownTarget && actor.testUserPermission?.(user,"OWNER")).map(user=>user.id);
+        guard();try{receipt=await globalThis.ChatMessage.create({_id:id,user:game.user.id,whisper,content:"<p>Эффект обвеса ожидает решения мастера.</p>",flags:{[MODULE_ID]:{weaponModTargetReceipt:state}}},{keepId:true});}
+        catch(error){guard();receipt=existing();if(!receipt || weaponModProfileSignature(receipt.getFlag(MODULE_ID,"weaponModTargetReceipt"))!==weaponModProfileSignature(state))throw error;}guard();
+      }
+      if(result.needsDecision.length){
+        const resolved=await this.promptWeaponModTargetConditions({decision:payload.decision,conditions,needsDecision:result.needsDecision,target});guard();
+        if(!resolved){const next={...state,status:"cancelled",operationId:payload.operationId,result:{cancelled:true}};await this.#writeWeaponModTargetReceipt(receipt,state,next,{content:"<p>Решение мастера отменено; проверка не выполнялась.</p>"},guard);return {...next.result,receiptId:id};}
+        const current=this.getWeaponModTargetConditions(actor,attack.context,target);
+        if(current.positionSignature!==conditions.positionSignature)throw new Error("Положение стрелка или наблюдателя изменилось; повторите решение мастера.");
+        conditions=resolveWeaponModTargetConditions(current,{...payload.decision,...Object.fromEntries(WEAPON_MOD_TARGET_FIELDS.map(field=>[field,resolved[field]??null]))},
+          {targetUuid:target.uuid,attackMessageId:message.id,allowMaterialDecision:true});result=evaluate();
+        if(result.needsDecision.length)throw new Error("Не все условия эффекта подтверждены мастером.");
+      }
+      let total=null,json=null;
+      if(result.suppressionCheck){
+        const next={...state,status:"rolling",conditions,operationId:payload.operationId};await this.#writeWeaponModTargetReceipt(receipt,state,next,{},guard);state=next;
+        const rolls=await target.actor.rollSkill({skill:"prc",ability:"wis",rolls:[{options:{target:result.suppressionCheck.dc}}]}, {configure:true}, {create:false,rollMode:"gmroll"});guard();
+        if(!rolls?.length){const cancelled={...state,status:"cancelled",result:{cancelled:true}};await this.#writeWeaponModTargetReceipt(receipt,state,cancelled,{content:"<p>Проверка восприятия отменена.</p>"},guard);return {...cancelled.result,receiptId:id};}
+        if(rolls.length!==1 || !Number.isFinite(rolls[0].total))throw new Error("Результат проверки неоднозначен; нужна ручная сверка.");
+        total=rolls[0].total;const data=rolls[0].toJSON();json=typeof data==="string"?data:JSON.stringify(data);
+      }
+      const outcome={damageRule:result.damageRule,dc:result.suppressionCheck?.dc??null,perceptionTotal:total,revealedToObserver:total===null?null:total>=result.suppressionCheck.dc},
+        next={...state,status:"resolved",conditions,result:outcome,rollJSON:json,operationId:payload.operationId,approvedByUserId:game.user.id},
+        content=total===null?"<p>Применимость эффекта обвеса подтверждена мастером.</p>":`<p>Восприятие: ${total}, Сл ${outcome.dc}. ${outcome.revealedToObserver?"Положение стрелка раскрыто этому наблюдателю.":"Положение стрелка не раскрыто этому наблюдателю."}</p>`;
+      await this.#writeWeaponModTargetReceipt(receipt,state,next,{content,...(json?{rolls:[globalThis.Roll.fromJSON(json)]}:{})},guard);
+      return {...outcome,receiptId:id,replayed:false};
+    });
+  }
+
+  initializeWeaponModTargetIndex(){
+    this._weaponModSeenAttacks=new Set(Array.from(game.messages?.values?.()??game.messages?.contents??[]).flatMap(message=>Array.from(message.rolls??[])
+      .map(roll=>roll.options?.rebreyaWeaponModAttack?.nonce).filter(Boolean)));
+  }
+  async handleWeaponModAttackMessage(message){
+    this._weaponModSeenAttacks??=new Set();
+    const contexts=Array.from(message.rolls??[]).map(roll=>roll.options?.rebreyaWeaponModAttack).filter(Boolean);
+    for(const context of contexts){
+      if(this._weaponModSeenAttacks.has(context.nonce))continue;this._weaponModSeenAttacks.add(context.nonce);
+      if(!isActiveGmClient(game) || !this.getWeaponModAttackContext(message,context.activityUuid))continue;
+      const actor=await globalThis.fromUuid(context.actorUuid),host=actor?.items?.get(context.hostItemId),catalog=this.moduleApi.itemUpgradeAutomationService?.weaponModCatalog;
+      if(!host || !catalog)continue;
+      const mods=readWeaponMods(host,id=>actor.items.get(id),catalog),source=context.sourceTokenUuid?await globalThis.fromUuid(context.sourceTokenUuid):null;
+      const ordered=[...context.components??[]].sort((a,b)=>Number(mods.modernizedParts.some(mod=>mod.itemId===b.itemId))-Number(mods.modernizedParts.some(mod=>mod.itemId===a.itemId)));
+      for(const snapshot of ordered){
+        const mod=[...mods.attachments,...mods.modernizedParts].find(mod=>mod.itemId===snapshot.itemId);
+        if(!mod || snapshot.profileSignature!==weaponModProfileSignature(mod.profile))continue;
+        if(mod.profile.effects.some(effect=>["scatter-radius","scatter-ability-modifier"].includes(effect.kind))){
+          await this.resolveWeaponModScatter({actorUuid:actor.uuid,hostItemId:host.id,childItemId:mod.itemId,activityId:context.activityUuid.split(".").at(-1),
+            operationId:globalThis.crypto.randomUUID(),decision:{kind:"scatter",attackMessageId:message.id,primaryTargetUuid:null,originPoint:null,abilityModifier:null}});
+          continue;
+        }
+        const silencer=mod.profile.effects.find(effect=>effect.kind==="silencer"),projectile=mod.profile.effects.some(effect=>effect.kind==="nonmagical-resistance");
+        let targets=[];
+        if(silencer && silencer.ammunition.includes(context.ammunitionFamily)){
+          if(source?.actor?.uuid!==actor.uuid){globalThis.ui?.notifications?.warn?.("Для проверки глушителя выберите точный токен стрелка.");continue;}
+          targets=Array.from(source.parent?.tokens?.contents??source.parent?.tokens?.values?.()??[]).filter(token=>{
+            if(!token.actor || token.actor.uuid===actor.uuid)return false;
+            const distance=this.getWeaponModTargetConditions(actor,context,token).distanceFeet;return Number.isFinite(distance)&&distance<=silencer.radiusFeet;
+          });
+        }else if(projectile){
+          const attack=this.getWeaponModAttackContext(message,context.activityUuid),uuids=new Set([...context.targetUuids??[],...this.getWeaponModScatterHits(attack).map(hit=>hit.uuid)]);
+          for(const uuid of uuids){const token=await globalThis.fromUuid(uuid);if(token)targets.push(token);}
+        }
+        for(const target of targets){
+          if(!isActiveGmClient(game))return;
+          await this.resolveWeaponModTargetEffects({actorUuid:actor.uuid,hostItemId:host.id,childItemId:mod.itemId,activityId:context.activityUuid.split(".").at(-1),
+            operationId:globalThis.crypto.randomUUID(),decision:{kind:"target-effects",targetUuid:target.uuid,attackMessageId:message.id,targetVisible:null,canHear:null,hiddenFromTarget:null,materialTarget:null}});
+        }
+      }
+    }
   }
 
   async promptWeaponModChoice(title,entries){
@@ -4039,6 +4359,7 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      this.tagWeaponModAttack(config);
       if(activity.flags?.[MODULE_ID]?.weaponModActivity){
         try{this.getManagedWeaponModActivityDefinition(activity);}
         catch(error){globalThis.ui?.notifications?.warn?.(error.message);return false;}

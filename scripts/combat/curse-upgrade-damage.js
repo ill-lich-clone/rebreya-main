@@ -47,16 +47,44 @@ export class CurseUpgradeDamageAdapter {
     this.resolveDamageSource = resolveDamageSource;
     this.processedPackets = new WeakSet();
     this.finalizedDamageItems = new WeakSet();
+    this.weaponModOptions=new WeakMap();this.weaponModPackets=new WeakSet();
+  }
+
+  registerNativeDamageOptions(ElementClass=globalThis.customElements?.get?.("damage-application")){
+    this.registerNativePacketCleanup();
+    const prototype=ElementClass?.prototype;if(typeof prototype?.getTargetOptions!=="function")return false;
+    const key=Symbol.for("rebreya-main.weapon-mod-damage-options");
+    if(prototype[key]){prototype[key].adapter=this;return true;}
+    const state={adapter:this,original:prototype.getTargetOptions};Object.defineProperty(prototype,key,{value:state});
+    prototype.getTargetOptions=function(uuid){
+      const options=state.original.call(this,uuid);
+      if(!options || !Object.isExtensible(options))return options;
+      const context=state.adapter.service.moduleApi?.combatAttackService?.getWeaponModDamageContext?.(this.chatMessage,uuid);
+      if(context)options.rebreyaWeaponModDamage=context;else delete options.rebreyaWeaponModDamage;
+      return options;
+    };return true;
+  }
+
+  registerNativePacketCleanup(ActorClass=globalThis.CONFIG?.Actor?.documentClass){
+    const prototype=ActorClass?.prototype;if(typeof prototype?.calculateDamage!=="function")return false;
+    const key=Symbol.for("rebreya-main.weapon-mod-packet-cleanup");
+    if(prototype[key]){prototype[key].adapter=this;return true;}
+    const state={adapter:this,original:prototype.calculateDamage};Object.defineProperty(prototype,key,{value:state});
+    prototype.calculateDamage=function(damages,options={},...rest){
+      try{return state.original.call(this,damages,options,...rest);}finally{state.adapter.restoreWeaponModTraits(options);}
+    };return true;
   }
 
   /** dnd5e.calculateDamage; skip the native outer callback for a MIDI packet. */
   calculateDamage(actor, damages, options = {}) {
     if (options.midi) return true;
+    this.restoreWeaponModTraits(options);
     return this.applyShieldResistance(actor, damages, options);
   }
 
   /** midi-qol.dnd5eCalculateDamage, after MIDI custom trait adjustments. */
   midiCalculateDamage(actor, damages, options = {}) {
+    this.restoreWeaponModTraits(options);
     return this.applyShieldResistance(actor, damages, options);
   }
 
@@ -91,12 +119,50 @@ export class CurseUpgradeDamageAdapter {
   /** Native dnd5e.preCalculateDamage(actor, descriptions, options). MIDI owns its nested callback. */
   preCalculateDamage(actor, damages, options = {}) {
     if (options.midi) return true;
+    this.applyWeaponModTraits(actor,damages,options);
     return this.applyPacket(actor, damages, options, false);
   }
 
   /** midi-qol.dnd5ePreCalculateDamage runs after MIDI save preparation, before native traits. */
   midiPreCalculateDamage(actor, damages, options = {}) {
+    this.applyWeaponModTraits(actor,damages,options);
     return this.applyPacket(actor, damages, options, true);
+  }
+
+  applyWeaponModTraits(actor,damages,options){
+    if(!Array.isArray(damages) || this.weaponModPackets.has(damages) || options.ignore===true || options.midi?.noCalc
+      || options.midi?.applyDamage && !options.rebreyaCurseFinalize)return;
+    const rule=this.service.moduleApi?.combatAttackService?.getWeaponModDamageRule?.(actor,options);
+    if(!rule)return;
+    const traits=actor.system?.traits??{};
+    // MIDI custom matchers run before our post callback. Their arbitrary conditions
+    // cannot safely be replaced by type-wide native options; leave those packets manual.
+    if(options.midi && [traits.dr,traits.di].some(trait=>String(trait?.custom??"").trim() || Object.keys(trait?.midi??{}).length)){
+      this.service.moduleApi?.combatAttackService?.warnWeaponModDamageLimit?.(actor,options);return;
+    }
+    const downgrade=new Set(options.downgrade instanceof Set?options.downgrade:[]),resistance=new Set(options.ignore?.resistance instanceof Set?options.ignore.resistance:[]);
+    let changed=false;
+    for(const entry of damages){
+      const properties=entry.properties;
+      if(!(properties instanceof Set || Array.isArray(properties)) || new Set(properties).has("mgc") || entry.value<=0
+        || !(globalThis.CONFIG?.DND5E?.damageTypes?.[entry.type]?.isPhysical??["bludgeoning","piercing","slashing"].includes(entry.type)))continue;
+      const conditional=category=>traits[category]?.value?.has?.(entry.type) && traits[category]?.bypasses?.has?.("mgc");
+      if(rule.treatNonmagicalImmunityAsResistance && conditional("di") && !ignored(options,"immunity",entry.type) && options.downgrade!==true){
+        downgrade.add(entry.type);changed=true;
+      }else if(rule.ignoreNonmagicalResistance && conditional("dr") && !ignored(options,"resistance",entry.type)){
+        resistance.add(entry.type);changed=true;
+      }
+    }
+    if(!changed)return;
+    const state={ignore:options.ignore,downgrade:options.downgrade,ownIgnore:{...options.ignore,resistance},ownDowngrade:options.downgrade===true?true:downgrade};
+    options.ignore=state.ownIgnore;options.downgrade=state.ownDowngrade;
+    this.weaponModOptions.set(options,state);this.weaponModPackets.add(damages);
+  }
+  restoreWeaponModTraits(options){
+    const state=this.weaponModOptions.get(options);if(!state)return;
+    if(options.ignore===state.ownIgnore){if(state.ignore===undefined)delete options.ignore;else options.ignore=state.ignore;}
+    if(options.downgrade===state.ownDowngrade){if(state.downgrade===undefined)delete options.downgrade;else options.downgrade=state.downgrade;}
+    this.weaponModOptions.delete(options);
   }
 
   flatModifiers(actor) {
@@ -140,15 +206,21 @@ export class CurseUpgradeDamageAdapter {
    * Recalculate source descriptions (never rolls) using one flat adjustment across
    * the effect, then publish the result in MIDI's own damage/HP preview fields.
    */
-  preTargetDamageApplication(token, { workflow, damageItem } = {}) {
+  preTargetDamageApplication(token, { workflow, damageItem, rebreyaWeaponModReady=false } = {}) {
     const actor = token?.actor ?? token?.document?.actor;
     if (!actor || !damageItem || this.finalizedDamageItems.has(damageItem)) return true;
-    const rules = this.flatModifiers(actor), hasFlat = rules.length > 0;
+    const combat=this.service.moduleApi?.combatAttackService,context=combat?.getWeaponModDamageContext?.(workflow?.itemCardId,token?.document?.uuid??token?.uuid,workflow?.activity?.uuid),
+      weaponRule=context?combat.getWeaponModDamageRule(actor,{rebreyaWeaponModDamage:context}):null;
+    if(context && !rebreyaWeaponModReady){
+      const pending=combat.prepareWeaponModDamageUse?.(workflow.activity,{midiOptions:{workflow}},{});
+      if(pending)return Promise.resolve(pending).then(result=>result?.cancelled?false:this.preTargetDamageApplication(token,{workflow,damageItem,rebreyaWeaponModReady:true}));
+    }
+    const rules = this.flatModifiers(actor), hasFlat = rules.length > 0,hasWeaponMod=Boolean(weaponRule);
     const hasShield = this.service.sources(actor, "shield").length > 0
       && isCurseRangedWeaponAttack(workflow?.activity, workflow?.item);
-    if (!hasFlat && !hasShield) return true;
+    if (!hasFlat && !hasShield && !hasWeaponMod) return true;
     this.finalizedDamageItems.add(damageItem);
-    if (hasFlat && typeof actor.calculateDamage === "function") {
+    if ((hasFlat || hasWeaponMod) && typeof actor.calculateDamage === "function") {
       const details = damageItem.damageDetails ?? {};
       const categories = damageItem.damageSelector === "otherDamage" ? ["otherDamage"]
         : ["defaultDamage", "bonusDamage", ...(globalThis.MidiQOL?.configSettings?.()?.singleConcentrationRoll ? ["otherDamage"] : [])];
@@ -175,6 +247,7 @@ export class CurseUpgradeDamageAdapter {
       let offset = 0;
       for (const { raw, options } of groups) {
         const result = actor.calculateDamage(raw, { ...options, midi: { ...options.midi },
+          ...(context?{rebreyaWeaponModDamage:context}:{}),
           rebreyaCurseFinalize: true, rebreyaCursePacketRatios: ratios.slice(offset, offset + raw.length) });
         offset += raw.length;
         if (!Array.isArray(result)) return true;

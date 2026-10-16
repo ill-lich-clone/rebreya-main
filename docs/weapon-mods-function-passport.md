@@ -1,5 +1,17 @@
 # Оружейные обвесы и модернизированные части
 
+## Цели, глушители и разброс
+
+Владельцы: pure `weapon-mod-roll-modifiers.js`, прежний `CombatAttackService` и `CurseUpgradeDamageAdapter`. Focused: `weapon-mod-target-effects.test.mjs`, commands, combat, curse, absorption, automation tests.
+
+- `isValidWeaponModTargetDecision(value)`, `resolveWeaponModTargetConditions(known,decision,context)`, `buildWeaponModTargetDecision(input)`: exact target-effects DTO; только неизвестные факты дополняются решением. MaterialTarget подтверждает authenticated GM. Глушитель: musket/pistol/rifle, радиус30/10 фт., native Восприятие против10+floor(actual attack total/2), раскрытие конкретному наблюдателю без изменения global hidden.
+- `tagWeaponModAttack(config)` сохраняет nonce, Actor/host/activity/token/targets, ammo, modifier/scatter formula и component/profile identities в options native roll. `getWeaponModAttackContext(message,activityUuid)` требует один evaluated roll; `getWeaponModDamageContext(messageOrId,targetUuid,activityUuid)` восстанавливает originating/associated attack, отказывает при неоднозначности.
+- `resolveWeaponModTargetEffects(payload,{sender,assertAuthority})` и `resolveWeaponModScatter(payload,context)`: active GM + OWNER, прежний inventory coordinator. Детерминированные закрытые GM-authored ChatMessage receipts: pending → rolling → resolved; durable rolling до RNG. Неопределённый rolling требует ручной сверки без переброса. `#writeWeaponModTargetReceipt(receipt,before,next,patch,guard,key)` делает CAS/readback и authority checks. Attack roll/патроны не меняются.
+- `getWeaponModTargetConditions(actor,context,target)` читает geometry/deafened, `promptWeaponModTargetConditions(input)` спрашивает неизвестное у GM. Геометрия проверяется после диалога. Observer receipt виден GM/владельцам наблюдателя; стрелку только для исходной явной цели.
+- `isValidWeaponModScatterDecision(value)`, `buildWeaponModScatterPlan({host,attack,scatterDamage,abilityModifier,contributions,targets})`: exact decision, радиус5/strong10, weak добавляет только фактический ability modifier. Тот же attack total против AC других существ, large Token выбирает одну занимаемую клетку. Один native DamageRoll, без обычных bonuses/critical dice; штатная card применяет HP. Неизвестная КД/геометрия требует ручного решения. `getWeaponModScatterHits(attack)` принимает дополнительные projectile targets только из GM resolved receipt.
+- `initializeWeaponModTargetIndex()` исключает исторические атаки; `handleWeaponModAttackMessage(message)` обрабатывает новые nonce через существующие chat hooks, сначала scatter. `prepareWeaponModDamageUse(activity,config,message)` ждёт решения до native rollDamage и сохраняет config/dialog/flags/authored parts.
+- `getWeaponModDamageRule(actor,options)` возвращает два scoped trait-флага только для точных target/attack/component identities из GM receipts. `warnWeaponModDamageLimit(actor,options)` сообщает о ручном расчёте custom MIDI trait expressions.
+
 ## Вычисляемые свойства и вес
 
 - `weapon-mod-projections.js:buildWeaponModContributions({host,mods,context})` получает detached source и проверенные links, возвращает typed contributions с identity Actor/host/child/effect/version и diagnostics. Исходные веса переводятся по native weight units; отрицательная каталожная масса модернизации используется как delta, если native nonnegative schema сохранила0. Никакие projectedEffects flags не записываются.

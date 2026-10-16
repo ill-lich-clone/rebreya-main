@@ -1,5 +1,5 @@
 import { evaluateSimpleUpgradeRoll } from "../automation/item-upgrade-roll-modifiers.js?v=1.4.254";
-import { evaluateWeaponModAttack } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.384";
+import { evaluateWeaponModAttack } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.386";
 import { getWeaponModHostDescriptor } from "../data/weapon-mod-rules.js?v=1.4.383";
 const MARKER = "rebreyaSimpleUpgradeDamage";
 const targetData = token => {

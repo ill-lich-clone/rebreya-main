@@ -43,7 +43,7 @@ import {
   hideInstalledUpgradeInventoryRows,
   isItemUpgradeHostItem,
   registerItemUpgradeFilterHook
-} from "./item-upgrade-sheet.js?v=1.4.385";
+} from "./item-upgrade-sheet.js?v=1.4.386";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,

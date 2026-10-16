@@ -1,6 +1,6 @@
 import { aggregateKey, keyedMutationScheduling } from "./socket-command-scheduling.js";
 import { weaponModFlag, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.383";
-import { isValidWeaponModAttackDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.384";
+import { isValidWeaponModAttackDecision, isValidWeaponModTargetDecision, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.386";
 const object=value=>value && typeof value==="object" && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
 const text=value=>typeof value==="string" && value.length>0 && value.length<=256 && value.trim()===value && !/[\u0000-\u001f\u007f]/u.test(value);
 const exact=(value,keys,optional=[])=>Boolean(object(value) && keys.every(key=>Object.hasOwn(value,key)) && Object.keys(value).every(key=>keys.includes(key)||optional.includes(key)));
@@ -12,7 +12,7 @@ export function isValidWeaponModernizationInstallPayload(p){return exact(p,base,
 export function isValidWeaponModernizationApprovalPayload(p){const keys=["actorUuid","hostItemId","sourceId","profileSignature","operationId"];
   return exact(p,keys) && keys.filter(key=>key!=="profileSignature").every(key=>text(p[key])) && typeof p.profileSignature==="string" && p.profileSignature.length>0 && p.profileSignature.length<=16384;}
 export function isValidWeaponModActivityPayload(p){const keys=["actorUuid","hostItemId","childItemId","activityId","operationId","decision"];
-  return exact(p,keys) && keys.filter(key=>key!=="decision").every(key=>text(p[key])) && (p.decision===null || isValidWeaponModAttackDecision(p.decision)
+  return exact(p,keys) && keys.filter(key=>key!=="decision").every(key=>text(p[key])) && (p.decision===null || isValidWeaponModAttackDecision(p.decision) || isValidWeaponModTargetDecision(p.decision) || isValidWeaponModScatterDecision(p.decision)
     || exact(p.decision,["kind","tokenUuid"]) && p.decision.kind==="light-token" && text(p.decision.tokenUuid)
     || exact(p.decision,["kind","grenadeItemId"]) && ["launcher-load","launcher-prepare"].includes(p.decision.kind) && text(p.decision.grenadeItemId)
     || exact(p.decision,["kind","prepareOperationId","grenadeItemId"]) && p.decision.kind==="launcher-consume" && text(p.decision.prepareOperationId) && text(p.decision.grenadeItemId)
