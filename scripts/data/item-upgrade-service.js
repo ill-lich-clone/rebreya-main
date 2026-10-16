@@ -4,6 +4,14 @@ import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.4.292";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
+import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.378";
+import { getWeaponModHostDescriptor, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, validateModernizedPartInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.378";
+import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.379";
+import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.377";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.379";
+import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
+import { createStableGearDocumentId } from "./gear-document-ids.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";
@@ -269,9 +277,107 @@ export function profileSignature(profile) {
 }
 
 export class ItemUpgradeService {
-  constructor(moduleApi = null, { getManifest = loadUpgradeAutomationManifest } = {}) {
+  constructor(moduleApi = null, { getManifest = loadUpgradeAutomationManifest, getWeaponModCatalog = loadWeaponModCatalog } = {}) {
     this.moduleApi = moduleApi;
     this.getManifest = getManifest;
+    this.getWeaponModCatalog = getWeaponModCatalog;
+  }
+
+  async getWeaponModsProjection(item) {
+    const catalog=await this.getWeaponModCatalog(),actor=getItemActor(item),host=getWeaponModHostDescriptor(item,catalog);
+    const state=readWeaponMods(item,id=>actor?.items?.get(id),catalog);
+    const catalogue=catalog.rows.map(row=>{
+      const owned=getActorItems(actor).filter(child=>weaponModFlag(child,"gearId")===row.sourceId && !weaponModFlag(child,"installedWeaponMod")?.hostItemId
+        && !weaponModFlag(child,INSTALLED_UPGRADE_FLAG)?.hostItemId);
+      return {...row,itemIds:owned.map(child=>child.id),quantity:owned.reduce((sum,child)=>sum+Number(child.system.quantity??0),0)};
+    });
+    return {host,...state,catalogue};
+  }
+
+  installWeaponAttachment(host,component,options={}) { return this.#mutateWeaponMod("install",host,component,options); }
+  removeWeaponAttachment(host,componentOrId,options={}) { return this.#mutateWeaponMod("remove",host,componentOrId,options); }
+  applyWeaponModernization(host,component,options={}) { return this.#mutateWeaponMod("modernize",host,component,options); }
+
+  async #mutateWeaponMod(mode,host,componentOrId,{operationId,mountId=null,removeItemId=null,completionReceipt=null,sender=globalThis.game?.user,assertAuthority=null}={}) {
+    const actor=getItemActor(host),componentId=typeof componentOrId==="string"?componentOrId:getItemId(componentOrId),authorityId=globalThis.game?.user?.id;
+    const guard=()=>{
+      if(!isActiveGmClient(globalThis.game) || globalThis.game.user.id!==authorityId)throw new Error("Активный мастер изменился. Повторите операцию.");
+      return assertAuthority?.();
+    };
+    guard();
+    if(typeof operationId!=="string" || !operationId.trim() || operationId.length>256 || !actor?.uuid || !componentId)throw new WeaponModRuleError("unavailable");
+    if(typeof componentOrId!=="string" && getItemActor(componentOrId)!==actor)throw new WeaponModRuleError("unavailable");
+    const documents=new ItemInstanceDocuments(),workflow=new ItemInstanceWorkflow({documents,
+      journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.inventoryService.mutationCoordinator});
+    const intent={operationId,mode:`weapon-mod-${mode}`,sourceActorUuid:actor.uuid,destinationActorUuid:actor.uuid,
+      sourceItemId:componentId,hostItemId:getItemId(host),mountId,removeItemId,completionReceipt};
+    const result=await workflow.runBatch(intent,{sender,assertAuthority:guard,suppressItemRenders:true,
+      authorize:({sourceActor})=>{
+        if(!(sender?.id && (sender.isGM || sourceActor.testUserPermission?.(sender,"OWNER"))))throw new Error("Недостаточно прав для изменения оружия.");
+      },
+      prepareBatch:async(actors,operation)=>{
+        const current=actors.sourceActor.items.get(intent.hostItemId),component=actors.sourceActor.items.get(componentId);
+        if(!current || !component || current===component || Number(current.system.quantity)!==1)throw new WeaponModRuleError("invalid-quantity");
+        if(this.moduleApi.craftingService?.isWeaponRebuildBusy?.(current) && mode!=="modernize")throw new Error("Оружие занято проектом пересборки.");
+        const catalog=await this.getWeaponModCatalog(),modHost=getWeaponModHostDescriptor(current,catalog),items=getActorItems(actor);
+        if(!modHost)throw new WeaponModRuleError("incompatible");
+        getRuntimeWeaponModChildren(current,items);
+        const before=weaponModFlag(current,"weaponMods")??null,state=deepClone(before??{version:1,attachments:[],modernizedParts:[],approvals:[]}),steps=[];
+        const patch=(item,beforeFields,after)=>({actor:"source",itemId:item.id,before:beforeFields,after});
+        const statePath=`flags.${MODULE_ID}.weaponMods`,linkPath=`flags.${MODULE_ID}.installedWeaponMod`;
+        let itemId=componentId,sourceRemaining=Number(component.system.quantity);
+        if(mode==="remove"){
+          const link=state.attachments.find(entry=>entry.itemId===componentId);
+          if(!link || weaponModFlag(component,"installedWeaponMod")?.kind!=="weaponAttachment")throw new WeaponModRuleError("unavailable");
+          state.attachments=state.attachments.filter(entry=>entry.itemId!==componentId);
+          steps.push({intent,plan:{kind:"placement",preserveSourceId:true},placement:[
+            patch(component,{"system.container":component.system.container??null,[linkPath]:weaponModFlag(component,"installedWeaponMod")??null},{"system.container":null,[linkPath]:null}),
+            patch(current,{[statePath]:before},{[statePath]:state})]});
+        }else{
+          if(weaponModFlag(component,"installedWeaponMod")?.hostItemId || weaponModFlag(component,INSTALLED_UPGRADE_FLAG)?.hostItemId
+            || items.some(child=>child.system?.container===component.id))throw new WeaponModRuleError("slot-conflict");
+          const candidate=getWeaponModCandidate(component,catalog);let mounts=[];
+          if(mode==="install")mounts=validateWeaponAttachmentInstallation(modHost,state.attachments,candidate,{mountId}).mountIds;
+          else{
+            const receipt=await this.moduleApi.craftingService?.verifyWeaponRebuildCompletion?.(completionReceipt,{host:current,component,removeItemId,operationId});
+            if(!receipt)throw new Error("Модернизация требует подтверждённого завершения оплаченной пересборки.");
+            const projection=readWeaponMods(current,id=>actor.items.get(id),catalog);
+            if(projection.diagnostics.length)throw new WeaponModRuleError("slot-conflict");
+            validateModernizedPartInstallation(modHost,projection.modernizedParts,candidate,{removeItemId,gmApproval:receipt.gmApproval});
+            if(removeItemId){
+              const old=actor.items.get(removeItemId);
+              steps.push({intent,plan:{kind:"placement",preserveSourceId:true},placement:[patch(old,
+                {"system.container":old.system.container??null,[linkPath]:weaponModFlag(old,"installedWeaponMod")??null},{"system.container":null,[linkPath]:null})]});
+              state.modernizedParts=state.modernizedParts.filter(entry=>entry.itemId!==removeItemId);
+            }
+          }
+          const childIntent={...intent,quantity:1,targetFolderId:null,heroSlotId:null,expectedSourceQuantity:null},source=await documents.readSource(childIntent,actors);
+          const plan=planItemInstanceMutation({source,quantity:1,sameActor:true,sameFolder:false,forHeroSlot:false});
+          const prepared=await documents.prepare(childIntent,plan,source,{preparePlacement:({itemId:targetId})=>{
+            state[mode==="install"?"attachments":"modernizedParts"].push({itemId:targetId,sourceId:candidate.sourceId,...(mode==="install"?{mountIds:mounts}:{})});
+            const reverse={version:1,kind:candidate.profile.kind,hostActorId:actor.id,hostItemId:current.id,mountIds:mounts};
+            return [patch({id:targetId},{"system.container":component.system.container??null,[linkPath]:null},{"system.container":current.id,[linkPath]:reverse}),
+              patch(current,{[statePath]:before},{[statePath]:state})];
+          }},operation);
+          itemId=prepared.itemId;sourceRemaining=plan.sourceRemaining;
+          steps.push({...prepared,intent:childIntent,plan});
+        }
+        return {steps,value:{itemId,sourceRemaining,changed:true,hostName:current.name,componentName:component.name}};
+      }});
+    if(mode!=="modernize")await this.#publishWeaponModAction(intent,result,sender,guard);
+    return result;
+  }
+
+  async #publishWeaponModAction(intent,result,sender,guard){
+    const id=createStableGearDocumentId(`weapon-mod-card:${sender.id}:${intent.mode}:${intent.operationId}`),existing=()=>globalThis.game?.messages?.get?.(id);
+    if(existing())return;
+    const activation={type:intent.mode==="weapon-mod-install"?"bonus":"action",value:1};
+    const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+    const data={_id:id,speaker:{actor:intent.sourceActorUuid.split(".").at(-1)},content:`<p>${escape(result.hostName)}: ${escape(result.componentName)} — ${activation.type==="bonus"?"установка, бонусное действие":"снятие, действие"}.</p>`,
+      flags:{[MODULE_ID]:{weaponModAction:{operationId:intent.operationId,activation,hostItemId:intent.hostItemId,componentItemId:result.itemId}}}};
+    guard();
+    try{await globalThis.ChatMessage.create(data,{keepId:true});}catch(error){guard();if(!existing())throw error;}
+    guard();
   }
 
   async getUpgradeProjection(item) {

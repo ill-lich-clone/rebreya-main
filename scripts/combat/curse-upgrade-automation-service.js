@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.4.96-item-upgrades";
+import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.4.380";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { CurseUpgradeSaveAdapter } from "./curse-upgrade-saves.js";
 import { CurseUpgradeDamageAdapter } from "./curse-upgrade-damage.js?v=1.4.255";

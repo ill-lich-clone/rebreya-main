@@ -102,7 +102,7 @@ Command module экспортирует `registerWeaponModCommands(moduleApi,bus
 
 Constructor сохраняет прежний `getManifest` и добавляет optional DI `{getWeaponModCatalog=loadWeaponModCatalog}`. Workflow/driver используют уже существующие `InventoryService.mutationJournal` и `mutationCoordinator` (образец фабрики `scripts/data/inventory-service.js:5685`); отдельный journal/coordinator не создаётся. Actor flag approvals — только проекция: действительное GM-согласование сверяется с authenticated audit существующего downtime/craft request и привязкой host/profileSignature. Поддельный approvedByUserId в Item flags не даёт разрешения. Установленная часть при переносе продолжает действовать; новое согласование требуется для новой установки, а не повторной активации старой.
 
-- [ ] **1. RED:** `split and install exactly one`, `same-kind and two writers conflict`, `stale item and forged payload reject before write`, `replay survives reload`, `GM loss never compensates`, `action cards are exactly once`:
+- [x] **1. RED:** `split and install exactly one`, `same-kind and two writers conflict`, `stale item and forged payload reject before write`, `replay survives reload`, `GM loss never compensates`, `action cards are exactly once`:
   ```js
   assert.equal(source.system.quantity, 2); // исходный stack 3
   assert.equal(actor.items.filter(isInstalledWeaponMod).length, 1);
@@ -111,10 +111,10 @@ Constructor сохраняет прежний `getManifest` и добавляе�
   assert.equal(replayed.operationId, first.operationId);
   ```
   Проверить same Actor/OWNER, host quantity1, busy project, отсутствующий/чужой Item, конфликт одного mount из all, отмену activity, duplicate request ID с другим fingerprint и поддельный Actor approval без GM audit; ни один отказ не оставляет child/успешную карточку. Старые upgrade exports и state остаются прежними.
-- [ ] **2. Run:** `node --test tests/weapon-mod-mutations.test.mjs tests/weapon-mod-commands.test.mjs`; FAIL.
-- [ ] **3. Implement:** ItemUpgradeService готовит placement patches и использует существующие `ItemInstanceWorkflow.run/runBatch`, `ItemInstanceDocuments`, inventory journal и Actor queues. В intent добавить mode `weapon-mod-install|weapon-mod-remove` и host/mount IDs: они входят в fingerprint. Для membership явно `planSource(...)->{sameFolder:false}`; для split применять `$target` substitution. Не копировать journal state machine. Completion-only modernization требует проверенный сервером craft receipt, не boolean от игрока. Chat result привязать к тому же operationId: write-then-throw подтверждать readback, failed chat publication повторять без повторной установки. Экономику действий показывать native activation, используя существующий механизм, если он ведётся; новый счётчик action-spent не вводить.
-- [ ] **4. GREEN:** новые tests + `node --test tests/item-instance-workflow.test.mjs tests/item-instance-batch.test.mjs tests/item-upgrade-service.test.mjs tests/group-command-dispatch.test.mjs tests/inventory-mutation-recovery.test.mjs`. Проверить новую запись после каждого инъецированного сбоя и оба active/inactive GM маршрута.
-- [ ] **5. Commit gate R:** `feat: install owned weapon attachments durably`.
+- [x] **2. Run:** `node --test tests/weapon-mod-mutations.test.mjs tests/weapon-mod-commands.test.mjs`; FAIL.
+- [x] **3. Implement:** ItemUpgradeService готовит placement patches и использует существующие `ItemInstanceWorkflow.run/runBatch`, `ItemInstanceDocuments`, inventory journal и Actor queues. В intent добавить mode `weapon-mod-install|weapon-mod-remove` и host/mount IDs: они входят в fingerprint. Для membership явно `planSource(...)->{sameFolder:false}`; для split применять `$target` substitution. Не копировать journal state machine. Completion-only modernization требует проверенный сервером craft receipt, не boolean от игрока. Chat result привязать к тому же operationId: write-then-throw подтверждать readback, failed chat publication повторять без повторной установки. Экономику действий показывать native activation, используя существующий механизм, если он ведётся; новый счётчик action-spent не вводить.
+- [x] **4. GREEN:** новые tests + `node --test tests/item-instance-workflow.test.mjs tests/item-instance-batch.test.mjs tests/item-upgrade-service.test.mjs tests/group-command-dispatch.test.mjs tests/inventory-mutation-recovery.test.mjs`. Проверить новую запись после каждого инъецированного сбоя и оба active/inactive GM маршрута.
+- [x] **5. Commit gate R:** `feat: install owned weapon attachments durably`.
 
 ### Task 4: T4. Перестройка магазина и смена патронов без потерь
 

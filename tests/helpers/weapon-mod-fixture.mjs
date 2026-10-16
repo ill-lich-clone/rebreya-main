@@ -22,6 +22,25 @@ export function makeItem(gearId, overrides = {}) {
     flags: { "rebreya-main": { gearId, firearmClass: row?.firearmClass ?? "", ...(row?.attachment ? { attachment: structuredClone(row.attachment) } : {}) } }, ...overrides };
 }
 export const makeCatalog = () => buildCatalog(gear, ruleDefinitions, hostDefinitions);
+
+export async function makeWeaponModMutationFixture({quantity=3}={}){
+  const {makeInstanceDocumentsFixture}=await import("./item-instance-documents-fixture.mjs");
+  const {ItemUpgradeService}=await import("../../scripts/data/item-upgrade-service.js");
+  const fx=makeInstanceDocumentsFixture({quantity}),catalog=makeCatalog(),previousChat=globalThis.ChatMessage,cards=new Map();
+  const component=fx.source,source=makeItem("soshki");
+  Object.assign(component.data,{name:source.name,type:"loot",flags:source.flags,system:{quantity,equipped:false,container:null}});
+  const hostData=makeItem("vintovka");hostData.system.properties=[...hostData.system.properties];
+  const host=new globalThis.Item({...hostData,_id:"weapon",flags:{...hostData.flags,"rebreya-main":{...hostData.flags["rebreya-main"],
+    itemUpgrades:{capacity:2,installed:[]}}}},fx.group);fx.group.items.contents.push(host);
+  let chatFault=null;
+  globalThis.ChatMessage={create:async data=>{cards.set(data._id,structuredClone(data));if(chatFault){chatFault=null;throw Error("chat write-then-throw");}return data;}};
+  game.messages={contents:[...cards.values()],get:id=>cards.get(id)};
+  fx.api.itemUpgradeService=new ItemUpgradeService(fx.api,{getManifest:async()=>[],getWeaponModCatalog:async()=>catalog});
+  const restore=fx.restore;
+  return {...fx,host,component,catalog,cards,sender:game.user,service:fx.api.itemUpgradeService,
+    chatWriteThenThrow:()=>chatFault=true,
+    restore(){globalThis.ChatMessage=previousChat;restore();}};
+}
 export const makeHost = (gearId, overrides = {}) => ({ ...getHost(makeItem(gearId), makeCatalog()), ...overrides });
 export const makeCandidate = (sourceId, overrides = {}) => ({ ...getCandidate(makeItem(sourceId), makeCatalog()), ...overrides });
 export const makeInstalled = (sourceId, itemId, mountIds = []) => ({ itemId, sourceId, mountIds, profile: makeCandidate(sourceId).profile });

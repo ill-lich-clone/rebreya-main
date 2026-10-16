@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { isInstalledWeaponMod } from "../data/weapon-mod-rules.js?v=1.4.378";
 import {
   getInstalledActorUpgradeItemIds,
   getInstalledUpgradeItems,
@@ -7,7 +8,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.292";
+} from "../data/item-upgrade-service.js?v=1.4.380";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
@@ -537,7 +538,7 @@ export function registerItemUpgradeFilterHook() {
 
   filterHookRegistered = true;
   globalThis.Hooks.on("dnd5e.filterItem", (_sheet, item) => {
-    if (isInstalledUpgradeItem(item)) {
+    if (isInstalledUpgradeItem(item) || isInstalledWeaponMod(item)) {
       return false;
     }
     return undefined;

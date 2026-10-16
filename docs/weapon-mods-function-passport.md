@@ -1,5 +1,15 @@
 # Оружейные обвесы и модернизированные части
 
+## Установка и typed commands
+
+- `ItemUpgradeService(moduleApi,{getManifest,getWeaponModCatalog=loadWeaponModCatalog})` сохраняет прежние upgrade API. `getWeaponModsProjection(host)` возвращает проверенные live links, diagnostics и полный каталог с реальными свободными itemIds/quantity того же Actor.
+- `installWeaponAttachment(host,component,{mountId,operationId,sender,assertAuthority})`, `removeWeaponAttachment(host,componentOrId,{operationId,sender,assertAuthority})` используют существующие InventoryService journal/coordinator, `ItemInstanceWorkflow.runBatch` и `ItemInstanceDocuments`. Под Actor lock повторно читаются host/component; split отделяет ровно одну единицу. Mode/host/mount входят в fingerprint. Patches изменяют только weaponMods, installedWeaponMod и native container; обычные upgrades не меняются. Authority проверяется вокруг каждой записи, потерявший власть GM не компенсирует. Terminal replay не восстанавливает удалённый child.
+- `applyWeaponModernization(host,component,{removeItemId,operationId,completionReceipt,...context})` — внутренний completion-only путь: требует серверный `craftingService.verifyWeaponRebuildCompletion`; клиентский boolean/flag не является receipt. Снятие старой части включается в тот же batch, быстрая команда снятия принимает только weaponAttachment.
+- Private `#publishWeaponModAction` после durable результата обеспечивает один ChatMessage с детерминированным ID, operationId и native activation `{type:bonus|action,value:1}` в module flag; write-then-throw сверяется по collection, failed publication повторяется без второго install. Отдельный счётчик действий не вводится.
+- `weapon-mod-mutation-commands.js:registerWeaponModCommands(moduleApi,bus)` регистрирует `item-mod.attachment.install/remove`, `item-mod.modernization.approve`, `item-mod.activity.use` с exact validators, authenticated sender, OWNER/GM и Actor scheduling. До подключения use handler возвращает unsupported без записей. Approval требует GM и идёт в crafting owner. `isValidWeaponAttachmentInstallPayload`, `isValidWeaponAttachmentRemovePayload`, `isValidWeaponModernizationApprovalPayload`, `isValidWeaponModActivityPayload` исключают произвольные profiles/sender flags.
+- Composition wrappers `installWeaponAttachment(payload)`, `removeWeaponAttachment(payload)`, `approveWeaponModernization(payload)` используют privileged gateway одинаково для active/inactive GM и игроков. `registerItemUpgradeFilterHook` скрывает физические installed children через существующий inventory filter.
+- Focused: `tests/weapon-mod-mutations.test.mjs`, `tests/weapon-mod-commands.test.mjs`; существующие instance workflow/batch, item upgrades и recovery.
+
 ## Физическое дерево, Storage и цена
 
 - `runtime-item-graph.js:getRuntimeWeaponModChildren(host,items)` проверяет обе физические связи, singleton, source identity, непересекающиеся крепления и orphan reverse links без повторной сборки по каталогу. Capture включает children один раз; build remap-ит оба направления и Actor; materialize отвергает изменённые связи при replay. Envelope остаётся RuntimeGraph v1, charges/ammo/effects сохраняются.
