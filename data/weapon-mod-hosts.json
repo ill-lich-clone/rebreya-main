@@ -1,0 +1,365 @@
+[
+  {
+    "gearId": "antimaterial-naya-vintovka",
+    "sourceRef": "Огнестрел V0.36!A43",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "antimaterial-nyy-revol-ver",
+    "sourceRef": "Огнестрел V0.36!A41",
+    "family": "advanced",
+    "form": "short",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "arbalet-legkiy",
+    "sourceRef": "Оружие V0.36!A16",
+    "family": "crossbow",
+    "form": null,
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "arbalet-ruchnoy",
+    "sourceRef": "Оружие V0.36!A57",
+    "family": "crossbow",
+    "form": null,
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "arbalet-tyazhelyy",
+    "sourceRef": "Оружие V0.36!A58",
+    "family": "crossbow",
+    "form": null,
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "arkebuza",
+    "sourceRef": "Огнестрел V0.36!A11",
+    "family": "primitive",
+    "form": "long",
+    "modelTags": [
+      "arquebus"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "avtomaticheskaya-vintovka",
+    "sourceRef": "Огнестрел V0.36!A27",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "avtomaticheskiy-pistolet",
+    "sourceRef": "Огнестрел V0.36!A19",
+    "family": "advanced",
+    "form": "short",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "derrindzher",
+    "sourceRef": "Огнестрел V0.36!A6",
+    "family": "primitive",
+    "form": "short",
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "dragun",
+    "sourceRef": "Огнестрел V0.36!A7",
+    "family": "primitive",
+    "form": "short",
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "drobovik",
+    "sourceRef": "Огнестрел V0.36!A25",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "shotgun"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "dvukhstvol-nyy-drobovik",
+    "sourceRef": "Огнестрел V0.36!A30",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "shotgun"
+    ],
+    "requiresGmApproval": true
+  },
+  {
+    "gearId": "garmata",
+    "sourceRef": "Огнестрел V0.36!A34",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "gauss-pulemyot",
+    "sourceRef": "Огнестрел V0.36!A45",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "gauss-vintovka",
+    "sourceRef": "Огнестрел V0.36!A33",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "karabin",
+    "sourceRef": "Огнестрел V0.36!A24",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "carbine",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "kolestsovyy-pistolet",
+    "sourceRef": "Огнестрел V0.36!A13",
+    "family": "primitive",
+    "form": "long",
+    "modelTags": [
+      "wheellock"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "kremnevyy-pistolet",
+    "sourceRef": "Огнестрел V0.36!A5",
+    "family": "primitive",
+    "form": "short",
+    "modelTags": [
+      "flintlock-pistol"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "lazernaya-vintovka",
+    "sourceRef": "Огнестрел V0.36!A44",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": true
+  },
+  {
+    "gearId": "miniakula",
+    "sourceRef": "Огнестрел V0.36!A35",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "mnogostvol-nyy-kremnevyy-pistolet",
+    "sourceRef": "Огнестрел V0.36!A8",
+    "family": "primitive",
+    "form": "short",
+    "modelTags": [
+      "flintlock-pistol"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "mnogozaryadnyy-arbalet",
+    "sourceRef": "Оружие V0.36!A64",
+    "family": "crossbow",
+    "form": null,
+    "modelTags": [],
+    "requiresGmApproval": true
+  },
+  {
+    "gearId": "mushket",
+    "sourceRef": "Огнестрел V0.36!A10",
+    "family": "primitive",
+    "form": "long",
+    "modelTags": [
+      "musket"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "mushketon",
+    "sourceRef": "Огнестрел V0.36!A12",
+    "family": "primitive",
+    "form": "long",
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "obrez",
+    "sourceRef": "Огнестрел V0.36!A18",
+    "family": "advanced",
+    "form": "short",
+    "modelTags": [
+      "shotgun"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "ognemyot",
+    "sourceRef": "Огнестрел V0.36!A29",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": true
+  },
+  {
+    "gearId": "perenosnaya-pushka",
+    "sourceRef": "Огнестрел V0.36!A31",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [],
+    "requiresGmApproval": true
+  },
+  {
+    "gearId": "pistolet",
+    "sourceRef": "Огнестрел V0.36!A16",
+    "family": "advanced",
+    "form": "short",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "poluavtomaticheskaya-vintovka",
+    "sourceRef": "Огнестрел V0.36!A28",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "revol-ver",
+    "sourceRef": "Огнестрел V0.36!A20",
+    "family": "advanced",
+    "form": "short",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "ruchnitsa",
+    "sourceRef": "Огнестрел V0.36!A21",
+    "family": "advanced",
+    "form": "short",
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "ruchnoy-granatomyot",
+    "sourceRef": "Огнестрел V0.36!A37",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [],
+    "requiresGmApproval": true
+  },
+  {
+    "gearId": "samodel-noe-rpu",
+    "sourceRef": "Огнестрел V0.36!A36",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "tesla-vintovka",
+    "sourceRef": "Огнестрел V0.36!A32",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "tyazhelaya-vintovka",
+    "sourceRef": "Огнестрел V0.36!A26",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "tyazhelyy-pistolet",
+    "sourceRef": "Огнестрел V0.36!A17",
+    "family": "advanced",
+    "form": "short",
+    "modelTags": [
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  },
+  {
+    "gearId": "uravnitel",
+    "sourceRef": "Огнестрел V0.36!A38",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [],
+    "requiresGmApproval": true
+  },
+  {
+    "gearId": "vintovka",
+    "sourceRef": "Огнестрел V0.36!A23",
+    "family": "advanced",
+    "form": "long",
+    "modelTags": [
+      "rifle",
+      "magazine-fed-firearm"
+    ],
+    "requiresGmApproval": false
+  }
+]

@@ -55,25 +55,25 @@
 
 Изменяемые существующие владельцы перечислены в каждой задаче. Нет массового рефакторинга `main.js`, inventory или attack service. Последовательность: **T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10 → T11 → T12**. T10 независим от боевой реализации после T1, но его параллельное выполнение требует отдельно выбранного пользователем способа работы.
 
-### T1. Проверенные профили, topology и чистые правила
+### Task 1: T1. Проверенные профили, topology и чистые правила
 
 **Files:** Create первые четыре data/catalog/rules файла из карты, fixture и `tests/weapon-mod-rules.test.mjs`, `tests/weapon-mod-catalog.test.mjs`; Modify `docs/function-passport.md`; Create профильный паспорт. `data/gear.json` не переписывать ради дублирования registry.
 
 **Interfaces:** `loadWeaponModCatalog() -> Promise<Catalog>`; `getWeaponModHostDescriptor(item,catalog) -> Host|null`; `readWeaponMods(host,resolveItem,catalog) -> {attachments,modernizedParts,diagnostics}`; `isInstalledWeaponMod(item) -> boolean` только определяет наличие обратной связи, не служит доказательством её валидности; `validateWeaponAttachmentInstallation(host,installed,candidate,{mountId=null}={}) -> {mountIds}`; `validateModernizedPartInstallation(host,parts,candidate,{removeItemId=null,gmApproval=null}={}) -> {countedParts,removeItemId}`. Host содержит `{id,gearId,family,form,modelTags,mountIds,quantity,requiresGmApproval}`; candidate — `{itemId,sourceId,profile,profileSignature,quantity,available}`. Отказы — `WeaponModRuleError(code,details)` с объяснением. Fixture экспортирует `makeHost(gearId,overrides={})`, `makeCandidate(sourceId,overrides={})` и `makeInstalled(sourceId,itemId,mountIds=[])` с этими DTO.
 
-- [ ] **1. RED:** `named mounts and duplicate rules`, `pistol grip exception`, `source classification survives rename`, `future catalogue row fails closed`. Точные assertions:
+- [x] **1. RED:** `named mounts and duplicate rules`, `pistol grip exception`, `source classification survives rename`, `future catalogue row fails closed`. Точные assertions:
   ```js
   assert.deepEqual(validateWeaponAttachmentInstallation(makeHost('vintovka'), [], makeCandidate('soshki'), {mountId:'bottom-2'}).mountIds, ['bottom-2','barrel']);
   assert.equal(getWeaponModHostDescriptor(renamedWheellock,catalog).form, 'long');
   assert.throws(() => validateWeaponAttachmentInstallation(crossbow,[],makeCandidate('glushitel')), {code:'incompatible'});
   ```
   Дополнительно: ровно 3/6/2 mount IDs; повтор sourceId отклоняется; ствол/сверловка/обоймы конфликтуют; три counted parts + improved grip допустимы только с базовой; итог пары +2 закреплён данными registry, неизвестный tag/profile запрещён. Старая world-копия без attachment profile получает read-only fallback по stable gearId, без name matching/Item.update; отличающийся custom profile сохраняется, но не допускается к новой установке. Baseline fixture фиксирует 13/12 профилей, но runtime не обрезает будущий каталог до 25 строк.
-- [ ] **2. Run:** `node --test tests/weapon-mod-rules.test.mjs tests/weapon-mod-catalog.test.mjs`; ожидается FAIL на отсутствующем новом интерфейсе/правиле.
-- [ ] **3. Implement:** exact profiles по approved spec и source refs; коротко-/длинноствольность взять из секций `Огнестрел V0.36!A1:D45`, не из имени. Особым считать явный registry-признак или canonical `spc`; для неизвестного form требовать решение GM. Новые registry rows не дают исполнять чужие arbitrary flags.
-- [ ] **4. GREEN:** та же команда, затем `node --test tests/item-upgrade-rules.test.mjs tests/item-upgrade-service.test.mjs tests/gear-compendium.test.mjs`. Проверить detached входы, custom profiles и прежние 1–3 слота.
-- [ ] **5. Commit gate R:** `feat: define verified weapon mod rules`.
+- [x] **2. Run:** `node --test tests/weapon-mod-rules.test.mjs tests/weapon-mod-catalog.test.mjs`; ожидается FAIL на отсутствующем новом интерфейсе/правиле.
+- [x] **3. Implement:** exact profiles по approved spec и source refs; коротко-/длинноствольность взять из секций `Огнестрел V0.36!A1:D45`, не из имени. Особым считать явный registry-признак или canonical `spc`; для неизвестного form требовать решение GM. Новые registry rows не дают исполнять чужие arbitrary flags.
+- [x] **4. GREEN:** та же команда, затем `node --test tests/item-upgrade-rules.test.mjs tests/item-upgrade-service.test.mjs tests/gear-compendium.test.mjs`. Проверить detached входы, custom profiles и прежние 1–3 слота.
+- [x] **5. Commit gate R:** `feat: define verified weapon mod rules`.
 
-### T2. Транспорт дерева и стоимость без изменения старых слотов
+### Task 2: T2. Транспорт дерева и стоимость без изменения старых слотов
 
 **Files:** Modify `scripts/data/runtime-item-graph.js`, `scripts/data/lootgen-composition.js`, `scripts/data/lootgen-item-descriptor.js`, `scripts/data/lootgen-prepared-item.js`, `scripts/data/lootgen-source-catalog.js`, `scripts/data/storage-container-snapshot.js`, `scripts/data/storage-container-item-service.js`, `scripts/data/item-value.js`, `scripts/data/item-instance-rules.js`, `scripts/data/inventory-ingress-descriptor.js`, `scripts/application/inventory-graph-transfer.js`, `scripts/infrastructure/foundry/item-instance-documents.js`; Test существующие файлы из шагов2/4 этой задачи.
 
@@ -92,7 +92,7 @@
 - [ ] **4. GREEN:** предыдущая команда + `node --test tests/lootgen-prepared-item.test.mjs tests/storage-container-item-service.test.mjs tests/inventory-ingress-descriptor.test.mjs tests/inventory-mutation-recovery.test.mjs tests/item-instance-rules.test.mjs tests/disarm-service.test.mjs`.
 - [ ] **5. Commit gate R:** `feat: preserve weapon mods in item graphs`.
 
-### T3. Каноническая установка, typed commands и действия
+### Task 3: T3. Каноническая установка, typed commands и действия
 
 **Files:** Modify `scripts/data/item-upgrade-service.js`, `scripts/main.js`, существующий inventory row filter в `scripts/integrations/item-upgrade-sheet.js`; Create command module из карты, `tests/weapon-mod-mutations.test.mjs`, `tests/weapon-mod-commands.test.mjs`; Extend fixture.
 
@@ -116,7 +116,7 @@ Constructor сохраняет прежний `getManifest` и добавляе�
 - [ ] **4. GREEN:** новые tests + `node --test tests/item-instance-workflow.test.mjs tests/item-instance-batch.test.mjs tests/item-upgrade-service.test.mjs tests/group-command-dispatch.test.mjs tests/inventory-mutation-recovery.test.mjs`. Проверить новую запись после каждого инъецированного сбоя и оба active/inactive GM маршрута.
 - [ ] **5. Commit gate R:** `feat: install owned weapon attachments durably`.
 
-### T4. Перестройка магазина и смена патронов без потерь
+### Task 4: T4. Перестройка магазина и смена патронов без потерь
 
 **Files:** Modify `scripts/combat/attack-service.js`, `scripts/data/item-upgrade-service.js`, `scripts/data/weapon-mod-rules.js`; Extend `tests/combat-attack-service.test.mjs`, `tests/weapon-mod-mutations.test.mjs`.
 
@@ -134,7 +134,7 @@ Constructor сохраняет прежний `getManifest` и добавляе�
 - [ ] **4. GREEN:** `node --test tests/combat-attack-service.test.mjs tests/weapon-mod-mutations.test.mjs tests/environment-automation-service.test.mjs`; прежние aborted pre-roll, one-write jam, batched reload и removed-property tests остаются неизменными.
 - [ ] **5. Commit gate R:** `feat: reconcile ammunition during weapon rebuilds`.
 
-### T5. Платная календарная пересборка и этап создания
+### Task 5: T5. Платная календарная пересборка и этап создания
 
 **Files:** Create `scripts/data/weapon-rebuild-rules.js`, `tests/weapon-rebuild-rules.test.mjs`, `tests/weapon-rebuild-project.test.mjs`; Modify `scripts/data/crafting-service.js`, `scripts/data/craft-project-processor.js`, `scripts/data/craft-downtime-service.js`, `scripts/data/character-downtime-service.js`, `scripts/application/downtime-mutation-commands.js`, `scripts/main.js`; Test существующие файлы из шага4.
 
@@ -152,7 +152,7 @@ Constructor сохраняет прежний `getManifest` и добавляе�
 - [ ] **4. GREEN:** новые tests + `node --test tests/crafting-rules.test.mjs tests/crafting-service.test.mjs tests/craft-project-processor.test.mjs tests/craft-downtime-service.test.mjs tests/character-downtime-service.test.mjs tests/downtime-scheduler.test.mjs tests/inventory-mutation-recovery.test.mjs`. Отдельно доказать отсутствие nested-lock deadlock: handler не занимает заново ту же world/Actor queue при completion.
 - [ ] **5. Commit gate R:** `feat: add paid weapon rebuild projects`.
 
-### T6. Не накапливающиеся проекции свойств, веса и пассивных бонусов
+### Task 6: T6. Не накапливающиеся проекции свойств, веса и пассивных бонусов
 
 **Files:** Create `scripts/automation/weapon-mod-projections.js`, `tests/weapon-mod-projections.test.mjs`; Modify `scripts/automation/item-upgrade-automation-service.js`, `scripts/automation/item-upgrade-projections.js`, `scripts/automation/item-upgrade-roll-modifiers.js`, `scripts/integrations/item-upgrade-roll-adapter.js`; Read/use existing `scripts/data/inventory-weight.js` для проверки общего веса.
 
@@ -170,7 +170,7 @@ Constructor сохраняет прежний `getManifest` и добавляе�
 - [ ] **4. GREEN:** новые tests + `node --test tests/item-upgrade-projections.test.mjs tests/item-upgrade-automation-service.test.mjs tests/item-upgrade-roll-adapter.test.mjs tests/item-upgrade-roll-modifiers.test.mjs tests/item-upgrade-absorption.test.mjs`.
 - [ ] **5. Commit gate R:** `feat: project passive weapon mod effects`.
 
-### T7. Прицеливание, положение, видимость и подводный режим
+### Task 7: T7. Прицеливание, положение, видимость и подводный режим
 
 **Files:** Create `scripts/automation/weapon-mod-roll-modifiers.js`, `tests/weapon-mod-roll-modifiers.test.mjs`; Modify `scripts/integrations/item-upgrade-roll-adapter.js`, `scripts/combat/attack-service.js`, `scripts/automation/weapon-mod-projections.js`; Extend existing turn/combat hook owner, не регистрировать второй набор listeners.
 
@@ -191,7 +191,7 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 - [ ] **4. GREEN:** новый test + `node --test tests/combat-attack-service.test.mjs tests/item-upgrade-roll-adapter.test.mjs tests/environment-automation-service.test.mjs`.
 - [ ] **5. Commit gate R:** `feat: apply conditional attachment attack rules`.
 
-### T8. Activities штыка, фонарика и гранатомёта
+### Task 8: T8. Activities штыка, фонарика и гранатомёта
 
 **Files:** Create `scripts/data/weapon-mod-activities.js`, `tests/weapon-mod-activities.test.mjs`; Modify `scripts/automation/item-upgrade-automation-service.js`, `scripts/combat/attack-service.js`, `scripts/application/weapon-mod-mutation-commands.js`; Read `scripts/data/magic-items-compendium.js:3942` и `:4191` как существующий образец native Token light, не переносить туда firearm owner. Гранаты разрешает существующий explosive путь CombatAttackService.
 
@@ -209,7 +209,7 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 - [ ] **4. GREEN:** новый test + `node --test tests/combat-attack-service.test.mjs tests/item-upgrade-automation-service.test.mjs tests/gear-compendium.test.mjs tests/magic-item-runtime.test.mjs`.
 - [ ] **5. Commit gate R:** `feat: add attachment utility activities`.
 
-### T9. Глушители и правила сопротивлений конкретной цели
+### Task 9: T9. Глушители и правила сопротивлений конкретной цели
 
 **Files:** Modify `scripts/combat/attack-service.js`, `scripts/combat/curse-upgrade-damage.js`, `scripts/automation/weapon-mod-roll-modifiers.js`; Create `tests/weapon-mod-target-effects.test.mjs`.
 
@@ -228,7 +228,7 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 - [ ] **4. GREEN:** новый test + `node --test tests/curse-upgrade-damage.test.mjs tests/item-upgrade-absorption.test.mjs tests/combat-attack-service.test.mjs`.
 - [ ] **5. Commit gate R:** `feat: resolve suppression and ammunition resistance effects`.
 
-### T10. Полный набор индивидуальных чертежей
+### Task 10: T10. Полный набор индивидуальных чертежей
 
 **Files:** Create `data/weapon-blueprints.json`, `assets/weapon-blueprints/<gearId>.png` для 38 baseline hosts и трёх явно подписанных family fallback; `tests/weapon-blueprints.test.mjs`. Modify catalog loader T1 для cached blueprint metadata, без изменения `Item.img` и авторских иконок.
 
@@ -240,7 +240,7 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 - [ ] **4. GREEN:** test + визуальная контактная таблица всех 38 изображений и проверка отличимости/ориентации. Автоматический hash не заменяет эту проверку. Manifest читается один раз; runtime не сканирует файловую систему ради каждого листа.
 - [ ] **5. Commit gate R:** `feat: add individual weapon blueprint artwork`.
 
-### T11. Чертёж и полный каталог в существующей вкладке МОДЫ
+### Task 11: T11. Чертёж и полный каталог в существующей вкладке МОДЫ
 
 **Files:** Create `scripts/integrations/weapon-mod-panel.js`, `tests/weapon-mod-panel.test.mjs`; Modify `scripts/integrations/item-upgrade-sheet.js`, `scripts/integrations/dnd5e-sheet-extensions.js`, `templates/item-mods-tab.hbs`, `styles/main.css`, `lang/ru.json`; Test `tests/item-upgrade-service.test.mjs`, `tests/item-sheet-branding.test.mjs`, `tests/module-manifest.test.mjs`.
 
@@ -258,7 +258,7 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 - [ ] **4. GREEN:** `node --test tests/weapon-mod-panel.test.mjs tests/item-upgrade-service.test.mjs tests/item-sheet-branding.test.mjs tests/module-manifest.test.mjs`. Затем live render 480px и 820px для каждой topology; drag/drop, ПКМ, ЛКМ и resize не перекрывают слоты и прежние усовершенствования.
 - [ ] **5. Commit gate R:** `feat: add blueprint attachment controls to item mods`.
 
-### T12. Проверка полного цикла, документация и итоговое ревью
+### Task 12: T12. Проверка полного цикла, документация и итоговое ревью
 
 **Files:** Modify `README.md`, `docs/weapon-mods-function-passport.md`, `docs/function-passport.md`; при обнаруженных дефектах менять только затронутые владельцы/их focused tests. Создать `docs/weapon-mods-verification.md` с runtime версиями, проверенными сценариями и оставшимися реальными ограничениями.
 

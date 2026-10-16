@@ -359,6 +359,7 @@ Definition of Done: код, тесты, `README.md` при изменении п
 
 ### 14. Прочность, разрушение и upgrades
 
+- **Оружейные обвесы и модернизации:** [профильный паспорт](weapon-mods-function-passport.md) — проверенный stable-ID каталог, topology креплений 3/6/2, pure правила совместимости/лимита и read-only проверка новых weaponMods links. Обычные upgrades сохраняют своего владельца и прежние слоты.
 - **R4: каталог, правила установки/активации, UI и value:** [профильный паспорт усовершенствований](item-upgrades-function-passport.md). Здесь описаны `ItemUpgradeService.getUpgradeProjection`, pure rules, availability manifest и `evaluateItemValue`; основной mutation owner сохранён.
 - **R7: простые эффекты:** [паспорт простой автоматизации](simple-item-upgrades-function-passport.md). `ItemUpgradeAutomationService`, source-aware native Item projection, contributions с явным effectKey, managed Actor effects, `SimpleUpgradeRollAdapter` через CombatAttackService и общий packet reducer проклятий; 35 профилей, 2 ожидают уточнения правил. Finite choices валидирует `item-upgrade-choices.js`, сохраняет прежний ItemUpgradeService.
 
