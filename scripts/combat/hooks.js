@@ -246,14 +246,18 @@ export function registerCombatHooks(moduleApi) {
       Hooks.on(hookName, refreshParentActor);
     }
     Hooks.on("createToken", (tokenDocument) => index.refreshToken(tokenDocument));
-    Hooks.on("updateToken", (tokenDocument) => index.refreshToken(tokenDocument));
+    Hooks.on("updateToken", (tokenDocument,changed,options) => {
+      index.refreshToken(tokenDocument);
+      moduleApi.combatAttackService?.handleWeaponModTokenMove?.(tokenDocument,changed,options)?.catch(error=>console.error(`${MODULE_ID} | Weapon mod movement failed.`,error));
+    });
     Hooks.on("deleteToken", (tokenDocument) => index.removeToken(
       tokenDocument?.uuid ?? tokenDocument?.document?.uuid ?? tokenDocument?.id
     ));
     Hooks.on("updateUser", () => index.rebuildScene(globalThis.canvas?.scene));
-    Hooks.on("deleteCombat", (combat) => index.invalidateScene(
-      combat?.scene?.id ?? combat?.scene?._id ?? combat?.scene ?? globalThis.canvas?.scene?.id
-    ));
+    Hooks.on("deleteCombat", (combat) => {
+      index.invalidateScene(combat?.scene?.id ?? combat?.scene?._id ?? combat?.scene ?? globalThis.canvas?.scene?.id);
+      moduleApi.combatAttackService?.handleWeaponModTurnChange?.(combat,{ended:true})?.catch(error=>console.error(`${MODULE_ID} | Weapon mod combat cleanup failed.`,error));
+    });
   }
 
   if (hasRuneKnightService) {

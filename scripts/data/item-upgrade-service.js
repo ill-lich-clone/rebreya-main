@@ -13,6 +13,7 @@ import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.4.383";
+import { resolveWeaponModActivity } from "./weapon-mod-activities.js?v=1.4.384";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";
@@ -299,6 +300,27 @@ export class ItemUpgradeService {
   removeWeaponAttachment(host,componentOrId,options={}) { return this.#mutateWeaponMod("remove",host,componentOrId,options); }
   installWeaponModernization(host,component,options={}) { return this.#mutateWeaponMod("modernize",host,component,options); }
   applyWeaponModernization(host,component,options={}) { return this.installWeaponModernization(host,component,options); }
+
+  async useWeaponModActivity(payload,{sender=globalThis.game?.user,assertAuthority=null}={}) {
+    const authorityId=globalThis.game?.user?.id,guard=()=>{
+      if(!isActiveGmClient(globalThis.game) || globalThis.game.user.id!==authorityId)throw new Error("Активный мастер изменился.");
+      return assertAuthority?.();
+    };
+    guard();
+    const intent={...payload,mode:"weapon-mod-activity",sourceActorUuid:payload.actorUuid,destinationActorUuid:payload.actorUuid};
+    const workflow=new ItemInstanceWorkflow({documents:new ItemInstanceDocuments(),journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.inventoryService.mutationCoordinator});
+    const result=await workflow.runBatch(intent,{sender,assertAuthority:guard,authorize:({sourceActor:actor})=>{
+      if(!(sender?.id && (sender.isGM || actor.testUserPermission?.(sender,"OWNER"))))throw new Error("Недостаточно прав на оружие.");
+    },prepareBatch:async({sourceActor:actor})=>{
+      const host=actor.items.get(payload.hostItemId),catalog=await this.getWeaponModCatalog();
+      if(!host || Number(host.system.quantity)!==1)throw new Error("Оружие больше недоступно.");
+      const mods=readWeaponMods(host,id=>actor.items.get(id),catalog),definition=resolveWeaponModActivity(host,mods,payload);
+      const plan=await this.moduleApi.combatAttackService.planWeaponModActivity({actor,host,definition,decision:payload.decision});
+      return {steps:[{intent,plan:{kind:"placement",preserveSourceId:true},placement:plan.placement}],value:plan.value};
+    }});
+    await this.moduleApi.itemUpgradeAutomationService?.requestSync?.(payload.actorUuid);
+    return result;
+  }
 
   async approveWeaponModernization(payload,{sender=globalThis.game?.user,assertAuthority=null}={}){
     const authorityId=globalThis.game?.user?.id,guard=()=>{

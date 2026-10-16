@@ -31,15 +31,16 @@ function serialize(roll) {
   return { total: roll.total, json: roll.toJSON() };
 }
 export class DisarmRollAdapter {
-  constructor({ RollClass = globalThis.Roll } = {}) { this.RollClass = RollClass; }
+  constructor({ RollClass = globalThis.Roll, getContributions = () => [] } = {}) { this.RollClass = RollClass; this.getContributions=getContributions; }
   async attack(plan, mode) {
     if (!plan.formula || !["normal", "advantage", "disadvantage"].includes(mode)) throw new DisarmError("unresolved-roll-plan");
     const dice = mode === "advantage" ? "2d20kh" : mode === "disadvantage" ? "2d20kl" : "1d20";
     return serialize(await new this.RollClass(plan.formula.replace(/^1d20/u, dice)).evaluate());
   }
-  async save(actor, ability, mode) {
+  async save(actor, ability, mode, { item = null } = {}) {
     if (!["str", "dex"].includes(ability) || !["normal", "advantage", "disadvantage"].includes(mode)) throw new DisarmError("invalid-save");
-    const rolls = await actor.rollSavingThrow({ ability, rolls: [{ options: { advantage: mode === "advantage", disadvantage: mode === "disadvantage" } }] },
+    const bonus=item?this.getContributions(actor,item).filter(c=>c.scope==="weapon-mod" && c.kind==="disarm-bonus" && c.hostItemId===item.id).reduce((total,c)=>total+c.value,0):0;
+    const rolls = await actor.rollSavingThrow({ ability, rolls: [{ ...(bonus?{parts:[String(bonus)]}:{}),options: { advantage: mode === "advantage", disadvantage: mode === "disadvantage" } }] },
       { configure: false }, { create: false });
     return serialize(rolls?.[0]);
   }

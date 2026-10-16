@@ -47,5 +47,11 @@ export async function makeWeaponModMutationFixture({quantity=3}={}){
     restore(){globalThis.ChatMessage=previousChat;restore();}};
 }
 export const makeHost = (gearId, overrides = {}) => ({ ...getHost(makeItem(gearId), makeCatalog()), ...overrides });
+export function makeAttackCase(sourceId,overrides={}){
+  const row=makeCatalog().rows.find(row=>row.sourceId===sourceId),aim=row.profile.effects.find(effect=>effect.kind==="aim");
+  return {host:{id:"host",actorUuid:"Actor.a",isFirearm:true},attack:{primary:true,type:"ranged",isFirearm:true},target:{uuid:"Token.target",cover:"none"},
+    contributions:row.profile.effects.map((effect,index)=>({...structuredClone(effect),scope:"weapon-mod",hostItemId:"host",childItemId:"child",sourceId,effectKey:String(index),key:`${sourceId}:${index}`})),
+    conditions:{movedFeet:0,prone:false,targetVisible:true,usesProficiency:true,underwater:false,aimMode:aim?.mode??null,...overrides}};
+}
 export const makeCandidate = (sourceId, overrides = {}) => ({ ...getCandidate(makeItem(sourceId), makeCatalog()), ...overrides });
 export const makeInstalled = (sourceId, itemId, mountIds = []) => ({ itemId, sourceId, mountIds, profile: makeCandidate(sourceId).profile });

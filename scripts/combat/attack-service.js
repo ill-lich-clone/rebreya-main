@@ -1,6 +1,9 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import { getWeaponModAmmoConfiguration } from "../data/weapon-mod-rules.js?v=1.4.383";
+import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.384";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { measureStorageTokenDistance } from "../data/storage-access.js";
 import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
 import { createDnd5eItemData } from "../data/gear-compendium.js?v=1.4.330";
 import {
@@ -899,6 +902,169 @@ export class CombatAttackService {
     this._processedDeadlyWorkflowTargets = new Set();
     this._reactionTriggerSequence = 0;
     this._reactionTriggerContexts = new Map();
+    this._weaponModDeferred = new WeakSet();
+  }
+
+  getWeaponModAttackConditions(activity,target,config={}) {
+    const host=activity?.item,actor=host?.actor??host?.parent,combat=globalThis.game?.combat;
+    const contributions=this.moduleApi.itemUpgradeAutomationService?.project?.(actor,host)?.contributions??[];
+    const aim=getWeaponModAimState(host,combat,contributions),movement=actor?.getFlag?.(MODULE_ID,"weaponModMovement")??actor?.flags?.[MODULE_ID]?.weaponModMovement;
+    const movingNow=Boolean(combat && combat.combatant?.actor?.uuid===actor?.uuid && movement?.combatId===combat.id && movement.round===combat.round && movement.turn===combat.turn);
+    const nativeProficiency=host?.system?.prof?.hasProficiency,legacyProficiency=host?.system?.proficient;
+    const targetUuid=target?.document?.uuid??target?.uuid??null,visibility=config.workflow?.targetVisibility?.get?.(targetUuid);
+    const water=actor?.getFlag?.(MODULE_ID,"underwater")??actor?.flags?.[MODULE_ID]?.underwater??globalThis.canvas?.scene?.getFlag?.(MODULE_ID,"underwater");
+    const known={movedFeet:movingNow && Number.isFinite(movement.feet)?movement.feet:aim?.movedFeet??null,
+      prone:actor?.statuses?.has?actor.statuses.has("prone"):null,targetVisible:typeof visibility==="boolean"?visibility:null,
+      usesProficiency:typeof nativeProficiency==="boolean"?nativeProficiency:typeof legacyProficiency==="boolean"?legacyProficiency:null,
+      underwater:actor?.statuses?.has?.("underwater")?true:typeof water==="boolean"?water:null,aimMode:aim?.mode??null};
+    const decision=config.rebreyaWeaponModDecisions?.find(entry=>entry.targetUuid===targetUuid);
+    return decision?resolveWeaponModConditions(known,decision,{targetUuid,attackMessageId:config.rebreyaWeaponModAttackMessageId??null}):known;
+  }
+
+  hydrateWeaponModAttackConditions(config,message={}) {
+    if(config.rebreyaWeaponModDecisions)return;
+    const activity=config.subject,id=message.data?.flags?.dnd5e?.originatingMessage??message.data?.["flags.dnd5e.originatingMessage"]
+      ??config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId;
+    const origin=globalThis.game?.messages?.get?.(id),stored=origin?.getFlag?.(MODULE_ID,"weaponModConditions");
+    if(!origin || !stored || !Array.isArray(stored.decisions) || stored.decisions.length>20 || origin.getFlag?.("dnd5e","activity.uuid")!==activity?.uuid || stored.activityUuid!==activity.uuid
+      || stored.actorUuid!==(activity.item?.actor??activity.item?.parent)?.uuid || stored.hostItemId!==activity.item.id)return;
+    config.rebreyaWeaponModAttackMessageId=origin.id;
+    config.rebreyaWeaponModDecisions=stored.decisions.map(decision=>({...decision,attackMessageId:origin.id}));
+  }
+
+  getWeaponModRangeResolution(activity,target,multiplier) {
+    const item=activity?.item,actor=item?.actor??item?.parent,range=item?.system?.range??{};
+    const normal=convertUnitsToFeet(Number(range.value),range.units??"ft")*multiplier,
+      long=convertUnitsToFeet(Number(range.long||range.value),range.units??"ft")*multiplier;
+    const tokens=actor?.getActiveTokens?.()??[],source=actor?.token??(tokens.length===1?tokens[0]:tokens.find(token=>token.controlled));
+    const targetDocument=target?.document??target;
+    const distance=source && targetDocument && [targetDocument.x,targetDocument.y].every(Number.isFinite)
+      ?convertUnitsToFeet(measureStorageTokenDistance(source,target),source.parent?.grid?.units??source.document?.parent?.grid?.units??"ft"):null;
+    if(!Number.isFinite(normal) || normal<=0 || !Number.isFinite(long) || !Number.isFinite(distance))return {normal,long,distanceFeet:null,allowed:true,disadvantage:false};
+    return {normal,long,distanceFeet:distance,allowed:distance<=Math.max(normal,long),disadvantage:distance>normal};
+  }
+
+  planWeaponModActivity({actor,host,definition,decision}) {
+    const {marker,effect}=definition,path=`flags.${MODULE_ID}.weaponModAim`,before=host.getFlag?.(MODULE_ID,"weaponModAim")??host.flags?.[MODULE_ID]?.weaponModAim??null;
+    if(effect.kind!=="aim")throw new Error("Действие обвеса пока не поддерживается.");
+    let after=null;
+    if(marker.action==="aim"){
+      const combat=globalThis.game?.combat;
+      if(!combat || combat.started===false || combat.combatant?.actor?.uuid!==actor.uuid)throw new Error("Прицеливаться можно в своём ходу.");
+      const known=this.getWeaponModAttackConditions({item:host,actor},null,{}),conditions=decision?resolveWeaponModConditions(known,decision):known;
+      if(conditions.movedFeet==null)throw new Error("Уточните перемещение в этом ходу.");
+      if(conditions.movedFeet>effect.maximumMovedFeet)throw new Error("Превышено допустимое перемещение для прицеливания.");
+      after={actorUuid:actor.uuid,hostItemId:host.id,childItemId:marker.childItemId,mode:effect.mode,combatId:combat.id,round:combat.round,turn:combat.turn,movedFeet:conditions.movedFeet};
+    }
+    return {placement:[{actor:"source",itemId:host.id,before:{[path]:before},after:{[path]:after}}],value:{hostItemId:host.id,childItemId:marker.childItemId,action:marker.action}};
+  }
+
+  /** Synchronous native hook gate: unknown facts are resolved before native consumption/roll modifiers. */
+  deferWeaponModAttack(activity,config={},dialog={},message={},method="use") {
+    const host=activity?.item,actor=host?.actor??host?.parent;
+    if(!actor)return true;
+    const contributions=this.moduleApi.itemUpgradeAutomationService?.project?.(actor,host)?.contributions??[];
+    if(!contributions.some(c=>c.scope==="weapon-mod" && c.hostItemId===host.id) && !isFirearmItem(host))return true;
+    const targets=Array.from(config.targets??config.workflow?.targets??globalThis.game?.user?.targets??[]),rows=[];
+    try{
+      for(const target of targets.length?targets:[null]){
+        const conditions=this.getWeaponModAttackConditions(activity,target,config),result=evaluateWeaponModAttack({host:{id:host.id,isFirearm:isFirearmItem(host)},
+          attack:{type:activity.actionType==="mwak" || activity.attack?.type?.value==="melee"?"melee":"ranged"},target:{uuid:target?.document?.uuid??target?.uuid??null},contributions,conditions});
+        if(!result.allowed){globalThis.ui?.notifications?.warn?.(result.diagnostics[0]?.reason??"Условия обвеса не выполнены.");return false;}
+        rows.push({target,conditions,result});
+      }
+    }catch(error){globalThis.ui?.notifications?.warn?.(error.message);return false;}
+    if(!rows.some(row=>row.result.needsDecision.length))return true;
+    if(this._weaponModDeferred.has(config))return false;
+    this._weaponModDeferred.add(config);
+    void(async()=>{
+      const decisions=[];
+      for(const row of rows){
+        if(!row.result.needsDecision.length)continue;
+        const decision=await this.promptWeaponModConditions(activity,row.target,row.conditions,row.result.needsDecision);
+        if(!decision)return;
+        decision.attackMessageId=config.rebreyaWeaponModAttackMessageId??null;
+        // Reread live facts after the dialog; a response cannot overwrite a changed native fact.
+        resolveWeaponModConditions(this.getWeaponModAttackConditions(activity,row.target,{}),decision,{targetUuid:row.target?.document?.uuid??row.target?.uuid??null,attackMessageId:config.rebreyaWeaponModAttackMessageId??null});
+        decisions.push(decision);
+      }
+      const resume={...config,rebreyaWeaponModDecisions:decisions};
+      if(method==="rollAttack"){
+        resume.rolls=config.rolls?.map(roll=>({...roll,parts:roll.parts?[...roll.parts]:undefined,options:{...roll.options}}));
+        if(resume.hookNames?.slice(-2).join(",")==="attack,d20Test")resume.hookNames=resume.hookNames.slice(0,-2);
+        await activity.rollAttack(resume,dialog,message);
+      }else{
+        const resumeMessage={...message,data:{...message.data,flags:{...message.data?.flags,[MODULE_ID]:{...message.data?.flags?.[MODULE_ID],
+          weaponModConditions:{activityUuid:activity.uuid,actorUuid:actor.uuid,hostItemId:host.id,decisions}}}}};
+        await activity.use(resume,dialog,resumeMessage);
+      }
+    })().catch(error=>globalThis.ui?.notifications?.warn?.(error.message)).finally(()=>this._weaponModDeferred.delete(config));
+    return false;
+  }
+
+  async promptWeaponModConditions(activity,target,known,needed) {
+    const dialog=globalThis.foundry?.applications?.api?.DialogV2;
+    if(!dialog?.wait)throw new Error("Неизвестны условия атаки; окно уточнения недоступно.");
+    const labels={movedFeet:"Перемещение в этом ходу (футы)",prone:"Вы лежите?",targetVisible:"Вы видите эту цель?",usesProficiency:"Атака с владением?",underwater:"Стрельба под водой?"};
+    const fields=[...new Set(needed.map(entry=>entry.field))],escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+    const content=`<p>${escape(activity.item.name)}${target?` → ${escape(target.name??target.document?.name)}`:""}</p>`+fields.map(field=>`<label>${labels[field]} ${field==="movedFeet"?`<input name="${field}" type="number" min="0" step="any" required>`:`<select name="${field}" required><option value="">Уточните</option><option value="true">Да</option><option value="false">Нет</option></select>`}</label>`).join("");
+    const response=await dialog.wait({window:{title:"Условия атаки"},content,buttons:[{action:"apply",label:"Продолжить",default:true,callback:(_event,button)=>{
+      const form=button.form??button.closest?.("form");if(!form?.reportValidity?.())return false;
+      const decision={kind:"attack-conditions",targetUuid:target?.document?.uuid??target?.uuid??null,attackMessageId:null,...Object.fromEntries(WEAPON_MOD_CONDITION_FIELDS.map(field=>[field,known[field]??null]))};
+      for(const field of fields){const value=form.elements.namedItem(field).value;decision[field]=field==="movedFeet"?Number(value):value==="true";}
+      return decision;
+    }},{action:"cancel",label:"Отмена",callback:()=>false}],close:()=>false});
+    return response && typeof response==="object"?response:null;
+  }
+
+  async handleWeaponModTurnChange(combat,{ended=false}={}) {
+    if(!isActiveGmClient(globalThis.game))return;
+    const actors=new Map(Array.from(combat?.combatants?.contents??combat?.combatants??[]).map(combatant=>[combatant.actor?.uuid,combatant.actor]));
+    if(combat?.combatant?.actor)actors.set(combat.combatant.actor.uuid,combat.combatant.actor);
+    for(const actor of actors.values()){
+      if(!actor?.uuid)continue;
+      await this.moduleApi.inventoryService?.mutationCoordinator.run(`inventory-organization:${actor.id}`,async()=>{
+        if(!isActiveGmClient(globalThis.game))return;
+        for(const host of actor.items?.contents??[]){
+          const aim=host.getFlag?.(MODULE_ID,"weaponModAim");
+          if(aim && (ended || aim.combatId!==combat.id || aim.round!==combat.round || aim.turn!==combat.turn || combat.combatant?.actor?.uuid!==actor.uuid)){
+            if(!isActiveGmClient(globalThis.game))return;
+            await host.update({[`flags.${MODULE_ID}.-=weaponModAim`]:null},{render:false});
+          }
+        }
+        if(!ended && combat.combatant?.actor?.uuid===actor.uuid){
+          const token=combat.combatant.token,current=actor.getFlag?.(MODULE_ID,"weaponModMovement");
+          if(current?.combatId===combat.id && current.round===combat.round && current.turn===combat.turn)return;
+          if(!isActiveGmClient(globalThis.game))return;
+          await actor.update({[`flags.${MODULE_ID}.==weaponModMovement`]:{combatId:combat.id,round:combat.round,turn:combat.turn,feet:0,
+            tokenId:token?.id??null,position:token?{x:token.x,y:token.y}:null,lastMovementId:null}});
+        }
+      });
+      await this.moduleApi.itemUpgradeAutomationService?.requestSync?.(actor);
+    }
+  }
+
+  async handleWeaponModTokenMove(token,changed={}) {
+    if(!isActiveGmClient(globalThis.game) || !["x","y","elevation"].some(key=>Object.hasOwn(changed,key)))return;
+    const actor=token?.actor,combat=globalThis.game?.combat;
+    if(!actor?.uuid || combat?.combatant?.actor?.uuid!==actor.uuid)return;
+    // Native v13 movement measures the entire travelled path, including intermediate waypoints.
+    const movement=token.movement,passed=movement?.passed,increment=passed?.waypoints?.some(point=>point.action==="displace" || globalThis.CONFIG?.Token?.movement?.actions?.[point.action]?.teleport)
+      ?null:Number.isFinite(passed?.distance)?convertUnitsToFeet(passed.distance,token.parent?.grid?.units??"ft"):null;
+    await this.moduleApi.inventoryService?.mutationCoordinator.run(`inventory-organization:${actor.id}`,async()=>{
+      if(!isActiveGmClient(globalThis.game))return;
+      const previous=actor.getFlag?.(MODULE_ID,"weaponModMovement"),sameTurn=previous?.combatId===combat.id && previous.round===combat.round && previous.turn===combat.turn;
+      if(movement?.id && sameTurn && previous.lastMovementId===movement.id)return;
+      const feet=sameTurn && previous.tokenId===token.id && Number.isFinite(previous.feet) && increment!==null?previous.feet+increment:null;
+      await actor.update({[`flags.${MODULE_ID}.==weaponModMovement`]:{combatId:combat.id,round:combat.round,turn:combat.turn,feet,
+        tokenId:token.id,position:{x:token.x,y:token.y},lastMovementId:movement?.id??null}});
+      for(const host of actor.items?.contents??[]){
+        if(!host.getFlag?.(MODULE_ID,"weaponModAim"))continue;
+        if(!isActiveGmClient(globalThis.game))return;
+        await host.update({[`flags.${MODULE_ID}.-=weaponModAim`]:null},{render:false});
+      }
+    });
+    await this.moduleApi.itemUpgradeAutomationService?.requestSync?.(actor);
   }
 
   async initialize() {
@@ -3693,6 +3859,8 @@ export class CombatAttackService {
       return true;
     }
 
+    if(!this.deferWeaponModAttack(activity,usageConfig,dialogConfig,messageConfig,"use"))return false;
+
     try {
       const item = activity.item;
       if (this.#blockJammedFirearm(item)) {
@@ -3745,6 +3913,8 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      this.hydrateWeaponModAttackConditions(config,message);
+      if(!this.deferWeaponModAttack(activity,config,dialog,message,"rollAttack"))return false;
       if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollAttack(config) === false) return false;
       if (this.#blockJammedFirearm(item)) {
         return false;
@@ -5009,6 +5179,8 @@ export class CombatAttackService {
       return null;
     }
 
+    await this.handleWeaponModTurnChange(combat);
+
     const currentActor = combat.combatant?.actor ?? null;
     if (!(currentActor instanceof Actor)) {
       return null;
@@ -5085,11 +5257,23 @@ export class CombatAttackService {
     const proficiencyBonus = this.#isAttackProficient(actor, weapon, options)
       ? getActorProficiencyBonus(actor)
       : 0;
-    const upgradeModifiers = this.moduleApi.itemUpgradeAutomationService?.rolls.evaluate(weapon, { primary: false },
-      this.#resolveActor(options.targetActor ?? options.targetId ?? options.targetToken ?? null));
+    const modTarget=options.targetToken??this.#resolveActor(options.targetActor??options.targetId??null),
+      modActivity={item:weapon,actor,actionType:options.attackKind==="firearm" || weapon.system.attackType==="ranged"?"rwak":"mwak"};
+    let modConfig={},upgradeModifiers=this.moduleApi.itemUpgradeAutomationService?.rolls.evaluate(weapon,{primary:false},modTarget,modActivity,modConfig);
+    if(upgradeModifiers?.weaponMods?.needsDecision.length){
+      const known=this.getWeaponModAttackConditions(modActivity,modTarget,modConfig),decision=await this.promptWeaponModConditions(modActivity,modTarget,known,upgradeModifiers.weaponMods.needsDecision);
+      if(!decision)throw new Error("Атака отменена.");
+      modConfig={rebreyaWeaponModDecisions:[decision]};
+      upgradeModifiers=this.moduleApi.itemUpgradeAutomationService.rolls.evaluate(weapon,{primary:false},modTarget,modActivity,modConfig);
+    }
+    if(upgradeModifiers?.weaponMods && (!upgradeModifiers.weaponMods.allowed || upgradeModifiers.weaponMods.needsDecision.length))throw new Error("Условия обвеса не выполнены или цель вне дистанции.");
     const situationalBonus = toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0);
     const attackBonus = abilityMod + proficiencyBonus + situationalBonus;
     let rollMode = resolveRollMode(options);
+    if(upgradeModifiers?.weaponMods?.range?.disadvantage){
+      if(["advantage","heroicAdvantage"].includes(rollMode))rollMode="normal";
+      else if(rollMode==="normal")rollMode="disadvantage";
+    }
     if (upgradeModifiers?.advantage) {
       if (["disadvantage", "heroicDisadvantage"].includes(rollMode)) rollMode = "normal";
       else if (rollMode === "normal") rollMode = "advantage";

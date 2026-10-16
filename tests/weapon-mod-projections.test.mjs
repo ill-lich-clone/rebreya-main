@@ -92,3 +92,16 @@ test("saw-off cannot charge while leaving an installed long-firearm-only attachm
   const shotgun=catalog.hosts.find(row=>row.modelTags.includes("shotgun")).gearId,fx=fixture({gearId:shotgun}),part=fx.install("soshki","bipod",2,["bottom-1","barrel"]);
   assert.throws(()=>buildWeaponRebuildQuote({host:getHost(fx.host,catalog),component:makeCandidate("obrezka-stvola"),parts:[],attachments:[part],currency:{gp:500},gmApproval:true}),e=>e.code==="incompatible");
 });
+
+test("collimator speed override belongs only to verified live aim and expires with the turn",()=>{
+  const fx=fixture(),previous=globalThis.game;fx.install("kollimatornyy-pritsel","optic",0,["top"]);
+  fx.host._source.flags[NS].weaponModAim={actorUuid:fx.actor.uuid,hostItemId:fx.host.id,childItemId:"optic",mode:"collimator",combatId:"fight",round:1,turn:0,movedFeet:10};
+  try{
+    game={combat:{id:"fight",round:1,turn:0,combatant:{actor:fx.actor}}};
+    const speed=fx.service.project(fx.actor).contributions.filter(c=>c.scope==="actor" && c.path.startsWith("system.attributes.movement."));
+    assert.equal(speed.length,5);assert.ok(speed.every(c=>c.mode===5 && c.value===0));
+    game.combat.turn=1;assert.equal(fx.service.project(fx.actor).contributions.filter(c=>c.scope==="actor").length,0);
+    game.combat.turn=0;fx.host._source.flags[NS].weaponMods.attachments=[];
+    assert.equal(fx.service.project(fx.actor).contributions.filter(c=>c.scope==="actor").length,0);
+  }finally{globalThis.game=previous;}
+});

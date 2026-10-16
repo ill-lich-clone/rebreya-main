@@ -1,13 +1,14 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.4.383";
+import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.4.384";
 import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
 import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.279";
-import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.255";
+import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.384";
 import { loadWeaponModCatalog } from "../data/weapon-mod-catalog.js?v=1.4.381";
 import { readWeaponMods } from "../data/weapon-mod-rules.js?v=1.4.383";
 import { buildWeaponModContributions, projectWeaponModItem } from "./weapon-mod-projections.js?v=1.4.383";
+import { getWeaponModAimState } from "./weapon-mod-roll-modifiers.js?v=1.4.384";
 
 const FLAG = "simpleItemUpgrade", PATCH = Symbol.for("rebreya-main.simple-upgrade-item-effects");
 const values = collection => Array.from(collection?.contents ?? collection?.values?.() ?? collection ?? []);
@@ -66,6 +67,12 @@ export class ItemUpgradeAutomationService {
         poundsPerUnit=Object.fromEntries(Object.entries(weights??{}).map(([key,row])=>[key,row.conversion/pound]).filter(([,factor])=>Number.isFinite(factor)&&factor>0));
       const projected=buildWeaponModContributions({host:{id:item.id,actorUuid:actor.uuid,source:item.toObject()},mods:detached,context:{poundsPerUnit}});
       result.contributions.push(...projected.contributions);result.diagnostics.push(...mods.diagnostics,...projected.diagnostics);
+      const aim=getWeaponModAimState(item,globalThis.game?.combat,projected.contributions);
+      const optic=aim && projected.contributions.find(c=>c.kind==="aim" && c.childItemId===aim.childItemId);
+      if(optic?.stopMovement)for(const movement of ["walk","fly","swim","climb","burrow"]){
+        result.contributions.push({...optic,scope:"actor",upgradeItemId:optic.childItemId,path:`system.attributes.movement.${movement}`,mode:5,value:0,priority:100,
+          key:`${optic.key}:aim-movement:${movement}`});
+      }
     }
     return result;
   }
@@ -88,7 +95,7 @@ export class ItemUpgradeAutomationService {
     if (!actor?.items || !actor.createEmbeddedDocuments || !this.isAuthority()) return;
     const desired = new Map(this.project(actor).contributions.filter(c => c.scope === "actor").map(c => [c.key, {
       name: actor.items.get?.(c.upgradeItemId)?.name ?? c.sourceId, type: "base", transfer: false, disabled: false,
-      changes: [{ key: c.path, mode: 2, value: String(c.value), priority: 20 }],
+      changes: [{ key: c.path, mode: c.mode??2, value: String(c.value), priority: c.priority??20 }],
       flags: { [MODULE_ID]: { [FLAG]: { managed: true, key: c.key, hostItemId: c.hostItemId, upgradeItemId: c.upgradeItemId } } }
     }]));
     const remove = [], update = [];

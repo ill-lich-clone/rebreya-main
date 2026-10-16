@@ -41,3 +41,10 @@ test("trusted roll executor evaluates once without chat; save uses native dnd5e 
   assert.equal(calls[1].message.create,false); assert.equal(calls[1].dialog.configure,false);
   assert.equal(calls[1].config.rolls[0].options.advantage,true);
 });
+
+test("tactical grip adds one only to the native save for the verified weapon being disarmed",async()=>{
+  const calls=[],item={id:"held"},actor={async rollSavingThrow(config){calls.push(config);return [{total:17,toJSON:()=>({total:17})}];}},
+    adapter=new DisarmRollAdapter({getContributions:()=>[{scope:"weapon-mod",kind:"disarm-bonus",hostItemId:"held",value:1},{scope:"weapon-mod",kind:"disarm-bonus",hostItemId:"other",value:9}]});
+  await adapter.save(actor,"str","normal",{item});assert.deepEqual(calls[0].rolls[0].parts,["1"]);
+  await adapter.save(actor,"dex","normal",{item:{id:"unmodified"}});assert.equal(calls[1].rolls[0].parts,undefined);
+});

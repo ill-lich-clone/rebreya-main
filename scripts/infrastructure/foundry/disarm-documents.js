@@ -1,5 +1,5 @@
 import { DisarmError, calculateDisarmDropCell, evaluateDisarmRules } from "../../combat/disarm-rules.js?v=1.4.252";
-import { buildDisarmRollPlan } from "../../integrations/disarm-roll-adapter.js?v=1.4.252";
+import { buildDisarmRollPlan } from "../../integrations/disarm-roll-adapter.js?v=1.4.384";
 import { getItemHeldHands, isItemEquipped, canUseHeldItemForHandRequirement } from "../../integrations/held-items.js?v=1.4.383";
 import { getNaturalReachFeet } from "../../combat/natural-reach.js";
 import { measureStorageTokenDistance } from "../../data/storage-access.js";
@@ -94,7 +94,7 @@ export class DisarmDocuments {
       || state.attackerSize !== record.attackerSize || state.targetSize !== record.targetSize) reject("stale-item", "Размер, предмет или хват изменились после начала атаки.");
     const target = await this.resolve(record.intent.targetTokenUuid);
     const ability = target.actor.system.abilities?.[saveAbility];
-    return { targetActor: target.actor, saveConditions: { saveAdvantage: ability?.save?.roll?.mode === 1, saveDisadvantage: ability?.save?.roll?.mode === -1 } };
+    return { targetActor: target.actor,targetItem:values(target.actor.items).find(item=>item.uuid===record.intent.targetItemUuid), saveConditions: { saveAdvantage: ability?.save?.roll?.mode === 1, saveDisadvantage: ability?.save?.roll?.mode === -1 } };
   }
   async dropPoints(record) { return collectDisarmDropPoints(await this.resolve(record.intent.targetTokenUuid), this.canvasProvider()); }
 }

@@ -116,18 +116,18 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.383";
-import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.4.382";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.383";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.384";
+import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.4.384";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.384";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
-import { DisarmService } from "./combat/disarm-service.js?v=1.4.377";
+import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.4.372";
 import { TreatWoundsDnd5eAdapter } from "./integrations/treat-wounds-dnd5e-adapter.js?v=1.4.372";
 import { TreatWoundsDocuments } from "./infrastructure/foundry/treat-wounds-documents.js?v=1.4.372";
 import { TREAT_WOUNDS_ACTIONS, isValidTreatWoundsPayload, authorizeTreatWoundsSender } from "./infrastructure/foundry/treat-wounds-command-contract.js?v=1.4.372";
 import { resolveTreatWoundsSelection, promptTreatWounds, buildTreatWoundsChatContent, bindTreatWoundsChat } from "./ui/treat-wounds-dialog.js?v=1.4.372";
-import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
-import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.377";
+import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.384";
+import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.384";
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
 import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.281";
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
@@ -314,8 +314,8 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.377";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.359";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.381";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.384";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.384";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -1804,7 +1804,7 @@ export class RebreyaMainModule {
     });
     this.disarmService = new DisarmService({
       journal: this.inventoryService.mutationJournal, coordinator: this.worldMutationCoordinator,
-      documents: this.disarmDocuments, rollAdapter: new DisarmRollAdapter(),
+      documents: this.disarmDocuments, rollAdapter: new DisarmRollAdapter({getContributions:(actor,item)=>this.itemUpgradeAutomationService?.project(actor,item).contributions??[]}),
       storageCommands: { dropDisarmedItem: (intent, context) => this.storageCommandService.dropDisarmedItem(intent, { ...context, capability: disarmCapability }) },
       publish: record => this.publishDisarmOperation(record)
     });
@@ -7047,6 +7047,11 @@ export class RebreyaMainModule {
 
   async installWeaponModernization(payload) {
     const result=await this.privilegedMutationGateway.mutate("item-mod.modernization.install",payload,{operationId:payload.operationId});
+    await this.refreshOpenApps();return result;
+  }
+
+  async useWeaponModActivity(payload) {
+    const result=await this.privilegedMutationGateway.mutate("item-mod.activity.use",payload,{operationId:payload.operationId});
     await this.refreshOpenApps();return result;
   }
 

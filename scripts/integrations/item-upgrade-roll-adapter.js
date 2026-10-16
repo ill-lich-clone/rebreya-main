@@ -1,4 +1,6 @@
 import { evaluateSimpleUpgradeRoll } from "../automation/item-upgrade-roll-modifiers.js?v=1.4.254";
+import { evaluateWeaponModAttack } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.384";
+import { getWeaponModHostDescriptor } from "../data/weapon-mod-rules.js?v=1.4.383";
 const MARKER = "rebreyaSimpleUpgradeDamage";
 const targetData = token => {
   const actor = token?.actor ?? token?.document?.actor ?? token;
@@ -25,8 +27,23 @@ export class SimpleUpgradeRollAdapter {
     Object.assign(this, { service, targets, getWorkflow, warn });
     this.attackRolls = new WeakSet(); this.damageRolls = new WeakSet(); this.warned = new WeakSet();
   }
-  evaluate(host, attack, target) {
-    return evaluateSimpleUpgradeRoll({ host, attack, target: targetData(target), contributions: this.service.project(host.actor, host).contributions });
+  evaluate(host, attack, target, activity = null, config = {}) {
+    const contributions = this.service.project(host.actor, host).contributions;
+    const result = evaluateSimpleUpgradeRoll({ host, attack, target: targetData(target), contributions });
+    if (!attack.primary && contributions.some(c => c.scope === "weapon-mod" && c.hostItemId === host.id)) {
+      const conditions = this.service.moduleApi?.combatAttackService?.getWeaponModAttackConditions(activity, target, config) ?? {};
+      const descriptor=getWeaponModHostDescriptor(host,this.service.weaponModCatalog),isFirearm=Boolean(descriptor && descriptor.family!=="crossbow");
+      result.weaponMods = evaluateWeaponModAttack({ host:{id:host.id,isFirearm}, attack: { ...attack, type: activity?.actionType === "mwak" || activity?.attack?.type?.value==="melee" ? "melee" : "ranged" },
+        target: { uuid: target?.document?.uuid ?? target?.uuid ?? null }, contributions, conditions });
+      const statuses = (target?.actor ?? target?.document?.actor ?? target)?.statuses;
+      const coverBonus = result.weaponMods.ignoreHalfCover && statuses?.has("coverHalf") && !statuses.has("coverThreeQuarters") ? 2 : 0;
+      result.attackBonus += result.weaponMods.attackBonus + coverBonus;
+      if(result.weaponMods.rangeMultiplier!==1){
+        const range=this.service.moduleApi?.combatAttackService?.getWeaponModRangeResolution?.(activity,target,result.weaponMods.rangeMultiplier);
+        if(range){result.weaponMods.range=range;result.weaponMods.allowed&&=range.allowed;}
+      }
+    }
+    return result;
   }
   context(config, primary, message = {}) {
     const activity = config.subject, workflow = config.workflow ?? this.getWorkflow(activity);
@@ -35,8 +52,12 @@ export class SimpleUpgradeRollAdapter {
     const mode = roll?.options?.advantageMode;
     const advantage = [-1, 0, 1].includes(mode) ? mode === 1
       : typeof roll?.hasAdvantage === "boolean" ? roll.hasAdvantage : null;
-    const results = (targets.length ? targets : [null]).map(target => this.evaluate(activity.item, { primary, advantage }, target));
-    const signature = result => primary ? result.damageParts : { attackBonus: result.attackBonus, advantage: result.advantage };
+    const results = (targets.length ? targets : [null]).map(target => this.evaluate(activity.item, { primary, advantage }, target, activity, config));
+    if (results.some(result => result.weaponMods && (!result.weaponMods.allowed || result.weaponMods.needsDecision.length))) {
+      this.warnOnce(config, "Уточните условия обвесов: прицеливание недоступно либо цель вне дистанции."); return null;
+    }
+    const signature = result => primary ? result.damageParts : { attackBonus: result.attackBonus, advantage: result.advantage,
+      ...(result.weaponMods ? { rangeMultiplier: result.weaponMods.rangeMultiplier,rangeDisadvantage:result.weaponMods.range?.disadvantage??false } : {}) };
     if (results.some(result => !same(signature(result), signature(results[0])))) {
       this.warnOnce(config, "Усовершенствования дают разные бонусы против выбранных целей. Выполните отдельные броски.");
       return null;
@@ -54,6 +75,8 @@ export class SimpleUpgradeRollAdapter {
       if (this.attackRolls.has(roll)) continue; this.attackRolls.add(roll);
       if (modifiers.attackBonus) { roll.parts ??= []; roll.parts.push(String(modifiers.attackBonus)); }
       if (modifiers.advantage) { roll.options ??= {}; roll.options.advantage = true; }
+      if (modifiers.weaponMods) { roll.options ??= {}; roll.options.rebreyaWeaponMods = { rangeMultiplier: modifiers.weaponMods.rangeMultiplier }; }
+      if (modifiers.weaponMods?.range?.disadvantage) roll.options.disadvantage=true;
     }
     return true;
   }

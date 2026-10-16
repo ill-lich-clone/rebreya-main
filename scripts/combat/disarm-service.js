@@ -123,7 +123,7 @@ export class DisarmService {
       const rules = evaluateDisarmRules({ ...record, ...live.saveConditions, saveAbility: intent.saveAbility });
       record = await this.#phase(record, "save-rolling", { saveAbility: intent.saveAbility, saveMode: rules.saveMode }, context);
       try {
-        const saveRoll = await this.rollAdapter.save(live.targetActor, intent.saveAbility, rules.saveMode);
+        const saveRoll = await this.rollAdapter.save(live.targetActor, intent.saveAbility, rules.saveMode,{item:live.targetItem});
         record = await this.#phase(record, "save-resolved", { saveRoll, dropped: resolveDisarmOutcome({ attackTotal: record.attackRoll.total, saveTotal: saveRoll.total }).dropped }, context);
       } catch (error) {
         await context.assertAuthority();

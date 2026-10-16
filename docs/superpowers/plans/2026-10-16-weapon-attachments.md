@@ -174,7 +174,7 @@ Constructor сохраняет прежний `getManifest` и добавляе�
 
 Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,attackMessageId,movedFeet,prone,targetVisible,usesProficiency,underwater,aimMode}`. UUID/message допускают null до выбора цели/создания атаки; movedFeet — null либо конечное неотрицательное число; boolean conditions допускают null; aimMode — null/`collimator`/`scope`. Ответ заполняет только неизвестное: не переопределяет уже известный authoritative факт.
 
-- [ ] **1. RED:** `collimator ten versus eleven feet`, `scope requires no movement`, `laser needs sight and proficiency`, `stock and bipod prone rules`, `underwater range is conditional`, `different targets require separate resolution`:
+- [x] **1. RED:** `collimator ten versus eleven feet`, `scope requires no movement`, `laser needs sight and proficiency`, `stock and bipod prone rules`, `underwater range is conditional`, `different targets require separate resolution`:
   ```js
   assert.equal(evaluateWeaponModAttack(makeAttackCase('kollimatornyy-pritsel',{movedFeet:10})).allowed, true);
   assert.equal(evaluateWeaponModAttack(makeAttackCase('kollimatornyy-pritsel',{movedFeet:11})).allowed, false);
@@ -182,10 +182,10 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
   assert.equal(evaluateWeaponModAttack(makeAttackCase('lazernyy-tseleukazatel',{targetVisible:true,usesProficiency:false})).attackBonus, 0);
   ```
   Проверить скорость0 после коллиматора, только половинное укрытие, конец хода, reload mid-turn, смену носителя, значения null с decision prompt, отмену и multi-target roll с разными бонусами без глобальной подстановки первого результата.
-- [ ] **2. Run:** `node --test tests/weapon-mod-roll-modifiers.test.mjs`; FAIL.
-- [ ] **3. Implement:** до roll известные conditions брать из существующего workflow/движения/статусов. Неизвестные — явный prompt для конкретной атаки; результат не сохранять как глобальное свойство цели. Aim не назначает выдуманную action cost. Использовать существующий cancel/pre-roll/post-roll контракт; условные range/cover modifiers не переписывают source Item.
-- [ ] **4. GREEN:** новый test + `node --test tests/combat-attack-service.test.mjs tests/item-upgrade-roll-adapter.test.mjs tests/environment-automation-service.test.mjs`.
-- [ ] **5. Commit gate R:** `feat: apply conditional attachment attack rules`.
+- [x] **2. Run:** `node --test tests/weapon-mod-roll-modifiers.test.mjs`; FAIL.
+- [x] **3. Implement:** до roll известные conditions брать из существующего workflow/движения/статусов. Неизвестные — явный prompt для конкретной атаки; результат не сохранять как глобальное свойство цели. Aim не назначает выдуманную action cost. Использовать существующий cancel/pre-roll/post-roll контракт; условные range/cover modifiers не переписывают source Item.
+- [x] **4. GREEN:** новый test + `node --test tests/combat-attack-service.test.mjs tests/item-upgrade-roll-adapter.test.mjs tests/environment-automation-service.test.mjs`.
+- [x] **5. Commit gate R:** `feat: apply conditional attachment attack rules`.
 
 ### Task 8: T8. Activities штыка, фонарика и гранатомёта
 

@@ -8,7 +8,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.383";
+} from "../data/item-upgrade-service.js?v=1.4.384";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
