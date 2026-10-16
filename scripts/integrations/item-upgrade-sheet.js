@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isInstalledWeaponMod } from "../data/weapon-mod-rules.js?v=1.4.389";
-import {bindWeaponModPanel,installWeaponModWithChoices} from "./weapon-mod-panel.js?v=1.4.389";
+import {bindWeaponModPanel,installWeaponModWithChoices} from "./weapon-mod-panel.js?v=1.4.390";
 import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.4.389";
 import {
   getInstalledActorUpgradeItemIds,
@@ -499,7 +499,7 @@ export function renderItemUpgradePanel(root, hostItem) {
   if (!(panel instanceof HTMLElement)) {
     return null;
   }
-  container.append(panel);
+  (container.querySelector?.("[data-weapon-mod-view='upgrades']")??container).append(panel);
   return panel;
 }
 

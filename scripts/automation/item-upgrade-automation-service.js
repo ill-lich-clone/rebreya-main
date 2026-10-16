@@ -4,7 +4,7 @@ import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } 
 import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
 import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.279";
-import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.389";
+import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.390";
 import { loadWeaponModCatalog } from "../data/weapon-mod-catalog.js?v=1.4.389";
 import { readWeaponMods } from "../data/weapon-mod-rules.js?v=1.4.389";
 import { buildWeaponModContributions, projectWeaponModItem } from "./weapon-mod-projections.js?v=1.4.383";

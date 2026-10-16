@@ -1,5 +1,13 @@
 <section class="tab {{ itemUpgradeTab.cssClass }} rm-item-upgrades-tab"
          data-tab="{{ itemUpgradeTab.id }}" data-group="{{ itemUpgradeTab.group }}">
-  <div data-weapon-mod-mount></div>
-  {{{ itemUpgradePanelHtml }}}
+  <nav class="rm-mod-subtabs" data-weapon-mod-tabs role="tablist" aria-label="Тип модификаций" hidden>
+    <button type="button" class="always-interactive" role="tab" data-weapon-mod-subtab="attachments" aria-selected="true">Обвесы</button>
+    <button type="button" class="always-interactive" role="tab" data-weapon-mod-subtab="upgrades" aria-selected="false">Усовершенствования</button>
+  </nav>
+  <div data-weapon-mod-view="attachments" role="tabpanel" aria-label="Обвесы" hidden>
+    <div data-weapon-mod-mount></div>
+  </div>
+  <div data-weapon-mod-view="upgrades" role="tabpanel" aria-label="Усовершенствования">
+    {{{ itemUpgradePanelHtml }}}
+  </div>
 </section>

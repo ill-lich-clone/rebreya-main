@@ -1,17 +1,53 @@
 import test from "node:test";import assert from "node:assert/strict";import {readFile} from "node:fs/promises";
 import {optionalModule,required,makeCatalog,makeItem,getHost,makeWeaponModMutationFixture} from "./helpers/weapon-mod-fixture.mjs";
+import {getWeaponModEffectiveHost} from "../scripts/data/weapon-mod-rules.js";
 const module=await optionalModule(new URL("../scripts/integrations/weapon-mod-panel.js",import.meta.url)),view=required(module,"buildWeaponModCatalogView");
-test("catalogue shows every row, available owned first, blocked owned next, missing grey and never installable",()=>{
- const catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog),inventory=[makeItem("lazernyy-tseleukazatel"),makeItem("glushitel"),makeItem("glushitel",{id:"second",system:{quantity:2}})],
+test("catalogue shows compatible rows, available owned first, blocked owned next, missing grey and never installable",()=>{
+ const catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog),inventory=[makeItem("lazernyy-tseleukazatel"),makeItem("glushitel"),makeItem("glushitel",{id:"second",system:{quantity:2}}),makeItem("razgonshchik-snaryadov",{flags:{"rebreya-main":{gearId:"razgonshchik-snaryadov",attachment:{kind:"custom"}}}})],
   installed={attachments:[{itemId:"installed",sourceId:"lazernyy-tseleukazatel",mountIds:["bottom-1"]}],modernizedParts:[]},
   rows=view({catalog,host,installed,inventory,kind:"weaponAttachment",mountId:"barrel",isOwner:true});
- assert.equal(rows.length,13);assert.ok(rows.some(row=>row.availabilityRank===0));assert.ok(rows.some(row=>row.availabilityRank===1));assert.ok(rows.some(row=>row.availabilityRank===2));
+ assert.ok(rows.length>0 && rows.length<13);assert.ok(rows.some(row=>row.availabilityRank===0));assert.ok(rows.some(row=>row.availabilityRank===1));assert.ok(rows.some(row=>row.availabilityRank===2));
+ assert.equal(rows.some(row=>row.sourceId==="lazernyy-tseleukazatel"),false);
  assert.deepEqual(rows.map(row=>row.availabilityRank),rows.map(row=>row.availabilityRank).sort());
  const silencer=rows.find(row=>row.sourceId==="glushitel");assert.equal(silencer.ownedQuantity,3);assert.equal(silencer.instances.length,2);assert.equal(silencer.available,true);
  assert.equal(silencer.mechanics,catalog.rows.find(row=>row.sourceId==="glushitel").profile.propertiesText);assert.match(silencer.requirements,/Ствол/);
  assert.ok(rows.filter(row=>!row.ownedQuantity).every(row=>!row.available && row.reason));
- assert.equal(view({catalog,host,installed,inventory,kind:"modernizedPart",isOwner:true}).length,12);
+ assert.equal(view({catalog,host,installed,inventory,kind:"modernizedPart",isOwner:true}).some(row=>row.sourceId==="pistoletnaya-rukoyat"),false);
  assert.ok(view({catalog,host,installed,inventory,kind:"weaponAttachment",isOwner:false}).every(row=>!row.available));
+});
+test("top slot includes only its compatible optics, keeps missing sources and presents two compact groups",()=>{
+ const catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog),owned=makeItem("kollimatornyy-pritsel",{uuid:"Actor.a.Item.owned",img:"owned.png"}),
+  source=makeItem("opticheskiy-pritsel",{uuid:"Compendium.world.rebreya-gear.scope",img:"source.png"}),
+  rows=view({catalog,host,installed:{attachments:[],modernizedParts:[]},inventory:[owned,makeItem("glushitel")],sourceItems:[source],kind:"weaponAttachment",mountId:"top",isOwner:true});
+ assert.deepEqual(rows.map(row=>row.sourceId),["kollimatornyy-pritsel","opticheskiy-pritsel"]);
+ assert.equal(rows[1].available,false);assert.equal(rows[1].documentUuid,source.uuid);assert.equal(rows[1].img,"source.png");
+ const html=required(module,"createWeaponModCatalogHtml")(rows,"weaponAttachment","top");
+ assert.match(html,/Есть в инвентаре/);assert.match(html,/Нет в инвентаре/);assert.match(html,/<hr/);
+ assert.match(html,/data-uuid="Compendium.world.rebreya-gear.scope"/);assert.match(html,/data-wm-choice="opticheskiy-pritsel"[^>]*disabled/);
+ assert.match(html,/<a[^>]*data-link[^>]*data-uuid="Compendium.world.rebreya-gear.scope"/);
+ assert.equal(html.includes(catalog.rows.find(row=>row.sourceId==="opticheskiy-pritsel").profile.propertiesText),false);
+ assert.match(required(module,"createWeaponModCatalogHtml")([rows[1]],"modernizedPart",null),/Нет подходящих частей в инвентаре/);
+});
+test("catalogue references use existing world and canonical compendium Items without creating documents",async()=>{
+ const previous=globalThis.game,catalog=makeCatalog(),world=makeItem("glushitel",{uuid:"Item.world",img:"world.png"});let indexed=0;
+ try{
+  globalThis.game={items:{contents:[world]},packs:{get:id=>id==="world.rebreya-gear"?{visible:true,collection:id,getIndex:async()=>{indexed++;return [{_id:"optic",name:"Прицел",img:"optic.png",flags:{"rebreya-main":{gearId:"opticheskiy-pritsel"}}}];}}:null}};
+  const sources=await required(module,"loadWeaponModSourceItems")(catalog);
+  assert.equal(indexed,1);assert.equal(sources.find(item=>item.uuid==="Item.world").img,"world.png");
+  assert.equal(sources.find(item=>item.uuid==="Compendium.world.rebreya-gear.optic").img,"optic.png");
+ }finally{globalThis.game=previous;}
+});
+test("modern catalogue compatibility uses the current saw-off form rather than the original long body",()=>{
+ const catalog=makeCatalog(),host=getWeaponModEffectiveHost(getHost(makeItem("drobovik"),catalog),[{sourceId:"obrezka-stvola"}]),
+  rows=view({catalog,host,installed:{attachments:[],modernizedParts:[]},inventory:[],kind:"modernizedPart",isOwner:true});
+ assert.ok(rows.some(row=>row.sourceId==="pistoletnaya-rukoyat"));
+});
+test("modern catalogue retains a legal at-cap replacement that removes saw-off and restores the long form",()=>{
+ const catalog=makeCatalog(),parts=["obrezka-stvola","oblegchyonnyy-korpus","sil-naya-sverdlovka"].map(sourceId=>({itemId:sourceId,sourceId,profile:catalog.rows.find(row=>row.sourceId===sourceId).profile})),
+  host=getWeaponModEffectiveHost(getHost(makeItem("drobovik"),catalog),parts),stock=makeItem("priklad"),
+  row=view({catalog,host,installed:{attachments:[],modernizedParts:parts},inventory:[stock],kind:"modernizedPart",isOwner:true}).find(row=>row.sourceId==="priklad");
+ assert.ok(row,"a valid real replacement must survive catalogue filtering");assert.equal(row.available,true);
+ assert.ok(row.instances[0].replacements.includes("obrezka-stvola"));
 });
 test("drag preview highlights only compatible mounts for a real owned available component",async()=>{
  const fx=await makeWeaponModMutationFixture({quantity:1});try{
@@ -25,10 +61,42 @@ test("drag preview highlights only compatible mounts for a real owned available 
 test("filled mount cards fit the diagram at narrow and wide sheet sizes without overlapping",()=>{
  const layout=required(module,"getWeaponModMountPositions"),catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog);
  for(const width of [400,788]){
-  const height=width*.6,rects=Object.values(layout(host)).map(point=>({left:width*(point.x/100-.11),right:width*(point.x/100+.11),top:height*point.y/100-43,bottom:height*point.y/100+43}));
+  const height=width*.6,rects=Object.values(layout(host)).map(point=>({left:width*(point.x/100-.11),right:width*(point.x/100+.11),top:height*point.y/100-width*.11,bottom:height*point.y/100+width*.11}));
   for(const rect of rects){assert.ok(rect.left>=0);assert.ok(rect.right<=width);assert.ok(rect.top>=0);assert.ok(rect.bottom<=height);}
   for(let i=0;i<rects.length;i++)for(let j=i+1;j<rects.length;j++){const a=rects[i],b=rects[j];assert.ok(a.right<=b.left || b.right<=a.left || a.bottom<=b.top || b.bottom<=a.top);}
  }
+});
+test("a two-mount child uses one clear orthogonal link between card edges without crossing another mount",()=>{
+ const host=getHost(makeItem("vintovka"),makeCatalog()),positions=required(module,"getWeaponModMountPositions")(host),
+  points=required(module,"getWeaponModConnectorPoints")(host,["bottom-1","barrel"]),rect=id=>({x:positions[id].x*10,y:positions[id].y*6});
+ assert.equal(points.length,4);assert.deepEqual(points[0],[rect("bottom-1").x,rect("bottom-1").y-110]);
+ assert.deepEqual(points.at(-1),[rect("barrel").x,rect("barrel").y+110]);
+ for(let i=1;i<points.length;i++)assert.ok(points[i][0]===points[i-1][0] || points[i][1]===points[i-1][1]);
+ assert.ok(points[1][1]<rect("bottom-2").y-110);assert.ok(points[1][1]>rect("barrel").y+110);
+});
+test("mods template adds two local sub-tabs and filled tiles retain full images and a frame legend",async()=>{
+ const template=await readFile(new URL("../templates/item-mods-tab.hbs",import.meta.url),"utf8");
+ assert.match(template,/data-weapon-mod-subtab="attachments"/);assert.match(template,/data-weapon-mod-subtab="upgrades"/);
+ const tabs=template.match(/<button[^>]*data-weapon-mod-subtab[^>]*>/g);assert.equal(tabs.length,2);
+ for(const tab of tabs)assert.match(tab,/class="[^"]*\balways-interactive\b/,"native dnd5e PLAY mode must leave navigation enabled");
+ assert.ok(template.indexOf("data-weapon-mod-tabs")<template.indexOf("data-weapon-mod-mount"));
+ const host=getHost(makeItem("vintovka"),makeCatalog()),blueprint={img:"weapon.png",width:1000,height:400,anchors:Object.fromEntries(host.mountIds.map(id=>[id,{x:.5,y:.5}]))},
+  html=required(module,"createWeaponModPanelHtml")({id:"host"},{host,attachments:[{itemId:"child",sourceId:"shtyk",mountIds:["bottom-1","barrel"],item:{name:"Штык",img:"bayonet.png"}}]},blueprint);
+ assert.match(html,/<fieldset[^>]*rm-wm__diagram/);assert.match(html,/<legend[^>]*>Оружейные обвесы/);
+ assert.equal((html.match(/src="bayonet.png"/g)??[]).length,2);assert.equal((html.match(/data-main-child="child"/g)??[]).length,1);
+ assert.match(html,/data-wm-link="child"/);assert.equal(html.includes("Одна часть за пересборку"),false);
+});
+test("local sub-tab choice survives sheet rerender and ordinary-only sheets keep enhancements visible",()=>{
+ const app={},makeRoot=()=>{
+  const buttons=["attachments","upgrades"].map(id=>({dataset:{weaponModSubtab:id},setAttribute(key,value){this[key]=value;},closest(){return this;}})),
+   nav=Object.assign(new EventTarget(),{querySelectorAll:()=>buttons,contains:()=>true}),panes=buttons.map(button=>({dataset:{weaponModView:button.dataset.weaponModSubtab},hidden:false}));
+  return {nav,buttons,panes,querySelector:()=>nav,querySelectorAll:()=>panes};
+ },bind=required(module,"bindWeaponModSubtabs"),first=makeRoot();
+ assert.equal(bind(first,app),"attachments");assert.equal(first.panes[1].hidden,true);
+ const event=new Event("click");Object.defineProperty(event,"target",{value:first.buttons[1]});first.nav.dispatchEvent(event);
+ assert.equal(first.panes[0].hidden,true);assert.equal(first.buttons[1]["aria-selected"],"true");
+ const next=makeRoot();assert.equal(bind(next,app),"upgrades");assert.equal(next.panes[1].hidden,false);
+ bind(next,app,{enabled:false});assert.equal(next.nav.hidden,true);assert.equal(next.panes[1].hidden,false);
 });
 test("owned modified, held, installed and fractional copies cannot be selected as usable instances",()=>{
  const catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog),copy=makeItem("glushitel"),held=makeItem("glushitel",{id:"held",system:{quantity:1,equipped:true},flags:{...copy.flags,"rebreya-main":{...copy.flags["rebreya-main"],heldHands:["left"]}}}),
@@ -81,6 +149,16 @@ test("cancelled rebuild does not debit currency or invoke installation, and old 
   const sheet=await import("../scripts/integrations/item-upgrade-sheet.js");
   assert.equal(await sheet.installItemUpgradeWithChoices(fx.host,fx.component,fx.api),null);assert.equal(calls,0);
   assert.equal(sheet.isInstalledModInventoryItem({system:{container:"weapon"},flags:{"rebreya-main":{installedWeaponMod:{version:1,hostItemId:"weapon"}}}}),true);
+ }finally{globalThis.foundry=previousFoundry;fx.restore();}
+});
+test("confirmed UI rebuild installs one actual owned part and debits exactly500gp through the canonical service",async()=>{
+ const fx=await makeWeaponModMutationFixture({quantity:2}),previousFoundry=globalThis.foundry;try{
+  fx.component.data.flags=makeItem("oblegchyonnyy-korpus").flags;
+  globalThis.foundry={...previousFoundry,applications:{api:{DialogV2:{confirm:async()=>true}}}};
+  fx.api.installWeaponModernization=payload=>fx.service.installWeaponModernization(fx.host,fx.group.items.get(payload.componentItemId),payload);
+  const before=fx.group.system.currency.gp,result=await required(module,"installWeaponModWithChoices")(fx.host,fx.component,fx.api);
+  assert.equal(fx.group.system.currency.gp,before-500);assert.equal(fx.component.system.quantity,1);
+  assert.equal(fx.host.getFlag("rebreya-main","weaponMods").modernizedParts.length,1);assert.equal(result.sourceRemaining,1);
  }finally{globalThis.foundry=previousFoundry;fx.restore();}
 });
 test("ordinary upgrades keep working without loading or depending on the weapon catalogue",async()=>{

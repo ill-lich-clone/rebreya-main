@@ -6,8 +6,8 @@ const targetData = token => {
   const actor = token?.actor ?? token?.document?.actor ?? token;
   return actor?.system ? { type: actor.system.details?.type?.value, passivePerception: actor.system.skills?.prc?.passive } : null;
 };
-const weaponActivity = activity => activity?.item?.type === "weapon" && (["mwak", "rwak"].includes(activity.actionType)
-  || (activity.attack?.type?.classification === "weapon" && ["melee", "ranged"].includes(activity.attack.type.value)));
+const weaponActivity = activity => activity?.item?.type === "weapon" && (["mwak", "rwak", "fwak"].includes(activity.actionType)
+  || (activity.attack?.type?.classification === "weapon" && ["melee", "ranged", "firearm"].includes(activity.attack.type.value)));
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 
 export function resolveSimpleUpgradeAttackRoll(config, message = {}, game = globalThis.game) {

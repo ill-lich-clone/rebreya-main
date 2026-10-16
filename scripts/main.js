@@ -118,7 +118,7 @@ import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.389";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.4.389";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.389";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.390";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.4.372";
@@ -373,7 +373,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.389";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.390";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.377";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
@@ -499,7 +499,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.389";
+const MODULE_STYLE_VERSION = "1.4.390";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;

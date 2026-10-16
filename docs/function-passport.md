@@ -359,7 +359,7 @@ Definition of Done: код, тесты, `README.md` при изменении п
 
 ### 14. Прочность, разрушение и upgrades
 
-- **Оружейные обвесы и модернизации:** [профильный паспорт](weapon-mods-function-passport.md) — каталог, topology 3/6/2, links/лимит, immediate500gp rebuild, native штык/свет/гранатомёт, глушители, source-target trait packets, разброс, MIDI activity range/cover и закрытые durable receipts. Обычные upgrades сохраняют владельца и прежние слоты. [Матрица проверок и live-ограничения](weapon-mods-verification.md).
+- **Оружейные обвесы и модернизации:** [профильный паспорт](weapon-mods-function-passport.md) — каталог, topology 3/6/2, links/лимит, immediate500gp rebuild, native штык/свет/гранатомёт, глушители, source-target trait packets, разброс, MIDI activity range/cover и закрытые durable receipts. Обычные upgrades сохраняют владельца и прежние слоты. [Матрица проверок и live-ограничения](weapon-mods-verification.md). [Исправления панели и native fwak, 1.4.390](weapon-mod-followup-verification.md).
 - **R4: каталог, правила установки/активации, UI и value:** [профильный паспорт усовершенствований](item-upgrades-function-passport.md). Здесь описаны `ItemUpgradeService.getUpgradeProjection`, pure rules, availability manifest и `evaluateItemValue`; основной mutation owner сохранён.
 - **R7: простые эффекты:** [паспорт простой автоматизации](simple-item-upgrades-function-passport.md). `ItemUpgradeAutomationService`, source-aware native Item projection, contributions с явным effectKey, managed Actor effects, `SimpleUpgradeRollAdapter` через CombatAttackService и общий packet reducer проклятий; 35 профилей, 2 ожидают уточнения правил. Finite choices валидирует `item-upgrade-choices.js`, сохраняет прежний ItemUpgradeService.
 

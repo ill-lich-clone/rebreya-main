@@ -3,7 +3,23 @@ import assert from "node:assert/strict";
 import {optionalModule,required,makeAttackCase,makeWeaponModMutationFixture,makeItem} from "./helpers/weapon-mod-fixture.mjs";
 import {SimpleUpgradeRollAdapter} from "../scripts/integrations/item-upgrade-roll-adapter.js";
 import {CombatAttackService} from "../scripts/combat/attack-service.js";
+import {ItemUpgradeAutomationService} from "../scripts/automation/item-upgrade-automation-service.js";
 const module=await optionalModule(new URL("../scripts/automation/weapon-mod-roll-modifiers.js",import.meta.url)),evaluate=required(module,"evaluateWeaponModAttack"),resolve=required(module,"resolveWeaponModConditions");
+test("native fwak firearm receives its real installed tactical grip bonus exactly once without modifying damage or source",async()=>{
+  const fx=await makeWeaponModMutationFixture({quantity:1});try{
+    fx.component.data.flags=makeItem("takticheskaya-rukoyatka").flags;Object.defineProperty(fx.host,"actor",{value:fx.group});
+    await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"native-firearm-grip",mountId:"bottom-1"});
+    const automation=new ItemUpgradeAutomationService(fx.api);automation.weaponModCatalog=fx.catalog;fx.api.itemUpgradeAutomationService=automation;
+    const before=fx.host.toObject(),activity={item:fx.host,actor:fx.group,type:"attack",actionType:"fwak",attack:{type:{classification:"weapon",value:"firearm"}}},
+      config={subject:activity,targets:[],rolls:[{parts:["@authored"],options:{}}]};
+    assert.equal(automation.rolls.preRollAttack(config),true);assert.deepEqual(config.rolls[0].parts,["@authored","1"]);
+    automation.rolls.preRollAttack(config);assert.deepEqual(config.rolls[0].parts,["@authored","1"]);
+    const damage={subject:activity,targets:[],rolls:[{base:true,parts:["2d6 + @mod"],options:{}}]};
+    automation.rolls.preRollDamage(damage);assert.deepEqual(damage.rolls[0].parts,["2d6 + @mod"]);
+    const spell={subject:{...activity,item:{type:"spell"}},rolls:[{parts:["@spell"],options:{}}]};
+    automation.rolls.preRollAttack(spell);assert.deepEqual(spell.rolls[0].parts,["@spell"]);assert.deepEqual(fx.host.toObject(),before);
+  }finally{fx.restore();}
+});
 test("collimator ten versus eleven feet and scope requires no movement",()=>{
   const collimator=evaluate(makeAttackCase("kollimatornyy-pritsel",{movedFeet:10}));assert.equal(collimator.allowed,true);assert.equal(collimator.stopMovement,true);assert.equal(collimator.ignoreHalfCover,true);
   assert.equal(evaluate(makeAttackCase("kollimatornyy-pritsel",{movedFeet:11})).allowed,false);
