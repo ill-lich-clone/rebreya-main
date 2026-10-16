@@ -13,6 +13,9 @@ test("attachment, approval and activity commands accept only exact typed payload
   assert.equal(approval(a),true);assert.equal(approval({...a,approvedByUserId:"gm"}),false);
   const use={actorUuid:base.actorUuid,hostItemId:"weapon",childItemId:"mod",activityId:"aim",operationId:"use",decision:null};
   assert.equal(activity(use),true);assert.equal(activity({...use,decision:{arbitrary:true}}),false);
+  const modernize=valid("isValidWeaponModernizationInstallPayload");
+  assert.equal(modernize(base),true);assert.equal(modernize({...base,removeItemId:"old",approvalReceiptId:"gm-audit"}),true);
+  assert.equal(modernize({...base,completionReceipt:{approved:true}}),false);assert.equal(modernize({...base,costCp:0}),false);
 });
 test("command executor resolves live Items and uses authenticated sender, reserved activities do not write",async()=>{
   const registrations=new Map(),seen=[],sender={id:"player",isGM:false},actor={items:{get:id=>({id,parent:actor})},testUserPermission:()=>true};

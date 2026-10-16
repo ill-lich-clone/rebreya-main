@@ -27,6 +27,11 @@ export async function makeWeaponModMutationFixture({quantity=3}={}){
   const {makeInstanceDocumentsFixture}=await import("./item-instance-documents-fixture.mjs");
   const {ItemUpgradeService}=await import("../../scripts/data/item-upgrade-service.js");
   const fx=makeInstanceDocumentsFixture({quantity}),catalog=makeCatalog(),previousChat=globalThis.ChatMessage,cards=new Map();
+  fx.group.system={currency:{pp:0,gp:10000,ep:0,sp:0,cp:0}};
+  const actorObject=fx.group.toObject.bind(fx.group);
+  fx.group.toObject=()=>({...actorObject(),system:structuredClone(fx.group.system)});
+  const {CombatAttackService}=await import("../../scripts/combat/attack-service.js");
+  fx.api.combatAttackService=new CombatAttackService(fx.api);
   const component=fx.source,source=makeItem("soshki");
   Object.assign(component.data,{name:source.name,type:"loot",flags:source.flags,system:{quantity,equipped:false,container:null}});
   const hostData=makeItem("vintovka");hostData.system.properties=[...hostData.system.properties];

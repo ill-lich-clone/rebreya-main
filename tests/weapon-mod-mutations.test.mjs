@@ -71,11 +71,8 @@ for(const phase of ["create","debit","equip"])for(const timing of ["before","aft
     }finally{fx.restore();}
   });
 }
-test("failed card publication retries without a second install, busy and custom components remain untouched",async()=>{
+test("failed card publication retries without a second install and custom components remain untouched",async()=>{
   const fx=await makeWeaponModMutationFixture();try{
-    fx.api.craftingService={isWeaponRebuildBusy:()=>true};
-    await assert.rejects(()=>fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"busy"}));
-    fx.api.craftingService=null;
     const attachment=fx.component.data.flags[NS].attachment;fx.component.data.flags[NS].attachment={...attachment,custom:true};
     await assert.rejects(()=>fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"custom"}));
     fx.component.data.flags[NS].attachment=attachment;
@@ -93,7 +90,6 @@ async function expandedWeaponFixture({inventoryAmmo=true}={}){
   const {CombatAttackService}=await import("../scripts/combat/attack-service.js");
   fx.api.repository={model:{gear,gearById:new Map(gear.map(row=>[row.id,row]))}};
   fx.api.combatAttackService=new CombatAttackService(fx.api);
-  fx.api.craftingService={verifyWeaponRebuildCompletion:async()=>({gmApproval:true})};
   Object.assign(fx.host.data.flags[NS],{lichWeaponPropertyValues:{reload:"Смена магазина 18",ammunition:"Винтовочный"},firearmAmmoState:{current:18,capacity:18,ammunition:"Винтовочный"}});
   for(const [i,sourceId] of ["rasshirennaya-oboyma","oblegchyonnyy-stvol","priklad"].entries()){
     const source=makeItem(sourceId),part=new Item({_id:`part-${i}`,name:source.name,type:"loot",system:{quantity:1,container:null},flags:source.flags},fx.group);
