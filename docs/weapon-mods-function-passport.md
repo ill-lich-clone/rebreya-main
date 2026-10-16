@@ -1,5 +1,15 @@
 # Оружейные обвесы и модернизированные части
 
+## Панель МОДЫ
+
+Владелец `scripts/integrations/weapon-mod-panel.js`; прежний `bindItemUpgradeSheet` вызывает async binding, template выделяет mount перед обычными upgrades. `buildWeaponModCatalogView({catalog,host,installed,inventory,kind,mountId,isOwner})` возвращает все13/12 строк, ранги0 owned/available,1 owned/blocked,2 missing; actual instances/quantity сохраняются отдельно. Авторские profiles, fractional/held/installed/contained-child экземпляры блокируются. Validation использует прежние pure rules, допустимые replacements вычисляются только при лимите.
+
+`getWeaponModMountPositions(host)` возвращает layout 3/6/2 с запасом для86px filled cards при400+ px diagram. `createWeaponModPanelHtml(item,projection,blueprint)` разделяет background/art/arrows/HTML buttons, один child в all-mount показывается основным и ссылочным слотом. `renderWeaponModPanel(root,item,projection,blueprint)` вставляет только свою секцию перед old upgrades. `bindWeaponModPanel(root,app,api,options)` имеет root sequence/AbortController, fresh guard после await, delegated click/contextmenu/drop/keyboard, busy gate и inline full catalogue.
+
+`installWeaponModWithChoices(item,component,api,{mountId,catalog,projection})` требует реальный owned Item; modern replacement/500gp подтверждаются до typed install. `choose(title,entries)` спрашивает конкретный экземпляр/действие, отмена не пишет world state; `request(item,method,payload,api)` сохраняет operationId для неопределённого повторного запроса. Все world mutations идут через прежний API. В occupied context доступны open/remove/native activity; отдельного снятия modern parts нет.
+
+В `item-upgrade-sheet.js` `installItemUpgradeWithChoices` направляет mod drops в тот же install helper; обычные upgrades сохраняют прежний путь и не зависят от загрузки weapon catalogue. `isInstalledModInventoryItem(item)` объединяет старый predicate и weapon child для existing filter/row hiding; legacy exports сохранены. Focused: `weapon-mod-panel.test.mjs`, item-upgrade-service, item-sheet-branding, module-manifest. Изолированный DOM:3/6/2 при480/820, filled bounds, full13/12, right/left click, readonly, stale render. Live Foundry требует отдельного доступного world.
+
 ## Чертежи
 
 Владелец `scripts/data/weapon-blueprints.js`, manifest `data/weapon-blueprints.json`, raster originals `assets/weapon-blueprints/`. `buildWeaponBlueprintIndex(manifest,hosts)` проверяет coverage каждого текущего host, уникальность IDs/paths, размеры и нормализованные anchors всех поддержанных mounts; число host не зашито. `getWeaponBlueprint(index,item,catalog)` возвращает individual для known host, family fallback только для неизвестного поддержанного оружия; unrelated item получает null. `loadWeaponBlueprints(hosts)` кеширует один Promise manifest fetch, при ошибке допускает повтор; filesystem scan отсутствует, Item.img не меняется. Focused `weapon-blueprints.test.mjs`: coverage/anchors, все41 файла и разные hashes, fallback policy, concurrent fetch once. Individual38 +fallback3 визуально проверены в контактной таблице.

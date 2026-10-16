@@ -1,5 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { isInstalledWeaponMod } from "../data/weapon-mod-rules.js?v=1.4.383";
+import {bindWeaponModPanel,installWeaponModWithChoices} from "./weapon-mod-panel.js?v=1.4.388";
+import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.4.385";
 import {
   getInstalledActorUpgradeItemIds,
   getInstalledUpgradeItems,
@@ -18,9 +20,13 @@ const INVENTORY_ROW_HAS_UPGRADES_CLASS = "has-rebreya-installed-upgrades";
 const INVENTORY_ROW_INSTALLING_CLASS = "is-rebreya-upgrade-installing";
 const UPGRADE_INSTALL_ANIMATION_MS = 700;
 let filterHookRegistered = false;
+export function isInstalledModInventoryItem(item){return isInstalledUpgradeItem(item)||isInstalledWeaponMod(item);}
 
 /** Ask only for a missing catalog choice, before the service may split or install anything. */
 export async function installItemUpgradeWithChoices(hostItem, upgradeItem, moduleApi) {
+  const attachment=upgradeItem?.getFlag?.(MODULE_ID,"attachment")??upgradeItem?.flags?.[MODULE_ID]?.attachment;
+  const catalog=attachment?await moduleApi.itemUpgradeService?.getWeaponModCatalog?.():moduleApi.itemUpgradeAutomationService?.weaponModCatalog;
+  if(catalog && getWeaponModCandidate(upgradeItem,catalog).profile)return installWeaponModWithChoices(hostItem,upgradeItem,moduleApi,{catalog});
   const projection = await moduleApi.itemUpgradeService?.getUpgradeProjection?.(upgradeItem);
   if (!projection?.requiresChoice || !projection.availability.available) return moduleApi.installItemUpgrade(hostItem, upgradeItem);
   const options = projection.choiceOptions ?? [];
@@ -503,6 +509,7 @@ export function hideInstalledUpgradeInventoryRows(root, actor) {
   }
 
   const installedIds = getInstalledActorUpgradeItemIds(actor);
+  for(const item of getActorItems(actor))if(isInstalledModInventoryItem(item))installedIds.add(getItemId(item));
   let changed = false;
 
   for (const node of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
@@ -538,7 +545,7 @@ export function registerItemUpgradeFilterHook() {
 
   filterHookRegistered = true;
   globalThis.Hooks.on("dnd5e.filterItem", (_sheet, item) => {
-    if (isInstalledUpgradeItem(item) || isInstalledWeaponMod(item)) {
+    if (isInstalledModInventoryItem(item)) {
       return false;
     }
     return undefined;
@@ -620,6 +627,8 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
 
 export function bindItemUpgradeSheet(root, app, moduleApi) {
   const hostItem = getSheetItem(app);
+  void bindWeaponModPanel(root,app,moduleApi,{getDropData:getItemUpgradeDropData,resolveDropItem,
+    rerender:()=>rerenderItemSheet(app,moduleApi)}).catch(error=>ui.notifications?.error?.(error.message));
   if (root instanceof HTMLElement && hostItem && moduleApi?.itemUpgradeService?.getUpgradeProjection) {
     void renderItemUpgradeAvailability(root, hostItem, moduleApi.itemUpgradeService);
   }

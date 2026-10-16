@@ -1,5 +1,8 @@
 ﻿{
   "TYPES.Item.state": "Государство",
+  "REBREYA.WeaponMods.Title": "Оружейные обвесы",
+  "REBREYA.WeaponMods.Rebuild": "Пересборка · 500 зм",
+  "REBREYA.WeaponMods.Missing": "Нет в инвентаре персонажа",
   "TYPES.Item.statePl": "Государства",
   "TYPES.Item.downtime": "Простой",
   "TYPES.Item.downtimePl": "Простои",

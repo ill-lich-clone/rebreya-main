@@ -244,17 +244,17 @@ Decision T7 имеет exact форму `{kind:'attack-conditions',targetUuid,at
 
 **Interfaces:** `buildWeaponModCatalogView({catalog,host,installed,inventory,kind,mountId=null,isOwner}) -> Entry[]`, где Entry `{sourceId,name,img,ownedQuantity,instances,available,reason,availabilityRank}`; availabilityRank0=owned/available, 1=owned/blocked, 2=missing. Авторский rank предмета не переписывается. `renderWeaponModPanel(root,host,projection,blueprint)` и `bindWeaponModPanel(root,app,moduleApi)` подключаются из текущего render/bind owner. Delegated handlers не множатся при повторном render; async sequence guard подавляет устаревшие projection ответы.
 
-- [ ] **1. RED:** `catalogue owned first but never grants missing item`, `different source instances remain selectable`, `mount links show one physical child`, `mods order preserves old panel`, `stale render does not restore old slots`:
+- [x] **1. RED:** `catalogue owned first but never grants missing item`, `different source instances remain selectable`, `mount links show one physical child`, `mods order preserves old panel`, `stale render does not restore old slots`:
   ```js
   assert.deepEqual(view.map(row=>row.availabilityRank), [0,1,2]);
   assert.equal(view.find(row=>row.ownedQuantity===0).available, false);
   assert.equal(missingChoiceCreateCalls, 0); assert.equal(dragAndClickOwnerMethod, 'installWeaponAttachment');
   ```
   Проверить все13/12 строки в соответствующих меню, disabled reasons, quantity, legacy removal-only UI, права просмотра, held/busy компоненты, two-bottom selection, отмену выбора экземпляра и формы пересборки, неизменённые старые capacity/slots/settings.
-- [ ] **2. Run:** `node --test tests/weapon-mod-panel.test.mjs`; FAIL.
-- [ ] **3. Implement:** фон/оружие/стрелки/слоты отдельными слоями; нормализованные SVG lines, HTML buttons с labels, keyboard focus и текстовыми причинами. ПКМ и ЛКМ пустого слота открывают один каталог; ЛКМ занятого открывает Item, ПКМ предлагает снять/доступную activity. Модернизация показывает плату 500 зм и сразу вызывает paid install T5; при достигнутом лимите предлагает одну снимаемую часть. GM-согласование только для особого оружия; календарных форм/проектов нет. Вторая рамка all-модуля содержит ссылочный маркер, не вторую самостоятельную карточку. Установленные children скрыть existing inventory filter одним общим предикатом, сохранив legacy exports.
-- [ ] **4. GREEN:** `node --test tests/weapon-mod-panel.test.mjs tests/item-upgrade-service.test.mjs tests/item-sheet-branding.test.mjs tests/module-manifest.test.mjs`. Затем live render 480px и 820px для каждой topology; drag/drop, ПКМ, ЛКМ и resize не перекрывают слоты и прежние усовершенствования.
-- [ ] **5. Commit gate R:** `feat: add blueprint attachment controls to item mods`.
+- [x] **2. Run:** `node --test tests/weapon-mod-panel.test.mjs`; FAIL.
+- [x] **3. Implement:** фон/оружие/стрелки/слоты отдельными слоями; нормализованные SVG lines, HTML buttons с labels, keyboard focus и текстовыми причинами. ПКМ и ЛКМ пустого слота открывают один каталог; ЛКМ занятого открывает Item, ПКМ предлагает снять/доступную activity. Модернизация показывает плату 500 зм и сразу вызывает paid install T5; при достигнутом лимите предлагает одну снимаемую часть. GM-согласование только для особого оружия; календарных форм/проектов нет. Вторая рамка all-модуля содержит ссылочный маркер, не вторую самостоятельную карточку. Установленные children скрыть existing inventory filter одним общим предикатом, сохранив legacy exports.
+- [x] **4. GREEN:** `node --test tests/weapon-mod-panel.test.mjs tests/item-upgrade-service.test.mjs tests/item-sheet-branding.test.mjs tests/module-manifest.test.mjs`. Проверен изолированный DOM render480/820 для каждой topology; live Foundry world недоступен (порт30000 не слушает, T12 фиксирует ограничение). drag/drop, ПКМ, ЛКМ и resize не перекрывают слоты и прежние усовершенствования.
+- [x] **5. Commit gate R:** `feat: add blueprint attachment controls to item mods`.
 
 ### Task 12: T12. Проверка полного цикла, документация и итоговое ревью
 
