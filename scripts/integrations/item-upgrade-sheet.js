@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { isInstalledWeaponMod } from "../data/weapon-mod-rules.js?v=1.4.378";
+import { isInstalledWeaponMod } from "../data/weapon-mod-rules.js?v=1.4.381";
 import {
   getInstalledActorUpgradeItemIds,
   getInstalledUpgradeItems,
@@ -8,7 +8,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.380";
+} from "../data/item-upgrade-service.js?v=1.4.381";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();

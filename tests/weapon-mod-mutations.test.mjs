@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {makeWeaponModMutationFixture} from "./helpers/weapon-mod-fixture.mjs";
+import {makeWeaponModMutationFixture, makeItem, gear} from "./helpers/weapon-mod-fixture.mjs";
 const NS="rebreya-main";
 test("install splits one owned component, keeps upgrades and replays durably after reload",async()=>{
   const fx=await makeWeaponModMutationFixture();try{
@@ -86,4 +86,79 @@ test("failed card publication retries without a second install, busy and custom 
     const replay=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"card-retry"});
     assert.equal(replay.replayed,true);assert.equal(fx.component.system.quantity,2);assert.equal(fx.cards.size,1);
   }finally{fx.restore();}
+});
+
+async function expandedWeaponFixture({inventoryAmmo=true}={}){
+  const fx=await makeWeaponModMutationFixture({quantity:1});
+  const {CombatAttackService}=await import("../scripts/combat/attack-service.js");
+  fx.api.repository={model:{gear,gearById:new Map(gear.map(row=>[row.id,row]))}};
+  fx.api.combatAttackService=new CombatAttackService(fx.api);
+  fx.api.craftingService={verifyWeaponRebuildCompletion:async()=>({gmApproval:true})};
+  Object.assign(fx.host.data.flags[NS],{lichWeaponPropertyValues:{reload:"Смена магазина 18",ammunition:"Винтовочный"},firearmAmmoState:{current:18,capacity:18,ammunition:"Винтовочный"}});
+  for(const [i,sourceId] of ["rasshirennaya-oboyma","oblegchyonnyy-stvol","priklad"].entries()){
+    const source=makeItem(sourceId),part=new Item({_id:`part-${i}`,name:source.name,type:"loot",system:{quantity:1,container:null},flags:source.flags},fx.group);
+    fx.group.items.contents.push(part);await fx.service.applyWeaponModernization(fx.host,part,{operationId:`prepare-${i}`,completionReceipt:{projectId:`trusted-${i}`}});
+  }
+  fx.host.data.flags[NS].firearmAmmoState.current=27;
+  const source=makeItem("oblegchyonnyy-korpus");Object.assign(fx.component.data,{name:source.name,flags:source.flags});
+  if(inventoryAmmo){const ammo=new Item({_id:"ammo",name:"Винтовочный патрон",type:"consumable",system:{quantity:5,type:{value:"ammo",subtype:"rebreyaRifle"}},flags:{[NS]:{gearId:"vintovochnyy-patron-10"}}},fx.group);fx.group.items.contents.push(ammo);}
+  return fx;
+}
+test("modernization shrinking magazine returns overflow exactly once in the same durable batch",async()=>{
+  const fx=await expandedWeaponFixture();try{
+    await fx.service.applyWeaponModernization(fx.host,fx.component,{operationId:"shrink",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}});
+    assert.equal(fx.host.getFlag(NS,"firearmAmmoState").current,18);assert.equal(fx.group.items.get("ammo").system.quantity,14);
+    assert.equal(fx.group.items.get("part-0").getFlag(NS,"installedWeaponMod"),undefined);
+    await fx.service.applyWeaponModernization(fx.host,fx.component,{operationId:"shrink",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}});
+    assert.equal(fx.group.items.get("ammo").system.quantity,14);
+  }finally{fx.restore();}
+});
+test("ammo refund failure rolls back part links, ammo and overflow; a foreign stack edit blocks overwrite",async()=>{
+  const fx=await expandedWeaponFixture();try{
+    fx.failAt("debit","after");await assert.rejects(()=>fx.service.applyWeaponModernization(fx.host,fx.component,{operationId:"failed-shrink",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}}));
+    assert.equal(fx.host.getFlag(NS,"firearmAmmoState").current,27);assert.equal(fx.group.items.get("ammo").system.quantity,5);
+    assert.equal(fx.host.getFlag(NS,"weaponMods").modernizedParts.some(p=>p.itemId==="part-0"),true);
+    fx.failAt("debit","after",()=>fx.group.items.get("ammo").data.system.quantity=99);
+    await assert.rejects(()=>fx.service.applyWeaponModernization(fx.host,fx.component,{operationId:"foreign-shrink",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}}),e=>e.code==="manual-review");
+    assert.equal(fx.group.items.get("ammo").system.quantity,99);
+  }finally{fx.restore();}
+});
+test("ammo overflow creates a canonical single cartridge stack when all prior ammunition was loaded",async()=>{
+  const previous=globalThis.CONST;globalThis.CONST={DOCUMENT_OWNERSHIP_LEVELS:{OBSERVER:2}};
+  const fx=await expandedWeaponFixture({inventoryAmmo:false});try{
+    fx.failAt("create","after");await assert.rejects(()=>fx.service.applyWeaponModernization(fx.host,fx.component,{operationId:"create-fault",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}}));
+    assert.equal(fx.group.items.contents.filter(i=>i.type==="consumable").length,0);
+    await fx.service.applyWeaponModernization(fx.host,fx.component,{operationId:"create-refund",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}});
+    const ammo=fx.group.items.contents.filter(i=>i.type==="consumable");assert.equal(ammo.length,1);assert.equal(ammo[0].system.quantity,9);
+    assert.equal(ammo[0].getFlag(NS,"gearId"),"vintovochnyy-patron-10");assert.equal(fx.host.getFlag(NS,"firearmAmmoState").current,18);
+  }finally{fx.restore();globalThis.CONST=previous;}
+});
+test("ammo refund refuses a changed ammunition identity even when its quantity was untouched",async()=>{
+  const fx=await expandedWeaponFixture();try{
+    fx.failAt("debit","before",()=>fx.group.items.get("ammo").data.flags[NS].gearId="obolochennye-puli-10");
+    await assert.rejects(()=>fx.service.applyWeaponModernization(fx.host,fx.component,{operationId:"identity-shrink",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}}),e=>e.code==="manual-review");
+    assert.equal(fx.group.items.get("ammo").getFlag(NS,"gearId"),"obolochennye-puli-10");
+  }finally{fx.restore();}
+});
+test("ammo refund creation after GM loss resumes one receipt and never duplicates returned rounds",async()=>{
+  const previous=globalThis.CONST;globalThis.CONST={DOCUMENT_OWNERSHIP_LEVELS:{OBSERVER:2}};
+  const fx=await expandedWeaponFixture({inventoryAmmo:false});try{
+    const options={operationId:"refund-leader-loss",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}};
+    fx.failAt("create","after",()=>game.user.active=false);
+    await assert.rejects(()=>fx.service.applyWeaponModernization(fx.host,fx.component,options));
+    assert.equal(fx.group.items.contents.filter(i=>i.type==="consumable").length,1);game.user.active=true;
+    await fx.service.applyWeaponModernization(fx.host,fx.component,options);await fx.service.applyWeaponModernization(fx.host,fx.component,options);
+    const ammo=fx.group.items.contents.filter(i=>i.type==="consumable");assert.equal(ammo.length,1);assert.equal(ammo[0].system.quantity,9);
+    assert.equal(fx.host.getFlag(NS,"firearmAmmoState").current,18);
+  }finally{fx.restore();globalThis.CONST=previous;}
+});
+test("ammo refund recovery never accepts or deletes a foreign edited newly created stack",async()=>{
+  const previous=globalThis.CONST;globalThis.CONST={DOCUMENT_OWNERSHIP_LEVELS:{OBSERVER:2}};
+  const fx=await expandedWeaponFixture({inventoryAmmo:false});try{
+    const options={operationId:"refund-foreign-create",removeItemId:"part-0",completionReceipt:{projectId:"trusted"}};
+    fx.failAt("create","after",()=>game.user.active=false);await assert.rejects(()=>fx.service.applyWeaponModernization(fx.host,fx.component,options));
+    const ammo=fx.group.items.contents.find(i=>i.type==="consumable");ammo.data.system.quantity=99;game.user.active=true;
+    await assert.rejects(()=>fx.service.applyWeaponModernization(fx.host,fx.component,options),e=>e.code==="manual-review");
+    assert.equal(fx.group.items.contents.filter(i=>i.type==="consumable").length,1);assert.equal(ammo.system.quantity,99);
+  }finally{fx.restore();globalThis.CONST=previous;}
 });

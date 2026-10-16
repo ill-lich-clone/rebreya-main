@@ -297,6 +297,32 @@ function makeAmmoItem({
   return item;
 }
 
+test("expanded magazine automatic area fire spends base capacity and keeps the extra cartridges",async()=>{
+  const weapon=makeFirearmItem({typeValue:"firearmAdvanced",properties:{lchFirearmReload:true,lchFirearmAutomatic:true,lchFirearmAmmunition:true},
+    values:{reload:"Смена магазина 18",ammunition:"Винтовочный",automaticDamage:"4d8"},ammoState:{current:27,capacity:27,baseCapacity:18,ammunition:"Винтовочный"}});
+  const actor=makeActor([weapon]),result=await new CombatAttackService({}).resolveFirearmAreaFire(actor,weapon,{mode:"automatic",createMessage:false});
+  assert.equal(result.capacity,27);assert.equal(result.ammoSpent,18);assert.equal(result.current,9);
+  assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").baseCapacity,18);
+});
+
+test("ammo reconfiguration plans exact overflow and rifling without mutating native state",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Смена магазина 18",ammunition:"Винтовочный"},
+    ammoState:{current:27,capacity:27,baseCapacity:18,ammunition:"Винтовочный"}}),ammo=makeAmmoItem({quantity:5,subtype:"rebreyaRifle"});
+  const actor=makeActor([weapon,ammo]),service=new CombatAttackService({});
+  ammo.flags[MODULE_ID].gearId="vintovochnyy-patron-10";
+  const before=JSON.stringify({name:weapon.name,flags:weapon.flags,quantity:ammo.system.quantity});
+  const plan=await service.planWeaponAmmoReconfiguration(actor,weapon,{capacity:18,ammunition:"Винтовочный"});
+  assert.equal(plan.returned.quantity,9);assert.equal(plan.after[weapon.id][`flags.${MODULE_ID}.firearmAmmoState`].current,18);
+  assert.equal(plan.after[ammo.id]["system.quantity"],14);assert.equal(plan.creates.length,0);
+  assert.equal(JSON.stringify({name:weapon.name,flags:weapon.flags,quantity:ammo.system.quantity}),before);
+  const swap=await service.planWeaponAmmoReconfiguration(actor,weapon,{capacity:18,ammunition:"Пистолетный"});
+  assert.equal(swap.after[weapon.id][`flags.${MODULE_ID}.firearmAmmoState`].current,0);assert.equal(swap.returned.quantity,27);
+  await assert.rejects(()=>service.planWeaponAmmoReconfiguration(actor,weapon,{capacity:18,ammunition:"Несуществующие патроны"}),e=>e.code==="unknown-ammunition");
+  weapon.flags[MODULE_ID].firearmAmmoState.ammunition="obolochennye-puli-10";ammo.flags[MODULE_ID].gearId="obolochennye-puli-10";
+  const specific=await service.planWeaponAmmoReconfiguration(actor,weapon,{capacity:18,ammunition:"Винтовочный"});
+  assert.equal(specific.after[weapon.id][`flags.${MODULE_ID}.firearmAmmoState`].ammunition,"obolochennye-puli-10");
+});
+
 function makeWeaponItem({
   id = "sword",
   name = "Sword",

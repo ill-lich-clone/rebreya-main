@@ -122,17 +122,17 @@ Constructor сохраняет прежний `getManifest` и добавляе�
 
 **Interfaces:** CombatAttackService добавляет read-only `planWeaponAmmoReconfiguration(actor,host,{capacity,ammunition}) -> {updates,creates,before,after,returned}`. План содержит exact snapshots подходящих stacks и оружия, без записи; ItemUpgradeService включает его в тот же durable batch завершения модернизации. Эффективная capacity отделена от **baseCapacity**, используемой расходом Automatic Fire.
 
-- [ ] **1. RED:** `expanded magazine preserves base burst cost`, `shrinking returns overflow once`, `rifling unloads previous ammunition`, `unknown ammo blocks entire change`:
+- [x] **1. RED:** `expanded magazine preserves base burst cost`, `shrinking returns overflow once`, `rifling unloads previous ammunition`, `unknown ammo blocks entire change`:
   ```js
   assert.equal(expanded.capacity, 27); assert.equal(expanded.automaticAmmoCost, 18);
   assert.equal(afterMagazine.current, 18); assert.equal(returnedCartridges, 9); // было 27/27
   assert.equal(afterMagazine.current + ammoInventoryAfter, beforeLoaded + ammoInventoryBefore);
   ```
   Тесты создаваемого нового ammo stack, write-then-throw, конфликта чужого stack и сбоя после выдачи overflow: нет двойного возврата, потери или бесплатных выстрелов.
-- [ ] **2. Run:** `node --test --test-name-pattern="magazine|overflow|rifling|ammo" tests/combat-attack-service.test.mjs tests/weapon-mod-mutations.test.mjs`; FAIL для новых случаев.
-- [ ] **3. Implement:** планирование без side effects, проверка actual ammo type до журнала, fresh CAS на snapshots. Не перезаписывать базовый Reload или текущий магазин из computed capacity. В batch входят part links, host ammo/name и возврат подходящих физических патронов; при неизвестном источнике отказ до записи.
-- [ ] **4. GREEN:** `node --test tests/combat-attack-service.test.mjs tests/weapon-mod-mutations.test.mjs tests/environment-automation-service.test.mjs`; прежние aborted pre-roll, one-write jam, batched reload и removed-property tests остаются неизменными.
-- [ ] **5. Commit gate R:** `feat: reconcile ammunition during weapon rebuilds`.
+- [x] **2. Run:** `node --test --test-name-pattern="magazine|overflow|rifling|ammo" tests/combat-attack-service.test.mjs tests/weapon-mod-mutations.test.mjs`; FAIL для новых случаев.
+- [x] **3. Implement:** планирование без side effects, проверка actual ammo type до журнала, fresh CAS на snapshots. Не перезаписывать базовый Reload или текущий магазин из computed capacity. В batch входят part links, host ammo/name и возврат подходящих физических патронов; при неизвестном источнике отказ до записи.
+- [x] **4. GREEN:** `node --test tests/combat-attack-service.test.mjs tests/weapon-mod-mutations.test.mjs tests/environment-automation-service.test.mjs`; прежние aborted pre-roll, one-write jam, batched reload и removed-property tests остаются неизменными.
+- [x] **5. Commit gate R:** `feat: reconcile ammunition during weapon rebuilds`.
 
 ### Task 5: T5. Платная календарная пересборка и этап создания
 

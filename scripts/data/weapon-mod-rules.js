@@ -40,6 +40,19 @@ export function isInstalledWeaponMod(item) {
   const link=weaponModFlag(item,INSTALLED_WEAPON_MOD_FLAG);
   return Boolean(link?.version===1 && link.hostItemId && item?.system?.container===link.hostItemId);
 }
+
+/** The caller supplies verified final parts; source Reload remains the base for automatic area fire. */
+export function getWeaponModAmmoConfiguration({capacity,ammunition},parts=[]) {
+  let multiplier=1,nextAmmunition=ammunition;
+  for(const part of parts)for(const effect of part.profile?.effects??[]){
+    if(effect.kind==="magazine")multiplier=effect.multiplier;
+    if(effect.kind==="ammunition")nextAmmunition=effect.value;
+  }
+  if(!Number.isSafeInteger(capacity) || capacity<0 || !Number.isFinite(multiplier) || multiplier<1)fail("incompatible");
+  const effective=Math.floor(capacity*multiplier);
+  if(!Number.isSafeInteger(effective))fail("incompatible");
+  return {baseCapacity:capacity,capacity:effective,ammunition:nextAmmunition};
+}
 function basic(host,candidate,kind) {
   if(!host || host.quantity!==1 || !Number.isSafeInteger(candidate?.quantity) || candidate.quantity<1)fail("invalid-quantity");
   if(!candidate.available || !candidate.profile || candidate.profile.kind!==kind)fail("unavailable");

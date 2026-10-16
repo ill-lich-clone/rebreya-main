@@ -1,5 +1,13 @@
 # Оружейные обвесы и модернизированные части
 
+## Магазин и боеприпасы при пересборке
+
+- `weapon-mod-rules.js:getWeaponModAmmoConfiguration({capacity,ammunition},parts=[])` вычисляет base/effective capacity и тип патронов по проверенным итоговым частям; исходный Reload не переписывается, увеличение округляется вниз.
+- `CombatAttackService.planWeaponAmmoReconfiguration(actor,host,{capacity,ammunition,modernizedParts=[]}) -> Promise<{updates,creates,before,after,returned}>` строит read-only CAS-план. Уменьшение возвращает излишек, смена типа выгружает весь прежний магазин; неизвестный тип/источник блокирует изменение до записи. Возврат идёт в точный canonical source/subtype, без fuzzy name matching; при отсутствии такого stack native factory создаёт detached данные с количеством патронов, а не упаковок. Identity/quantity/name/effects snapshots проверяются вместе.
+- `#resolveFirearmReloadCapacity/#resolveFirearmAmmoState/#setFirearmAmmoStateSync` сохраняют baseCapacity для модернизированного магазина, не обрезают его до исходного Reload при чтении/выстреле/перезарядке. `resolveFirearmAreaFire` расходует min(current,baseCapacity); дополнительные патроны остаются. Прежняя обычная автоматическая очередь по шесть патронов и partial area fire сохранены.
+- `ItemUpgradeService.#mutateWeaponMod` включает ammo create/placement, снятие и новую часть в один существующий batch. Create-only refund step использует тот же journal/origin/recovery; `ItemInstanceDocuments.verifyCommitted` для kind=create сверяет весь созданный snapshot. Compensation удаляет только неизменённый собственный refund, потерявший власть GM не компенсирует.
+- Focused: ammo/magazine/rifling/overflow cases в `tests/combat-attack-service.test.mjs`, `tests/weapon-mod-mutations.test.mjs`; instance batch и environment automation regressions.
+
 ## Установка и typed commands
 
 - `ItemUpgradeService(moduleApi,{getManifest,getWeaponModCatalog=loadWeaponModCatalog})` сохраняет прежние upgrade API. `getWeaponModsProjection(host)` возвращает проверенные live links, diagnostics и полный каталог с реальными свободными itemIds/quantity того же Actor.

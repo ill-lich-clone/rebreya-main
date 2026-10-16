@@ -5,10 +5,10 @@ import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapa
 import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.4.292";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
 import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.378";
-import { getWeaponModHostDescriptor, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, validateModernizedPartInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.378";
+import { getWeaponModHostDescriptor, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, validateModernizedPartInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.381";
 import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.379";
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.377";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.379";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.381";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
@@ -344,6 +344,19 @@ export class ItemUpgradeService {
             const projection=readWeaponMods(current,id=>actor.items.get(id),catalog);
             if(projection.diagnostics.length)throw new WeaponModRuleError("slot-conflict");
             validateModernizedPartInstallation(modHost,projection.modernizedParts,candidate,{removeItemId,gmApproval:receipt.gmApproval});
+            const ammoPlan=await this.moduleApi.combatAttackService?.planWeaponAmmoReconfiguration?.(actor,current,
+              {modernizedParts:[...projection.modernizedParts.filter(part=>part.itemId!==removeItemId),candidate]});
+            if(!ammoPlan)throw new Error("Планирование боеприпасов недоступно; пересборка не изменена.");
+            for(const [index,creation] of ammoPlan.creates.entries()){
+              const createId=`${operation.id}:ammo-refund:${index}`,targetData=deepClone(creation.data),targetId=createStableGearDocumentId(createId);
+              targetData._id=targetId;targetData.flags??={};targetData.flags[MODULE_ID]??={};
+              targetData.flags[MODULE_ID].itemInstanceOrigin={id:createId,fingerprint:operation.fingerprint};
+              steps.push({intent:{...intent,sourceItemId:current.id},itemId:targetId,targetData,
+                plan:{kind:"create",quantity:targetData.system.quantity,sourceRemaining:1,preserveSourceId:false},sourceBefore:1,
+                sourceMarkerBefore:weaponModFlag(current,"itemInstanceDebit")??null,sourceMarkerAfter:{id:createId},placement:[]});
+            }
+            if(ammoPlan.updates.length)steps.push({intent,plan:{kind:"placement",preserveSourceId:true},
+              placement:ammoPlan.updates.map(({itemId,patch:after})=>({actor:"source",itemId,before:ammoPlan.before[itemId],after}))});
             if(removeItemId){
               const old=actor.items.get(removeItemId);
               steps.push({intent,plan:{kind:"placement",preserveSourceId:true},placement:[patch(old,

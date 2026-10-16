@@ -1,5 +1,8 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
+import { getWeaponModAmmoConfiguration } from "../data/weapon-mod-rules.js?v=1.4.381";
+import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
+import { createDnd5eItemData } from "../data/gear-compendium.js?v=1.4.330";
 import {
   hasActiveRepeatingShot,
   inferAmmunitionItemSubtype,
@@ -1103,6 +1106,8 @@ export class CombatAttackService {
     const values = this.#getLichWeaponPropertyValues(item, options);
     const fromReload = this.#parseFirstPositiveInteger(values.reload);
     if (fromReload > 0) {
+      const state=readDocumentFlag(item,MODULE_ID,FIREARM_AMMO_STATE_FLAG);
+      if(state?.baseCapacity===fromReload && Number.isSafeInteger(state.capacity) && state.capacity>0)return state.capacity;
       return fromReload;
     }
 
@@ -1125,6 +1130,7 @@ export class CombatAttackService {
       tracked: capacity > 0,
       current: capacity > 0 ? clampInteger(current, 0, capacity) : 0,
       capacity,
+      ...(Number.isSafeInteger(state?.baseCapacity)?{baseCapacity:state.baseCapacity}:{}),
       ammunition: cleanText(options.ammunition ?? state?.ammunition ?? values.ammunition),
       reload: cleanText(values.reload),
       fireMode: cleanText(values.fireMode)
@@ -1446,6 +1452,7 @@ export class CombatAttackService {
     const nextState = {
       current,
       capacity,
+      ...(Number.isSafeInteger(state?.baseCapacity)?{baseCapacity:state.baseCapacity}:{}),
       ammunition,
       updatedAt: new Date().toISOString()
     };
@@ -4713,6 +4720,62 @@ export class CombatAttackService {
     };
   }
 
+  async planWeaponAmmoReconfiguration(actor,weapon,{capacity,ammunition,modernizedParts=[]}={}) {
+    const fail=()=>{const error=new Error("Не удалось достоверно определить тип возвращаемых патронов.");error.code="unknown-ammunition";throw error;};
+    if(!(actor instanceof Actor) || !(weapon instanceof Item) || actor.items.get(weapon.id)!==weapon)fail();
+    const values=this.#getLichWeaponPropertyValues(weapon),saved=readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG)??null;
+    const baseCapacity=this.#parseFirstPositiveInteger(values.reload);
+    // Weapons without a tracked magazine do not acquire one through this planner.
+    if(!baseCapacity && !saved)return {updates:[],creates:[],before:{},after:{},returned:{quantity:0,ammunition:""}};
+    const desired=getWeaponModAmmoConfiguration({capacity:baseCapacity || saved?.baseCapacity || saved?.capacity || 0,
+      ammunition:cleanText(values.ammunition || saved?.ammunition)},modernizedParts);
+    if(capacity!==undefined)desired.capacity=capacity;
+    if(ammunition!==undefined)desired.ammunition=ammunition;
+    if(!Number.isSafeInteger(desired.capacity) || desired.capacity<0)fail();
+    const aliases={rifle:"Винтовочный",pistol:"Пистолетный",musket:"Мушкетный",shotgun:"Картечный"};
+    desired.ammunition=aliases[desired.ammunition]??desired.ammunition;
+    const subtype=label=>inferRebreyaAmmunitionSubtype({id:label}) || inferRebreyaWeaponAmmunitionSubtype({lichWeaponPropertyValues:{ammunition:aliases[label]??label}});
+    const previousAmmo=cleanText(saved?.ammunition || values.ammunition),oldType=subtype(previousAmmo),nextType=subtype(desired.ammunition);
+    if(!oldType || !nextType)fail();
+    const current=saved?.current ?? desired.baseCapacity;
+    if(!Number.isSafeInteger(current) || current<0 || (saved && (!Number.isSafeInteger(saved.capacity) || current>saved.capacity)))fail();
+    const returned=oldType!==nextType?current:Math.max(0,current-desired.capacity),nextCurrent=current-returned;
+    const next={...(saved??{}),current:nextCurrent,capacity:desired.capacity,baseCapacity:desired.baseCapacity,
+      ammunition:oldType===nextType && inferRebreyaAmmunitionSubtype({id:previousAmmo})?previousAmmo:desired.ammunition};
+    const weaponSource=weapon.toObject?.()??weapon,identity={
+      [`flags.${MODULE_ID}.lichWeaponPropertyValues`]:structuredClone(weaponSource.flags?.[MODULE_ID]?.lichWeaponPropertyValues??null),
+      [`flags.${MODULE_ID}.gearId`]:weaponSource.flags?.[MODULE_ID]?.gearId??null,
+      "system.properties":structuredClone(weaponSource.system?.properties??null)};
+    const statePath=`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`,before={[weapon.id]:{...identity,[statePath]:saved,name:weapon.name}},
+      after={[weapon.id]:{...identity,[statePath]:next,name:withFirearmAmmoSuffix(weapon.name,nextCurrent,desired.capacity)}},creates=[];
+    if(returned){
+      const canonicalIds={rebreyaMusket:"mushketnyy-patron-20",rebreyaRifle:"vintovochnyy-patron-10",rebreyaShotgun:"kartechnyy-patron-20",rebreyaPistol:"pistoletnyy-patron-20",
+        rebreyaFuelTank:"toplivnyy-bak-1",rebreyaRocket:"raketnyy-vystrel-3",rebreyaEnergyBattery:"batareya-4",rebreyaGaussBolt:"stal-noy-bolt-1",rebreyaAntimatter:"zaryad-antimaterii-20",rebreyaThermalBattery:"teplovaya-batareya-20"};
+      const sourceId=inferRebreyaAmmunitionSubtype({id:previousAmmo})?previousAmmo:canonicalIds[oldType];
+      // Refund exact native subtype/identity; never use fuzzy name matching to mint ammunition.
+      const matches=collectionValues(actor.items).filter(item=>this.#isAmmunitionItem(item)
+        && (inferRebreyaAmmunitionSubtype(item) || inferAmmunitionItemSubtype(item))===oldType
+        && readDocumentFlag(item,MODULE_ID,"gearId")===sourceId
+        && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId).sort((a,b)=>a.id.localeCompare(b.id));
+      const target=matches[0];
+      if(target){
+        const path=this.#itemQuantityUpdatePath(target),quantity=this.#getItemQuantity(target);
+        if(!Number.isSafeInteger(quantity+returned))fail();
+        const snapshot=target.toObject?.()??target,identity={name:snapshot.name,type:snapshot.type,flags:structuredClone(snapshot.flags??null),effects:structuredClone(snapshot.effects??null),
+          ...Object.fromEntries(Object.entries(snapshot.system??{}).filter(([key])=>key!=="quantity").map(([key,value])=>[`system.${key}`,structuredClone(value)]))};
+        before[target.id]={...identity,[path]:quantity};after[target.id]={...identity,[path]:quantity+returned};
+      }else{
+        const model=this.moduleApi?.repository?.model??await this.moduleApi?.getModel?.(),source=model?.gearById?.get(sourceId)??model?.gear?.find(row=>row.id===sourceId);
+        if(!source || inferRebreyaAmmunitionSubtype(source)!==oldType)fail();
+        const data=createDnd5eItemData(source,new Map());
+        for(const key of ["_id","id","folder","ownership"])delete data[key];
+        data.system.quantity=returned;data.system.container=null;creates.push({sourceId:source.id,data});
+      }
+    }
+    return {updates:Object.entries(after).map(([itemId,patch])=>({itemId,patch})),creates,before,after,
+      returned:{quantity:returned,ammunition:previousAmmo}};
+  }
+
   async loadImplantReloadReservoir(actorOrId, options = {}) {
     const actor = this.#resolveActor(actorOrId);
     const implantAutomationService = this.moduleApi?.implantAutomationService;
@@ -4877,11 +4940,11 @@ export class CombatAttackService {
       options.targetCount ?? globalThis.game?.user?.targets?.size,
       1
     )));
-    const ammoRequired = mode === "automatic" ? state.current : targetCount;
+    const ammoRequired = mode === "automatic" ? Math.min(state.current,state.baseCapacity??state.capacity) : targetCount;
     const ammo = this.#consumeLoadedFirearmAmmo(actor, weapon, ammoRequired, {
       ...options,
       allowPartial: mode === "automatic",
-      emptyMagazine: mode === "automatic"
+      emptyMagazine: false
     });
     if (!ammo.success) {
       return {

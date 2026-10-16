@@ -116,7 +116,7 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.380";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.381";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.4.380";
 import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.292";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
@@ -315,7 +315,7 @@ import {
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.377";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.359";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.381";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";

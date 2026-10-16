@@ -160,6 +160,7 @@ export class ItemInstanceDocuments {
   async verifyCommitted(record, context) {
     const { sourceActor, targetActor } = await this.readActors(record.intent);
     if (record.plan.kind !== "placement" && !targetActor.items.get(record.itemId)) conflict();
+    if(record.plan.kind==="create" && !equal(cleanClone(targetActor.items.get(record.itemId).toObject()),cleanClone(record.targetData)))conflict();
     if (record.plan.kind === "split") {
       const item = sourceActor.items.get(record.intent.sourceItemId);
       if (readInventoryItemQuantity(item?.toObject?.() ?? item) !== record.plan.sourceRemaining || !quantityStateMatches(item, record.sourceQuantityStateAfter) || !equal(item.getFlag(MODULE_ID, "itemInstanceDebit"), record.sourceMarkerAfter)) conflict();
