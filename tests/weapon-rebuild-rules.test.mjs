@@ -21,3 +21,9 @@ test("capacity replacement has one fee and improved grip also costs its own 500g
   const replacement=quote({host,parts,component:makeCandidate("giganskaya-oboyma"),removeItemId:"mag",currency:{gp:500}});
   assert.equal(replacement.costCp,50000);assert.equal(replacement.afterCp,0);
 });
+test("payment preserves untouched coin denominations and only makes change when needed",()=>{
+  const currency={pp:4,gp:600,ep:5,sp:12,cp:17};
+  assert.deepEqual(quote({...input(),currency}).currencyAfter,{...currency,gp:100});
+  const change=quote({...input(),currency:{pp:1,gp:499}});
+  assert.equal(change.beforeCp-change.afterCp,50000);assert.deepEqual(change.currencyAfter,{pp:0,gp:9});
+});

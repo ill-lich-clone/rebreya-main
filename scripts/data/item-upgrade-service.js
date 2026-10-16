@@ -3,16 +3,16 @@ import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-
 import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.255";
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.4.292";
-import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
+import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js?v=1.4.383";
 import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.378";
-import { getWeaponModHostDescriptor, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, validateModernizedPartInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.381";
+import { getWeaponModHostDescriptor, getWeaponModEffectiveHost, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.383";
 import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.379";
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.377";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.381";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.4.382";
+import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.4.383";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";
@@ -292,7 +292,7 @@ export class ItemUpgradeService {
         && !weaponModFlag(child,INSTALLED_UPGRADE_FLAG)?.hostItemId);
       return {...row,itemIds:owned.map(child=>child.id),quantity:owned.reduce((sum,child)=>sum+Number(child.system.quantity??0),0)};
     });
-    return {host,...state,catalogue};
+    return {host:getWeaponModEffectiveHost(host,state.modernizedParts),...state,catalogue};
   }
 
   installWeaponAttachment(host,component,options={}) { return this.#mutateWeaponMod("install",host,component,options); }
@@ -361,7 +361,7 @@ export class ItemUpgradeService {
           if(weaponModFlag(component,"installedWeaponMod")?.hostItemId || weaponModFlag(component,INSTALLED_UPGRADE_FLAG)?.hostItemId
             || items.some(child=>child.system?.container===component.id))throw new WeaponModRuleError("slot-conflict");
           const candidate=getWeaponModCandidate(component,catalog);let mounts=[];
-          if(mode==="install")mounts=validateWeaponAttachmentInstallation(modHost,state.attachments,candidate,{mountId}).mountIds;
+          if(mode==="install")mounts=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(modHost,readWeaponMods(current,id=>actor.items.get(id),catalog).modernizedParts),state.attachments,candidate,{mountId}).mountIds;
           else{
             const projection=readWeaponMods(current,id=>actor.items.get(id),catalog);
             if(projection.diagnostics.length)throw new WeaponModRuleError("slot-conflict");
@@ -370,7 +370,7 @@ export class ItemUpgradeService {
             const approval=audit?.terminal && audit.result?.ok && audit.kind==="item-instance-v1" && audit.intent?.mode==="weapon-mod-approve"?audit.result.value:null;
             const gmApproval=Boolean(approval && approval.approvedByUserId && approval.actorUuid===actor.uuid && approval.hostItemId===current.id
               && approval.sourceId===candidate.sourceId && approval.profileSignature===candidate.profileSignature && approval.operationId===operationId);
-            const quote=buildWeaponRebuildQuote({host:modHost,component:candidate,parts:projection.modernizedParts,removeItemId,gmApproval,
+            const quote=buildWeaponRebuildQuote({host:modHost,component:candidate,parts:projection.modernizedParts,attachments:projection.attachments,removeItemId,gmApproval,
               currency:actor.toObject().system?.currency});
             steps.push({intent,plan:{kind:"placement",preserveSourceId:true},placement:[{actor:"source",before:{"system.currency":quote.currencyBefore},after:{"system.currency":quote.currencyAfter}}]});
             const ammoPlan=await this.moduleApi.combatAttackService?.planWeaponAmmoReconfiguration?.(actor,current,

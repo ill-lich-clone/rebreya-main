@@ -11,7 +11,7 @@ import {
 } from "../data/storage-object-kind.js?v=1.4.360";
 import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js?v=1.4.377";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { isNaturalWeapon } from "./held-items.js?v=1.4.96-npc-held-natural";
+import { isNaturalWeapon } from "./held-items.js?v=1.4.383";
 
 const EFFECT_SUPPRESSION_PATCH = Symbol.for(`${MODULE_ID}.durabilityEffectSuppression`);
 const REGISTERED_HOOK_TARGETS = new WeakSet();

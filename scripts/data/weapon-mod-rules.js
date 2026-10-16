@@ -40,6 +40,11 @@ export function isInstalledWeaponMod(item) {
   const link=weaponModFlag(item,INSTALLED_WEAPON_MOD_FLAG);
   return Boolean(link?.version===1 && link.hostItemId && item?.system?.container===link.hostItemId);
 }
+export function getWeaponModEffectiveHost(host,parts=[]){
+  if(!host)return null;
+  const form=parts.some(part=>part.sourceId==="obrezka-stvola")?"short":(host.baseForm??host.form);
+  return {...host,form,modelTags:[...host.modelTags.filter(tag=>!["short-firearm","long-firearm"].includes(tag)),...(form?[`${form}-firearm`]:[])]};
+}
 
 /** The caller supplies verified final parts; source Reload remains the base for automatic area fire. */
 export function getWeaponModAmmoConfiguration({capacity,ammunition},parts=[]) {
@@ -112,8 +117,7 @@ export function validateModernizedPartInstallation(host,parts,candidate,{removeI
   const countedParts=final.filter(part=>part.profile.countsTowardLimit!==false).length;
   if(countedParts>3)fail("capacity");
   if(removeItemId!==null && parts.filter(part=>part.profile.countsTowardLimit!==false).length<3)fail("capacity");
-  const form=ids.has("obrezka-stvola")?"short":(host.baseForm ?? host.form);
-  const effective={...host,modelTags:[...host.modelTags.filter(tag=>!["short-firearm","long-firearm"].includes(tag)),...(form?[`${form}-firearm`]:[])]};
+  const effective=getWeaponModEffectiveHost(host,final);
   for(const part of final)compatible(effective,part.profile,final);
   if(host.requiresGmApproval && !gmApproval)fail("gm-approval-required");
   return {countedParts,removeItemId};
@@ -143,13 +147,13 @@ export function readWeaponMods(host,resolveItem,catalog) {
     seen.add(entry.itemId);sources.add(entry.sourceId);selected.forEach(mount=>mounts.add(mount));
     result[field].push({...structuredClone(entry),profile:structuredClone(row.profile),item:child});
   }
-  for(const field of ["attachments","modernizedParts"]) {
+  for(const field of ["modernizedParts","attachments"]) {
     const entries=result[field];
     result[field]=entries.filter(entry=>{
       const candidate={...entry,quantity:1,available:true};
       try {
         if(field==="attachments") {
-          const checked=validateWeaponAttachmentInstallation(descriptor,entries.filter(other=>other!==entry),candidate,{mountId:entry.mountIds[0]});
+          const checked=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(descriptor,result.modernizedParts),entries.filter(other=>other!==entry),candidate,{mountId:entry.mountIds[0]});
           if(checked.mountIds.length!==entry.mountIds.length || checked.mountIds.some(mount=>!entry.mountIds.includes(mount)))fail("slot-conflict");
         } else validateModernizedPartInstallation(descriptor,entries.filter(other=>other!==entry),candidate,{gmApproval:true});
         return true;

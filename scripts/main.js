@@ -116,9 +116,9 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.382";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.383";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.4.382";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.292";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.383";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.377";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.4.372";
@@ -357,7 +357,7 @@ import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/ra
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.372";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
-import { getActorHandReservations } from "./integrations/held-items.js";
+import { getActorHandReservations } from "./integrations/held-items.js?v=1.4.383";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";

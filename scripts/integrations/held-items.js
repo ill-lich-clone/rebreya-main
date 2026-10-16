@@ -444,6 +444,8 @@ export function getItemHeldHands(item) {
 
 export function getItemHandRequirement(item) {
   const requirement = getDocumentFlag(item, HAND_REQUIREMENT_FLAG);
+  const automation=globalThis.game?.rebreyaMain?.itemUpgradeAutomationService??globalThis.game?.modules?.get?.("rebreya-main")?.api?.itemUpgradeAutomationService;
+  const sawOff=automation?.getWeaponModItemState?.(item)?.sawOff===true;
   if (requirement === undefined || requirement === null || requirement === "") {
     return null;
   }
@@ -453,6 +455,7 @@ export function getItemHandRequirement(item) {
       requirement.requiredHands ?? requirement.hands ?? requirement.min ?? requirement.value,
       0
     );
+    if(requiredHands===2 && sawOff)return {...requirement,requiredHands:1,allowedHands:[1],maxHands:1,canUseTwoHands:false,twoHanded:false};
     const allowedHands = normalizeHandCounts(
       requirement.allowedHands ?? requirement.allowed ?? requirement.options ?? requirement.values
     );
@@ -476,6 +479,7 @@ export function getItemHandRequirement(item) {
 
   const allowedHands = normalizeHandCounts(requirement);
   const requiredHands = allowedHands[0] ?? 0;
+  if(requiredHands===2 && sawOff)return {requiredHands:1,allowedHands:[1],maxHands:1,canUseTwoHands:false};
   return {
     requiredHands,
     allowedHands,

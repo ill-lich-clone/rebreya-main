@@ -1,6 +1,6 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
-import { getWeaponModAmmoConfiguration } from "../data/weapon-mod-rules.js?v=1.4.381";
+import { getWeaponModAmmoConfiguration } from "../data/weapon-mod-rules.js?v=1.4.383";
 import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
 import { createDnd5eItemData } from "../data/gear-compendium.js?v=1.4.330";
 import {
@@ -15,7 +15,7 @@ import {
   canUseHeldItemForHandRequirement,
   getItemHeldHands,
   hasDistinctHeldItemsInDifferentHands
-} from "../integrations/held-items.js?v=1.4.181-dual-wield-gloves";
+} from "../integrations/held-items.js?v=1.4.383";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";

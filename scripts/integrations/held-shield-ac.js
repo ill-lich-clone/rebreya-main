@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isBrokenDurabilityItem } from "./durability-hooks.js?v=1.4.377";
-import { getItemHeldHands } from "./held-items.js?v=1.4.96-npc-held-natural";
+import { getItemHeldHands } from "./held-items.js?v=1.4.383";
 
 const PATCH_MARKER = "__rebreyaHeldShieldArmorClassPatched";
 const ACTOR_DATA_MODEL_TYPES = ["character", "npc"];

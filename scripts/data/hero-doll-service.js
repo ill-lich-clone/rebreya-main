@@ -8,7 +8,7 @@ import { normalizeHeroDollPresets, captureHeroDollPresetSlots, heroDollPresetMod
 import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.379";
 import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.4.379";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js";
+import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js?v=1.4.383";
 
 export const HERO_DOLL_ASSIGN_COMMAND = "hero-doll.assign";
 export const HERO_DOLL_NORMALIZE_COMMAND = "hero-doll.normalize-stack";

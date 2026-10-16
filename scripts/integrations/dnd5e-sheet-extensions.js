@@ -51,7 +51,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.96-npc-held-natural";
+} from "./held-items.js?v=1.4.383";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js?v=1.4.317";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";

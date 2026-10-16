@@ -154,17 +154,17 @@ Constructor сохраняет прежний `getManifest` и добавляе�
 
 **Interfaces:** `buildWeaponModContributions({host,mods,context={}}) -> {contributions,diagnostics}` использует проверенные links T1/T3 и вклад с identity `{actorUuid,hostItemId,childItemId,effectKey,projectionVersion}`. В существующем `ItemUpgradeAutomationService.project()` объединяются прежние и новые вклады. Source projection применяется одной restore/apply последовательностью; `systemPatch` не сохраняется поверх authored source.
 
-- [ ] **1. RED:** `prepare twice is idempotent`, `source edit and removal restore current values`, `weight modifier order`, `grip dependency yields total two`, `sawed off changes base dice only`:
+- [x] **1. RED:** `prepare twice is idempotent`, `source edit and removal restore current values`, `weight modifier order`, `grip dependency yields total two`, `sawed off changes base dice only`:
   ```js
   assert.equal(projected.weightLb, 15); // (base20 + modernDelta2) / 2 + attachments4
   assert.equal(projected.attackBonus, 2); // базовая и улучшенная рукояти
   assert.deepEqual(secondPrepare, firstPrepare);
   ```
   Закрепить kg/lb, нижнюю границу ноль, чужие AE и дополнительные authored damage terms, отдельные нормальную/максимальную дальности, снятие `two`, изменение form до short, half body weight и прежнее усовершенствование уменьшения веса — оно применяется ровно один раз к полученному общему весу. Проверить `buildActorInventoryWeightSnapshot(actor).weightLb === 15` для примера выше, native encumbrance и то, что source-вес каждого child неизменён и восстанавливается после снятия.
-- [ ] **2. Run:** `node --test tests/weapon-mod-projections.test.mjs`; FAIL.
-- [ ] **3. Implement:** source → additive modernization weight → body multiplier → physical attachment weight → existing simple-upgrade weight reducer. Root содержит общий вычисленный вес; для доказанно установленного child его derived weight contribution к переносимому весу равен0 через тот же native restore/apply adapter, source weight не записывается. Снятие, invalid link и чужой Item не оставляют нулевой projection. Так native encumbrance и existing inventory-weight не считают компонент повторно; в панели исходный вес компонента читается из source/каталога с пометкой «учтён в оружии». Пассивные операции registry реализовать через существующие capability/WeakMap механизмы. Custom damage formula, которую нельзя корректно преобразовать, возвращает точную диагностику/решение мастера, не переписывается приблизительной формулой.
-- [ ] **4. GREEN:** новые tests + `node --test tests/item-upgrade-projections.test.mjs tests/item-upgrade-automation-service.test.mjs tests/item-upgrade-roll-adapter.test.mjs tests/item-upgrade-roll-modifiers.test.mjs tests/item-upgrade-absorption.test.mjs`.
-- [ ] **5. Commit gate R:** `feat: project passive weapon mod effects`.
+- [x] **2. Run:** `node --test tests/weapon-mod-projections.test.mjs`; FAIL.
+- [x] **3. Implement:** source → additive modernization weight → body multiplier → physical attachment weight → existing simple-upgrade weight reducer. Root содержит общий вычисленный вес; для доказанно установленного child его derived weight contribution к переносимому весу равен0 через тот же native restore/apply adapter, source weight не записывается. Снятие, invalid link и чужой Item не оставляют нулевой projection. Так native encumbrance и existing inventory-weight не считают компонент повторно; в панели исходный вес компонента читается из source/каталога с пометкой «учтён в оружии». Пассивные операции registry реализовать через существующие capability/WeakMap механизмы. Custom damage formula, которую нельзя корректно преобразовать, возвращает точную диагностику/решение мастера, не переписывается приблизительной формулой.
+- [x] **4. GREEN:** новые tests + `node --test tests/item-upgrade-projections.test.mjs tests/item-upgrade-automation-service.test.mjs tests/item-upgrade-roll-adapter.test.mjs tests/item-upgrade-roll-modifiers.test.mjs tests/item-upgrade-absorption.test.mjs`.
+- [x] **5. Commit gate R:** `feat: project passive weapon mod effects`.
 
 ### Task 7: T7. Прицеливание, положение, видимость и подводный режим
 

@@ -1,5 +1,14 @@
 # Оружейные обвесы и модернизированные части
 
+## Вычисляемые свойства и вес
+
+- `weapon-mod-projections.js:buildWeaponModContributions({host,mods,context})` получает detached source и проверенные links, возвращает typed contributions с identity Actor/host/child/effect/version и diagnostics. Исходные веса переводятся по native weight units; отрицательная каталожная масса модернизации используется как delta, если native nonnegative schema сохранила0. Никакие projectedEffects flags не записываются.
+- `projectWeaponModItem(system,contributions,{itemId})` применяет delta массы к native derived полям после чужих AE: clamp(body + modernized weights) → body multiplier → attachment weights; существующий simple-upgrade reducer вызывается после этого ровно один раз. Проверенный child получает derived weight0, source-вес сохраняется. Дальность меняется отдельно по нормальной/максимальной tracks; добавляется ProneFire. Saw-off снимает two и уменьшает только base denomination, сохраняет number/bonus/types/extra terms; custom formula диагностируется для решения мастера.
+- `ItemUpgradeAutomationService.project` объединяет прежние вклады с weapon-mod contributions; catalogue читается один раз в `initialize`. `applyItemProjection/restoreItemProjection` используют прежний Item.applyActiveEffects wrapper и WeakMap, сравнивают каждый исходный/вычисленный owned field отдельно: source edit одного поля не оставляет старый вклад в других и не перезаписывает чужие изменения. `getWeaponModItemState(item)` возвращает detached read-only state для native consumers.
+- `getWeaponModEffectiveHost(host,parts)` выводит текущую short/long форму только из проверенных частей. `readWeaponMods` сначала валидирует модернизации, затем совместимость обвесов с итоговой формой. Paid quote проверяет оставшиеся обвесы до списания: длинноствольный обвес нужно снять перед обрезкой.
+- `held-items.js:getItemHandRequirement` учитывает verified derived saw-off state в существующем reader для object и legacy numeric flags; authored flags не переписывает. Удаление части возвращает исходные ограничения.
+- Focused: `tests/weapon-mod-projections.test.mjs`, `tests/held-items.test.mjs`, прежние simple-upgrade projections/automation/roll/absorption; суммарный вес проверяется реальным `buildActorInventoryWeightSnapshot`.
+
 ## Магазин и боеприпасы при пересборке
 
 - `weapon-mod-rules.js:getWeaponModAmmoConfiguration({capacity,ammunition},parts=[])` вычисляет base/effective capacity и тип патронов по проверенным итоговым частям; исходный Reload не переписывается, увеличение округляется вниз.

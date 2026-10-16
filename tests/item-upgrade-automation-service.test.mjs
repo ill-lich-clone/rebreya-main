@@ -85,7 +85,7 @@ test("initialize resets native actor models before preparing existing activities
   const previous = globalThis.game;
   let resets = 0;
   const actor = { uuid: "Actor.ready", reset() { resets++; }, prepareData() { assert.fail("Direct prepareData duplicates native base damage parts"); } };
-  const service = new ItemUpgradeAutomationService({}, { getManifest: async () => [], isAuthority: () => false });
+  const service = new ItemUpgradeAutomationService({}, { getManifest: async () => [], getWeaponModCatalog:async()=>({rows:[],hosts:[]}), isAuthority: () => false });
   service.registerItemDataPatch = () => false;
   try {
     globalThis.game = { system: { id: "dnd5e" }, actors: { contents: [actor] } };
