@@ -22,6 +22,17 @@ test("install splits one owned component, keeps upgrades and replays durably aft
     assert.equal([...fx.cards.values()][1].flags[NS].weaponModAction.activation.type,"action");
   }finally{fx.restore();}
 });
+
+for(const modernized of [false,true])test(`authoritative ${modernized?"rebuild":"attachment"} rejects a component that became held before execution`,async()=>{
+  const fx=await makeWeaponModMutationFixture({quantity:1});
+  try{
+    if(modernized)fx.component.data.flags=makeItem("oblegchyonnyy-korpus").flags;
+    fx.component.data.type="equipment";fx.component.data.system.equipped=true;fx.component.data.flags["rebreya-main"].heldHands=["left"];
+    const before=fx.component.toObject(),wallet=structuredClone(fx.group.system.currency),host=fx.host.toObject();
+    await assert.rejects(modernized?fx.service.installWeaponModernization(fx.host,fx.component,{operationId:"held"}):fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"held",mountId:"bottom-1"}),error=>error.code==="component-held");
+    assert.deepEqual(fx.component.toObject(),before);assert.deepEqual(fx.host.toObject(),host);assert.deepEqual(fx.group.system.currency,wallet);
+  }finally{fx.restore();}
+});
 test("two writers serialize and duplicate, unavailable, foreign and stacked hosts refuse before mutation",async()=>{
   const fx=await makeWeaponModMutationFixture();try{
     const results=await Promise.allSettled(["a","b"].map(operationId=>fx.service.installWeaponAttachment(fx.host,fx.component,{operationId})));

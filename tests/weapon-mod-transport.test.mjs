@@ -73,6 +73,19 @@ test("native Storage round trip preserves one multi-mount child and exact uses/a
   assert.equal(child.system.uses.spent,2);assert.equal(host.flags[NS].firearmAmmo.current,5);
 });
 
+test("portable Storage preserves loaded launcher descendants and their exact native sources",async()=>{
+  const {actor,root,child,bag}=fixture({bag:true}),hostData=root.toObject(),launcherData=child.toObject();
+  hostData.flags[NS].weaponMods.attachments=[{itemId:child.id,sourceId:"podstvol-nyy-granatomet",mountIds:["bottom-1"]}];
+  launcherData.flags[NS].gearId="podstvol-nyy-granatomet";launcherData.flags[NS].installedWeaponMod.mountIds=["bottom-1"];actor.add(hostData);actor.add(launcherData);
+  actor.add({_id:"loaded-grenade",name:"Авторская граната",type:"loot",system:{quantity:1,container:child.id,uses:{spent:2,max:"7"},description:{value:"Исходное описание"}},
+    effects:[{name:"Сохранённый эффект",changes:[]}],flags:{core:{sourceId:"Item.original-grenade"},[NS]:{gearId:"malaya-oskolochnaya-granata",authoredFormula:"2d6 + @abilities.dex.mod"}}});
+  const service=new StorageContainerItemService({buildItemData:()=>{throw Error("native captured state must survive");}}),snapshot=await service.captureFromItem(bag),graph=await service.prepareItemGraph(snapshot,{actorId:"destination"});
+  assert.equal(snapshot.state.manualRows.length,1);assert.equal(graph.nodes.length,4);
+  const launcher=graph.nodes.find(node=>node.flags?.[NS]?.gearId==="podstvol-nyy-granatomet"),grenade=graph.nodes.find(node=>node.flags?.[NS]?.gearId==="malaya-oskolochnaya-granata");
+  assert.equal(grenade.system.container,launcher._id);assert.deepEqual(grenade.system.uses,{spent:2,max:"7"});assert.equal(grenade.flags[NS].authoredFormula,"2d6 + @abilities.dex.mod");
+  assert.equal(grenade.flags.core.sourceId,"Item.original-grenade");assert.equal(grenade.effects[0].name,"Сохранённый эффект");assert.equal(new Set(graph.nodes.map(node=>node._id)).size,4);
+});
+
 test("v3 descriptor keeps weapon mods separate, counts identities and prevents merging physical builds",()=>{
   const value=descriptor(),normalized=normalizeLootgenItemDescriptor(value);
   assert.deepEqual(normalized,value);assert.notEqual(normalized.weaponMods,value.weaponMods);

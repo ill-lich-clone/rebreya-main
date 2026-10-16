@@ -1,4 +1,4 @@
-import { WEAPON_MOD_TAGS, WEAPON_MOD_MOUNTS, weaponModFlag, weaponModProfileSignature, getWeaponModHostDescriptor } from "./weapon-mod-rules.js?v=1.4.383";
+import { WEAPON_MOD_TAGS, WEAPON_MOD_MOUNTS, weaponModFlag, weaponModProfileSignature, getWeaponModHostDescriptor } from "./weapon-mod-rules.js?v=1.4.389";
 export { getWeaponModHostDescriptor };
 const fail=(code,id)=>{throw new Error(`weapon-mod-catalog: ${code}: ${id ?? ""}`);};
 const index=(rows,key)=>{

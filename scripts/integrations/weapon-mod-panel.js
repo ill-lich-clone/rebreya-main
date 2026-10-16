@@ -1,7 +1,7 @@
 import {MODULE_ID} from "../constants.js";
-import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.4.385";
-import {weaponModFlag,validateWeaponAttachmentInstallation,validateModernizedPartInstallation} from "../data/weapon-mod-rules.js?v=1.4.383";
-import {loadWeaponBlueprints,getWeaponBlueprint} from "../data/weapon-blueprints.js?v=1.4.387";
+import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.4.389";
+import {weaponModFlag,validateWeaponAttachmentInstallation,validateModernizedPartInstallation} from "../data/weapon-mod-rules.js?v=1.4.389";
+import {loadWeaponBlueprints,getWeaponBlueprint} from "../data/weapon-blueprints.js?v=1.4.389";
 import {getItemHeldHands,isItemEquipped} from "./held-items.js?v=1.4.383";
 const states=new WeakMap(),requests=new WeakMap(),values=collection=>Array.from(collection?.contents??collection?.values?.()??collection??[]);
 const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
@@ -9,6 +9,16 @@ const labels={top:"Верх","bottom-1":"Низ 1","bottom-2":"Низ 2","side-1
 const owner=item=>Boolean(item?.actor??item?.parent) && (globalThis.game?.user?.isGM || item.isOwner===true || (item.actor??item.parent)?.testUserPermission?.(game.user,"OWNER"));
 const errorText=error=>error?.message??"Компонент недоступен.";
 function localize(key,fallback){const value=globalThis.game?.i18n?.localize?.(key);return value && value!==key?value:fallback;}
+function requirementsText(profile,catalog){
+ const names={top:"Верх",bottom:"Низ",side:"Сторона",barrel:"Ствол",firearm:"Огнестрел","long-firearm":"Длинноствольное",
+  "short-firearm":"Короткоствольное","all-firearms":"Любой огнестрел","magazine-fed-firearm":"Магазинное питание",musket:"Мушкет",
+  "flintlock-pistol":"Кремнёвый пистолет",arquebus:"Аркебуза",wheellock:"Колесцовое",rifle:"Винтовка",carbine:"Карабин",shotgun:"Дробовик",
+  "short-firearm-with-pistol-grip":"Короткоствольное с пистолетной рукоятью"},name=id=>catalog.rows.find(row=>row.sourceId===id)?.name??names[id]??id,
+  slots=profile.slots?.values?.map(name).join(profile.slots.mode==="all"?" + ":" / ");
+ return [slots?`Крепления: ${slots}`:"Встроенная часть",profile.compatibility?.length?`Оружие: ${profile.compatibility.map(name).join(", ")}`:"",
+  profile.requires?.length?`Требуется: ${profile.requires.map(name).join(", ")}`:"",profile.requiresParts?.length?`Нужна часть: ${profile.requiresParts.map(name).join(", ")}`:"",
+  profile.excludes?.length?`Несовместимо: ${profile.excludes.map(name).join(", ")}`:"",profile.countsTowardLimit===false?"Не занимает лимит частей":""].filter(Boolean).join(" · ");
+}
 function validateChoice(host,installed,candidate,kind,mountId){
  if(kind==="weaponAttachment")return {mountIds:validateWeaponAttachmentInstallation(host,installed.attachments??[],candidate,{mountId}).mountIds,replacements:[]};
  const parts=installed.modernizedParts??[];
@@ -33,8 +43,15 @@ export function buildWeaponModCatalogView({catalog,host,installed,inventory,kind
     return {itemId:item.id??item._id,name:item.name??row.name,quantity:Number(item.system?.quantity??0),available:!reason,reason,...checked};
   }),available=instances.some(instance=>instance.available),ownedQuantity=instances.reduce((sum,instance)=>sum+Math.max(0,Number.isFinite(instance.quantity)?instance.quantity:0),0),
    reason=available?"":instances[0]?.reason??localize("REBREYA.WeaponMods.Missing","Нет в инвентаре персонажа.");
-  return {sourceId:row.sourceId,name:row.name,img:copies[0]?.img||row.img||"icons/svg/item-bag.svg",ownedQuantity,instances,available,reason,availabilityRank:available?0:ownedQuantity>0?1:2};
- }).sort((a,b)=>a.availabilityRank-b.availabilityRank || a.name.localeCompare(b.name,"ru"));
+  return {sourceId:row.sourceId,name:row.name,img:copies[0]?.img||row.img||"icons/svg/item-bag.svg",mechanics:row.profile.propertiesText??"",requirements:requirementsText(row.profile,catalog),ownedQuantity,instances,available,reason,availabilityRank:available?0:ownedQuantity>0?1:2};
+ }).sort((a,b)=>a.availabilityRank-b.availabilityRank || a.name.localeCompare(b.name,"ru") || a.sourceId.localeCompare(b.sourceId));
+}
+export function getWeaponModCompatibleMounts(item,component,catalog,projection){
+ const actor=item.actor??item.parent;
+ if(!owner(item) || actor?.items.get(component?.id)!==component || (component?.actor??component?.parent)!==actor
+   || getWeaponModCandidate(component,catalog).profile?.kind!=="weaponAttachment")return [];
+ return projection.host.mountIds.filter(mountId=>buildWeaponModCatalogView({catalog,host:projection.host,installed:projection,inventory:values(actor.items),
+  kind:"weaponAttachment",mountId,isOwner:true}).some(row=>row.instances.some(instance=>instance.itemId===component.id && instance.available)));
 }
 export function getWeaponModMountPositions(host){
  const positions={top:{x:50,y:19},"bottom-1":{x:host.family==="crossbow"?50:40,y:81},"bottom-2":{x:70,y:81},"side-1":{x:12,y:31},"side-2":{x:12,y:69},barrel:{x:88,y:45}};
@@ -100,7 +117,7 @@ export async function installWeaponModWithChoices(item,component,api,{mountId=nu
  return request(item,kind==="weaponAttachment"?"installWeaponAttachment":"installWeaponModernization",payload,api);
 }
 function catalogHtml(rows,kind,mountId){
- return `<header><strong>${kind==="modernizedPart"?"Модернизация · 500 зм":"Обвесы · "+labels[mountId]}</strong><button type="button" data-wm-close aria-label="Закрыть каталог">×</button></header><div class="rm-wm__catalog-rows">${rows.map(row=>`<button type="button" class="rm-wm__choice ${row.availabilityRank===2?"is-missing":""}" data-wm-choice="${escape(row.sourceId)}" ${row.available?"":"disabled"} title="${escape(row.reason)}"><img src="${escape(row.img)}" alt=""><span><strong>${escape(row.name)}</strong><small>${row.ownedQuantity?"В инвентаре: "+row.ownedQuantity:"Нет в инвентаре"}${row.reason?" · "+escape(row.reason):""}</small></span></button>`).join("")}</div>`;
+ return `<header><strong>${kind==="modernizedPart"?"Модернизация · 500 зм":"Обвесы · "+labels[mountId]}</strong><button type="button" data-wm-close aria-label="Закрыть каталог">×</button></header><div class="rm-wm__catalog-rows">${rows.map(row=>`<button type="button" class="rm-wm__choice ${row.availabilityRank===2?"is-missing":""}" data-wm-choice="${escape(row.sourceId)}" ${row.available?"":"disabled"} title="${escape(row.reason)}"><img src="${escape(row.img)}" alt=""><span><strong>${escape(row.name)}</strong><small>${row.ownedQuantity?"В инвентаре: "+row.ownedQuantity:"Нет в инвентаре"}${row.reason?" · "+escape(row.reason):""}</small><small>${escape(row.requirements)}</small><small>${escape(row.mechanics)}</small></span></button>`).join("")}</div>`;
 }
 export async function bindWeaponModPanel(root,app,api,{loadBlueprints=loadWeaponBlueprints,resolveBlueprint=getWeaponBlueprint,render=renderWeaponModPanel,getDropData,resolveDropItem,rerender}={}){
  const item=app?.item??app?.document??app?.object;if(!root?.querySelector || item?.type!=="weapon" || !api?.itemUpgradeService?.getWeaponModsProjection)return false;
@@ -110,7 +127,7 @@ export async function bindWeaponModPanel(root,app,api,{loadBlueprints=loadWeapon
  const index=await loadBlueprints(catalog.hosts);if(states.get(root)!==state || root.isConnected===false)return false;
  const panel=render(root,item,projection,resolveBlueprint(index,item,catalog));if(!panel)return false;
  const actor=item.actor??item.parent,status=panel.querySelector("[data-wm-status]"),catalogNode=panel.querySelector("[data-wm-catalog]");
- const fresh=()=>states.get(root)===state && (app.item??app.document??app.object)===item;
+ const fresh=()=>states.get(root)===state && root.isConnected!==false && (app.item??app.document??app.object)===item;
  const run=async action=>{
   if(state.busy || !fresh())return;state.busy=true;panel.setAttribute("aria-busy","true");
   try{await action();if(fresh())await (rerender?.()??app.render?.({force:true}));}
@@ -151,14 +168,33 @@ export async function bindWeaponModPanel(root,app,api,{loadBlueprints=loadWeapon
   const slot=event.target.closest("[data-wm-mount],[data-wm-legacy]");if(!slot)return;event.preventDefault();event.stopPropagation();
   if(slot.dataset.wmChild || slot.dataset.wmLegacy)void run(()=>context(slot.dataset.wmChild??slot.dataset.wmLegacy));else show("weaponAttachment",slot.dataset.wmMount);
  },{signal:state.abort.signal});
- panel.addEventListener("dragover",event=>{if(owner(item)){event.preventDefault();event.stopPropagation();if(event.dataTransfer)event.dataTransfer.dropEffect="move";}},{signal:state.abort.signal});
+ const paintMounts=mounts=>panel.querySelectorAll("[data-wm-mount]").forEach(slot=>slot.classList.toggle("is-compatible",mounts.includes(slot.dataset.wmMount))),
+  clearDrag=()=>{state.dragSequence=(state.dragSequence??0)+1;state.compatibleMounts=[];paintMounts([]);},
+  previewDrag=async event=>{
+   const sequence=state.dragSequence=(state.dragSequence??0)+1;state.compatibleMounts=[];paintMounts([]);
+   try{
+    const data=getDropData?.(event)??JSON.parse(event.dataTransfer?.getData("text/plain")||"{}"),
+     child=resolveDropItem?await resolveDropItem(data):data.uuid?await fromUuid(data.uuid):actor?.items.get(data.id??data._id);
+    if(!child || !fresh())return;const current=await api.itemUpgradeService.getWeaponModsProjection(item);
+    if(!fresh() || sequence!==state.dragSequence || !current.host)return;
+    state.compatibleMounts=getWeaponModCompatibleMounts(item,child,catalog,current);paintMounts(state.compatibleMounts);
+   }catch{/* Protected browser drag data is unavailable until drop; do not guess a source. */}
+  };
+ if(typeof app.addEventListener==="function" && typeof app.removeEventListener==="function"){
+  const closed=()=>state.abort.abort();app.addEventListener("close",closed,{once:true});
+  state.abort.signal.addEventListener("abort",()=>app.removeEventListener("close",closed),{once:true});
+  globalThis.document?.addEventListener("dragstart",event=>{if(fresh() && owner(item))void previewDrag(event);},{signal:state.abort.signal});
+  globalThis.document?.addEventListener("dragend",clearDrag,{signal:state.abort.signal});
+ }
+ panel.addEventListener("dragleave",event=>{if(!panel.contains(event.relatedTarget))paintMounts([]);},{signal:state.abort.signal});
+ panel.addEventListener("dragover",event=>{if(owner(item)){event.preventDefault();event.stopPropagation();paintMounts(state.compatibleMounts??[]);if(event.dataTransfer)event.dataTransfer.dropEffect="move";}},{signal:state.abort.signal});
  panel.addEventListener("keydown",event=>{
   if(event.key!=="ContextMenu" && !(event.shiftKey && event.key==="F10"))return;
   const slot=event.target.closest("[data-wm-mount]");if(!slot)return;event.preventDefault();
   if(slot.dataset.wmChild)void run(()=>context(slot.dataset.wmChild));else show("weaponAttachment",slot.dataset.wmMount);
  },{signal:state.abort.signal});
  panel.addEventListener("drop",event=>{
-  event.preventDefault();event.stopPropagation();void run(async()=>{
+  event.preventDefault();event.stopPropagation();clearDrag();void run(async()=>{
    if(!owner(item))throw Error("Нет прав владельца оружия.");
    const data=getDropData?.(event)??JSON.parse(event.dataTransfer?.getData("text/plain")||"{}"),child=resolveDropItem?await resolveDropItem(data):data.uuid?await fromUuid(data.uuid):actor.items.get(data.id??data._id);
    if(!child)throw Error("Перетащите экземпляр из инвентаря персонажа.");

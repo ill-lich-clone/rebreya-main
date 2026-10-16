@@ -1,4 +1,4 @@
-import { validateModernizedPartInstallation, validateWeaponAttachmentInstallation, getWeaponModEffectiveHost } from "./weapon-mod-rules.js?v=1.4.383";
+import { validateModernizedPartInstallation, validateWeaponAttachmentInstallation, getWeaponModEffectiveHost } from "./weapon-mod-rules.js?v=1.4.389";
 const units={pp:1000,gp:100,ep:50,sp:10,cp:1};
 const fail=(code,message)=>{const error=new Error(message);error.code=code;throw error;};
 /** Fixed work fee, independent of the price paid to acquire the physical component. No calendar state. */

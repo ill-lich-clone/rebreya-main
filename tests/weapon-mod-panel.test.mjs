@@ -8,9 +8,19 @@ test("catalogue shows every row, available owned first, blocked owned next, miss
  assert.equal(rows.length,13);assert.ok(rows.some(row=>row.availabilityRank===0));assert.ok(rows.some(row=>row.availabilityRank===1));assert.ok(rows.some(row=>row.availabilityRank===2));
  assert.deepEqual(rows.map(row=>row.availabilityRank),rows.map(row=>row.availabilityRank).sort());
  const silencer=rows.find(row=>row.sourceId==="glushitel");assert.equal(silencer.ownedQuantity,3);assert.equal(silencer.instances.length,2);assert.equal(silencer.available,true);
+ assert.equal(silencer.mechanics,catalog.rows.find(row=>row.sourceId==="glushitel").profile.propertiesText);assert.match(silencer.requirements,/Ствол/);
  assert.ok(rows.filter(row=>!row.ownedQuantity).every(row=>!row.available && row.reason));
  assert.equal(view({catalog,host,installed,inventory,kind:"modernizedPart",isOwner:true}).length,12);
  assert.ok(view({catalog,host,installed,inventory,kind:"weaponAttachment",isOwner:false}).every(row=>!row.available));
+});
+test("drag preview highlights only compatible mounts for a real owned available component",async()=>{
+ const fx=await makeWeaponModMutationFixture({quantity:1});try{
+  const mounts=required(module,"getWeaponModCompatibleMounts"),projection=await fx.service.getWeaponModsProjection(fx.host);
+  assert.deepEqual(mounts(fx.host,fx.component,fx.catalog,projection),["bottom-1","bottom-2","barrel"]);
+  assert.deepEqual(mounts(fx.host,makeItem("soshki"),fx.catalog,projection),[]);
+  fx.component.data.system.equipped=true;fx.component.data.flags["rebreya-main"].heldHands=["left"];
+  assert.deepEqual(mounts(fx.host,fx.component,fx.catalog,projection),[]);
+ }finally{fx.restore();}
 });
 test("filled mount cards fit the diagram at narrow and wide sheet sizes without overlapping",()=>{
  const layout=required(module,"getWeaponModMountPositions"),catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog);
@@ -42,6 +52,16 @@ test("stale asynchronous panel response cannot restore old slots",async()=>{
  const second=bind(root,{item:host},api,options);await new Promise(resolve=>setImmediate(resolve));
  const projection={host:getHost(host,catalog),attachments:[],modernizedParts:[],diagnostics:[]};
  resolvers[1]({...projection,tag:"new"});await second;resolvers[0]({...projection,tag:"old"});await first;assert.deepEqual(renders,["new"]);
+});
+test("closing the native application releases the document drag listeners",async()=>{
+ const fx=await makeWeaponModMutationFixture(),previousDocument=globalThis.document;try{
+  const document=new EventTarget(),panel=Object.assign(new EventTarget(),{querySelector:()=>({}),querySelectorAll:()=>[]}),
+   app=Object.assign(new EventTarget(),{item:fx.host}),root={querySelector:()=>null,isConnected:true};globalThis.document=document;
+  let reads=0;await required(module,"bindWeaponModPanel")(root,app,fx.api,{loadBlueprints:async()=>({}),resolveBlueprint:()=>({}),render:()=>panel,
+   getDropData:()=>{reads++;return {};},resolveDropItem:async()=>null});
+  document.dispatchEvent(new Event("dragstart"));assert.equal(reads,1);app.dispatchEvent(new Event("close"));
+  document.dispatchEvent(new Event("dragstart"));assert.equal(reads,1);
+ }finally{globalThis.document=previousDocument;fx.restore();}
 });
 test("panel install uses the canonical owned-instance mutation and splits one unit, never a catalogue-created item",async()=>{
  const fx=await makeWeaponModMutationFixture({quantity:3});

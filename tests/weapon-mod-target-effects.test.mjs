@@ -125,6 +125,28 @@ test("native attack context is unique and damage UI retains cached option identi
     const merged={...fx.message,id:"merged",getAssociatedRolls:()=>[fx.message]};element.chatMessage=merged;assert.equal(element.getTargetOptions(fx.observer.uuid).rebreyaWeaponModDamage.attackMessageId,fx.message.id);
   }finally{fx.restore();}
 });
+for(const method of ["rollWeaponAttack","rollFirearmAttack"])test(`${method} publishes the actual tagged attack and drives suppressor receipts; message-free rolls stay message-free`,async()=>{
+  const fx=await targetFixture();try{
+    Object.defineProperty(fx.host,"actor",{value:fx.group});fx.group.system.abilities={dex:{mod:4}};fx.group.system.attributes={prof:3};
+    fx.host.data.flags["rebreya-main"].firearmAmmoState={current:6,capacity:6,ammunition:"Винтовочный"};
+    ChatMessage.getSpeaker=({actor})=>({actor:actor.id});let cards=0;
+    class NativeRoll{
+      constructor(formula,data){Object.assign(this,{formula,data,options:{},dice:[{results:[{result:15,active:true}]}]});}
+      evaluate(){this.total=24;return this;}
+      async toMessage(data){cards++;return ChatMessage.create({...data,_id:`legacy-${cards}`,rolls:[this]});}
+      static fromJSON(json){return JSON.parse(json);}
+    }
+    globalThis.Roll=NativeRoll;
+    const service=fx.api.combatAttackService,options={targetToken:fx.observer,firearmMisfire:0};
+    const result=await service[method](fx.group,fx.host,options),card=fx.cards.get("legacy-1"),attack=service.getWeaponModAttackContext(card);
+    assert.ok(attack,"public attack must enter the canonical target-effect route");assert.equal(attack.roll.total,result.total);
+    assert.equal(attack.context.activityUuid,fx.activity.uuid);assert.deepEqual(attack.context.targetUuids,[fx.observer.uuid]);assert.equal(attack.context.abilityModifier,4);
+    assert.equal(attack.context.sourceTokenUuid,fx.shooter.uuid);assert.equal(result.roll.options.rebreyaWeaponModAttack.nonce,attack.context.nonce);
+    service.promptWeaponModTargetConditions=async()=>({canHear:true,hiddenFromTarget:true,targetVisible:null,materialTarget:null});
+    await service.handleWeaponModAttackMessage(card);assert.equal(fx.rolled(),1);
+    const before=cards;await service[method](fx.group,fx.host,{...options,createMessage:false});assert.equal(cards,before);assert.equal(fx.rolled(),1);
+  }finally{fx.restore();}
+});
 
 test("MIDI finalizes a source-bound immunity downgrade once without any flat curse and keeps the save once",()=>{
   const {actor,service,adapter}=packetFixture(),context={attackMessageId:"attack",attackNonce:"nonce",activityUuid:"Activity.a",targetUuid:"Token.t"};

@@ -1,7 +1,7 @@
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.385";
 import { normalizeLootgenComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
-import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.386";
-import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
+import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.389";
+import { buildRuntimeGraphDocuments, captureRuntimeItemGraph, materializeRuntimeItemGraph, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
@@ -177,19 +177,23 @@ function captureHostData(item, allItems, composition) {
       slotIndex:link.slotIndex,choices:clone(readFlag(child,"upgradeChoices")) ?? {}});
   }
   if (allItems.some(child=>readFlag(child,"installedUpgrade")?.hostItemId===item.id && !seen.has(child.id))) treeConflict("orphan-installed-upgrade");
-  const weaponMods={version:1,attachments:[],modernizedParts:[]};
+  const weaponMods={version:1,attachments:[],modernizedParts:[]},sourceUuidsByItemId={};
   for(const child of getRuntimeWeaponModChildren(item,allItems)){
-    if(seen.has(child.id) || allItems.some(candidate=>candidate.system?.container===child.id))treeConflict("nested-installed-component");
-    seen.add(child.id);
-    const childData=plainItemData(child);delete childData.flags[MODULE_ID].runtimeItemGraph;
-    nodes.push({...childData,_id:child.id});
+    const graph=captureRuntimeItemGraph({items:{contents:allItems,get:id=>allItems.find(candidate=>candidate.id===id)}},child);
+    for(const node of graph.nodes){
+      if(seen.has(node._id) || node._id===item.id || nodes.length>=200)treeConflict("nested-installed-component");
+      seen.add(node._id);
+      const childData=plainItemData(allItems.find(candidate=>candidate.id===node._id));delete childData.flags[MODULE_ID].runtimeItemGraph;
+      nodes.push({...childData,_id:node._id});
+    }
+    Object.assign(sourceUuidsByItemId,graph.sourceUuidsByItemId);
     const binding=readFlag(child,"installedWeaponMod"),field=binding.kind==="weaponAttachment"?"attachments":"modernizedParts",sourceId=readFlag(child,"gearId");
     const previous=composition?.weaponMods?.[field]?.find(entry=>entry.sourceId===sourceId);
     weaponMods[field].push({instanceKey:previous?.instanceKey??`native-weapon-mod:${child.uuid??child.id}`,sourceId,
       ...(field==="attachments"?{mountIds:clone(binding.mountIds)}:{})});
   }
   if (item.type !== "container" && allItems.some(child=>child.system?.container===item.id && !seen.has(child.id))) treeConflict("ordinary-host-contents");
-  if (nodes.length > 1) flags.runtimeItemGraph = {version:1,rootId:clean(item.id),nodes};
+  if (nodes.length > 1) flags.runtimeItemGraph = {version:1,rootId:clean(item.id),nodes,...(Object.keys(sourceUuidsByItemId).length?{sourceUuidsByItemId}:{})};
   flags.storageCapturedHost = true;
   let metadata;
   if (composition) {

@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {optionalModule,required,makeCatalog,makeCandidate,getHost} from "./helpers/weapon-mod-fixture.mjs";
+import {optionalModule,required,makeCatalog,makeCandidate,getHost,makeAttackCase,makeWeaponModMutationFixture,makeItem} from "./helpers/weapon-mod-fixture.mjs";
+import {readFile} from "node:fs/promises";
+import {CombatAttackService} from "../scripts/combat/attack-service.js";
 import {ItemUpgradeAutomationService} from "../scripts/automation/item-upgrade-automation-service.js";
 import {buildActorInventoryWeightSnapshot} from "../scripts/data/inventory-weight.js";
 import {getItemHandRequirement} from "../scripts/integrations/held-items.js";
@@ -54,6 +56,45 @@ test("native metric conversion gives the same carried weight without altering na
   for(const item of fx.actor.items.contents)fx.prepare(item);
   assert.equal(fx.host.system.weight.value,6);assert.equal(buildActorInventoryWeightSnapshot(fx.actor).weightLb,15);
 });
+test("scope projects the native activity before MIDI range checks and restores after aim without changing its source",async t=>{
+  const fx=fixture();fx.install("opticheskiy-pritsel","scope",0,["top"]);
+  const base=makeAttackCase("opticheskiy-pritsel"),combat=new CombatAttackService({itemUpgradeAutomationService:fx.service});fx.service.moduleApi.combatAttackService=combat;
+  combat.getWeaponModAttackConditions=()=>base.conditions;
+  let preparedRange={value:60,long:180,units:"ft"};
+  const authored={value:"@range",long:"3 * @range",units:"ft",override:true},activity={type:"attack",actionType:"rwak",item:fx.host,actor:fx.actor,_source:{range:structuredClone(authored)},
+    range:{...preparedRange},prepareFinalData(){this.range={...preparedRange};}};
+  fx.host.system.activities=new Map([["attack",activity]]);fx.service.applyWeaponModActivityRuntime(fx.host);activity.prepareFinalData();
+  assert.deepEqual(activity.range,{value:120,long:360,units:"ft"});activity.prepareFinalData();assert.equal(activity.range.long,360);
+  assert.deepEqual(activity._source.range,authored);assert.deepEqual(fx.host.system.range,{value:60,long:180,units:"ft"});
+  const grid={size:100,distance:5,type:1,units:"ft"};fx.actor.token={x:0,y:0,width:1,height:1,parent:{grid}};
+  const target={x:6000,y:0,width:1,height:1,parent:{grid}};
+  assert.equal(combat.getWeaponModRangeResolution(activity,target,2).long,360);
+  let source;try{source=await readFile(new URL("../../midi-qol/midi-qol.js",import.meta.url),"utf8");}catch(error){if(error.code!=="ENOENT")throw error;t.diagnostic("Installed MIDI source unavailable; native range values were verified.");}
+  if(source){
+    const start=source.indexOf("  const checkRangeFunction = ",source.indexOf("function checkActivityRange(")),terminator='}, "checkRangeFunction");',end=source.indexOf(terminator,start)+terminator.length;
+    assert.ok(start>0 && end>start);let distance=300;
+    const checkRange=new Function("canvas","game","configSettings","MODULE_ID","allAttackTypes","getDistance","checkMechanic","__name","debugEnabled","log",`${source.slice(start,end)}; return checkRangeFunction;`)
+      ({scene:{grid:{units:"ft"}}},{settings:{get:()=>false}},{optionalRules:{wallsBlockRange:"none"}},"midi-qol",["rwak"],()=>distance,()=>"fail",fn=>fn,0,()=>{});
+    const nativeActor={name:"Shooter",system:{},flags:{}},token={actor:nativeActor},midiTarget={name:"Target",actor:{}},midiItem={actor:nativeActor,labels:{properties:[]}},
+      nativeActivity={actor:nativeActor,item:midiItem,actionType:"rwak",range:activity.range,target:{affects:{type:"creature"}}};
+    assert.equal(checkRange(nativeActivity,token,[midiTarget]).result,"dis");distance=100;assert.equal(checkRange(nativeActivity,token,[midiTarget]).result,"normal");
+  }
+  preparedRange={value:90,long:270,units:"ft"};activity.prepareFinalData();assert.deepEqual(activity.range,{value:180,long:540,units:"ft"});
+  assert.equal(combat.getWeaponModRangeResolution(activity,target,2).long,540);
+  base.conditions.aimMode=null;activity.prepareFinalData();assert.equal(activity.range.long,270);
+  assert.deepEqual(activity._source.range,authored);
+});
+test("underwater valve rejects out of effective range in the use gate before native consumption",async()=>{
+  const fx=await makeWeaponModMutationFixture({quantity:1});try{
+    fx.component.data.flags=makeItem("podvodnyy-klapan").flags;await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"valve",mountId:"side-1"});
+    const automation=new ItemUpgradeAutomationService(fx.api);automation.weaponModCatalog=fx.catalog;fx.api.itemUpgradeAutomationService=automation;
+    const combat=fx.api.combatAttackService,conditions=makeAttackCase("podvodnyy-klapan",{underwater:true}).conditions;
+    combat.getWeaponModAttackConditions=()=>conditions;fx.host.system.range={value:60,long:180,units:"ft"};
+    const grid={size:100,distance:5,type:1,units:"ft"};fx.group.token={x:0,y:0,width:1,height:1,parent:{grid}};
+    const activity={item:fx.host,actor:fx.group,actionType:"rwak"},target={x:2000,y:0,width:1,height:1,parent:{grid}};
+    assert.equal(combat.deferWeaponModAttack(activity,{targets:[target]}),false);
+  }finally{fx.restore();}
+});
 test("pure contributions preserve identity, two grips give two, and saw-off edits only base die/properties/range",()=>{
   const fx=fixture(),mods={attachments:[],modernizedParts:[fx.install("pistoletnaya-rukoyat","base",0),fx.install("uluchshennaya-pistoletnaya-rukoyat","improved",0)]};
   const host={id:fx.host.id,actorUuid:fx.actor.uuid,source:fx.host.toObject()},result=build({host,mods});
@@ -75,6 +116,16 @@ test("custom damage is diagnosed and negative canonical body deltas clamp safely
   assert.equal(system.damage.base.denomination,10);assert.equal(system.damage.base.custom.formula,"@custom.dice + 1d4");assert.equal(system.weight.value,0);
   const light=fx.install("fonarik","light",2,["side-1"]),withAttachment=build({host,mods:{attachments:[light],modernizedParts:[part]}}),next=structuredClone(host.source.system);next.properties=new Set(next.properties);
   apply(next,withAttachment.contributions,{itemId:host.id});assert.equal(next.weight.value,2);
+});
+test("the MODS projection exposes the saw-off manual-formula warning without rewriting authored damage",async()=>{
+  const fx=fixture({gearId:catalog.hosts.find(row=>row.modelTags.includes("shotgun")).gearId});fx.install("obrezka-stvola","saw",0);
+  fx.host._source.system.damage.base.custom={enabled:true,formula:"@custom.dice + 1d4"};
+  const before=fx.host.toObject(),service=new ItemUpgradeService({itemUpgradeAutomationService:fx.service},{getWeaponModCatalog:async()=>catalog});
+  const projection=await service.getWeaponModsProjection(fx.host);
+  assert.ok(projection.diagnostics.some(d=>d.code==="saw-off-custom-damage" && d.reason.includes("мастер")));
+  assert.deepEqual(fx.host.toObject(),before);
+  const worldItem={...fx.host,actor:null,parent:null};assert.doesNotThrow(()=>worldItem.toObject());
+  assert.equal((await service.getWeaponModsProjection(worldItem)).host.family,"advanced");
 });
 test("saw-off reports short form and its derived hand requirement becomes one without changing authored flags",async()=>{
   const shotgun=catalog.hosts.find(row=>row.modelTags.includes("shotgun")).gearId,fx=fixture({gearId:shotgun}),previous=globalThis.game;

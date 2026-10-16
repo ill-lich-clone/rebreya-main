@@ -1,15 +1,15 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.4.386";
+import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.4.389";
 import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
 import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.279";
-import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.386";
-import { loadWeaponModCatalog } from "../data/weapon-mod-catalog.js?v=1.4.385";
-import { readWeaponMods } from "../data/weapon-mod-rules.js?v=1.4.383";
+import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.389";
+import { loadWeaponModCatalog } from "../data/weapon-mod-catalog.js?v=1.4.389";
+import { readWeaponMods } from "../data/weapon-mod-rules.js?v=1.4.389";
 import { buildWeaponModContributions, projectWeaponModItem } from "./weapon-mod-projections.js?v=1.4.383";
-import { getWeaponModAimState } from "./weapon-mod-roll-modifiers.js?v=1.4.386";
-import { buildWeaponModActivities, buildWeaponModBayonetProfile, reconcileWeaponModActivities } from "../data/weapon-mod-activities.js?v=1.4.385";
+import { getWeaponModAimState, evaluateWeaponModAttack } from "./weapon-mod-roll-modifiers.js?v=1.4.386";
+import { buildWeaponModActivities, buildWeaponModBayonetProfile, reconcileWeaponModActivities } from "../data/weapon-mod-activities.js?v=1.4.389";
 import { getItemHeldHands } from "../integrations/held-items.js?v=1.4.383";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { storageTokenCenter } from "../data/storage-access.js";
@@ -29,6 +29,7 @@ export class ItemUpgradeAutomationService {
     this.moduleApi = moduleApi; this.options = options; this.manifest = []; this.pending = new Map(); this.hostAdapterReady = false;
     this.itemProjections = new WeakMap();
     this.weaponModActivityRuntime=new WeakMap();
+    this.weaponModActivityRanges=new WeakMap();this.weaponModRangeWrappers=new WeakMap();
     this.weaponModCatalog={rows:[],hosts:[]};
     this.rolls = new SimpleUpgradeRollAdapter(this, { getWorkflow: activity => {
       const workflows = this.moduleApi.curseUpgradeAutomationService?.attacks?.activityWorkflows?.get(activity);
@@ -239,9 +240,37 @@ export class ItemUpgradeAutomationService {
     };
     this.weaponModActivityRuntime.set(activity,{consume:activity.consume,createUsageMessage:activity._createUsageMessage});
   }
+  restoreWeaponModActivityRange(activity){
+    const prior=this.weaponModActivityRanges.get(activity);this.weaponModActivityRanges.delete(activity);
+    if(prior?.range!==activity.range)return;
+    for(const field of ["value","long"])if(activity.range[field]===prior.effective[field])activity.range[field]=prior.base[field];
+  }
+  projectWeaponModActivityRange(activity){
+    this.restoreWeaponModActivityRange(activity);
+    const item=activity.item,actor=item?.actor??item?.parent;
+    if(!actor || !getFlag(item,"weaponMods") || activity.type!=="attack" || activity.flags?.[MODULE_ID]?.weaponModActivity
+      || activity.actionType==="mwak" || activity.attack?.type?.value==="melee" || !activity.range)return;
+    const contributions=this.project(actor,item).contributions,conditions=this.moduleApi.combatAttackService?.getWeaponModAttackConditions?.(activity,null,{})??{},
+      result=evaluateWeaponModAttack({host:{id:item.id},attack:{type:"ranged"},contributions,conditions});
+    if(!result.allowed || result.rangeMultiplier===1 || result.needsDecision.some(row=>["movedFeet","underwater"].includes(row.field)))return;
+    const base={value:activity.range.value,long:activity.range.long},effective={...base};
+    for(const field of ["value","long"])if(Number.isFinite(base[field]))effective[field]=base[field]*result.rangeMultiplier;
+    Object.assign(activity.range,effective);this.weaponModActivityRanges.set(activity,{range:activity.range,base,effective});
+  }
+  getWeaponModActivityRangeState(activity){
+    const prior=this.weaponModActivityRanges.get(activity);
+    return prior?.range===activity.range && ["value","long"].every(field=>activity.range[field]===prior.effective[field])?{...prior.base,units:activity.range.units}:null;
+  }
   applyWeaponModActivityRuntime(item){
     for(const activity of values(item.system?.activities)){
       this.#applyWeaponModLauncherRuntime(activity);
+      if(getFlag(item,"weaponMods") && activity.type==="attack" && !activity.flags?.[MODULE_ID]?.weaponModActivity
+        && typeof activity.prepareFinalData==="function" && this.weaponModRangeWrappers.get(activity)!==activity.prepareFinalData){
+        const original=activity.prepareFinalData,service=this;
+        activity.prepareFinalData=function(...args){
+          service.restoreWeaponModActivityRange(this);const result=original.apply(this,args);service.projectWeaponModActivityRange(this);return result;
+        };this.weaponModRangeWrappers.set(activity,activity.prepareFinalData);
+      }
       if(getFlag(item,"weaponMods") && !activity.flags?.[MODULE_ID]?.weaponModActivity && activity.type==="attack" && typeof activity.rollDamage==="function"
         && this.weaponModActivityRuntime.get(activity)?.rollDamage!==activity.rollDamage){
         const original=activity.rollDamage,service=this;

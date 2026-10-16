@@ -1,7 +1,7 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
-import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.383";
-import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.4.385";
+import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.389";
+import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.4.389";
 import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.386";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
@@ -1109,7 +1109,8 @@ export class CombatAttackService {
         positions=()=>weaponModProfileSignature([primary,...tokens].map(token=>[token.uuid,token.x,token.y,token.width,token.height,token.actor.system?.attributes?.ac?.value])),
         positionBefore=positions(),targets=tokens.map(token=>({uuid:token.uuid,actorUuid:token.actor.uuid,ac:token.actor.system?.attributes?.ac?.value,
           distanceFeet:convertUnitsToFeet(Math.min(...storageTokenFootprintCenters(token).map(point=>measureStorageGridDistance(originPoint,point,{sceneGrid:primary.parent.grid}))),primary.parent.grid.units??"ft")})),
-        build=()=>buildWeaponModScatterPlan({host,attack:attack.roll,scatterDamage,abilityModifier,contributions,targets});
+        build=()=>buildWeaponModScatterPlan({host,attack:{total:attack.roll.total,isCritical:attack.roll.isCritical??attack.context.isCritical,
+          isFumble:attack.roll.isFumble??attack.context.isFumble},scatterDamage,abilityModifier,contributions,targets});
       let plan=build();
       if(plan.needsDecision.some(row=>row.field==="abilityModifier")){
         const dialog=globalThis.foundry?.applications?.api?.DialogV2;
@@ -1345,7 +1346,8 @@ export class CombatAttackService {
   }
 
   getWeaponModRangeResolution(activity,target,multiplier) {
-    const item=activity?.item,actor=item?.actor??item?.parent,range=item?.system?.range??{};
+    const item=activity?.item,actor=item?.actor??item?.parent,
+      range=this.moduleApi.itemUpgradeAutomationService?.getWeaponModActivityRangeState?.(activity)??activity?.range??item?.system?.range??{};
     const normal=convertUnitsToFeet(Number(range.value),range.units??"ft")*multiplier,
       long=convertUnitsToFeet(Number(range.long||range.value),range.units??"ft")*multiplier;
     const tokens=actor?.getActiveTokens?.()??[],source=actor?.token??(tokens.length===1?tokens[0]:tokens.find(token=>token.controlled));
@@ -1398,6 +1400,9 @@ export class CombatAttackService {
         const conditions=this.getWeaponModAttackConditions(activity,target,config),result=evaluateWeaponModAttack({host:{id:host.id,isFirearm:isFirearmItem(host)},
           attack:{type:activity.actionType==="mwak" || activity.attack?.type?.value==="melee"?"melee":"ranged"},target:{uuid:target?.document?.uuid??target?.uuid??null},contributions,conditions});
         if(!result.allowed){globalThis.ui?.notifications?.warn?.(result.diagnostics[0]?.reason??"Условия обвеса не выполнены.");return false;}
+        if(!result.needsDecision.length && result.rangeMultiplier!==1 && !this.getWeaponModRangeResolution(activity,target,result.rangeMultiplier).allowed){
+          globalThis.ui?.notifications?.warn?.("Цель вне дистанции оружия с выбранным обвесом.");return false;
+        }
         rows.push({target,conditions,result});
       }
     }catch(error){globalThis.ui?.notifications?.warn?.(error.message);return false;}
@@ -5675,7 +5680,29 @@ export class CombatAttackService {
           isJammed: true
         };
       }
+    }
 
+    const abilityKey = this.#resolveAttackAbilityKey(actor, weapon, options);
+    const abilityMod = getActorAbilityModifier(actor, abilityKey);
+    const proficiencyBonus = this.#isAttackProficient(actor, weapon, options)
+      ? getActorProficiencyBonus(actor)
+      : 0;
+    const nativeActivities=Array.from(weapon.system.activities?.values?.()??Object.values(weapon.system.activities??{})),
+      nativeActivity=nativeActivities.find(activity=>activity.type==="attack" && !activity.flags?.[MODULE_ID]?.weaponModActivity
+        && (!options.activityId || (activity.id??activity._id)===options.activityId) && (!isFirearmItem(weapon) || activity.attack?.type?.value!=="melee")),
+      modTarget=options.targetToken??this.#resolveActor(options.targetActor??options.targetId??null),
+      modActivity=nativeActivity?.item===weapon?nativeActivity:{...nativeActivity,item:weapon,actor,
+        uuid:nativeActivity?.uuid??(nativeActivity?`${weapon.uuid}.Activity.${nativeActivity.id??nativeActivity._id}`:null),
+        actionType:isFirearmItem(weapon) || weapon.system.attackType==="ranged"?"rwak":"mwak"};
+    let modConfig={},upgradeModifiers=this.moduleApi.itemUpgradeAutomationService?.rolls.evaluate(weapon,{primary:false},modTarget,modActivity,modConfig);
+    if(upgradeModifiers?.weaponMods?.needsDecision.length){
+      const known=this.getWeaponModAttackConditions(modActivity,modTarget,modConfig),decision=await this.promptWeaponModConditions(modActivity,modTarget,known,upgradeModifiers.weaponMods.needsDecision);
+      if(!decision)throw new Error("Атака отменена.");
+      modConfig={rebreyaWeaponModDecisions:[decision]};
+      upgradeModifiers=this.moduleApi.itemUpgradeAutomationService.rolls.evaluate(weapon,{primary:false},modTarget,modActivity,modConfig);
+    }
+    if(upgradeModifiers?.weaponMods && (!upgradeModifiers.weaponMods.allowed || upgradeModifiers.weaponMods.needsDecision.length))throw new Error("Условия обвеса не выполнены или цель вне дистанции.");
+    if (isFirearmItem(weapon)) {
       const ammo = this.#consumeLoadedFirearmAmmo(actor, weapon, this.#resolveFirearmShotAmmoCost(weapon, options), options);
       if (!ammo.success) {
         return {
@@ -5705,22 +5732,6 @@ export class CombatAttackService {
         };
       }
     }
-
-    const abilityKey = this.#resolveAttackAbilityKey(actor, weapon, options);
-    const abilityMod = getActorAbilityModifier(actor, abilityKey);
-    const proficiencyBonus = this.#isAttackProficient(actor, weapon, options)
-      ? getActorProficiencyBonus(actor)
-      : 0;
-    const modTarget=options.targetToken??this.#resolveActor(options.targetActor??options.targetId??null),
-      modActivity={item:weapon,actor,actionType:options.attackKind==="firearm" || weapon.system.attackType==="ranged"?"rwak":"mwak"};
-    let modConfig={},upgradeModifiers=this.moduleApi.itemUpgradeAutomationService?.rolls.evaluate(weapon,{primary:false},modTarget,modActivity,modConfig);
-    if(upgradeModifiers?.weaponMods?.needsDecision.length){
-      const known=this.getWeaponModAttackConditions(modActivity,modTarget,modConfig),decision=await this.promptWeaponModConditions(modActivity,modTarget,known,upgradeModifiers.weaponMods.needsDecision);
-      if(!decision)throw new Error("Атака отменена.");
-      modConfig={rebreyaWeaponModDecisions:[decision]};
-      upgradeModifiers=this.moduleApi.itemUpgradeAutomationService.rolls.evaluate(weapon,{primary:false},modTarget,modActivity,modConfig);
-    }
-    if(upgradeModifiers?.weaponMods && (!upgradeModifiers.weaponMods.allowed || upgradeModifiers.weaponMods.needsDecision.length))throw new Error("Условия обвеса не выполнены или цель вне дистанции.");
     const situationalBonus = toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0);
     const attackBonus = abilityMod + proficiencyBonus + situationalBonus;
     let rollMode = resolveRollMode(options);
@@ -5736,6 +5747,7 @@ export class CombatAttackService {
 
     const formula = `${d20Formula} + @abilityMod + @proficiencyBonus + @situationalBonus`;
     const roll = await (new Roll(formula, {
+      mod: abilityMod,
       abilityMod,
       proficiencyBonus,
       situationalBonus
@@ -5750,6 +5762,12 @@ export class CombatAttackService {
     const isHit = Number.isFinite(targetAc)
       ? (isAutomaticHit || (!isAutomaticMiss && roll.total >= targetAc))
       : null;
+    if(modActivity.uuid){
+      const targetTokens=options.targetToken?[options.targetToken]:modTarget instanceof Actor?Array.from(modTarget.getActiveTokens?.(true,true)??[]):null;
+      this.tagWeaponModAttack({subject:modActivity,rolls:[roll],...(targetTokens?{targets:targetTokens.length===1?targetTokens:[]}:{} )});
+      const context=roll.options?.rebreyaWeaponModAttack;
+      if(context)Object.assign(context,{isCritical:isCriticalHit,isFumble:isAutomaticMiss});
+    }
 
     const attackTraits = this.#getAttackTraits(weapon, options);
     const breakdown = {
@@ -5765,7 +5783,8 @@ export class CombatAttackService {
       const flavor = this.#buildAttackFlavor(actor, weapon, options, breakdown);
       await roll.toMessage({
         speaker: ChatMessage.getSpeaker({ actor }),
-        flavor
+        flavor,
+        ...(roll.options?.rebreyaWeaponModAttack?{flags:{dnd5e:{activity:{uuid:modActivity.uuid},roll:{type:"attack"},messageType:"roll"}}}:{})
       });
     }
 

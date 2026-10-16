@@ -1,6 +1,6 @@
 import { evaluateSimpleUpgradeRoll } from "../automation/item-upgrade-roll-modifiers.js?v=1.4.254";
 import { evaluateWeaponModAttack } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.386";
-import { getWeaponModHostDescriptor } from "../data/weapon-mod-rules.js?v=1.4.383";
+import { getWeaponModHostDescriptor } from "../data/weapon-mod-rules.js?v=1.4.389";
 const MARKER = "rebreyaSimpleUpgradeDamage";
 const targetData = token => {
   const actor = token?.actor ?? token?.document?.actor ?? token;
@@ -35,8 +35,7 @@ export class SimpleUpgradeRollAdapter {
       const descriptor=getWeaponModHostDescriptor(host,this.service.weaponModCatalog),isFirearm=Boolean(descriptor && descriptor.family!=="crossbow");
       result.weaponMods = evaluateWeaponModAttack({ host:{id:host.id,isFirearm}, attack: { ...attack, type: activity?.actionType === "mwak" || activity?.attack?.type?.value==="melee" ? "melee" : "ranged" },
         target: { uuid: target?.document?.uuid ?? target?.uuid ?? null }, contributions, conditions });
-      const statuses = (target?.actor ?? target?.document?.actor ?? target)?.statuses;
-      const coverBonus = result.weaponMods.ignoreHalfCover && statuses?.has("coverHalf") && !statuses.has("coverThreeQuarters") ? 2 : 0;
+      const coverBonus = result.weaponMods.ignoreHalfCover ? this.halfCoverBonus(host,activity,target,config) : 0;
       result.attackBonus += result.weaponMods.attackBonus + coverBonus;
       if(result.weaponMods.rangeMultiplier!==1){
         const range=this.service.moduleApi?.combatAttackService?.getWeaponModRangeResolution?.(activity,target,result.weaponMods.rangeMultiplier);
@@ -44,6 +43,25 @@ export class SimpleUpgradeRollAdapter {
       }
     }
     return result;
+  }
+  halfCoverBonus(host,activity,target,config){
+    const defender=target?.actor??target?.document?.actor??target,statuses=defender?.statuses;
+    if(statuses?.has("coverTotal"))return 0;
+    const statusBonus=Math.max(Number(defender?.system?.attributes?.ac?.cover)||0,statuses?.has("coverThreeQuarters")?5:statuses?.has("coverHalf")?2:0);
+    let dynamic=0;
+    if(globalThis.MidiQOL || globalThis.game?.modules?.get?.("midi-qol")?.active){
+      const actor=host.actor??host.parent,tokens=Array.from(actor?.getActiveTokens?.(true,true)??[]),controlled=tokens.filter(token=>token.controlled??token.object?.controlled),
+        source=actor?.token??(tokens.length===1?tokens[0]:controlled.length===1?controlled[0]:null);
+      if(!source || !(target?.document??target)?.actor || typeof globalThis.MidiQOL?.computeCoverBonus!=="function"){
+        this.warnOnce(config,"Укрытие для прицела должен проверить мастер: точные токены или расчёт укрытия MIDI недоступны.");return 0;
+      }
+      try{dynamic=globalThis.MidiQOL.computeCoverBonus(source.object??source,target.object??target,activity);}
+      catch{dynamic=NaN;}
+      if(typeof dynamic!=="number" || Number.isNaN(dynamic)){
+        this.warnOnce(config,"Не удалось определить укрытие для прицела; требуется сверка мастера.");return 0;
+      }
+    }
+    return Math.max(statusBonus,dynamic)===2?2:0;
   }
   context(config, primary, message = {}) {
     const activity = config.subject, workflow = config.workflow ?? this.getWorkflow(activity);

@@ -56,6 +56,18 @@ test("native scope ignores exactly half cover and leaves three-quarter cover int
     assert.equal(config.rolls[0].options.rebreyaWeaponMods.rangeMultiplier,2);
   }
 });
+test("optics use MIDI dynamic cover for this token pair and retain greater cover",()=>{
+  const previous=globalThis.MidiQOL,base=makeAttackCase("opticheskiy-pritsel"),source={uuid:"Token.source"},actor={uuid:"Actor.a",getActiveTokens:()=>[source]},
+    item={id:"host",type:"weapon",actor},activity={item,actionType:"rwak"},target={uuid:"Token.target",actor:{system:{attributes:{ac:{cover:0}}},statuses:new Set()}},
+    service={project:()=>({contributions:base.contributions}),moduleApi:{combatAttackService:{getWeaponModAttackConditions:()=>base.conditions}}};
+  let dynamic=2,calls=0;globalThis.MidiQOL={computeCoverBonus:(attacker,defender,subject)=>{calls++;assert.equal(attacker,source);assert.equal(defender,target);assert.equal(subject,activity);return dynamic;}};
+  try{
+    const adapter=new SimpleUpgradeRollAdapter(service),bonus=()=>adapter.evaluate(item,{primary:false},target,activity).attackBonus;
+    assert.equal(bonus(),2);target.actor.statuses.add("coverHalf");target.actor.system.attributes.ac.cover=2;
+    dynamic=5;assert.equal(bonus(),0);dynamic=Infinity;assert.equal(bonus(),0);
+    dynamic=0;assert.equal(bonus(),2);target.actor.statuses.add("coverTotal");assert.equal(bonus(),0);assert.equal(calls,4);
+  }finally{globalThis.MidiQOL=previous;}
+});
 
 test("aim belongs to the actor, verified child and current combat turn, surviving client reload",()=>{
   const getAim=required(module,"getWeaponModAimState"),base=makeAttackCase("kollimatornyy-pritsel"),actor={uuid:"Actor.a"},host={id:"host",actor,flags:{"rebreya-main":{weaponModAim:{actorUuid:"Actor.a",hostItemId:"host",childItemId:base.contributions[0].childItemId,mode:"collimator",combatId:"fight",round:2,turn:0}}}},combat={id:"fight",round:2,turn:0,combatant:{actor}};

@@ -2934,6 +2934,17 @@ test("firearm attacks spend loaded ammunition and mark an empty magazine in the 
   assert.equal(TestRoll.queuedTotals.length, 0);
 });
 
+for(const reason of ["cancel","range"])test(`legacy firearm ${reason} rejection preserves ammo and never rolls misfire before conditions`,async()=>{
+  TestRoll.queuedTotals=[20,15];
+  const weapon=makeFirearmItem({properties:{lchFirearmAmmunition:true,lchFirearmFireMode:true,lchFirearmReload:true,lchFirearmMisfire:true},
+    values:{ammunition:"Пистолетные",fireMode:"Одиночные",reload:"Смена магазина 1",misfire:3},ammoState:{current:1,capacity:1,ammunition:"Пистолетные"}}),
+    actor=makeActor([weapon]),service=new CombatAttackService({itemUpgradeAutomationService:{rolls:{evaluate:()=>({weaponMods:{allowed:reason!=="range",needsDecision:reason==="cancel"?[{field:"targetVisible"}]:[]}})}}});
+  service.getWeaponModAttackConditions=()=>({});service.promptWeaponModConditions=async()=>null;
+  const before=structuredClone(weapon.flags);
+  await assert.rejects(service.rollFirearmAttack(actor,weapon,{createMessage:false}),/отменена|Условия/u);
+  assert.deepEqual(weapon.flags,before);assert.deepEqual(TestRoll.queuedTotals,[20,15]);
+});
+
 test("firearm shots persist ammo state and displayed count through one Item write", async () => {
   TestRoll.queuedTotals = [15];
   const weapon = makeFirearmItem({
