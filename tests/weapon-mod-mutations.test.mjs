@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {makeWeaponModMutationFixture, makeItem, gear} from "./helpers/weapon-mod-fixture.mjs";
 const NS="rebreya-main";
+test("native required nullable container is cleared with null, without dropping the entire attachment removal update",async()=>{
+ const fx=await makeWeaponModMutationFixture({quantity:1});try{
+  const result=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"native-install",mountId:"bottom-1"}),child=fx.group.items.get(result.itemId),update=child.update.bind(child),quantity=child.system.quantity;
+  let dropped=0;child.update=async patch=>{if(Object.hasOwn(patch,"system.-=container")){dropped++;return child;}return update(patch);};
+  await fx.service.removeWeaponAttachment(fx.host,child,{operationId:"native-remove"});
+  assert.equal(dropped,0);assert.equal(child.system.container,null);assert.equal(child.system.quantity,quantity);
+  assert.equal(child.getFlag(NS,"installedWeaponMod"),undefined);assert.equal(fx.host.getFlag(NS,"weaponMods").attachments.length,0);
+ }finally{fx.restore();}
+});
 test("install splits one owned component, keeps upgrades and replays durably after reload",async()=>{
   const fx=await makeWeaponModMutationFixture();try{
     const upgradeBefore=structuredClone(fx.host.getFlag(NS,"itemUpgrades"));
@@ -17,7 +26,7 @@ test("install splits one owned component, keeps upgrades and replays durably aft
     assert.equal([...fx.cards.values()][0].flags[NS].weaponModAction.activation.type,"bonus");
     await assert.rejects(()=>fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"install",mountId:"bottom-1"}),e=>e.code==="operation-conflict");
     await fx.service.removeWeaponAttachment(fx.host,child.id,{operationId:"remove"});
-    assert.equal(child.system.container,undefined);assert.equal(child.getFlag(NS,"installedWeaponMod"),undefined);
+    assert.equal(child.system.container,null);assert.equal(child.getFlag(NS,"installedWeaponMod"),undefined);
     assert.equal(fx.host.getFlag(NS,"weaponMods").attachments.length,0);assert.equal(fx.cards.size,2);
     assert.equal([...fx.cards.values()][1].flags[NS].weaponModAction.activation.type,"action");
   }finally{fx.restore();}

@@ -127,6 +127,7 @@ export class ItemInstanceDocuments {
 
   #update(fields) {
     return Object.fromEntries(Object.entries(fields).map(([path, value]) => {
+      if (path === "system.container" && value === null) return [path, null]; // Required but nullable native schema field.
       if (value !== null) {
         const parts = path.split(".");
         if (typeof value === "object" && !Array.isArray(value)) parts[parts.length - 1] = `==${parts.at(-1)}`;

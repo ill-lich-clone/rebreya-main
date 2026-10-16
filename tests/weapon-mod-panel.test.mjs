@@ -1,6 +1,7 @@
 import test from "node:test";import assert from "node:assert/strict";import {readFile} from "node:fs/promises";
 import {optionalModule,required,makeCatalog,makeItem,getHost,makeWeaponModMutationFixture} from "./helpers/weapon-mod-fixture.mjs";
 import {getWeaponModEffectiveHost} from "../scripts/data/weapon-mod-rules.js";
+import {createOverlayDom} from "./helpers/overlay-dom.mjs";
 const module=await optionalModule(new URL("../scripts/integrations/weapon-mod-panel.js",import.meta.url)),view=required(module,"buildWeaponModCatalogView");
 test("catalogue shows compatible rows, available owned first, blocked owned next, missing grey and never installable",()=>{
  const catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog),inventory=[makeItem("lazernyy-tseleukazatel"),makeItem("glushitel"),makeItem("glushitel",{id:"second",system:{quantity:2}}),makeItem("razgonshchik-snaryadov",{flags:{"rebreya-main":{gearId:"razgonshchik-snaryadov",attachment:{kind:"custom"}}}})],
@@ -25,6 +26,7 @@ test("top slot includes only its compatible optics, keeps missing sources and pr
  assert.match(html,/Есть в инвентаре/);assert.match(html,/Нет в инвентаре/);assert.match(html,/<hr/);
  assert.match(html,/data-uuid="Compendium.world.rebreya-gear.scope"/);assert.match(html,/data-wm-choice="opticheskiy-pritsel"[^>]*disabled/);
  assert.match(html,/<a[^>]*data-link[^>]*data-uuid="Compendium.world.rebreya-gear.scope"/);
+ assert.doesNotMatch(html,/\bhref\s*=/);assert.match(html,/role="button" tabindex="0"/);
  assert.equal(html.includes(catalog.rows.find(row=>row.sourceId==="opticheskiy-pritsel").profile.propertiesText),false);
  assert.match(required(module,"createWeaponModCatalogHtml")([rows[1]],"modernizedPart",null),/Нет подходящих частей в инвентаре/);
 });
@@ -86,18 +88,46 @@ test("mods template adds two local sub-tabs and filled tiles retain full images 
  assert.equal((html.match(/src="bayonet.png"/g)??[]).length,2);assert.equal((html.match(/data-main-child="child"/g)??[]).length,1);
  assert.match(html,/data-wm-link="child"/);assert.equal(html.includes("Одна часть за пересборку"),false);
 });
-test("mount captions show mount and item above the uncovered image only on hover or keyboard focus, with one centered link lock",async()=>{
+test("mounts use the hero doll tooltip binding and keep the image uncovered with one centered link lock",async()=>{
  const host=getHost(makeItem("vintovka"),makeCatalog()),blueprint={img:"weapon.png",width:1000,height:400,anchors:Object.fromEntries(host.mountIds.map(id=>[id,{x:.5,y:.5}]))},
   html=required(module,"createWeaponModPanelHtml")({id:"host"},{host,attachments:[{itemId:"child",sourceId:"shtyk",mountIds:["bottom-1","barrel"],item:{name:"Штык",img:"bayonet.png"}}]},blueprint),
   mounts=html.match(/<button[^>]*data-wm-mount[\s\S]*?<\/button>/g),css=await readFile(new URL("../styles/main.css",import.meta.url),"utf8");
- assert.equal(mounts.length,6);for(const mount of mounts){assert.match(mount,/<span class="rm-wm__caption"[^>]*><strong>/);assert.doesNotMatch(mount,/\btitle=/);}
- assert.match(mounts.find(mount=>mount.includes('data-wm-mount="bottom-1"')),/rm-wm__caption[^>]*><strong>Низ 1<\/strong><span class="rm-wm__name">Штык/);
+ assert.equal(mounts.length,6);for(const mount of mounts){assert.match(mount,/data-rm-tooltip=/);assert.doesNotMatch(mount,/\btitle=|rm-wm__caption/);}
+ assert.match(mounts.find(mount=>mount.includes('data-wm-mount="bottom-1"')),/data-rm-tooltip="Низ 1: Штык"/);
  assert.equal((html.match(/data-wm-lock="child"/g)??[]).length,1);assert.match(html,/data-wm-lock="child" transform="translate\(640,369\)"/);
  assert.match(css,/\.rm-wm \.rm-wm__mount\{[^}]*width:18\.7%[^}]*overflow:visible/);
- assert.match(css,/\.rm-wm__caption\{[^}]*bottom:calc\(100% \+ 5px\)[^}]*background:transparent[^}]*visibility:hidden/);
- assert.match(css,/\.rm-wm__mount:is\(:hover,:focus-visible\)[^}]*\.rm-wm__caption\{visibility:visible/);
- assert.match(css,/\[data-wm-mount\^="side-"\]>\.rm-wm__caption\{left:0;transform:none/);
- assert.match(css,/\[data-wm-mount="barrel"\]>\.rm-wm__caption\{left:auto;right:0;transform:none/);
+ assert.match(css,/\.rm-anchored-tooltip\.rm-wm-tooltip\{[^}]*background:transparent/);
+ assert.doesNotMatch(html,/data-wm-catalog/);
+});
+test("context menu removes real weapon attachments through the canonical command, and legacy upgrades through their existing owner only",async()=>{
+ const fx=await makeWeaponModMutationFixture({quantity:1});try{
+  const installed=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"context-install",mountId:"bottom-1"}),child=fx.group.items.get(installed.itemId);
+  fx.api.removeWeaponAttachment=payload=>fx.service.removeWeaponAttachment(fx.host,payload.componentItemId,payload);
+  const build=required(module,"buildWeaponModContextActions"),projection=await fx.service.getWeaponModsProjection(fx.host),actions=build(fx.host,child,projection,fx.api);
+  assert.deepEqual(actions.slice(0,2).map(action=>action.id),["open","remove-weapon"]);await actions[1].callback();assert.equal(child.system.container,null);
+  fx.host.data.flags["rebreya-main"].itemUpgrades={version:1,capacity:3,installed:[{itemId:child.id}]};child.data.flags["rebreya-main"].installedUpgrade={hostActorId:fx.group.id,hostItemId:fx.host.id};
+  let removed=null;fx.api.removeItemUpgrade=async(host,id)=>{removed={host,id};};
+  await build(fx.host,child,{attachments:[]},fx.api).find(action=>action.id==="remove-upgrade").callback();assert.equal(removed.host,fx.host);assert.equal(removed.id,child.id);
+  child.data.flags["rebreya-main"].installedUpgrade.hostItemId="another-weapon";
+  assert.deepEqual(build(fx.host,child,{attachments:[]},fx.api).map(action=>action.id),["open"]);
+ }finally{fx.restore();}
+});
+test("native panel delegates a list context menu and mounts catalogue in a dismissible portal; UUID clicks close it without navigation",async()=>{
+ const fx=await makeWeaponModMutationFixture({quantity:1}),previousDocument=globalThis.document;try{
+  const installed=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"portal-install",mountId:"bottom-1"}),dom=createOverlayDom(),{owner}=dom.fixture(),panel=new dom.Element(),top=new dom.Element(),occupied=new dom.Element(),status=new dom.Element();
+  owner.append(panel);panel.append(top,occupied);top.dataset={wmMount:"top",rmTooltip:"Верх: Пусто"};occupied.dataset={wmMount:"bottom-1",wmChild:installed.itemId};
+  top.closest=()=>top;occupied.closest=()=>occupied;panel.querySelector=()=>status;panel.querySelectorAll=()=>[top,occupied];globalThis.document=dom.document;
+  let rendered=0,menu=null;const app=Object.assign(new EventTarget(),{item:fx.host,render(){rendered++;}}),event=target=>({target,clientX:100,clientY:120,preventDefault(){},stopPropagation(){}});
+  await required(module,"bindWeaponModPanel")(owner,app,fx.api,{loadBlueprints:async()=>({}),loadSourceItems:async()=>[],resolveBlueprint:()=>({}),render:()=>panel,openContextMenu:options=>{menu=options;return null;}});
+  await panel.emit("contextmenu",event(occupied));assert.deepEqual(menu.actions.slice(0,2).map(action=>action.id),["open","remove-weapon"]);assert.equal(rendered,0);
+  await panel.emit("contextmenu",event(top));const portal=dom.document.body.children.at(-1),content=portal.children[0];
+  assert.notEqual(portal,owner);assert.equal(panel.contains(content),false);assert.match(content.innerHTML,/Есть в инвентаре/);assert.equal(content.dataset.wmCatalog,"true");
+  const reference=new dom.Element();content.append(reference);reference.closest=selector=>selector==="a[data-link]"?reference:null;let prevented=false;
+  await content.emit("click",{target:reference,preventDefault(){prevented=true;},stopPropagation(){}});
+  assert.equal(prevented,false);assert.equal(dom.document.body.children.length,1);
+  await panel.emit("contextmenu",event(top));await dom.events.emit("click",{target:dom.document.body});assert.equal(dom.document.body.children.length,1);
+  await panel.emit("contextmenu",event(top));app.dispatchEvent(new Event("close"));assert.equal(dom.document.body.children.length,1);assert.equal(menu.signal.aborted,true);
+ }finally{globalThis.document=previousDocument;fx.restore();}
 });
 test("local sub-tab choice survives sheet rerender and ordinary-only sheets keep enhancements visible",()=>{
  const app={},makeRoot=()=>{

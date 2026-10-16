@@ -14,7 +14,7 @@ import {
 import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js?v=1.4.327";
 import { bindHeroDollPresetControls } from "../ui/hero-doll-presets-ui.js?v=1.4.364-hero-presets";
 import { bringAppToFront } from "../ui.js";
-import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.247-anchored-overlays";
+import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.392";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
@@ -43,7 +43,7 @@ import {
   hideInstalledUpgradeInventoryRows,
   isItemUpgradeHostItem,
   registerItemUpgradeFilterHook
-} from "./item-upgrade-sheet.js?v=1.4.391";
+} from "./item-upgrade-sheet.js?v=1.4.392";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
@@ -6376,7 +6376,7 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
   upsertFirearmWeaponPropertiesField(root, app);
   upsertWeaponAttackTraitsField(root, app);
   bindWeaponPropertyGlossary(root);
-  bindItemUpgradeSheet(root, app, moduleApi);
+  bindItemUpgradeSheet(root, app, moduleApi, {openContextMenu:openHeldItemContextMenu});
 }
 
 function resolveActorItem(actor, itemId) {
@@ -6914,9 +6914,11 @@ function isShieldEquipmentItem(item) {
   return item?.type === "equipment" && cleanConfigString(item?.system?.type?.value).toLowerCase() === "shield";
 }
 
+const heldItemMenuCleanups = new WeakMap();
 function closeHeldItemContextMenu() {
   const existing = document.querySelector?.("[data-rebreya-held-item-context-menu='true']");
-  existing?.remove?.();
+  if (existing && heldItemMenuCleanups.has(existing)) heldItemMenuCleanups.get(existing)();
+  else existing?.remove?.();
 }
 
 function parseZIndex(value) {
@@ -6947,9 +6949,9 @@ function getTopFoundryWindowZIndex() {
     }, 110);
 }
 
-function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}) {
+function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [], signal } = {}) {
   closeHeldItemContextMenu();
-  if (!Array.isArray(actions) || !actions.length || !document?.body) {
+  if (signal?.aborted || !Array.isArray(actions) || !actions.length || !document?.body) {
     return null;
   }
 
@@ -7050,6 +7052,15 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
     }
   };
 
+  const cleanup = () => {
+    document.removeEventListener?.("pointerdown", closeOnPointerDown, true);
+    document.removeEventListener?.("keydown", closeOnKeyDown, true);
+    signal?.removeEventListener("abort", cleanup);
+    heldItemMenuCleanups.delete(menuRoot);
+    menuRoot.remove();
+  };
+  heldItemMenuCleanups.set(menuRoot, cleanup);
+  signal?.addEventListener("abort", cleanup, {once:true});
   document.addEventListener?.("pointerdown", closeOnPointerDown, true);
   document.addEventListener?.("keydown", closeOnKeyDown, true);
   return menuRoot;

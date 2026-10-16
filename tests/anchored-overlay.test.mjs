@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOverlayDom } from './helpers/overlay-dom.mjs';
 import { calculateAnchoredOverlayPosition as place, AnchoredOverlay, bindAnchoredTooltips } from '../scripts/ui/anchored-overlay.js';
+test('tooltip can prefer top and use a scoped appearance while existing overlays keep automatic placement',async()=>{
+ const anchorRect={left:100,right:180,top:300,bottom:380},size={width:160,height:40},viewport={width:1280,height:720};
+ assert.equal(place(anchorRect,size,viewport).placement,'bottom');
+ assert.equal(place(anchorRect,size,viewport,{preferredPlacement:'top'}).placement,'top');
+ const dom=createOverlayDom(),{owner,anchor}=dom.fixture();anchor.rect={...anchorRect,width:80,height:80};anchor.dataset.rmTooltip='Низ 1: Штык';
+ const controller=new AbortController(),binding=bindAnchoredTooltips(owner,[anchor],{signal:controller.signal,preferredPlacement:'top',className:'rm-wm-tooltip'});
+ await anchor.emit('mouseenter');const portal=dom.document.body.children.at(-1);
+ assert.match(portal.children[0].className,/rm-wm-tooltip/);assert.equal(portal.dataset.placement,'top');
+ controller.abort();assert.equal(dom.document.body.children.length,1);await anchor.emit('mouseenter');assert.equal(dom.document.body.children.length,1);binding.destroy();
+});
 
 test('bottom-right anchor flips and stays inside viewport', () => {
   const p = place({left:1200,right:1270,top:620,bottom:700}, {width:224,height:200}, {width:1280,height:720});

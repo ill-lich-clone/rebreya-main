@@ -3,7 +3,7 @@ import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.377";
 import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.370";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
-import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.247-anchored-overlays";
+import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.392";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";

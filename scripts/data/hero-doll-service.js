@@ -2,7 +2,7 @@ import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
 import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.4.338-hero-doll-menu";
 
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.381";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import { ItemInstanceError, planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { normalizeHeroDollPresets, captureHeroDollPresetSlots, heroDollPresetModified } from "./hero-doll-presets.js?v=1.4.364-hero-presets";
 import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.385";

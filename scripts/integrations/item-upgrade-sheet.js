@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isInstalledWeaponMod } from "../data/weapon-mod-rules.js?v=1.4.389";
-import {bindWeaponModPanel,installWeaponModWithChoices} from "./weapon-mod-panel.js?v=1.4.391";
+import {bindWeaponModPanel,installWeaponModWithChoices} from "./weapon-mod-panel.js?v=1.4.392";
 import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.4.389";
 import {
   getInstalledActorUpgradeItemIds,
@@ -10,7 +10,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.389";
+} from "../data/item-upgrade-service.js?v=1.4.392";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
@@ -625,9 +625,9 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
   return bound;
 }
 
-export function bindItemUpgradeSheet(root, app, moduleApi) {
+export function bindItemUpgradeSheet(root, app, moduleApi, {openContextMenu} = {}) {
   const hostItem = getSheetItem(app);
-  void bindWeaponModPanel(root,app,moduleApi,{getDropData:getItemUpgradeDropData,resolveDropItem,
+  void bindWeaponModPanel(root,app,moduleApi,{getDropData:getItemUpgradeDropData,resolveDropItem,openContextMenu,
     rerender:()=>rerenderItemSheet(app,moduleApi)}).catch(error=>ui.notifications?.error?.(error.message));
   if (root instanceof HTMLElement && hostItem && moduleApi?.itemUpgradeService?.getUpgradeProjection) {
     void renderItemUpgradeAvailability(root, hostItem, moduleApi.itemUpgradeService);

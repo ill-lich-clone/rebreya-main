@@ -1,11 +1,11 @@
 const openOverlays = new Set();
 let tooltipSequence = 0;
 
-export function bindAnchoredTooltips(ownerElement, targets, { signal, getText = target => target.dataset.rmTooltip } = {}) {
+export function bindAnchoredTooltips(ownerElement, targets, { signal, getText = target => target.dataset.rmTooltip, className = "", preferredPlacement = "auto" } = {}) {
   let anchor = null;
   let descriptionBefore = null;
   const tooltipId = `rm-anchored-tooltip-${++tooltipSequence}`;
-  const overlay = new AnchoredOverlay({ ownerElement, resolveAnchor: () => anchor, onClose: () => {
+  const overlay = new AnchoredOverlay({ ownerElement, resolveAnchor: () => anchor, preferredPlacement, onClose: () => {
     if (!anchor) return;
     if (descriptionBefore === null) anchor.removeAttribute("aria-describedby");
     else anchor.setAttribute("aria-describedby", descriptionBefore);
@@ -25,7 +25,7 @@ export function bindAnchoredTooltips(ownerElement, targets, { signal, getText = 
       anchor = target;
       descriptionBefore = target.getAttribute("aria-describedby");
       const content = ownerElement.ownerDocument.createElement("div");
-      content.className = "rm-anchored-tooltip";
+      content.className = ["rm-anchored-tooltip", className].filter(Boolean).join(" ");
       content.id = tooltipId;
       content.setAttribute("role", "tooltip");
       content.textContent = text;
@@ -41,7 +41,7 @@ export function bindAnchoredTooltips(ownerElement, targets, { signal, getText = 
   return binding;
 }
 
-export function calculateAnchoredOverlayPosition(anchor, size, viewport, { margin = 8, gap = 6 } = {}) {
+export function calculateAnchoredOverlayPosition(anchor, size, viewport, { margin = 8, gap = 6, preferredPlacement = "auto" } = {}) {
   const dimensions = [size.width, size.height, viewport.width, viewport.height, margin, gap];
   if (dimensions.some(value => !Number.isFinite(value) || value < 0)
     || [anchor.left, anchor.right, anchor.top, anchor.bottom].some(value => !Number.isFinite(value))) {
@@ -50,7 +50,8 @@ export function calculateAnchoredOverlayPosition(anchor, size, viewport, { margi
   const width = Math.min(size.width, Math.max(0, viewport.width - 2 * margin));
   const below = Math.max(0, viewport.height - margin - anchor.bottom - gap);
   const above = Math.max(0, anchor.top - gap - margin);
-  const placement = size.height <= below || below >= above ? "bottom" : "top";
+  const preferredFits = preferredPlacement === "top" ? size.height <= above : preferredPlacement === "bottom" && size.height <= below;
+  const placement = preferredFits ? preferredPlacement : size.height <= below || below >= above ? "bottom" : "top";
   const maxHeight = Math.min(size.height, placement === "bottom" ? below : above);
   const left = Math.max(margin, Math.min(anchor.left, viewport.width - margin - width));
   const top = placement === "bottom" ? anchor.bottom + gap : anchor.top - gap - maxHeight;
@@ -59,10 +60,11 @@ export function calculateAnchoredOverlayPosition(anchor, size, viewport, { margi
 
 /** Presentation only. The caller retains ownership of content and action dispatch. */
 export class AnchoredOverlay {
-  constructor({ ownerElement, resolveAnchor, onClose = () => {} }) {
+  constructor({ ownerElement, resolveAnchor, onClose = () => {}, preferredPlacement = "auto" }) {
     this.ownerElement = ownerElement;
     this.resolveAnchor = resolveAnchor;
     this.onClose = onClose;
+    this.preferredPlacement = preferredPlacement;
     this.element = null;
     this.observers = [];
     this.frame = null;
@@ -140,7 +142,7 @@ export class AnchoredOverlay {
     }, {
       width: this.naturalWidth,
       height: Math.max(this.content.scrollHeight, this.content.getBoundingClientRect().height)
-    }, { width: view.innerWidth, height: view.innerHeight });
+    }, { width: view.innerWidth, height: view.innerHeight }, { preferredPlacement: this.preferredPlacement });
     const layers = Array.from(this.ownerElement.ownerDocument.querySelectorAll(".application, .app"))
       .filter(element => element !== this.element)
       .map(element => Number.parseInt(view.getComputedStyle(element).zIndex, 10) || 0);

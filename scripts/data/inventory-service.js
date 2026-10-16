@@ -9,7 +9,7 @@ import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/it
 import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.385";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.385";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.385";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.381";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,

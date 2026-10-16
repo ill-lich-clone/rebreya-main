@@ -8,7 +8,7 @@ import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalo
 import { getWeaponModHostDescriptor, getWeaponModEffectiveHost, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.389";
 import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.377";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.381";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
