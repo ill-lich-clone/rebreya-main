@@ -1,6 +1,6 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "../../data/inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../../constants.js";
-import { ItemInstanceError } from "../../data/item-instance-rules.js?v=1.4.377";
+import { ItemInstanceError } from "../../data/item-instance-rules.js?v=1.4.379";
 import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.377";
 import { createStableGearDocumentId } from "../../data/gear-document-ids.js";
 
@@ -45,6 +45,7 @@ export class ItemInstanceDocuments {
       hasContents: ["container", "backpack"].includes(data.type) || Boolean(flags.storageContainer)
         || actors.sourceActor.items.contents.some(item => item.system?.container === sourceItem.id),
       hasInstalledUpgrades: Boolean(flags.itemUpgrades?.installed?.length || flags.installedUpgrade?.hostItemId),
+      hasWeaponMods: Boolean(flags.weaponMods?.attachments?.length || flags.weaponMods?.modernizedParts?.length || flags.installedWeaponMod?.hostItemId),
       hasIndependentState: Boolean((data.effects?.length ?? 0) > 0 || limitedUses || data.system?.attuned === true
         || flags.curseEater || flags.curseUpgrade || flags.itemInstanceDebit?.pending
         || (flags.durability && (flags.durability.state !== "intact" || flags.durability.hp?.value !== flags.durability.hp?.max))),

@@ -28,7 +28,7 @@ export function planItemInstanceMutation({ source, quantity, sameActor, sameFold
   }
   if (sameActor && sameFolder && !forHeroSlot) return { kind: "noop", quantity, sourceRemaining: total, preserveSourceId: true };
   if (quantity === total) return { kind: sameActor ? "membership" : "move", quantity, sourceRemaining: sameActor ? total : 0, preserveSourceId: Boolean(sameActor) };
-  if (["hasContents", "hasInstalledUpgrades", "hasIndependentState", "isEquipped", "isHeld"].some(key => source[key])) {
+  if (["hasContents", "hasInstalledUpgrades", "hasWeaponMods", "hasIndependentState", "isEquipped", "isHeld"].some(key => source[key])) {
     throw new ItemInstanceError("complex-stack", "Предмет с индивидуальным состоянием нельзя разделить автоматически. Нужна сверка экземпляров.");
   }
   return { kind: "split", quantity, sourceRemaining: material ? Number((total - quantity).toFixed(12)) : (totalUnits - movedUnits) / scale, preserveSourceId: false };

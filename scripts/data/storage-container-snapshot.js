@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeStorageTriggerState } from "./storage-trigger-service.js";
-import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
+import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.379";
 import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.317";
 
 export const STORAGE_CONTAINER_FLAG = "storageContainer";
@@ -55,7 +55,8 @@ function normalizeItemRow(row, createId) {
   if(normalized.composition!==undefined){
     normalized.composition=normalizeLootgenComposition(normalized.composition);
     if(!Number.isSafeInteger(normalized.quantity) || normalized.quantity<1
-      || (normalized.composition.upgrades.length && normalized.quantity!==1))throw new TypeError("Invalid composed storage quantity.");
+      || ((normalized.composition.upgrades.length || normalized.composition.weaponMods?.attachments?.length
+        || normalized.composition.weaponMods?.modernizedParts?.length) && normalized.quantity!==1))throw new TypeError("Invalid composed storage quantity.");
   }
   const quantity = positiveQuantity(normalized.quantity ?? normalized.itemData?.system?.quantity, 1);
   normalized.rowKind = "item";

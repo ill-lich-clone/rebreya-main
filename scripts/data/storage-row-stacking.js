@@ -1,7 +1,7 @@
 import { normalizeInventoryMaterialProjection } from "./inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
 import { stripItemSourceUuidFromFlags } from "./item-source-reference.js?v=1.4.377";
-import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
+import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.379";
 
 function stackState(row) {
   if (!row || isStorageContainerRow(row) || isStorageJournalRow(row) || row.stackable === false) return null;

@@ -1,8 +1,8 @@
 import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.363";
-import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.268";
-import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.292";
-import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.377";
-import { evaluateItemValue } from "../data/item-value.js?v=1.4.264";
+import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.379";
+import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.379";
+import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.379";
+import { evaluateItemValue } from "../data/item-value.js?v=1.4.379";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { pickLootgenNarrativeFields } from "../data/lootgen-narrative-catalog.js?v=1.4.317";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";

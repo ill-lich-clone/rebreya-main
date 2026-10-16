@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isDurabilityEligible } from "./durability-rules.js";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.377";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.379";
 import { readInventoryItemQuantity, readInventoryItemUnitWeight, readInventoryItemUnitPrice } from "./inventory-material-quantity.js?v=1.4.377";
 
 const COPPER_MULTIPLIERS = Object.freeze({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 });
@@ -137,6 +137,9 @@ function resolveMaterialProfile(itemData, model) {
 
 export function getInventoryDismantleBlockReason(itemData) {
   const flags = moduleFlags(itemData);
+  if(flags.weaponMods?.attachments?.length || flags.weaponMods?.modernizedParts?.length || flags.installedWeaponMod?.hostItemId) {
+    return "Сначала снимите обвесы и модернизированные части: разбор составного предмета целиком пока недоступен.";
+  }
   if (flags.runtimeItemGraph || flags.itemUpgrades?.installed?.length || flags.installedUpgrade?.hostItemId) {
     return "Сначала снимите усовершенствования с предмета: разбор составного предмета целиком пока недоступен.";
   }

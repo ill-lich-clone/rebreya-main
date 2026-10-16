@@ -17,7 +17,7 @@ import {
   isStorageJournalRow,
   resolveStorageContainerPath,
   updateStorageContainerPath
-} from "./storage-container-snapshot.js?v=1.4.317";
+} from "./storage-container-snapshot.js?v=1.4.379";
 import {
   normalizeStorageTriggerState,
   validateStorageTriggerDefinitions

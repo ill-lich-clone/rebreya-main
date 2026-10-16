@@ -1,6 +1,6 @@
 import { UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "./item-upgrade-service.js?v=1.4.292";
-import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
+import { resolveLootgenItemValue } from "./item-value.js?v=1.4.379";
 import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.264";
 import { resolveLootgenContainerProfile } from "./lootgen-container-rules.js?v=1.4.266";
 
@@ -76,7 +76,8 @@ export function createLootgenCatalogReader({model={},gearIndex=[],magicDocuments
       }
       const price=component.sourceType==="magicItem"?magicPrice(source):modelPrice(source,component.sourceType);
       if(component.sourceType==="gear" && upgrades.has(id(component.sourceId)) && !gearDocuments.has(id(component.sourceId)))price.priceKnown=false;
-      return {...price,upgradeProfile:component.sourceType==="gear"?structuredClone(upgrades.get(id(component.sourceId))?.profile??null):null,includedUpgradeSourceIds:[]};
+      return {...price,upgradeProfile:component.sourceType==="gear"?structuredClone(upgrades.get(id(component.sourceId))?.profile??null):null,
+        ...(component.sourceType==="gear" && source.attachment?{weaponModProfile:structuredClone(source.attachment)}:{}),includedUpgradeSourceIds:[]};
     },
     describeUpgradeHost(component) {
       const source=component?.sourceType==="gear"?gearDocuments.get(id(component.sourceId)):component?.sourceType==="magicItem"?magic.get(id(component.sourceId)):null;

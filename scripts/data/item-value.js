@@ -1,3 +1,5 @@
+import { normalizeWeaponModComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
+
 export class ItemValueError extends Error {
   constructor(code, details = {}) {
     super(`item-value: ${code}`);
@@ -42,22 +44,32 @@ export function evaluateItemValue(descriptor, catalogReader) {
 }
 
 function evaluateValueNode(d,catalogReader,context,depth) {
-  if (!record(d) || d.version !== 2 || !id(d.instanceKey) || !id(d.sourceType) || !id(d.sourceId)
+  if (!record(d) || ![2,3].includes(d.version) || !id(d.instanceKey) || !id(d.sourceType) || !id(d.sourceId)
     || typeof d.isBroken !== "boolean" || !Number.isSafeInteger(d.quantity) || d.quantity < 1
     || !Array.isArray(d.upgrades)) invalid({ field: "host" });
   if (d.container != null && typeof catalogReader?.readContainerValueNodes!=="function") throw new ItemValueError("unsupported-container");
-  if ((d.upgrades.length || d.container!=null) && d.quantity !== 1) invalid({ field: "composed-quantity" });
+  if(d.version===2 && d.weaponMods!==undefined)invalid({field:"weaponMods"});
+  let mods=[];
+  if(d.version===3){
+    try { mods=weaponModComponents({weaponMods:normalizeWeaponModComposition(d.weaponMods)}); }
+    catch { invalid({field:"weaponMods"}); }
+  }
+  if ((d.upgrades.length || mods.length || d.container!=null) && d.quantity !== 1) invalid({ field: "composed-quantity" });
   if(d.container!=null && depth>8)throw new ItemValueError("container-depth");
   const keys=context.instances,slots=new Set();
   if(keys.has(d.instanceKey))invalid({field:"duplicate-instance"});
   keys.add(d.instanceKey);
-  context.documents+=1+d.upgrades.length;
+  context.documents+=1+d.upgrades.length+mods.length;
   if(context.documents>200)throw new ItemValueError("document-limit");
   for (const upgrade of d.upgrades) {
     if (!record(upgrade) || !id(upgrade.instanceKey) || !id(upgrade.sourceId) || !record(upgrade.choices)
       || !Number.isInteger(upgrade.slotIndex) || upgrade.slotIndex < 1 || upgrade.slotIndex > 3
       || keys.has(upgrade.instanceKey) || slots.has(upgrade.slotIndex)) invalid({ field: "upgrade" });
     keys.add(upgrade.instanceKey); slots.add(upgrade.slotIndex);
+  }
+  for(const component of mods){
+    if(keys.has(component.instanceKey))invalid({field:"duplicate-instance"});
+    keys.add(component.instanceKey);
   }
   const base = readComponent({...d,container:null}, catalogReader);
   const baseValue = multiplyItemValue(base.unitValue, d.quantity);
@@ -70,6 +82,12 @@ function evaluateValueNode(d,catalogReader,context,depth) {
     if (includedIndex >= 0) included.splice(includedIndex, 1);
     else upgradeValue = addItemValue(upgradeValue, component.unitValue);
   }
+  let weaponModValue=0;
+  for(const mod of mods){
+    const component=readComponent({...mod,sourceType:"gear",quantity:1,isBroken:d.isBroken},catalogReader);
+    if(component.weaponModProfile?.kind!==(mod.mountIds?"weaponAttachment":"modernizedPart"))invalid({field:"weaponModProfile",sourceId:mod.sourceId});
+    weaponModValue=addItemValue(weaponModValue,component.unitValue);
+  }
   let contentsValue=0;
   if(d.container!=null){
     const projection=catalogReader.readContainerValueNodes(d.container,{shell:d});
@@ -79,7 +97,8 @@ function evaluateValueNode(d,catalogReader,context,depth) {
     contentsValue=addItemValue(0,projection.currencyValue);
     for(const child of projection.entries)contentsValue=addItemValue(contentsValue,evaluateValueNode(child,catalogReader,context,depth+1).totalValue);
   }
-  return { baseValue, upgradeValue, contentsValue, totalValue:addItemValue(addItemValue(baseValue,upgradeValue),contentsValue), diagnostics: [] };
+  return { baseValue, upgradeValue, ...(d.version===3?{weaponModValue}:{}), contentsValue,
+    totalValue:addItemValue(addItemValue(addItemValue(baseValue,upgradeValue),weaponModValue),contentsValue), diagnostics: [] };
 }
 
 /** Preserve the existing UI policy, including fallback for explicit legacy zero. */

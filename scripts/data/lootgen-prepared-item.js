@@ -1,7 +1,8 @@
-import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./lootgen-item-descriptor.js?v=1.4.268";
+import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./lootgen-item-descriptor.js?v=1.4.379";
+import { weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
 import { sha256Hex } from "../shared/sha256.js?v=1.4.268";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
-import { RUNTIME_ITEM_GRAPH_FLAG } from "./runtime-item-graph.js?v=1.4.377";
+import { RUNTIME_ITEM_GRAPH_FLAG, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.379";
 
 const MODULE_ID="rebreya-main";
 export const LOOTGEN_COMPOSITION_FLAG="lootgenComposition";
@@ -11,9 +12,23 @@ function keyOf(descriptor,unitValue) {
   return descriptor.container===null ? value : `sha256:${sha256Hex(value)}`;
 }
 
+function validatePreparedWeaponMods(host,descriptor,graph,used){
+  let children;
+  try { children=getRuntimeWeaponModChildren(host,graph.nodes); } catch { fail(); }
+  const expected=weaponModComponents(descriptor),state=host.flags?.[MODULE_ID]?.weaponMods;
+  if(children.length!==expected.length)fail();
+  for(const component of expected){
+    const kind=component.mountIds?"weaponAttachment":"modernizedPart",field=component.mountIds?"attachments":"modernizedParts";
+    const link=state?.[field]?.find(entry=>entry.sourceId===component.sourceId),child=children.find(node=>node._id===link?.itemId);
+    if(!child || used.has(child._id) || child.flags[MODULE_ID].installedWeaponMod.kind!==kind
+      || itemInstanceFingerprint(link.mountIds??[])!==itemInstanceFingerprint(component.mountIds??[]))fail();
+    used.add(child._id);
+  }
+}
+
 function validatePreparedContainerGraph(itemData,descriptor,graph) {
   const nodes=projectLootgenDescriptorTree(descriptor),hosts=new Map(),used=new Set();
-  if(graph.nodes.length!==nodes.reduce((sum,node)=>sum+1+node.descriptor.upgrades.length,0))fail();
+  if(graph.nodes.length!==nodes.reduce((sum,node)=>sum+1+node.descriptor.upgrades.length+weaponModComponents(node.descriptor).length,0))fail();
   for(const node of graph.nodes){
     const metadata=node.flags?.[MODULE_ID]?.storageContainerMember?.composition;
     if(!metadata)continue;
@@ -43,12 +58,14 @@ function validatePreparedContainerGraph(itemData,descriptor,graph) {
         || itemInstanceFingerprint(childFlags.upgradeChoices)!==itemInstanceFingerprint(upgrade.choices))fail();
       used.add(child._id);
     }
+    validatePreparedWeaponMods(host,d,graph,used);
   }
   const root=graph.nodes[0];
   if(used.size!==graph.nodes.length || itemInstanceFingerprint(itemData.system)!==itemInstanceFingerprint(root.system)
     || itemInstanceFingerprint(itemData.effects??[])!==itemInstanceFingerprint(root.effects??[])
     || itemInstanceFingerprint(itemData.flags[MODULE_ID].storageContainer)!==itemInstanceFingerprint(root.flags[MODULE_ID].storageContainer)
-    || itemInstanceFingerprint(itemData.flags[MODULE_ID].itemUpgrades)!==itemInstanceFingerprint(root.flags[MODULE_ID].itemUpgrades))fail();
+    || itemInstanceFingerprint(itemData.flags[MODULE_ID].itemUpgrades)!==itemInstanceFingerprint(root.flags[MODULE_ID].itemUpgrades)
+    || itemInstanceFingerprint(itemData.flags[MODULE_ID].weaponMods)!==itemInstanceFingerprint(root.flags[MODULE_ID].weaponMods))fail();
 }
 
 export function readLootgenPreparedComposition(itemData) {
@@ -57,9 +74,10 @@ export function readLootgenPreparedComposition(itemData) {
   if(!marker || Object.keys(marker).sort().join(',')!=='compositionKey,descriptor,unitValue,version' || marker.version!==2
     || !Number.isSafeInteger(marker.unitValue) || marker.unitValue<0)fail();
   const descriptor=normalizeLootgenItemDescriptor(marker.descriptor),graph=flags[RUNTIME_ITEM_GRAPH_FLAG];
-  if((!descriptor.upgrades.length && descriptor.container===null) || descriptor.quantity!==1 || marker.compositionKey!==keyOf(descriptor,marker.unitValue)
+  const modCount=weaponModComponents(descriptor).length;
+  if((!descriptor.upgrades.length && !modCount && descriptor.container===null) || descriptor.quantity!==1 || marker.compositionKey!==keyOf(descriptor,marker.unitValue)
     || flags.sourceType!==descriptor.sourceType || flags.sourceId!==descriptor.sourceId
-    || graph?.version!==1 || !Array.isArray(graph.nodes) || (descriptor.container===null && graph.nodes.length!==descriptor.upgrades.length+1)
+    || graph?.version!==1 || !Array.isArray(graph.nodes) || (descriptor.container===null && graph.nodes.length!==descriptor.upgrades.length+modCount+1)
     || graph.nodes[0]?._id!==graph.rootId || new Set(graph.nodes.map(d=>d._id)).size!==graph.nodes.length
     || graph.nodes.some(d=>typeof d._id!=='string' || !/^[a-zA-Z0-9]{16}$/u.test(d._id))
     || itemData.system?.quantity!==1 || graph.nodes[0].system?.quantity!==1)fail();
@@ -70,13 +88,18 @@ export function readLootgenPreparedComposition(itemData) {
   const installed=flags.itemUpgrades?.installed;
   if(!Array.isArray(installed) || installed.length!==descriptor.upgrades.length
     || itemInstanceFingerprint(installed)!==itemInstanceFingerprint(graph.nodes[0].flags?.[MODULE_ID]?.itemUpgrades?.installed))fail();
+  const used=new Set([graph.rootId]);
   for(const upgrade of descriptor.upgrades){
     const link=installed.find(link=>link.slotIndex===upgrade.slotIndex),child=graph.nodes.find(d=>d._id===link?.itemId),childFlags=child?.flags?.[MODULE_ID];
-    if(!child || child._id===graph.rootId || child.system?.quantity!==1 || child.system.container!==graph.rootId
+    if(!child || used.has(child._id) || child.system?.quantity!==1 || child.system.container!==graph.rootId
       || childFlags?.gearId!==upgrade.sourceId || childFlags.installedUpgrade?.hostItemId!==graph.rootId
       || childFlags.installedUpgrade.slotIndex!==upgrade.slotIndex
       || itemInstanceFingerprint(childFlags.upgradeChoices)!==itemInstanceFingerprint(upgrade.choices))fail();
+    used.add(child._id);
   }
+  if(itemInstanceFingerprint(flags.weaponMods)!==itemInstanceFingerprint(graph.nodes[0].flags?.[MODULE_ID]?.weaponMods))fail();
+  validatePreparedWeaponMods(graph.nodes[0],descriptor,graph,used);
+  if(used.size!==graph.nodes.length)fail();
   return {version:2,descriptor,unitValue:marker.unitValue,compositionKey:marker.compositionKey};
 }
 

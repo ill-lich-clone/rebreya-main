@@ -1,7 +1,7 @@
-import { normalizeLootgenFlatItemDescriptor } from "./lootgen-composition.js?v=1.4.268";
-import { buildStorageContainerSnapshot } from "./storage-container-snapshot.js?v=1.4.317";
+import { normalizeLootgenFlatItemDescriptor, weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
+import { buildStorageContainerSnapshot } from "./storage-container-snapshot.js?v=1.4.379";
 import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.268";
-export { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
+export { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.379";
 
 const fail = reason => {const error=new Error(`Некорректное дерево лута: ${reason}.`);error.code="invalid-lootgen-descriptor";throw error;};
 function projectTree(root) {
@@ -9,8 +9,8 @@ function projectTree(root) {
   const visit=(raw,parentInstanceKey=null,depth=0)=>{
     const descriptor=normalizeLootgenFlatItemDescriptor(raw,{allowContainer:true});
     if(descriptor.container!==null && (descriptor.quantity!==1 || depth>8))fail("container-quantity-or-depth");
-    documents+=1+descriptor.upgrades.length;if(documents>200)fail("document-limit");
-    for(const entry of [descriptor,...descriptor.upgrades]){
+    documents+=1+descriptor.upgrades.length+weaponModComponents(descriptor).length;if(documents>200)fail("document-limit");
+    for(const entry of [descriptor,...descriptor.upgrades,...weaponModComponents(descriptor)]){
       if(instances.has(entry.instanceKey))fail("duplicate-instance");instances.add(entry.instanceKey);
     }
     const node={descriptor,parentInstanceKey,currencyValue:0};nodes.push(node);
@@ -37,6 +37,6 @@ export function projectLootgenDescriptorTree(raw) {return projectTree(normalizeL
 
 export function getLootgenAggregationKey(raw) {
   const value=normalizeLootgenItemDescriptor(raw);
-  if(!value.upgrades.length && value.container===null)return `${value.sourceType}:${value.sourceId}:${value.isBroken?"broken":"intact"}`;
-  return JSON.stringify([value.sourceType,value.sourceId,value.instanceKey,value.isBroken,value.upgrades]);
+  if(!value.upgrades.length && !weaponModComponents(value).length && value.container===null)return `${value.sourceType}:${value.sourceId}:${value.isBroken?"broken":"intact"}`;
+  return JSON.stringify([value.sourceType,value.sourceId,value.instanceKey,value.isBroken,value.upgrades,...(value.version===3?[value.weaponMods]:[])]);
 }

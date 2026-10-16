@@ -1,9 +1,11 @@
-import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.4.377";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.4.379";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";
 
 export const INVENTORY_GRAPH_TRANSFER_KIND = "inventory-graph-transfer-v1";
 export function isInventoryGraphItem(source, item) {
   return Boolean(item && (item.type === "container" || item.flags?.["rebreya-main"]?.itemUpgrades?.installed?.length
+    || item.flags?.["rebreya-main"]?.weaponMods?.attachments?.length || item.flags?.["rebreya-main"]?.weaponMods?.modernizedParts?.length
+    || item.flags?.["rebreya-main"]?.installedWeaponMod?.hostItemId
     || Array.from(source.items.contents ?? source.items.values()).some(child => child.system?.container === item.id)));
 }
 const fail = message => { const error = new Error(message); error.code = "graph-manual-review"; throw error; };
@@ -24,6 +26,7 @@ export async function transferInventoryGraph({ source, target, itemId, quantity,
     const root = source.items.get(itemId);
     if (!root || root.system.quantity !== 1 || quantity !== 1) fail("Предмет с содержимым или усовершенствованиями переносится целиком, по одному экземпляру.");
     if (root.flags?.["rebreya-main"]?.installedUpgrade?.hostItemId) fail("Сначала снимите усовершенствование с предмета.");
+    if(root.flags?.["rebreya-main"]?.installedWeaponMod?.hostItemId)fail("Сначала снимите обвес или модернизированную часть с оружия.");
     if (root.system.equipped || root.flags?.["rebreya-main"]?.heldHands?.length) fail("Сначала освободите руки и снимите переносимый предмет.");
     const graph = captureRuntimeItemGraph(source, root);
     const targetData = structuredClone(graph.nodes[0]); targetData.flags ??= {}; targetData.flags["rebreya-main"] ??= {};
@@ -40,7 +43,8 @@ export async function transferInventoryGraph({ source, target, itemId, quantity,
       if (!item || snapshotKey(item.toObject()) !== snapshotKey(data)) fail("Исходное дерево изменилось во время переноса.");
     }
     for (const item of source.items.contents ?? source.items.values()) {
-      if (!expected.has(item.id) && (expected.has(item.system?.container) || expected.has(item.flags?.["rebreya-main"]?.installedUpgrade?.hostItemId))) fail("В исходное дерево добавлен новый предмет.");
+      if (!expected.has(item.id) && (expected.has(item.system?.container) || expected.has(item.flags?.["rebreya-main"]?.installedUpgrade?.hostItemId)
+        || expected.has(item.flags?.["rebreya-main"]?.installedWeaponMod?.hostItemId))) fail("В исходное дерево добавлен новый предмет.");
     }
   };
   if (record.phase === "prepared") {

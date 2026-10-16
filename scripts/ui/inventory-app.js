@@ -1,4 +1,4 @@
-import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.377";
+import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.379";
 import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
 import { MODULE_ID } from "../constants.js";
 import { canViewItem } from "../infrastructure/foundry/item-source-resolver.js?v=1.4.377";

@@ -14,8 +14,8 @@ import {
   isStorageContainerRow,
   isStorageJournalRow,
   rekeyStorageContainerSnapshot
-} from "./storage-container-snapshot.js?v=1.4.317";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.377";
+} from "./storage-container-snapshot.js?v=1.4.379";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.379";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js?v=1.4.377";
 import { deriveGroundPilePresentation } from "./storage-pile-presentation.js?v=1.4.370";
 

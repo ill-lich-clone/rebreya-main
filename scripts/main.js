@@ -105,7 +105,7 @@ import {
 import {
   buildInventoryIngressDescriptor,
   resolveInventoryDismantleOutputs
-} from "./data/inventory-ingress-descriptor.js?v=1.4.377";
+} from "./data/inventory-ingress-descriptor.js?v=1.4.379";
 import {
   InventoryIngressPlanner,
   isValidSerializedInventoryIngressPlan
@@ -266,8 +266,8 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.377";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.377";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.370";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.377";
-import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.317";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.379";
+import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.379";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
 import { measureDoorDistanceFeet, preflightDoorAccess } from "./data/door-access.js?v=1.4.197-door-trigger-target";

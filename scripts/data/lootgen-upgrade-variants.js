@@ -1,4 +1,4 @@
-import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.256";
+import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.379";
 import { evaluateItemValue } from "./item-value.js";
 import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.4.250";
 import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";

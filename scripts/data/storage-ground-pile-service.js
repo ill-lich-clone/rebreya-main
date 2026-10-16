@@ -8,7 +8,7 @@ import {
   readStorageCoinDenomination,
   readStorageState
 } from "./storage-service.js?v=1.4.377";
-import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
+import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.379";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken

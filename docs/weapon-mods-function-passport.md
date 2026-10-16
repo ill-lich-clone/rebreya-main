@@ -1,5 +1,16 @@
 # Оружейные обвесы и модернизированные части
 
+## Физическое дерево, Storage и цена
+
+- `runtime-item-graph.js:getRuntimeWeaponModChildren(host,items)` проверяет обе физические связи, singleton, source identity, непересекающиеся крепления и orphan reverse links без повторной сборки по каталогу. Capture включает children один раз; build remap-ит оба направления и Actor; materialize отвергает изменённые связи при replay. Envelope остаётся RuntimeGraph v1, charges/ammo/effects сохраняются.
+- `lootgen-composition.js:normalizeWeaponModComposition(raw,{instanceKeys})` проверяет exact DTO v1 с отдельными attachments/modernizedParts, global identities и mounts. `weaponModComponents(descriptor)` возвращает плоский список без размножения multi-mount child. Нормализаторы композиции/дерева и aggregation key принимают descriptor v3, сохраняют прежние контракты v1/v2, лимиты 200 документов/8 уровней.
+- `composite-item-graph.js:buildCompositeItemGraph(raw,{buildBase,buildUpgrade,buildWeaponMod=buildUpgrade,weaponModCatalog,createDocumentId,manifest,actorId})` валидирует v3 по проверенному каталогу до вызова builders компонентов и создаёт detached native links. Для переноса существующих custom Items используется физический snapshot, а не этот builder.
+- `storage-container-item-service.js:captureHostData` включает новые компоненты в host graph и исключает их из обычных contents. `prepareItemGraph` учитывает их identities; `storage-container-snapshot.js:normalizeItemRow` запрещает quantity>1 для составного v3.
+- `lootgen-prepared-item.js:readLootgenPreparedComposition/buildLootgenPreparedItem` сохраняют marker v2 и runtime v1 с descriptor v3, проверяют количество children и точное совпадение связей корня и графа. Контейнерная валидация охватывает каждый host дерева.
+- `item-value.js:evaluateItemValue(descriptor,reader)` для v3 добавляет `weaponModValue`, суммируя каждый реальный компонент один раз. Неизвестная цена/неверный kind отклоняется; global identity/depth/document budgets общие с contents. Точная форма результата v2 сохранена. `lootgen-catalog-reader.js:resolveValueComponent` передаёт source attachment profile для проверки kind.
+- `ItemInstanceDocuments.readSource` выставляет `hasWeaponMods`; `planItemInstanceMutation`, `getInventoryDismantleBlockReason` и `isInventoryGraphItem` защищают составное оружие и установленный child от plain/split/dismantle путей. Inventory graph transfer запрещает отдельный перенос child и проверяет связи при recovery.
+- Focused: `tests/weapon-mod-transport.test.mjs`, `tests/composite-item-graph.test.mjs`, существующие runtime graph, prepared item, Storage, value, instance/recovery и disarm tests.
+
 Входной индекс: [паспорт функций](function-passport.md), раздел 14. Правила: [утверждённая спецификация](superpowers/specs/2026-10-16-weapon-attachments-design.md).
 
 ## Каталог и носители

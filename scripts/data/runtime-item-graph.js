@@ -13,6 +13,32 @@ const matchesPreparedValue = (actual, expected) => {
   return actual === expected;
 };
 
+/** Physical links only: unsupported/custom rules remain transferable without granting effects. */
+export function getRuntimeWeaponModChildren(host,items) {
+  const data=host.toObject?.() ?? host,hostId=host.id ?? host._id,flags=data.flags?.[MODULE_ID],state=flags?.weaponMods;
+  const actorId=host.actor?.id ?? host.parent?.id,children=[],seen=new Set(),sources=new Set(),mounts=new Set();
+  if(state!=null) {
+    if(state.version!==1 || !Array.isArray(state.attachments) || !Array.isArray(state.modernizedParts)
+      || data.system?.quantity!==1)conflict();
+    for(const [field,kind] of [["attachments","weaponAttachment"],["modernizedParts","modernizedPart"]])for(const entry of state[field]) {
+      const child=items.find(item=>(item.id ?? item._id)===entry.itemId),childData=child?.toObject?.() ?? child,childFlags=childData?.flags?.[MODULE_ID],link=childFlags?.installedWeaponMod;
+      const selected=field==="attachments"?entry.mountIds:[];
+      if(!child || !entry.sourceId || seen.has(entry.itemId) || sources.has(entry.sourceId) || childData.system?.quantity!==1
+        || childData.system?.container!==hostId || childFlags?.gearId!==entry.sourceId || link?.version!==1
+        || link.kind!==kind || link.hostItemId!==hostId || (actorId && link.hostActorId!==actorId)
+        || !Array.isArray(selected) || !Array.isArray(link.mountIds) || selected.length!==link.mountIds.length
+        || new Set(selected).size!==selected.length || selected.some(mount=>!link.mountIds.includes(mount) || mounts.has(mount))
+        || (field==="attachments" && !selected.length))conflict();
+      seen.add(entry.itemId);sources.add(entry.sourceId);selected.forEach(mount=>mounts.add(mount));children.push(child);
+    }
+  }
+  for(const child of items) {
+    const childFlags=(child.flags ?? child.toObject?.()?.flags)?.[MODULE_ID];
+    if(childFlags?.installedWeaponMod?.hostItemId===hostId && !seen.has(child.id ?? child._id))conflict();
+  }
+  return children;
+}
+
 /** Detached transport snapshot of live Documents, not a catalogue rebuild or another world repository. */
 export function captureRuntimeItemGraph(actor, root) {
   const items = Array.from(actor.items.contents ?? actor.items.values());
@@ -24,6 +50,7 @@ export function captureRuntimeItemGraph(actor, root) {
     if (sourceUuid) sourceUuidsByItemId[item.id] = sourceUuid;
     const installed = data.flags?.[MODULE_ID]?.itemUpgrades?.installed ?? [];
     const childIds = new Set(installed.map(entry => entry.itemId));
+    for(const child of getRuntimeWeaponModChildren(item,items))childIds.add(child.id ?? child._id);
     for (const child of items) if (child.system?.container === item.id) childIds.add(child.id);
     for (const id of childIds) visit(actor.items.get(id));
   };
@@ -36,6 +63,7 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actor
     || graph.nodes[0]?._id !== graph.rootId || typeof operationId !== "string" || !operationId) conflict();
   const ids = new Map(graph.nodes.map(node => [node._id, createStableGearDocumentId(`${operationId}:${node._id}`)]));
   if (ids.size !== graph.nodes.length || graph.nodes.some(node => typeof node._id !== "string" || !node._id)) conflict();
+  for(const node of graph.nodes)getRuntimeWeaponModChildren(node,graph.nodes);
   const documents = graph.nodes.map(node => {
     const sourceId = node._id;
     const input = node._id === graph.rootId ? rootData ?? node : node;
@@ -73,6 +101,14 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actor
       flags.installedUpgrade.hostItemId = ids.get(flags.installedUpgrade.hostItemId);
       if (actorId !== null) flags.installedUpgrade.hostActorId = actorId;
     }
+    for(const entry of [...(flags.weaponMods?.attachments ?? []),...(flags.weaponMods?.modernizedParts ?? [])]) {
+      if(!ids.has(entry.itemId))conflict();entry.itemId=ids.get(entry.itemId);
+    }
+    if(flags.installedWeaponMod?.hostItemId) {
+      if(!ids.has(flags.installedWeaponMod.hostItemId))conflict();
+      flags.installedWeaponMod.hostItemId=ids.get(flags.installedWeaponMod.hostItemId);
+      if(actorId!==null)flags.installedWeaponMod.hostActorId=actorId;
+    }
     return data;
   });
   return { rootItemId: ids.get(graph.rootId), documents };
@@ -90,6 +126,8 @@ export async function materializeRuntimeItemGraph(actor, graph, operationId, roo
         || (actual.system?.container ?? null) !== (data.system?.container ?? null)
         || itemInstanceFingerprint(actual.flags?.[MODULE_ID]?.itemUpgrades ?? null) !== itemInstanceFingerprint(data.flags[MODULE_ID].itemUpgrades ?? null)
         || itemInstanceFingerprint(actual.flags?.[MODULE_ID]?.installedUpgrade ?? null) !== itemInstanceFingerprint(data.flags[MODULE_ID].installedUpgrade ?? null)) conflict();
+      if(itemInstanceFingerprint(actual.flags?.[MODULE_ID]?.weaponMods ?? null)!==itemInstanceFingerprint(data.flags[MODULE_ID].weaponMods ?? null)
+        || itemInstanceFingerprint(actual.flags?.[MODULE_ID]?.installedWeaponMod ?? null)!==itemInstanceFingerprint(data.flags[MODULE_ID].installedWeaponMod ?? null))conflict();
       if (recoverMissing && !matchesPreparedValue(actual, data)) conflict();
     }
     return actor.items.get(plan.rootItemId);

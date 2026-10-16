@@ -79,7 +79,7 @@
 
 **Interfaces:** host flag `{version:1,attachments:[{itemId,sourceId,mountIds}],modernizedParts:[{itemId,sourceId}],approvals:[{sourceId,profileSignature,approvedByUserId}]}` в `weaponMods`; child flag `installedWeaponMod:{version:1,kind,hostActorId,hostItemId,mountIds}` + native `system.container`. Перенос сохраняет существующий RuntimeGraph v1 envelope и все node snapshots, но явно remap/verify обе новые связи. Для сериализованной композиции ввести descriptor **v3**: прежние поля v2 плюс `weaponMods:{version:1,attachments:[{instanceKey,sourceId,mountIds}],modernizedParts:[{instanceKey,sourceId}]}`; обычные v1/v2 продолжают читаться/выдаваться прежним образом. `evaluateItemValue(v3,reader)` добавляет `weaponModValue` и включает его в total; результат v2 сохраняет точную прежнюю форму.
 
-- [ ] **1. RED:** `weapon mods survive storage round trip`, `graph remaps every reverse link`, `installed mod cannot split or dismantle`, `v3 counts a multi-mount child once`, `foreign edit blocks recovery`:
+- [x] **1. RED:** `weapon mods survive storage round trip`, `graph remaps every reverse link`, `installed mod cannot split or dismantle`, `v3 counts a multi-mount child once`, `foreign edit blocks recovery`:
   ```js
   assert.equal(roundTrip.weaponMods.attachments[0].mountIds.length, 2);
   assert.equal(targetChild.getFlag('rebreya-main','installedWeaponMod').hostActorId, target.id);
@@ -87,10 +87,10 @@
   assert.deepEqual(evaluateItemValue(legacyV2,reader), legacyExpected);
   ```
   Закрепить quantity1, unique identities, cap200/depth8, unknown-price, included-component multiset, сохранение charges/choices/ammo, отказ при forged/missing child; terminal replay после удаления цели не создаёт её повторно.
-- [ ] **2. Run:** `node --test tests/runtime-item-graph.test.mjs tests/runtime-graph-inventory.test.mjs tests/lootgen-item-descriptor.test.mjs tests/item-value.test.mjs tests/storage-container-snapshot.test.mjs`; FAIL на новых edges/v3.
-- [ ] **3. Implement:** расширить существующие capture/materializer/snapshot normalizers и value traversal, а не создавать второй graph. Согласовать composition keys, prepared-marker validation и inventory identity; native child не должен одновременно считаться contents и mod. Сложный host/child блокировать существующими split/dismantle guards.
-- [ ] **4. GREEN:** предыдущая команда + `node --test tests/lootgen-prepared-item.test.mjs tests/storage-container-item-service.test.mjs tests/inventory-ingress-descriptor.test.mjs tests/inventory-mutation-recovery.test.mjs tests/item-instance-rules.test.mjs tests/disarm-service.test.mjs`.
-- [ ] **5. Commit gate R:** `feat: preserve weapon mods in item graphs`.
+- [x] **2. Run:** `node --test tests/runtime-item-graph.test.mjs tests/runtime-graph-inventory.test.mjs tests/lootgen-item-descriptor.test.mjs tests/item-value.test.mjs tests/storage-container-snapshot.test.mjs`; FAIL на новых edges/v3.
+- [x] **3. Implement:** расширить существующие capture/materializer/snapshot normalizers и value traversal, а не создавать второй graph. Согласовать composition keys, prepared-marker validation и inventory identity; native child не должен одновременно считаться contents и mod. Сложный host/child блокировать существующими split/dismantle guards.
+- [x] **4. GREEN:** предыдущая команда + `node --test tests/lootgen-prepared-item.test.mjs tests/storage-container-item-service.test.mjs tests/inventory-ingress-descriptor.test.mjs tests/inventory-mutation-recovery.test.mjs tests/item-instance-rules.test.mjs tests/disarm-service.test.mjs`.
+- [x] **5. Commit gate R:** `feat: preserve weapon mods in item graphs`.
 
 ### Task 3: T3. Каноническая установка, typed commands и действия
 

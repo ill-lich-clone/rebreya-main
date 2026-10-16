@@ -6,10 +6,10 @@ import {
   inventoryMaterialQuantitiesMatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch
 } from "./inventory-material-quantity.js?v=1.4.377";
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
-import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.377";
-import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.377";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.377";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.377";
+import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.379";
+import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.379";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.379";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.379";
 import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
@@ -39,7 +39,7 @@ import {
   getInventoryDismantleBlockReason,
   resolveInventoryDismantleMinimumQuantity,
   resolveInventoryDismantleOutputs
-} from "./inventory-ingress-descriptor.js?v=1.4.377";
+} from "./inventory-ingress-descriptor.js?v=1.4.379";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,

@@ -1,7 +1,7 @@
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.377";
-import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
-import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.292";
-import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.377";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.379";
+import { normalizeLootgenComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
+import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.379";
+import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.379";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
@@ -13,7 +13,7 @@ import {
   createPortableStorageContainerItemData,
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
-} from "./storage-container-snapshot.js?v=1.4.317";
+} from "./storage-container-snapshot.js?v=1.4.379";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.322";
 import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.317";
 import {
@@ -153,7 +153,7 @@ function captureCurrency(currency) {
   return result;
 }
 
-/** Capture only this host and installed upgrades; ordinary contents remain canonical snapshot rows. */
+/** Capture this host and installed components; ordinary contents remain canonical snapshot rows. */
 function captureHostData(item, allItems, composition) {
   const data = plainItemData(item), flags = data.flags[MODULE_ID];
   delete flags.storageContainer; delete flags.runtimeItemGraph; delete flags.lootgenComposition;
@@ -177,13 +177,25 @@ function captureHostData(item, allItems, composition) {
       slotIndex:link.slotIndex,choices:clone(readFlag(child,"upgradeChoices")) ?? {}});
   }
   if (allItems.some(child=>readFlag(child,"installedUpgrade")?.hostItemId===item.id && !seen.has(child.id))) treeConflict("orphan-installed-upgrade");
+  const weaponMods={version:1,attachments:[],modernizedParts:[]};
+  for(const child of getRuntimeWeaponModChildren(item,allItems)){
+    if(seen.has(child.id) || allItems.some(candidate=>candidate.system?.container===child.id))treeConflict("nested-installed-component");
+    seen.add(child.id);
+    const childData=plainItemData(child);delete childData.flags[MODULE_ID].runtimeItemGraph;
+    nodes.push({...childData,_id:child.id});
+    const binding=readFlag(child,"installedWeaponMod"),field=binding.kind==="weaponAttachment"?"attachments":"modernizedParts",sourceId=readFlag(child,"gearId");
+    const previous=composition?.weaponMods?.[field]?.find(entry=>entry.sourceId===sourceId);
+    weaponMods[field].push({instanceKey:previous?.instanceKey??`native-weapon-mod:${child.uuid??child.id}`,sourceId,
+      ...(field==="attachments"?{mountIds:clone(binding.mountIds)}:{})});
+  }
   if (item.type !== "container" && allItems.some(child=>child.system?.container===item.id && !seen.has(child.id))) treeConflict("ordinary-host-contents");
   if (nodes.length > 1) flags.runtimeItemGraph = {version:1,rootId:clean(item.id),nodes};
   flags.storageCapturedHost = true;
   let metadata;
   if (composition) {
     // Custom installed Items remain physically transferable, but are not advertised as priced catalog compositions.
-    try { metadata = normalizeLootgenComposition({...composition,upgrades}); } catch { metadata = undefined; }
+    try { metadata = normalizeLootgenComposition({...composition,upgrades,
+      ...(weaponModComponents({weaponMods}).length || composition.version===3?{version:3,weaponMods}:{})}); } catch { metadata = undefined; }
   }
   return {data,composition:metadata,installedIds:seen};
 }
@@ -339,7 +351,7 @@ export class StorageContainerItemService {
     const appendHost = async (composition, quantity, fallback, parentId, member, narrativeFields = {}) => {
       let nodes;
       if (composition) {
-        for (const entry of [composition, ...composition.upgrades]) {
+        for (const entry of [composition, ...composition.upgrades, ...weaponModComponents(composition)]) {
           if (instances.has(entry.instanceKey)) treeConflict("duplicate-composition");
           instances.add(entry.instanceKey);
         }
