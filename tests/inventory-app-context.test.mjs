@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
+import { extname } from "node:path";
 
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 
@@ -927,6 +928,22 @@ test("InventoryApp refreshInventorySnapshot invalidates folder caches before the
     assert.equal(snapshotCalls, 2);
     assert.notEqual(app.inventoryFolderTreeCache, firstTree);
     assert.deepEqual(renders, [{ force: true, preserveScroll: true }]);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp template path passes Foundry server extension validation", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?template-path=${Date.now()}`);
+    const templatePath = InventoryApp.PARTS.main.template;
+    assert.equal(extname(templatePath), ".hbs");
+    assert.equal(templatePath, "modules/rebreya-main/templates/inventory-app.hbs");
+    assert.doesNotMatch(templatePath, /[?#]/u);
+    const templateFile = new URL(`../${templatePath.slice("modules/rebreya-main/".length)}`, import.meta.url);
+    assert.ok((await stat(templateFile)).isFile());
   }
   finally {
     restoreFoundry();

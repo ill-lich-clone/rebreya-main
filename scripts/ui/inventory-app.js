@@ -3457,7 +3457,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = {
     main: {
       root: true,
-      template: `modules/${MODULE_ID}/templates/inventory-app.hbs?v=1.4.377`
+      template: `modules/${MODULE_ID}/templates/inventory-app.hbs`
     }
   };
 

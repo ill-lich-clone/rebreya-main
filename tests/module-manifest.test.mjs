@@ -4,12 +4,12 @@ import { readdir, readFile } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
-test("current clock performance release advances the module cache version", async () => {
+test("current release advances the module cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.393");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.393.js"]);
+  assert.equal(manifest.version, "1.4.394");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.394.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.393.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.394.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -29,7 +29,8 @@ test("clock and inventory runtime owners each share one canonical module URL", a
   }
   assert.ok(imports >= 12);
   for(const [owner,keys] of cacheKeys)assert.deepEqual(keys,new Set([
-    ["inventory-service.js","inventory-sync.js","inventory-app.js"].includes(owner)?"1.4.393":"1.4.377"
+    owner === "inventory-app.js" ? "1.4.394"
+      : ["inventory-service.js","inventory-sync.js"].includes(owner) ? "1.4.393" : "1.4.377"
   ]),owner);
 });
 
@@ -120,8 +121,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.393");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.393.js"]);
+  assert.equal(manifest.version, "1.4.394");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.394.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -426,7 +427,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.393.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.394.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

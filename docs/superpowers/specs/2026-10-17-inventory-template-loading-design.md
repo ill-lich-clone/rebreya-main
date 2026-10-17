@@ -1,6 +1,6 @@
 # Restore inventory template loading in Foundry v13
 
-Status: approved by the user on 2026-10-17; implementation-plan review pending.
+Status: spec and Native plan approved by the user on 2026-10-17; implemented and verified offline. See the implementation plan for results and live-validation limits.
 
 ## Observable result
 

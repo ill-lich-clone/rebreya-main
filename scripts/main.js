@@ -1642,7 +1642,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.4.393"
+          "./ui/inventory-app.js?v=1.4.394"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -7977,7 +7977,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.393");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.394");
 
       if (!this.inventoryApp) {
         this.inventoryApp = new InventoryApp(this);
@@ -8024,7 +8024,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.393");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.394");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,
