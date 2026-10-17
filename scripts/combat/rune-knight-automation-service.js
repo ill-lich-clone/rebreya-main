@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { getCreatureTokenFootprint } from "../data/equipment-size-rules.js?v=1.4.393";
 
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const EFFECT_MODE_ADD = 2;
@@ -21,7 +22,6 @@ const FIGHTER_DOMINANCE_IDENTIFIER = "fighter-dominance";
 const GIANT_MIGHT_FORM_AUTOMATION = "giant-might-form";
 const GIANT_MIGHT_DAMAGE_FORMULA = "1d6";
 const SIZE_ORDER = Object.freeze(["tiny", "sm", "med", "lg", "huge", "grg"]);
-const TOKEN_SIZE_BY_ACTOR_SIZE = Object.freeze({ tiny: 0.5, sm: 1, med: 1, lg: 2, huge: 3, grg: 4 });
 const MAX_WORKFLOW_STATES = 128;
 const MOVEMENT_PATHS = Object.freeze([
   "walk",
@@ -2098,20 +2098,32 @@ export class RuneKnightAutomationService {
 
     let effect = null;
     try {
-      const targetSize = await this.#chooseGiantMightSize(actor, item, token);
-      const form = await this.#giantMightFormPlan(actor, token, targetSize);
+      const resizeService = this.moduleApi?.equipmentSizeService;
+      const preview = token && resizeService?.getCreatureResizePreview(token);
+      const selection = await this.#chooseGiantMightSize(actor, item, token);
+      const form = await this.#giantMightFormPlan(actor, token, selection.size);
+      const weaponIds = form.grew && resizeService
+        ? await resizeService.chooseHeldWeaponResize(actor, token, form.appliedActorSize, { choice: selection.weaponChoice, preview }) : [];
+      if (form.grew && resizeService) {
+        const gridSize = Math.max(1, numberValue(globalThis.canvas?.dimensions?.size ?? globalThis.canvas?.grid?.size, 1));
+        form.grew = await this.#canGrowGiantToken(token?.document ?? token, form.appliedToken, form.originalToken, gridSize);
+        if (!form.grew) form.reachBonus = 0;
+      }
       effect = await this.#createGiantMightFormEffect(actor, item, form);
       if (!effect) throw new Error("Giant's Might form could not be created");
       effect._rebreyaGiantMightToken = token?.document ?? token ?? null;
-      if (form.grew) await this.#applyGiantMightGrowth(actor, token, form);
+      if (form.grew) await this.#applyGiantMightGrowth(actor, token, form, { weaponIds, expected: preview?.expected });
       return true;
     }
     catch (error) {
-      if (effect) {
-        await this.#restoreGiantMightForm(actor, effect);
-        await this.#deleteActorEffect(actor, effect);
+      try {
+        if (effect) {
+          try { await this.#restoreGiantMightForm(actor, effect, { offerWeapons: false }); }
+          finally { await this.#deleteActorEffect(actor, effect); }
+        }
       }
-      await payment.rollback?.();
+      catch (restoreError) { error.message += ` Восстановление формы: ${restoreError.message}`; }
+      finally { await payment.rollback?.(); }
       throw error;
     }
   }
@@ -2156,15 +2168,18 @@ export class RuneKnightAutomationService {
   }
 
   async #chooseGiantMightSize(actor, item, token) {
-    if (!this.#actorHasFeature(actor, "runic-juggernaut")) return "";
+    if (!this.#actorHasFeature(actor, "runic-juggernaut")) return { size: "" };
     const queue = this.moduleApi?.reactionQueueService;
-    if (typeof queue?.promptDecision !== "function") return "";
+    if (typeof queue?.promptDecision !== "function") return { size: "" };
+    const resizeService = this.moduleApi?.equipmentSizeService;
+    const hasWeapons = Boolean(resizeService?.getHeldWeapons(actor)?.length);
+    const promptOwnerIds = resizeService?.getResizePromptOwnerIds(actor) ?? ownerUserIds(actor);
     const choice = await queue.promptDecision({
       candidate: {
         actorUuid: documentUuid(actor) || actorKey(actor),
         tokenUuid: documentUuid(token),
         itemUuid: documentUuid(item),
-        ownerUserIds: ownerUserIds(actor)
+        ownerUserIds: promptOwnerIds
       },
       prompt: {
         title: "Рунический исполин",
@@ -2176,10 +2191,12 @@ export class RuneKnightAutomationService {
           type: "select",
           label: "Размер формы",
           options: [{ value: "huge", label: "Огромный" }]
-        }]
+        }, ...(hasWeapons ? [{ name: "resizeWeapons", type: "select", label: "Оружие в руках",
+          options: [{ value: "yes", label: "Изменить вместе с существом" }, { value: "no", label: "Оставить размер оружия" }] }] : [])]
       }
     });
-    return choice?.accepted === true && cleanText(choice?.size, "huge") === "huge" ? "huge" : "";
+    return { size: choice?.accepted === true && cleanText(choice?.size, "huge") === "huge" ? "huge" : "",
+      weaponChoice: hasWeapons && choice?.accepted === true ? { ...choice, resizeResponderUserId: promptOwnerIds[0] } : undefined };
   }
 
   async #giantMightFormPlan(actor, token, targetSize = "") {
@@ -2198,8 +2215,7 @@ export class RuneKnightAutomationService {
       width: numberValue(tokenDocument.width, 1),
       height: numberValue(tokenDocument.height, 1)
     } : null;
-    const footprint = TOKEN_SIZE_BY_ACTOR_SIZE[appliedActorSize]
-      ?? Math.max(numberValue(originalToken?.width, 1), numberValue(originalToken?.height, 1));
+    const footprint = getCreatureTokenFootprint(appliedActorSize).width;
     const gridSize = Math.max(1, numberValue(
       globalThis.canvas?.dimensions?.size ?? globalThis.canvas?.grid?.size,
       1
@@ -2320,30 +2336,44 @@ export class RuneKnightAutomationService {
     return Array.isArray(created) ? created[0] ?? null : created ?? null;
   }
 
-  async #applyGiantMightGrowth(actor, token, form) {
+  async #applyGiantMightGrowth(actor, token, form, { weaponIds = [], expected } = {}) {
+    if (this.moduleApi?.equipmentSizeService) {
+      return this.moduleApi.equipmentSizeService.applyPreparedCreatureResize({ actor, token: token?.document ?? token,
+        size: form.appliedActorSize, tokenPatch: form.appliedToken, weaponIds, expected });
+    }
     await this.#updateDocument(actor, { "system.traits.size": form.appliedActorSize });
     await this.#updateDocument(token?.document ?? token, form.appliedToken);
   }
 
-  async #restoreGiantMightForm(actor, effect) {
+  async #restoreGiantMightForm(actor, effect, { offerWeapons = true } = {}) {
     const form = getProperty(effect, `flags.${MODULE_ID}.runeKnight.form`);
     if (!form?.grew) return false;
     let restored = false;
-    if (cleanText(actor?.system?.traits?.size) === cleanText(form.appliedActorSize)) {
+    const changeActorSize = cleanText(actor?.system?.traits?.size) === cleanText(form.appliedActorSize);
+    const resizeService = this.moduleApi?.equipmentSizeService;
+    if (changeActorSize && !resizeService) {
       restored = (await this.#updateDocument(actor, { "system.traits.size": form.originalActorSize })) || restored;
     }
     const token = effect?._rebreyaGiantMightToken
       ?? globalThis.fromUuidSync?.(form.tokenUuid)
       ?? null;
     const tokenDocument = token?.document ?? token;
+    const patch = {};
     if (tokenDocument && form.originalToken && form.appliedToken) {
-      const patch = {};
       for (const key of ["x", "y", "width", "height"]) {
         if (numberValue(tokenDocument[key], Number.NaN) === numberValue(form.appliedToken[key], Number.NaN)) {
           patch[key] = form.originalToken[key];
         }
       }
-      restored = (await this.#updateDocument(tokenDocument, patch)) || restored;
+      if (!resizeService) restored = (await this.#updateDocument(tokenDocument, patch)) || restored;
+    }
+    if (resizeService) {
+      const preview = tokenDocument && resizeService.getCreatureResizePreview(tokenDocument);
+      const weaponIds = changeActorSize && offerWeapons && tokenDocument
+        ? await resizeService.chooseHeldWeaponResize(actor, tokenDocument, form.originalActorSize, { preview }) : [];
+      const result = await resizeService.applyPreparedCreatureResize({ actor, token: tokenDocument, size: form.originalActorSize,
+        tokenPatch: patch, changeActorSize, weaponIds, expected: preview?.expected });
+      restored = result.changed || restored;
     }
     return restored;
   }

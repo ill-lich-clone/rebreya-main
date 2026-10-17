@@ -1024,7 +1024,9 @@ function createGiantMightHarness({
   canGrow = true,
   effectFails = false,
   features = [],
-  hugeAccepted = true
+  hugeAccepted = true,
+  equipmentSizeService = null,
+  resizeWeapons = "yes"
 } = {}) {
   const giantItem = createItem({ id: "giant-might", automation: "giant-might", spent: giantSpent, max: 4 });
   const dominanceItem = createItem({ id: "dominance", spent: dominanceSpent, max: dominanceMax, identifier: "fighter-dominance" });
@@ -1060,13 +1062,14 @@ function createGiantMightHarness({
   }
   const calls = { prompts: 0, promptTitles: [], damage: 0, damageFormulas: [] };
   const moduleApi = {
+    equipmentSizeService,
     reactionQueueService: {
       async promptDecision({ prompt }) {
         calls.prompts += 1;
         calls.promptTitles.push(prompt.title);
         if (prompt.title === "Мощь великана") return { accepted: fallbackAccepted };
         if (prompt.title === "Рунический исполин") {
-          return { accepted: hugeAccepted, size: "huge" };
+          return { accepted: hugeAccepted, size: "huge", resizeWeapons };
         }
         return { accepted: false };
       }
@@ -1089,8 +1092,55 @@ function createGiantMightHarness({
       }
     }
   };
-  return { service, activity, actor, token, giantItem, dominanceItem, calls };
+  return { service, activity, actor, token, giantItem, dominanceItem, calls, moduleApi };
 }
+
+test("Giant's Might delegates growth and exact conditional reversion to common resize owner with consent", async () => {
+  const operations = [], choices = [];
+  const equipmentSizeService = {
+    getHeldWeapons: () => [{ id: "sword" }], getResizePromptOwnerIds: () => ["owner"],
+    getCreatureResizePreview: token => ({ expected: { actorSize: token.actor.system.traits.size } }),
+    chooseHeldWeaponResize: async (...args) => { choices.push(args); return ["sword"]; },
+    applyPreparedCreatureResize: async plan => { operations.push(plan); if (plan.changeActorSize !== false) plan.actor.system.traits.size = plan.size; Object.assign(plan.token, plan.tokenPatch); return { changed: true }; }
+  };
+  const h = createGiantMightHarness({ equipmentSizeService });
+  await h.service.applyDnd5ePostUseActivity(h.activity, { token: h.token });
+  assert.equal(operations.length, 1);
+  assert.equal(operations[0].size, "lg"); assert.deepEqual(operations[0].weaponIds, ["sword"]);
+  assert.equal(choices.length, 1);
+  const effect = h.actor.effects.find(effect => effect.flags?.["rebreya-main"]?.runeKnight?.automation === "giant-might-form");
+  await h.service.handleEmbeddedEffectDeletion(effect);
+  assert.equal(operations.length, 2);
+  assert.equal(operations[1].size, "med");
+  assert.deepEqual([h.token.x, h.token.y, h.token.width, h.token.height], [100, 100, 1, 1]);
+  assert.equal(choices.length, 2);
+});
+
+test("Giant's Might no-space skips weapon prompt and common writes; failed common write refunds resource", async () => {
+  let choices = 0, writes = 0;
+  const equipmentSizeService = { getHeldWeapons: () => [], getCreatureResizePreview: () => ({ expected: {} }),
+    chooseHeldWeaponResize: async () => { choices++; return []; },
+    applyPreparedCreatureResize: async () => { writes++; throw Error("resize failed"); } };
+  const blocked = createGiantMightHarness({ equipmentSizeService, canGrow: false });
+  await blocked.service.applyDnd5ePostUseActivity(blocked.activity, { token: blocked.token });
+  assert.equal(choices, 0); assert.equal(writes, 0);
+  const failed = createGiantMightHarness({ equipmentSizeService });
+  await assert.rejects(() => failed.service.applyDnd5ePostUseActivity(failed.activity, { token: failed.token }), /resize failed/);
+  assert.equal(failed.giantItem.system.uses.spent, 0);
+});
+
+test("Giant's Might rechecks free space after awaiting weapon consent", async () => {
+  let room = true, writes = 0;
+  const equipmentSizeService = { getHeldWeapons: () => [], getCreatureResizePreview: () => ({ expected: {} }),
+    chooseHeldWeaponResize: async () => { room = false; return ["sword"]; },
+    applyPreparedCreatureResize: async () => { writes++; } };
+  const h = createGiantMightHarness({ equipmentSizeService });
+  h.service.options.canGrowToken = () => room;
+  await h.service.applyDnd5ePostUseActivity(h.activity, { token: h.token });
+  assert.equal(writes, 0); assert.equal(h.actor.system.traits.size, "med");
+  assert.equal(h.giantItem.system.uses.spent, 1);
+  assert.equal(h.actor.createdEffects[0].flags["rebreya-main"].runeKnight.form.grew, false);
+});
 
 test("Giant's Might spends its PB resource, creates the form, and restores owned size values", async () => {
   const harness = createGiantMightHarness();

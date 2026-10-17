@@ -1,7 +1,7 @@
-import { normalizeLootgenFlatItemDescriptor, weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
-import { buildStorageContainerSnapshot } from "./storage-container-snapshot.js?v=1.4.379";
-import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.268";
-export { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.379";
+import { normalizeLootgenFlatItemDescriptor, weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
+import { buildStorageContainerSnapshot } from "./storage-container-snapshot.js?v=1.4.393";
+import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.393";
+export { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.393";
 
 const fail = reason => {const error=new Error(`Некорректное дерево лута: ${reason}.`);error.code="invalid-lootgen-descriptor";throw error;};
 function projectTree(root) {
@@ -37,6 +37,7 @@ export function projectLootgenDescriptorTree(raw) {return projectTree(normalizeL
 
 export function getLootgenAggregationKey(raw) {
   const value=normalizeLootgenItemDescriptor(raw);
-  if(!value.upgrades.length && !weaponModComponents(value).length && value.container===null)return `${value.sourceType}:${value.sourceId}:${value.isBroken?"broken":"intact"}`;
-  return JSON.stringify([value.sourceType,value.sourceId,value.instanceKey,value.isBroken,value.upgrades,...(value.version===3?[value.weaponMods]:[])]);
+  const size = value.equipmentSize ?? "med";
+  if(!value.upgrades.length && !weaponModComponents(value).length && value.container===null)return `${value.sourceType}:${value.sourceId}:${value.isBroken?"broken":"intact"}${size==="med"?"":`:${size}`}`;
+  return JSON.stringify([value.sourceType,value.sourceId,value.instanceKey,value.isBroken,value.upgrades,...(value.version>=3?[value.weaponMods]:[]),...(size==="med"?[]:[size])]);
 }

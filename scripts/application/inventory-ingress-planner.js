@@ -1,7 +1,8 @@
-import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js?v=1.4.385";
+import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js?v=1.4.393";
 
+import { isEquipmentSize } from "../data/equipment-size-rules.js?v=1.4.393";
 export const INVENTORY_INGRESS_PLAN_VERSION = 1;
-const versionForRows = rows => rows.some(row => row.identity?.compositionKey) ? 2 : INVENTORY_INGRESS_PLAN_VERSION;
+const versionForRows = rows => rows.some(row => row.identity?.equipmentSize) ? 3 : rows.some(row => row.identity?.compositionKey) ? 2 : INVENTORY_INGRESS_PLAN_VERSION;
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -51,10 +52,12 @@ function validWireAction(action) {
 
 function validWireIdentity(identity, quantity, version) {
   const composed = Object.hasOwn(identity ?? {}, "compositionKey");
+  const sized = Object.hasOwn(identity ?? {}, "equipmentSize");
   return hasExactKeys(identity, [
-    "documentType", "durabilityState", "quantity", "sourceId", "sourceType", ...(composed ? ["compositionKey"] : [])
+    "documentType", "durabilityState", "quantity", "sourceId", "sourceType", ...(composed ? ["compositionKey"] : []), ...(sized ? ["equipmentSize"] : [])
   ])
-    && (!composed || (version === 2 && quantity === 1 && typeof identity.compositionKey === "string"
+    && (!sized || (version===3 && isEquipmentSize(identity.equipmentSize) && identity.equipmentSize!=="med"))
+    && (!composed || (version >= 2 && quantity === 1 && typeof identity.compositionKey === "string"
       && identity.compositionKey.length > 0 && identity.compositionKey.length <= 8192))
     && [identity.documentType, identity.durabilityState, identity.sourceId, identity.sourceType]
       .every((value) => typeof value === "string" && cleanId(value) === value)
@@ -67,7 +70,7 @@ export function isValidSerializedInventoryIngressPlan(plan) {
   if (!hasExactKeys(plan, [
     "groupActorId", "requestedFolderId", "rootOverrideSourceKeys", "rows", "rulesRevision", "version"
   ])
-    || ![INVENTORY_INGRESS_PLAN_VERSION, 2].includes(plan.version)
+    || ![INVENTORY_INGRESS_PLAN_VERSION, 2, 3].includes(plan.version)
     || !wireId(plan.groupActorId)
     || !Number.isSafeInteger(plan.rulesRevision)
     || plan.rulesRevision < 0

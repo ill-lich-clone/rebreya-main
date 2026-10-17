@@ -1,6 +1,6 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.377";
-import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.370";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.393";
+import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.393";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.392";

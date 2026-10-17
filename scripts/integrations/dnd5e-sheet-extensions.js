@@ -12,6 +12,8 @@ import {
   TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
 import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js?v=1.4.327";
+import { EQUIPMENT_SIZES, EQUIPMENT_SIZE_LABELS, getEquipmentSize } from "../data/equipment-size-rules.js?v=1.4.393";
+import { isEquipmentSizeItem } from "./equipment-size.js?v=1.4.393";
 import { bindHeroDollPresetControls } from "../ui/hero-doll-presets-ui.js?v=1.4.364-hero-presets";
 import { bringAppToFront } from "../ui.js";
 import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.392";
@@ -6036,6 +6038,28 @@ function insertGroupIntoDetails(root, group, { key = "" } = {}) {
   return group;
 }
 
+export function upsertEquipmentSizeField(root, app, moduleApi) {
+  const item = getItemFromSheetApp(app);
+  if (!item || !isEquipmentSizeItem(item) || !getItemDetailsContainer(root)) return;
+  const editable = isSheetEditable(app, root);
+  const { group, fields } = createFormGroup(item.type === "weapon" ? "Размер оружия" : "Размер снаряжения");
+  const select = document.createElement("select");
+  select.disabled = !editable;
+  select.setAttribute("aria-label", item.type === "weapon" ? "Размер оружия" : "Размер снаряжения");
+  for (const size of EQUIPMENT_SIZES) {
+    const option = document.createElement("option");
+    option.value = size; option.textContent = EQUIPMENT_SIZE_LABELS[size];
+    option.selected = size === getEquipmentSize(item); select.append(option);
+  }
+  select.addEventListener("change", async event => {
+    if (!editable) return;
+    try { await moduleApi?.equipmentSizeService?.setItemSize(item, event.currentTarget.value); }
+    catch (error) { globalThis.ui?.notifications?.error?.(error.message); }
+  });
+  fields.append(select);
+  insertGroupIntoDetails(root, group, { key: "equipment-size" });
+}
+
 function upsertItemRankField(root, app) {
   const details = getItemDetailsContainer(root);
   if (!details) {
@@ -6372,6 +6396,7 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
   upsertToolBaseItemOptions(root, app);
   upsertItemRankBadge(root, item);
   upsertItemRankField(root, app);
+  upsertEquipmentSizeField(root, app, moduleApi);
   upsertItemSlotField(root, app);
   upsertFirearmWeaponPropertiesField(root, app);
   upsertWeaponAttackTraitsField(root, app);

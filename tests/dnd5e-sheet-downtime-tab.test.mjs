@@ -3,6 +3,29 @@ import assert from "node:assert/strict";
 import { extname } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 
+test("equipment owner-size control is editable, idempotent and delegates to the size service", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { upsertEquipmentSizeField } = await import("../scripts/integrations/dnd5e-sheet-extensions.js");
+    const item = new globalThis.Item();
+    Object.assign(item, { type: "weapon", isOwner: true, system: {}, flags: {}, getFlag() {} });
+    const details = new stubs.HTMLElement(), root = new stubs.HTMLElement({ selectors: { ".tab[data-tab='details']": details } });
+    const calls = [], api = { equipmentSizeService: { async setItemSize(target, size) { calls.push([target, size]); } } };
+    upsertEquipmentSizeField(root, { item, isEditable: true }, api);
+    const group = findTreeNode(details, node => node.dataset?.rebreyaItemField === "equipment-size");
+    assert.ok(group);
+    const select = findTreeNode(group, node => node.tagName === "SELECT");
+    assert.equal(select.children.length, 6);
+    select.value = "lg";
+    await select.listeners.change[0]({ currentTarget: select });
+    assert.deepEqual(calls, [[item, "lg"]]);
+    upsertEquipmentSizeField(root, { item, isEditable: false }, api);
+    const readOnly = findTreeNode(details, node => node.dataset?.rebreyaItemField === "equipment-size");
+    assert.equal(findTreeNode(readOnly, node => node.tagName === "SELECT").disabled, true);
+  }
+  finally { stubs.restore(); }
+});
+
 function readWebpDimensions(bytes) {
   assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
   assert.equal(bytes.toString("ascii", 8, 12), "WEBP");

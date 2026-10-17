@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
+import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
 import { isDurabilityEligible } from "./durability-rules.js";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.385";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.393";
 import { readInventoryItemQuantity, readInventoryItemUnitWeight, readInventoryItemUnitPrice } from "./inventory-material-quantity.js?v=1.4.377";
 
 const COPPER_MULTIPLIERS = Object.freeze({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 });
@@ -219,6 +220,7 @@ export function buildInventoryIngressDescriptor(itemData, {
     unitWeight: unitWeightPounds(itemData),
     predominantMaterialId: cleanString(materialProfile?.materialId),
     dismantlable: !composition && dismantlable === true,
+    ...(getEquipmentSize(itemData)!=="med"?{equipmentSize:getEquipmentSize(itemData)}:{}),
     ...(composition ? { compositionKey: composition.compositionKey } : {})
   });
 }
@@ -233,6 +235,7 @@ export function captureInventoryIngressIdentity(descriptor, quantity) {
     documentType: cleanString(descriptor?.documentType),
     durabilityState: cleanString(descriptor?.durabilityState),
     quantity: safeQuantity,
+    ...(descriptor?.equipmentSize && descriptor.equipmentSize!=="med" ? {equipmentSize:descriptor.equipmentSize} : {}),
     ...(descriptor?.compositionKey ? { compositionKey: descriptor.compositionKey } : {})
   });
 }

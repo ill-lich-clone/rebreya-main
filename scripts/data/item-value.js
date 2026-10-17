@@ -1,4 +1,5 @@
-import { normalizeWeaponModComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
+import { normalizeWeaponModComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
+import { isEquipmentSize, getEquipmentSizeMultipliers } from "./equipment-size-rules.js?v=1.4.393";
 
 export class ItemValueError extends Error {
   constructor(code, details = {}) {
@@ -44,13 +45,14 @@ export function evaluateItemValue(descriptor, catalogReader) {
 }
 
 function evaluateValueNode(d,catalogReader,context,depth) {
-  if (!record(d) || ![2,3].includes(d.version) || !id(d.instanceKey) || !id(d.sourceType) || !id(d.sourceId)
+  if (!record(d) || ![2,3,4].includes(d.version) || !id(d.instanceKey) || !id(d.sourceType) || !id(d.sourceId)
     || typeof d.isBroken !== "boolean" || !Number.isSafeInteger(d.quantity) || d.quantity < 1
     || !Array.isArray(d.upgrades)) invalid({ field: "host" });
   if (d.container != null && typeof catalogReader?.readContainerValueNodes!=="function") throw new ItemValueError("unsupported-container");
   if(d.version===2 && d.weaponMods!==undefined)invalid({field:"weaponMods"});
+  if ((d.version===4 && !isEquipmentSize(d.equipmentSize)) || (d.version!==4 && d.equipmentSize!==undefined)) invalid({field:"equipmentSize"});
   let mods=[];
-  if(d.version===3){
+  if(d.version>=3){
     try { mods=weaponModComponents({weaponMods:normalizeWeaponModComposition(d.weaponMods)}); }
     catch { invalid({field:"weaponMods"}); }
   }
@@ -72,7 +74,9 @@ function evaluateValueNode(d,catalogReader,context,depth) {
     keys.add(component.instanceKey);
   }
   const base = readComponent({...d,container:null}, catalogReader);
-  const baseValue = multiplyItemValue(base.unitValue, d.quantity);
+  const rawBaseValue = multiplyItemValue(base.unitValue, d.quantity);
+  const baseValue = d.version===4 ? Math.round(rawBaseValue * getEquipmentSizeMultipliers("med",d.equipmentSize).price) : rawBaseValue;
+  addItemValue(baseValue,0);
   const included = [...base.includedUpgradeSourceIds];
   let upgradeValue = 0;
   for (const upgrade of d.upgrades) {
@@ -97,7 +101,7 @@ function evaluateValueNode(d,catalogReader,context,depth) {
     contentsValue=addItemValue(0,projection.currencyValue);
     for(const child of projection.entries)contentsValue=addItemValue(contentsValue,evaluateValueNode(child,catalogReader,context,depth+1).totalValue);
   }
-  return { baseValue, upgradeValue, ...(d.version===3?{weaponModValue}:{}), contentsValue,
+  return { baseValue, upgradeValue, ...(d.version>=3?{weaponModValue}:{}), contentsValue,
     totalValue:addItemValue(addItemValue(addItemValue(baseValue,upgradeValue),weaponModValue),contentsValue), diagnostics: [] };
 }
 

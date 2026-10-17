@@ -14,8 +14,25 @@ globalThis.Item = class TestItemDocument {};
 
 const {
   captureInventoryTransferIdentity,
+  itemsCanRepresentSameTransfer,
+  inventoryTransferIdentityMatches,
   InventoryService
 } = await import(`../scripts/data/inventory-service.js?simple-transfer=${Date.now()}`);
+
+test("same catalog weapon of another owner size cannot merge or satisfy a stale transfer identity", () => {
+  const medium = createItem({ id: "medium", name: "Sword" });
+  const large = createItem({ id: "large", name: "Sword" });
+  for (const item of [medium, large]) {
+    item.type = "weapon";
+    item.flags[MODULE_ID] = { sourceType: "gear", sourceId: "sword", gearId: "sword" };
+  }
+  large.flags[MODULE_ID].equipmentSize = { version: 1, size: "lg" };
+  assert.equal(itemsCanRepresentSameTransfer(medium, large), false);
+  const oldIdentity = captureInventoryTransferIdentity(medium);
+  assert.equal(inventoryTransferIdentityMatches(medium, oldIdentity), true);
+  assert.equal(inventoryTransferIdentityMatches(large, oldIdentity), false);
+  assert.equal(captureInventoryTransferIdentity(large).equipmentSize, "lg");
+});
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));

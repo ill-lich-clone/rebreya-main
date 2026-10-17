@@ -1,4 +1,4 @@
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.363";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.393";
 
 const CATALOG_VERSION = 2;
 

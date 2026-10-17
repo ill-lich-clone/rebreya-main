@@ -1,5 +1,7 @@
 # Составной лут — R8/R9
 
+Текущий размерный контракт добавляет strict descriptor v4, который переносит категорию host; v2/v3 остаются совместимыми. Цена host масштабируется отдельно от upgrades/mods/contents, physical graph проверяет соответствие категории flags: [профильный паспорт](equipment-size-function-passport.md#стоимость-composition-и-перенос).
+
 Версия 1.4.268: общий каталог/price reader, prepared graph ingress и GM-only durable подготовка результата в закрытом ChatMessage. Проверка каталога перед новым Item ingress подключена. Публикация того же результата, reference-only drag и окно выбора/выдачи улучшений подключены. Полный native multiplayer lifecycle ещё не подтверждён. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
 
 ## Descriptor

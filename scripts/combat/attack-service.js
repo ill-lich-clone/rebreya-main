@@ -15,10 +15,12 @@ import {
 } from "../data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
 import { getNaturalReachFeet } from "./natural-reach.js";
+import { getWeaponSizeUse } from "../data/equipment-size-rules.js?v=1.4.393";
 import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
   getItemHeldHands,
+  isNaturalWeapon,
   hasDistinctHeldItemsInDifferentHands
 } from "../integrations/held-items.js?v=1.4.383";
 
@@ -35,6 +37,7 @@ const FIREARM_RELOAD_PROPERTY = "lchFirearmReload";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
+const EQUIPMENT_SIZE_ATTACK_BUILDER = Symbol("rebreyaEquipmentSizeAttackBuilder");
 const DND5E_AMMUNITION_PROPERTY = "amm";
 const IMPLANT_RELOAD_RESERVOIR_FLAG = "implantReloadReservoir";
 const IMPLANT_RELOAD_RESERVOIR_CAPACITY = 20;
@@ -2371,6 +2374,8 @@ export class CombatAttackService {
       return options.proficient;
     }
 
+    if (this.#isImprovisedForSize(actor, item)) return actor?.getFlag?.("dnd5e", "tavernBrawlerFeat") === true;
+
     const explicit = foundry.utils.getProperty(item, "system.proficient");
     if (typeof explicit === "boolean") {
       return explicit;
@@ -4356,6 +4361,65 @@ export class CombatAttackService {
     return true;
   }
 
+  #isImprovisedForSize(actor, item) {
+    return item?.type === "weapon" && !isNaturalWeapon(item) && getWeaponSizeUse(actor, item).improvised;
+  }
+
+  #noteImprovisedSize(message) {
+    const note = "Импровизированное оружие: размер превышает допустимый для владельца.";
+    message.data ??= {};
+    const previous = String(message.data.flavor ?? "");
+    if (!previous.includes(note)) message.data.flavor = [previous, note].filter(Boolean).join("<br>");
+  }
+
+  #applyEquipmentSizeAttack(config, dialog, message) {
+    const activity = config.subject, item = activity.item, actor = activity.actor ?? item.actor;
+    if (!this.#isImprovisedForSize(actor, item)) return;
+    const project = (roll, ensureTerm = true) => {
+      roll.data ??= {};
+      const trained = actor?.getFlag?.("dnd5e", "tavernBrawlerFeat") === true;
+      roll.data.prof = trained ? item.system?.prof?.clone?.({ multiplier: 1 })?.term ?? getActorProficiencyBonus(actor) : 0;
+      if (trained && ensureTerm && !(roll.parts ?? []).some(part => /@prof\b/u.test(String(part)))) {
+        roll.parts ??= []; roll.parts.push("@prof");
+      }
+    };
+    const original = dialog.options?.buildConfig;
+    for (const roll of config.rolls ?? []) project(roll, typeof original !== "function");
+    if (typeof original === "function" && !original[EQUIPMENT_SIZE_ATTACK_BUILDER]) {
+      const wrapped = function (...args) {
+        const result = original.apply(this, args);
+        if (result?.then) return result.then(value => { project(args[1]); return value; });
+        project(args[1]); return result;
+      };
+      wrapped[EQUIPMENT_SIZE_ATTACK_BUILDER] = true;
+      dialog.options.buildConfig = wrapped;
+    }
+    this.#noteImprovisedSize(message);
+  }
+
+  #applyEquipmentSizeDamage(config, message) {
+    const activity = config.subject, item = activity.item, actor = activity.actor ?? item.actor;
+    if (activity.flags?.[MODULE_ID]?.weaponModActivity || !this.#isImprovisedForSize(actor, item)) return;
+    const roll = (config.rolls ?? []).find(entry => entry.base) ?? config.rolls?.[0];
+    if (!roll) return;
+    roll.parts ??= [];
+    const sourceFormula = damagePartFormula(item.system?.damage?.base);
+    const primary = extractPrimaryDiceTerm(sourceFormula);
+    const dice = /\b(\d*)d(\d+)\b/iu;
+    const reference = sourceFormula.match(/^\s*\(*\s*(@scale\.[\w.]+)/u)?.[1];
+    let index = reference ? roll.parts.findIndex(part => String(part).match(/^\s*\(*\s*(@[\w.]+)/u)?.[1] === reference) : -1;
+    if (index < 0) index = primary ? roll.parts.findIndex(part => {
+      const match = String(part).match(dice);
+      return match && Number(match[1] || 1) === primary.number && Number(match[2]) === primary.faces;
+    }) : -1;
+    if (index < 0) index = roll.parts.findIndex(part => dice.test(String(part)));
+    if (index < 0) index = roll.parts.findIndex(part => /^\s*\(*\s*\d+(?:\.\d+)?(?:\s*[+-]|$)/u.test(String(part)));
+    if (index < 0) roll.parts.unshift("1d4");
+    else if (!reference && dice.test(String(roll.parts[index]))) roll.parts[index] = String(roll.parts[index]).replace(dice, "1d4");
+    else roll.parts[index] = String(roll.parts[index]).replace(/^(\s*\(*\s*)(?:\d*d\d+|\d+(?:\.\d+)?|@[\w.]+)/iu, (_match, prefix) => `${prefix}1d4`);
+    this.#noteImprovisedSize(message);
+  }
+
   applyDnd5eAttackRollConfig(config = {}, dialog = {}, message = {}) {
     const activity = config?.subject ?? null;
     if (!this.#isWeaponAttackActivity(activity)) {
@@ -4372,6 +4436,7 @@ export class CombatAttackService {
         return this.moduleApi.itemUpgradeAutomationService?.rolls.preRollAttack(config)!==false;
       }
       this.hydrateWeaponModAttackConditions(config,message);
+      this.#applyEquipmentSizeAttack(config, dialog, message);
       if(!this.deferWeaponModAttack(activity,config,dialog,message,"rollAttack"))return false;
       if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollAttack(config) === false) return false;
       if (this.#blockJammedFirearm(item)) {
@@ -4695,6 +4760,7 @@ export class CombatAttackService {
     try {
       const item = activity.item;
       if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollDamage(config, message) === false) return false;
+      this.#applyEquipmentSizeDamage(config, message);
       const automation = this.#getLichAutomationState(item);
       const mu = Math.max(0, Math.floor(toNumber(automation.mu, 0)));
       const mku = Math.max(0, Math.floor(toNumber(automation.mku, 0)));
@@ -4811,6 +4877,7 @@ export class CombatAttackService {
       `Bonus ${signedNumber(breakdown?.situationalBonus ?? 0)}`,
       `Mode: ${modeLabelMap[breakdown?.rollMode] ?? "normal"}`
     ];
+    if (this.#isImprovisedForSize(actor, item)) parts.push("Импровизированное оружие по размеру");
 
     if (options.flavor) {
       return String(options.flavor);

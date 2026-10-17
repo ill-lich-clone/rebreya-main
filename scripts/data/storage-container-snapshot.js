@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeStorageTriggerState } from "./storage-trigger-service.js";
-import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.379";
+import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.393";
 import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.317";
 
 export const STORAGE_CONTAINER_FLAG = "storageContainer";

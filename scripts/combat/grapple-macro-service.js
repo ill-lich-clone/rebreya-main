@@ -8,6 +8,7 @@ export const MOVE_GRAPPLED_MACRO_SOURCE_ID = "move-grappled-macro";
 export const DISARM_MACRO_SOURCE_ID = "disarm-macro";
 export const TWISTED_MACRO_SOURCE_ID = "twisted-macro";
 export const TREAT_WOUNDS_MACRO_SOURCE_ID = "treat-wounds-macro";
+export const CREATURE_SIZE_MACRO_SOURCE_ID = "resize-creature-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -119,6 +120,11 @@ function folderSnapshot(folder) {
   };
 }
 
+export function buildCreatureSizeMacroData(folderId, options = {}) {
+  return macroData({ name: "Изменить размер", command: "await game.rebreyaMain?.resizeCreature?.();",
+    sourceId: CREATURE_SIZE_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function macroSnapshot(macro) {
   return {
     name: macro?.name,
@@ -183,6 +189,9 @@ export class GrappleMacroService {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, TREAT_WOUNDS_MACRO_SOURCE_ID, buildTreatWoundsMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
+      await this.#syncMacro(game, CREATURE_SIZE_MACRO_SOURCE_ID, buildCreatureSizeMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       }))
     ];

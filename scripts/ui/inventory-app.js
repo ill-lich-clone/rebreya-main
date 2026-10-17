@@ -16,7 +16,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.392";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.393";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,

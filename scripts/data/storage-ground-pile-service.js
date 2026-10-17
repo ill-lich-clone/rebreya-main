@@ -1,18 +1,18 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
-import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.377";
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.393";
 import { MODULE_ID } from "../constants.js";
-import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.377";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.377";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.393";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.393";
 import {
   buildStorageTokenState,
   readStorageCoinDenomination,
   readStorageState
-} from "./storage-service.js?v=1.4.377";
-import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.379";
+} from "./storage-service.js?v=1.4.393";
+import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.393";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.370";
+} from "./storage-pile-presentation.js?v=1.4.393";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation,

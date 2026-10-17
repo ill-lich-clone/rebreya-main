@@ -1,5 +1,7 @@
 # Усовершенствования: каталог, правила, стоимость
 
+Размер собственного host, strict descriptor v4 и неизменность стоимости установленных компонентов: [паспорт размеров снаряжения](equipment-size-function-passport.md#стоимость-composition-и-перенос). Прежние v2/v3 descriptors и installation contracts сохраняются.
+
 Входной индекс: [паспорт функций](function-passport.md), разделы 13–15. R4 — правила/value; R7 runtime — 1.4.255. [Паспорт простых усовершенствований](simple-item-upgrades-function-passport.md) описывает 35 подключённых профилей, native проекцию, броски, поглощение и lifecycle.
 
 ## Каталог

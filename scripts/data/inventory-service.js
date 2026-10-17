@@ -1,5 +1,6 @@
 import { consumeTreatWoundsKitOnce } from "../application/treat-wounds-kit-consumption.js?v=1.4.372";
 import { preserveItemSourceUuid } from "./item-source-reference.js?v=1.4.377";
+import { getEquipmentSize, isEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
 import {
   isInventoryMaterialItemData, readInventoryItemQuantity, readInventoryItemUnitWeight,
   readInventoryItemUnitPrice, withInventoryItemQuantity, buildInventoryItemQuantityPatch,
@@ -8,7 +9,7 @@ import {
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.385";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.385";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.385";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.393";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import {
   DOWNTIME_ITEM_TYPE,
@@ -39,7 +40,7 @@ import {
   getInventoryDismantleBlockReason,
   resolveInventoryDismantleMinimumQuantity,
   resolveInventoryDismantleOutputs
-} from "./inventory-ingress-descriptor.js?v=1.4.385";
+} from "./inventory-ingress-descriptor.js?v=1.4.393";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -624,6 +625,16 @@ function durabilityTransferSignature(item) {
     : "uninitialized";
 }
 
+function equipmentSizeProfilesMatch(sourceData, acceptedData) {
+  if (getEquipmentSize(sourceData) !== getEquipmentSize(acceptedData)) return false;
+  const left = sourceData.flags?.[MODULE_ID]?.equipmentSize, right = acceptedData.flags?.[MODULE_ID]?.equipmentSize;
+  if (!left && !right) return true;
+  if (left?.reference && right?.reference && itemInstanceFingerprint(left.reference) !== itemInstanceFingerprint(right.reference)) return false;
+  const profile = data => ({ base: data.flags?.[MODULE_ID]?.versatileBaseDamageOriginal ?? data.system?.damage?.base,
+    versatile: data.system?.damage?.versatile, weight: data.system?.weight, price: data.system?.price });
+  return itemInstanceFingerprint(profile(sourceData)) === itemInstanceFingerprint(profile(acceptedData));
+}
+
 export function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
   if (!sourceItem || !acceptedItem) {
     return false;
@@ -642,6 +653,7 @@ export function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
     : sourceData.type === acceptedData.type
       && normalizeText(sourceData.name) === normalizeText(acceptedData.name);
   return Boolean(sameSource)
+    && equipmentSizeProfilesMatch(sourceData, acceptedData)
     && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem);
 }
 
@@ -666,6 +678,7 @@ function itemsCanMergeInInventory(sourceItem, acceptedItem) {
     ? Boolean(sourceIdentity && acceptedIdentity && sourceIdentity === acceptedIdentity)
     : itemsCanRepresentSameTransfer(sourceItem, acceptedItem);
   return sameStack
+    && equipmentSizeProfilesMatch(sourceItem?.toObject?.() ?? sourceItem, acceptedItem?.toObject?.() ?? acceptedItem)
     && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem)
     && (!isInventoryMaterialItemData(sourceItem?.toObject?.() ?? sourceItem)
       || (isInventoryMaterialItemData(acceptedItem?.toObject?.() ?? acceptedItem)
@@ -687,7 +700,8 @@ export function captureInventoryTransferIdentity(item) {
     sourceId: hasManagedIdentity ? sourceId : "",
     itemType: hasManagedIdentity ? "" : cleanId(itemData?.type),
     normalizedName: hasManagedIdentity ? "" : normalizeText(itemData?.name),
-    durability: durabilityTransferSignature(item)
+    durability: durabilityTransferSignature(item),
+    ...(getEquipmentSize(itemData)!=="med"?{equipmentSize:getEquipmentSize(itemData)}:{})
   };
 }
 
@@ -700,8 +714,10 @@ function normalizeInventoryTransferIdentity(value) {
     sourceId: cleanId(value.sourceId),
     itemType: cleanId(value.itemType),
     normalizedName: normalizeText(value.normalizedName),
-    durability: cleanId(value.durability)
+    durability: cleanId(value.durability),
+    ...(value.equipmentSize && value.equipmentSize!=="med"?{equipmentSize:value.equipmentSize}:{})
   };
+  if (value.equipmentSize !== undefined && !isEquipmentSize(value.equipmentSize)) return null;
   const hasManagedIdentity = Boolean(identity.sourceType && identity.sourceId);
   const hasFallbackIdentity = Boolean(identity.itemType && identity.normalizedName);
   if (hasManagedIdentity === hasFallbackIdentity) {

@@ -1,4 +1,4 @@
-import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.363";
+import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.393";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";
 import { WorldMutationCoordinator } from "./world-mutation-coordinator.js";

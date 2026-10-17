@@ -1,5 +1,6 @@
-import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./lootgen-item-descriptor.js?v=1.4.379";
-import { weaponModComponents } from "./lootgen-composition.js?v=1.4.379";
+import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./lootgen-item-descriptor.js?v=1.4.393";
+import { weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
+import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
 import { sha256Hex } from "../shared/sha256.js?v=1.4.268";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { RUNTIME_ITEM_GRAPH_FLAG, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
@@ -37,6 +38,7 @@ function validatePreparedContainerGraph(itemData,descriptor,graph) {
   if(hosts.size!==nodes.length || hosts.get(descriptor.instanceKey)?._id!==graph.rootId)fail();
   for(const entry of nodes){
     const d=entry.descriptor,host=hosts.get(d.instanceKey),flags=host?.flags?.[MODULE_ID];
+    if(d.version===4 && getEquipmentSize(host)!==d.equipmentSize)fail();
     const {quantity,container,...metadata}=d;
     if(!host || used.has(host._id) || host.system?.quantity!==quantity
       || (host.system?.container??null)!==(entry.parentInstanceKey===null?null:hosts.get(entry.parentInstanceKey)?._id)
@@ -81,6 +83,9 @@ export function readLootgenPreparedComposition(itemData) {
     || graph.nodes[0]?._id!==graph.rootId || new Set(graph.nodes.map(d=>d._id)).size!==graph.nodes.length
     || graph.nodes.some(d=>typeof d._id!=='string' || !/^[a-zA-Z0-9]{16}$/u.test(d._id))
     || itemData.system?.quantity!==1 || graph.nodes[0].system?.quantity!==1)fail();
+  if(descriptor.version===4 && (getEquipmentSize(itemData)!==descriptor.equipmentSize
+    || getEquipmentSize(graph.nodes[0])!==descriptor.equipmentSize
+    || itemInstanceFingerprint(flags.equipmentSize)!==itemInstanceFingerprint(graph.nodes[0].flags?.[MODULE_ID]?.equipmentSize)))fail();
   if(descriptor.container!==null){
     validatePreparedContainerGraph(itemData,descriptor,graph);
     return {version:2,descriptor,unitValue:marker.unitValue,compositionKey:marker.compositionKey};

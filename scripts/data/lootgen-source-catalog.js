@@ -1,9 +1,9 @@
-import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.4.392";
+import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.4.393";
 import { loadUpgradeAutomationManifest } from "./upgrade-automation-manifest.js?v=1.4.255";
 import { MODULE_ID, GEAR_COMPENDIUM_NAME, MAGIC_ITEMS_COMPENDIUM_NAME } from "../constants.js";
-import { resolveLootgenItemValue } from "./item-value.js?v=1.4.379";
+import { resolveLootgenItemValue } from "./item-value.js?v=1.4.393";
 import { collectBreakableManagedGearIds } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
-import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.363";
+import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.393";
 import { buildLootgenTypeFilterOptions, isLootgenTypeAllowed, resolveMagicLootgenTypeLabel } from "./lootgen-type-filters.js?v=1.4.258";
 import { loadLootgenNarrativeCatalog } from "./lootgen-narrative-catalog.js?v=1.4.317";
 import { getLootgenThemeProfile } from "./lootgen-thematic-selection.js?v=1.4.363";

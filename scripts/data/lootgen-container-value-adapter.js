@@ -1,5 +1,5 @@
-import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.379";
-import { ItemValueError, addItemValue } from "./item-value.js?v=1.4.379";
+import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.393";
+import { ItemValueError, addItemValue } from "./item-value.js?v=1.4.393";
 
 const object=value=>value!==null && typeof value==="object" && !Array.isArray(value);
 const fail=(code="invalid-container")=>{throw new ItemValueError(code);};

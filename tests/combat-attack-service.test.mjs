@@ -410,6 +410,105 @@ function addRepeatingShotEffect(item, { disabled = false, suppressed = false } =
   return item;
 }
 
+test("oversized native and MIDI attacks use improvised proficiency and base damage without mutating the Item", () => {
+  for (const midi of [false, true]) {
+    const weapon = makeWeaponItem();
+    weapon.flags[MODULE_ID].equipmentSize = { version: 1, size: "lg" };
+    weapon.system.damage = { base: { number: 2, denomination: 6, bonus: "3", custom: { enabled: false, formula: "" } } };
+    const actor = makeActor([weapon]); weapon.actor = actor;
+    const before = structuredClone({ system: weapon.system, flags: weapon.flags });
+    const activity = { id: "size-attack", type: "attack", actor, item: weapon, attack: { type: { value: "melee" } } };
+    const service = new CombatAttackService({});
+    const attack = { subject: activity, rolls: [{ parts: ["@mod", "@prof"], data: { mod: 1, prof: 2 } }],
+      ...(midi ? { workflow: {}, midiOptions: {} } : {}) };
+    const message = { data: { flavor: "Исходная подпись" } };
+    assert.equal(service.applyDnd5eAttackRollConfig(attack, {}, message), true);
+    assert.equal(attack.rolls[0].data.prof, 0);
+    assert.match(message.data.flavor, /Импровизированное оружие/u);
+    const damage = { subject: activity, rolls: [
+      { base: true, parts: ["2d6+1d4+3", "@mod", "+2"], data: {} },
+      { parts: ["1d6"], data: {} }
+    ], ...(midi ? { workflow: {}, midiOptions: {} } : {}) };
+    assert.equal(service.applyDnd5eDamageRollConfig(damage, {}, {}), true);
+    assert.deepEqual(damage.rolls[0].parts, ["1d4+1d4+3", "@mod", "+2"]);
+    assert.deepEqual(damage.rolls[1].parts, ["1d6"]);
+    const reordered = { subject: activity, rolls: [{ base: true, parts: ["@mod", "+2", "2d6", "@bonus"], data: {} }] };
+    service.applyDnd5eDamageRollConfig(reordered, {}, {});
+    assert.deepEqual(reordered.rolls[0].parts, ["@mod", "+2", "1d4", "@bonus"]);
+    assert.deepEqual({ system: weapon.system, flags: weapon.flags }, before);
+    assert.equal(weapon.updateCalls.length, 0);
+    actor.system.traits.size = "lg";
+    const normal = { subject: activity, rolls: [{ base: true, parts: ["2d6", "@mod"], data: {} }] };
+    service.applyDnd5eDamageRollConfig(normal, {}, {});
+    assert.deepEqual(normal.rolls[0].parts, ["2d6", "@mod"]);
+  }
+});
+
+test("native attack dialog rebuild retains improvised proficiency and Tavern Brawler grants its own training", () => {
+  const weapon = makeWeaponItem();
+  weapon.flags[MODULE_ID].equipmentSize = { version: 1, size: "lg" };
+  const actor = makeActor([weapon]); weapon.actor = actor;
+  const activity = { id: "size-dialog", type: "attack", actor, item: weapon, attack: { type: { value: "melee" } } };
+  const service = new CombatAttackService({}), config = { subject: activity, rolls: [{ parts: [], data: {} }] };
+  const dialog = { options: { buildConfig(_process, roll) { roll.parts = ["@mod", "@prof"]; roll.data = { mod: 1, prof: 2 }; } } };
+  service.applyDnd5eAttackRollConfig(config, dialog, {});
+  const rebuilt = { parts: [], data: {} };
+  dialog.options.buildConfig(config, rebuilt);
+  assert.equal(rebuilt.data.prof, 0);
+  actor.flags.dnd5e = { tavernBrawlerFeat: true };
+  const trained = { subject: activity, rolls: [{ parts: ["@mod", "@prof"], data: { prof: 2 } }] };
+  service.applyDnd5eAttackRollConfig(trained, {}, {});
+  assert.equal(trained.rolls[0].data.prof, 2);
+  const native = { subject: activity, rolls: [{ parts: [], data: {} }] };
+  const nativeDialog = { options: { buildConfig(_process, roll) {
+    roll.parts = [...roll.parts, "@mod", "@prof"];
+    roll.data = { prof: 2, ...roll.data };
+  } } };
+  service.applyDnd5eAttackRollConfig(native, nativeDialog, {});
+  nativeDialog.options.buildConfig(native, native.rolls[0]);
+  assert.equal(native.rolls[0].parts.filter(part => part === "@prof").length, 1);
+});
+
+test("improvised damage replaces a dynamic primary reference while keeping authored riders", () => {
+  const weapon = makeWeaponItem();
+  weapon.flags[MODULE_ID].equipmentSize = { version: 1, size: "lg" };
+  weapon.system.damage = { base: { custom: { enabled: true, formula: "@scale.weapon+1d6+3" } } };
+  const actor = makeActor([weapon]); weapon.actor = actor;
+  const config = { subject: { type: "attack", actor, item: weapon, attack: { type: { value: "melee" } } },
+    rolls: [{ base: true, parts: ["@scale.weapon+1d6+3", "@mod"], data: {} }] };
+  new CombatAttackService({}).applyDnd5eDamageRollConfig(config, {}, {});
+  assert.deepEqual(config.rolls[0].parts, ["1d4+1d6+3", "@mod"]);
+  assert.equal(weapon.system.damage.base.custom.formula, "@scale.weapon+1d6+3");
+});
+
+test("improvised custom damage keeps leading flat and ability modifiers while replacing its main die", () => {
+  for (const formula of ["3+1d8", "@abilities.str.mod+1d8"]) {
+    const weapon = makeWeaponItem();
+    weapon.flags[MODULE_ID].equipmentSize = { version: 1, size: "lg" };
+    const actor = makeActor([weapon]);
+    weapon.system.damage = { base: { custom: { enabled: true, formula } } };
+    const service = new CombatAttackService({});
+    const config = { subject: { type: "attack", item: weapon, actor, attack: { type: { value: "melee" } } }, rolls: [{ base: true, parts: [formula, "@mod"], data: {} }] };
+    service.applyDnd5eDamageRollConfig(config, {}, {});
+    assert.equal(config.rolls[0].parts[0], formula.replace("1d8", "1d4"));
+    assert.equal(weapon.system.damage.base.custom.formula, formula);
+  }
+});
+
+test("module attack API also treats oversized weapons as untrained while preserving explicit overrides", async () => {
+  const weapon = makeWeaponItem();
+  weapon.flags[MODULE_ID].equipmentSize = { version: 1, size: "lg" };
+  const actor = makeActor([weapon]); weapon.actor = actor;
+  const service = new CombatAttackService({});
+  const result = await service.rollWeaponAttack(actor, weapon, { createMessage: false });
+  assert.equal(result.breakdown.proficiencyBonus, 0);
+  actor.flags.dnd5e = { tavernBrawlerFeat: true };
+  const trained = await service.rollWeaponAttack(actor, weapon, { createMessage: false });
+  assert.equal(trained.breakdown.proficiencyBonus, 2);
+  const explicit = await service.rollWeaponAttack(actor, weapon, { createMessage: false, includeProficiency: false });
+  assert.equal(explicit.breakdown.proficiencyBonus, 0);
+});
+
 test("weapon attack activities automatically take an unused item in the left hand", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;

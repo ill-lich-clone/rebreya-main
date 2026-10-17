@@ -1,9 +1,10 @@
-import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.379";
+import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.393";
 import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.389";
 import { getWeaponModHostDescriptor, validateWeaponAttachmentInstallation, validateModernizedPartInstallation } from "./weapon-mod-rules.js?v=1.4.389";
 import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.4.392";
 import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.4.250";
 import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.4.383";
+import { applyEquipmentSizeToItemData } from "../integrations/equipment-size.js?v=1.4.393";
 
 const MODULE_ID = "rebreya-main";
 const fail = reason => { const error = new Error(`Не удалось подготовить составной предмет: ${reason}.`); error.code = "invalid-composite-graph"; throw error; };
@@ -34,7 +35,8 @@ export async function buildCompositeItemGraph(raw, { buildBase, buildUpgrade, bu
     if(typeof id!=="string" || !/^[a-zA-Z0-9]{16}$/u.test(id) || ids.has(id))fail("document-id");
     ids.add(id);return id;
   };
-  const root = cleanCatalogItem(await buildBase(descriptor.sourceType,descriptor.sourceId),nextId());
+  const source = cleanCatalogItem(await buildBase(descriptor.sourceType,descriptor.sourceId),nextId());
+  const root = descriptor.version===4 ? applyEquipmentSizeToItemData(source,descriptor.equipmentSize) : source;
   root.system.quantity=descriptor.quantity;
   const host = buildUpgradeHostDescriptor(root), category=getItemUpgradeCategory(root), installed=[], links=[], children=[];
   root.flags[MODULE_ID][ITEM_UPGRADES_HOST_FLAG]={category,capacity:host.capacity,installed};
@@ -45,8 +47,9 @@ export async function buildCompositeItemGraph(raw, { buildBase, buildUpgrade, bu
     installed.push({itemId:nextId(),slotIndex:upgrade.slotIndex});
   }
   const modPlans=[];
-  if(descriptor.version===3){
-    const catalog=weaponModCatalog??await loadWeaponModCatalog(),modHost=getWeaponModHostDescriptor(root,catalog);
+  if(descriptor.version>=3){
+    const hasMods = descriptor.weaponMods.attachments.length || descriptor.weaponMods.modernizedParts.length;
+    const catalog=weaponModCatalog??(hasMods?await loadWeaponModCatalog():null),modHost=hasMods?getWeaponModHostDescriptor(root,catalog):null;
     const state={version:1,attachments:[],modernizedParts:[],approvals:[]};
     root.flags[MODULE_ID].weaponMods=state;
     for(const field of ["modernizedParts","attachments"]){

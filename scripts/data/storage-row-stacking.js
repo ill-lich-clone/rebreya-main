@@ -1,7 +1,7 @@
 import { normalizeInventoryMaterialProjection } from "./inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
 import { stripItemSourceUuidFromFlags } from "./item-source-reference.js?v=1.4.377";
-import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.379";
+import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.393";
 
 function stackState(row) {
   if (!row || isStorageContainerRow(row) || isStorageJournalRow(row) || row.stackable === false) return null;
@@ -22,6 +22,13 @@ function stackState(row) {
     delete state.itemData.system.quantity;
     delete state.itemData.system.container;
     if (state.itemData.flags?.[MODULE_ID]) delete state.itemData.flags[MODULE_ID].lootgenChat;
+    const sizeState = state.itemData.flags?.[MODULE_ID]?.equipmentSize;
+    const reference = sizeState?.reference, system = state.itemData.system;
+    const baselineMatches = reference?.size === "med"
+      && equalState(reference.base, state.itemData.flags?.[MODULE_ID]?.versatileBaseDamageOriginal ?? system.damage?.base)
+      && equalState(reference.versatile, system.damage?.versatile)
+      && equalState(reference.weight, system.weight) && equalState(reference.price, system.price);
+    if (sizeState?.size === "med" && (!reference || baselineMatches)) delete state.itemData.flags[MODULE_ID].equipmentSize;
     state.itemData.flags = stripItemSourceUuidFromFlags(state.itemData.flags ?? {});
   }
   return state;
