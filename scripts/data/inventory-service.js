@@ -9,7 +9,7 @@ import {
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.385";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.385";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.393";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.395";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import {
   DOWNTIME_ITEM_TYPE,
@@ -40,7 +40,7 @@ import {
   getInventoryDismantleBlockReason,
   resolveInventoryDismantleMinimumQuantity,
   resolveInventoryDismantleOutputs
-} from "./inventory-ingress-descriptor.js?v=1.4.393";
+} from "./inventory-ingress-descriptor.js?v=1.4.395";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -48,7 +48,7 @@ import {
   normalizeInventoryIngressRuleState
 } from "./inventory-ingress-rules.js";
 import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
-import { applyLootgenNarrativeVariant, hasLootgenNarrative } from "./lootgen-narrative-catalog.js?v=1.4.317";
+import { applyLootgenNarrativeVariant, hasLootgenNarrative } from "./lootgen-narrative-catalog.js?v=1.4.395";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-record-items";
 import {

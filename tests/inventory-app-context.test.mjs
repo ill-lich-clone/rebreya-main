@@ -5,6 +5,20 @@ import { extname } from "node:path";
 
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 
+test("narrative inventory inspection opens the saved instance without resolving its base source", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { id: "player" } };
+  try {
+    const { openInventoryItemSource } = await import(`../scripts/ui/inventory-app.js?narrative-inspection=${Date.now()}`);
+    let opened = 0;
+    const item = { documentName: "Item", uuid: "Actor.group.Item.book", flags: { "rebreya-main": { narrativeVariantId: "chosen-book" } }, testUserPermission: () => true, sheet: { render: async () => { opened++; } } };
+    assert.equal(await openInventoryItemSource(item, { moduleApi: { resolveItemSource: () => assert.fail("base source lookup") } }), "sheet");
+    assert.equal(opened, 1);
+  }
+  finally { globalThis.game = previousGame; restoreFoundry(); }
+});
+
 test("take transfer errors distinguish compensated and manual outcomes", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   try {

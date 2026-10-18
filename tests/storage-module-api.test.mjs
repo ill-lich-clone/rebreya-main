@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { normalizeLootgenNarrativeCatalog } from "../scripts/data/lootgen-narrative-catalog.js";
 
 import { MODULE_ID } from "../scripts/constants.js";
 
@@ -552,6 +554,9 @@ test("module composition materializes a corpse before allowing marker-guarded GM
   try {
     const { RebreyaMainModule } = await import(`../scripts/main.js?corpse-composition=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
+    moduleApi.lootgenSourceCatalog.getNarrativeCatalog = async () => normalizeLootgenNarrativeCatalog(
+      JSON.parse(await readFile(new URL("../data/lootgen-narrative-variants.json", import.meta.url), "utf8"))
+    );
     let materializations = 0;
     moduleApi.corpseStorageMaterializer.materialize = async (actualToken) => {
       materializations += 1;

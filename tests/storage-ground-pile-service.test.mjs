@@ -16,6 +16,25 @@ function applyPatch(target, patch) {
   }
 }
 
+test("narrative map placement saves one chosen instance and duplicate mutation never rerolls it", async () => {
+  const { prepareStorageNarrativeRows } = await import("../scripts/data/storage-narrative-rows.js");
+  const { normalizeLootgenNarrativeCatalog } = await import("../scripts/data/lootgen-narrative-catalog.js");
+  const catalog = normalizeLootgenNarrativeCatalog({ schemaVersion: 1, variants: [{ variantId: "book-map", gearId: "book", sourceName: "Книга", title: "Летопись", description: "История города.", rank: 1 }] });
+  let draws = 0;
+  const { service, tokens } = createHarness({ prepareRows: rows => prepareStorageNarrativeRows(rows, catalog, { random: () => { draws++; return 0; } }) });
+  const source = { rowId: "book", quantity: 1, name: "Книга", sourceType: "gear", sourceId: "book",
+    itemData: { name: "Книга", type: "loot", system: { quantity: 1, description: { value: "generic" } }, flags: { [MODULE_ID]: { gearId: "book" } } } };
+  const before = structuredClone(source);
+  const request = { row: source, quantity: 1, sceneId: "scene", x: 200, y: 300, mutationId: "book-drop" };
+  await service.transferToScene(request);
+  assert.equal(readStorageState(tokens[0]).manualRows[0].itemData.name, "Летопись");
+  const duplicate = await service.transferToScene(request);
+  assert.equal(duplicate.duplicate, true); assert.equal(draws, 1);
+  await service.transferToScene({ ...request, mutationId: "second-book" });
+  assert.equal(readStorageState(tokens[0]).manualRows.length, 2);
+  assert.equal(draws, 2); assert.deepEqual(source, before);
+});
+
 test("ground pile splits and merges fractional material units with native integer ItemData", async () => {
   const { service, tokens } = createHarness();
   const itemData = withInventoryItemQuantity({ name: "Adamant", type: "loot", flags: { [MODULE_ID]: {
@@ -40,7 +59,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createHarness({ activeGm = true, beforeCreate, beforeUpdate, afterDelete, idFactory } = {}) {
+function createHarness({ activeGm = true, beforeCreate, beforeUpdate, afterDelete, idFactory, prepareRows } = {}) {
   const pileActor = {
     id: "pile-actor",
     flags: {
@@ -95,7 +114,8 @@ function createHarness({ activeGm = true, beforeCreate, beforeUpdate, afterDelet
   const service = new StorageGroundPileService({
     gameProvider: () => game,
     isActiveGm: () => activeGm,
-    idFactory: idFactory ?? (() => `pile-row-${++nextId}`)
+    idFactory: idFactory ?? (() => `pile-row-${++nextId}`),
+    prepareRows
   });
   return { service, scene, tokens, pileActor, game };
 }

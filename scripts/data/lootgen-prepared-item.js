@@ -1,4 +1,4 @@
-import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./lootgen-item-descriptor.js?v=1.4.393";
+import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "./lootgen-item-descriptor.js?v=1.4.395";
 import { weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
 import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
 import { sha256Hex } from "../shared/sha256.js?v=1.4.268";

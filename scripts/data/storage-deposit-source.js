@@ -1,23 +1,23 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "./inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.393";
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.395";
 import { MODULE_ID } from "../constants.js";
 import { preserveItemSourceUuid, stripItemSourceUuidFromFlags } from "./item-source-reference.js?v=1.4.377";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.393";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.395";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.393";
+} from "./storage-service.js?v=1.4.395";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
   isStorageJournalRow,
   rekeyStorageContainerSnapshot
-} from "./storage-container-snapshot.js?v=1.4.393";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.393";
+} from "./storage-container-snapshot.js?v=1.4.395";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.395";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js?v=1.4.377";
-import { deriveGroundPilePresentation } from "./storage-pile-presentation.js?v=1.4.393";
+import { deriveGroundPilePresentation } from "./storage-pile-presentation.js?v=1.4.395";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));

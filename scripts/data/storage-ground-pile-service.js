@@ -1,18 +1,18 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
-import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.393";
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.395";
 import { MODULE_ID } from "../constants.js";
-import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.393";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.393";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.395";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.395";
 import {
   buildStorageTokenState,
   readStorageCoinDenomination,
   readStorageState
-} from "./storage-service.js?v=1.4.393";
-import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.393";
+} from "./storage-service.js?v=1.4.395";
+import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.395";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.393";
+} from "./storage-pile-presentation.js?v=1.4.395";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation,
@@ -182,11 +182,13 @@ export class StorageGroundPileService {
   constructor({
     gameProvider = () => globalThis.game,
     isActiveGm = () => true,
+    prepareRows = async (rows) => rows,
     idFactory = () => globalThis.foundry?.utils?.randomID?.() ?? Math.random().toString(36).slice(2)
   } = {}) {
     this.gameProvider = gameProvider;
     this.isActiveGm = isActiveGm;
     this.idFactory = idFactory;
+    this.prepareRows = prepareRows;
     this.sceneMutationTasks = new Map();
   }
 
@@ -412,6 +414,7 @@ export class StorageGroundPileService {
       if ((groundFlag.mutationIds ?? []).includes(stableMutationId)) {
         return { created: false, merged: false, duplicate: true, token: existing, state: readStorageState(existing) };
       }
+      rows = await this.prepareRows(rows);
       const state = readStorageState(existing);
       const claimed = new Set(state.claimedRowIds);
       const manualRows = state.manualRows.map(clone);
@@ -460,6 +463,7 @@ export class StorageGroundPileService {
       return { created: false, merged: true, duplicate: false, token: existing, state: next };
     }
 
+    rows = await this.prepareRows(rows);
     const actor = this.#resolvePileActor(game);
     if (!actor) throw new Error("Служебный актёр наземной кучи не восстановлен.");
     const incomingCoins = normalizedCoins(coins);

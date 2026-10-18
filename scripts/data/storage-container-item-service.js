@@ -1,22 +1,22 @@
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.393";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.395";
 import { normalizeLootgenComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
 import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
-import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.393";
+import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.395";
 import { buildRuntimeGraphDocuments, captureRuntimeItemGraph, materializeRuntimeItemGraph, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.393";
-import { readStorageState } from "./storage-service.js?v=1.4.393";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.395";
+import { readStorageState } from "./storage-service.js?v=1.4.395";
 import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,
   createPortableStorageContainerItemData,
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
-} from "./storage-container-snapshot.js?v=1.4.393";
+} from "./storage-container-snapshot.js?v=1.4.395";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.322";
-import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.317";
+import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.395";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation
@@ -328,12 +328,14 @@ export class StorageContainerItemService {
     buildItemData = null,
     getManifest = async () => [],
     createDocumentId = documentId,
+    prepareRows = async rows => rows,
     logger = console
   } = {}) {
     this.resolveScene = resolveScene;
     this.resolveActor = resolveActor;
     this.resolveFallbackActor = resolveFallbackActor;
     this.logger = logger;
+    this.prepareRows = prepareRows;
     Object.assign(this, {journal, coordinator, buildItemData, getManifest, createDocumentId});
   }
 
@@ -656,7 +658,7 @@ export class StorageContainerItemService {
   }
 
   async restoreSnapshotToScene(snapshot, { sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
-    const normalized = buildStorageContainerSnapshot(snapshot);
+    let normalized = buildStorageContainerSnapshot(snapshot);
     const topDown = containerTopDownPresentation(normalized);
     const topDownSize = topDown
       ? (topDown.visualType === "Доспех" ? 1 : 0.5)
@@ -676,6 +678,9 @@ export class StorageContainerItemService {
       clean(readFlag(token, STORAGE_CONTAINER_MUTATION_FLAG)?.id) === stableMutationId
     )) ?? null;
     if (existing) return existing;
+
+    const [prepared] = await this.prepareRows([{ rowKind: "container", rowId: normalized.containerId, quantity: 1, container: normalized }]);
+    normalized = buildStorageContainerSnapshot(prepared.container);
 
     let actorId = clean(normalized.presentation?.actorId);
     let actor = actorId ? await this.resolveActor(actorId) : null;

@@ -1,6 +1,6 @@
 # Personalised item instances on the map and after pickup
 
-Status: approved by the user on 2026-10-18; implementation-plan review pending.
+Status: spec and plan approved by the user on 2026-10-18; implemented in release 1.4.395 and verified by offline regression tests. Live Foundry validation was unavailable.
 Scope is the existing narrative-item flow.
 
 ## User-visible result

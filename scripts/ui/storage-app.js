@@ -1,7 +1,8 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.393";
-import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.393";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.395";
+import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.395";
 import { MODULE_ID } from "../constants.js";
+import { buildNarrativeItemNamePatch, loadLootgenNarrativeCatalog } from "../data/lootgen-narrative-catalog.js?v=1.4.395";
 import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.392";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
@@ -16,6 +17,32 @@ import {
 } from "./storage-transfer-ui.js?v=1.4.377";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+/** Inspect the saved physical instance, with editing disabled and no persistent document creation. */
+export async function openStorageRowItem(row, { ItemClass = globalThis.CONFIG?.Item?.documentClass ?? globalThis.Item?.implementation ?? globalThis.Item, catalog } = {}) {
+  if (!row?.itemData?.type || typeof ItemClass !== "function") return false;
+  const data = structuredClone(row.itemData);
+  let namePatch = buildNarrativeItemNamePatch(data);
+  if (!namePatch && !clean(data.name) && data.flags?.[MODULE_ID]?.narrativeVariantId) {
+    namePatch = buildNarrativeItemNamePatch(data, catalog ?? await loadLootgenNarrativeCatalog());
+  }
+  Object.assign(data, namePatch);
+  for (const field of ["_id", "id", "folder", "sort", "_stats"]) delete data[field];
+  data._id = globalThis.foundry?.utils?.randomID?.()
+    ?? globalThis.crypto.randomUUID().replaceAll("-", "").slice(0, 16);
+  data.ownership = { default: globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OBSERVER ?? 2 };
+  const item = new ItemClass(data);
+  const sourceSheet = item.sheet;
+  if (!sourceSheet?.render) return false;
+  const ReadOnlyStoredItemSheet = class extends sourceSheet.constructor {
+    get isEditable() { return false; }
+  };
+  const sheet = sourceSheet instanceof ApplicationV2
+    ? new ReadOnlyStoredItemSheet({ document: item })
+    : new ReadOnlyStoredItemSheet(item, { editable: false });
+  await sheet.render(true);
+  return true;
+}
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
 const STORAGE_TRANSFER_TYPES = new Set(["text/plain", "text", "application/json"]);
 const TEXTURE_MODES = Object.freeze([
@@ -279,7 +306,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         isJournal,
         canDrag: !isJournal,
         canClaim: !isJournal,
-        canOpenSource: !isJournal && Boolean(clean(row.sourceId)),
+        canOpenSource: !isJournal && Boolean(clean(row.sourceId) || row.itemData?.type),
         isContainer,
         primaryAction: isContainer ? "storage-open-container" : "storage-toggle-row",
         canEdit: configurationEnabled && !isJournal,
@@ -610,6 +637,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const row = this.#rowById(rowId);
     if (!row) throw new Error("Предмет хранилища уже недоступен.");
     if (row.rowKind === "journal") throw new Error("Запись журнала доступна только для чтения.");
+    if (await openStorageRowItem(row)) return;
     const sourceId = clean(row.sourceId);
     if (sourceId.includes(".") && typeof globalThis.fromUuid === "function") {
       const document = await globalThis.fromUuid(sourceId);

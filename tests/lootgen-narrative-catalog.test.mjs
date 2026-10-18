@@ -21,7 +21,7 @@ const variant = Object.freeze({
   rank: 1
 });
 
-test("catalog groups variants and applies only the description plus module flags", () => {
+test("catalog applies the selected title and description while preserving mechanics", () => {
   const catalog = normalizeLootgenNarrativeCatalog({ schemaVersion: 1, variants: [variant] });
   const selected = selectLootgenNarrativeVariant({
     sourceType: "gear",
@@ -42,7 +42,8 @@ test("catalog groups variants and applies only the description plus module flags
 
   const item = applyLootgenNarrativeVariant(base, selected);
 
-  assert.equal(item.name, "Книга");
+  assert.equal(item.name, "Следы копоти");
+  assert.equal(item.flags["rebreya-main"].narrativeBaseName, "Книга");
   assert.equal(item.type, "loot");
   assert.equal(item.img, "book.webp");
   assert.equal(item.system.quantity, 1);

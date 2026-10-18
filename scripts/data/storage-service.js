@@ -1,7 +1,7 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
-import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.393";
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.393";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.395";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.395";
 import {
   markDurabilityBroken,
   markDurabilityIntact
@@ -17,7 +17,7 @@ import {
   isStorageJournalRow,
   resolveStorageContainerPath,
   updateStorageContainerPath
-} from "./storage-container-snapshot.js?v=1.4.393";
+} from "./storage-container-snapshot.js?v=1.4.395";
 import {
   normalizeStorageTriggerState,
   validateStorageTriggerDefinitions
@@ -551,6 +551,7 @@ export class StorageService {
     getOrBuildDurability = async () => null,
     materializeFirstOpen = async () => null,
     onGeneratedOpen = async () => {},
+    prepareRows = async (rows) => rows,
     random = Math.random,
     logger = console
   } = {}) {
@@ -564,6 +565,7 @@ export class StorageService {
       throw new TypeError("StorageService requires a durability builder function.");
     }
     this.generate = generate;
+    this.prepareRows = prepareRows;
     this.random = random;
     this.getOrBuildDurability = getOrBuildDurability;
     this.materializeFirstOpen = materializeFirstOpen;
@@ -620,8 +622,17 @@ export class StorageService {
     };
   }
 
+  async #prepareNarrativeRows(state) {
+    const options = { claimedRowIds: state.claimedRowIds ?? [] };
+    return { ...state,
+      manualRows: await this.prepareRows(state.manualRows ?? [], options),
+      generatedRows: await this.prepareRows(state.generatedRows ?? [], options)
+    };
+  }
+
   async #write(token, state) {
     state = migrateLegacyCoinRowsInState(state)?.state ?? state;
+    state = await this.#prepareNarrativeRows(state);
     const document = resolveDocument(token);
     if (typeof document?.update !== "function") {
       throw new TypeError("Storage token must support update.");
@@ -819,6 +830,8 @@ export class StorageService {
 
   async #openOnce(token, context) {
     let current = readStorageState(token);
+    const prepared = await this.#prepareNarrativeRows(current);
+    if (JSON.stringify(prepared) !== JSON.stringify(current)) current = await this.#write(token, prepared);
     const wrappers = migrateSyntheticCoinPileRowsInState(current);
     if (wrappers) current = await this.#write(token, wrappers.state);
     const migrated = migrateLegacyCoinRowsInState(current);

@@ -1,7 +1,7 @@
-import { getLootgenContainerSummary } from "./lootgen-container-preview.js?v=1.4.393";
+import { getLootgenContainerSummary } from "./lootgen-container-preview.js?v=1.4.395";
 import { MODULE_ID } from "../constants.js";
 import { resolveLootgenItemValue as resolveLegacyItemValue } from "../data/item-value.js?v=1.4.393";
-import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.393";
+import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.395";
 import {
   buildLootgenRowIdentity,
   normalizeBrokenEquipmentChance,
@@ -12,8 +12,8 @@ import {
   buildLootgenTypeFilterOptions,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js?v=1.4.258";
-import { buildLootgenGearTypeOptions, readLootgenMagicDocuments } from "../data/lootgen-source-catalog.js?v=1.4.393";
-import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.393";
+import { buildLootgenGearTypeOptions, readLootgenMagicDocuments } from "../data/lootgen-source-catalog.js?v=1.4.395";
+import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.395";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -229,7 +229,7 @@ export function resolveLootgenItemValue(rawValue, fallbackGold = 0) {
   return resolveLegacyItemValue(rawValue, fallbackGold);
 }
 
-export { buildLootgenMundaneCandidate } from "../data/lootgen-source-catalog.js?v=1.4.393";
+export { buildLootgenMundaneCandidate } from "../data/lootgen-source-catalog.js?v=1.4.395";
 
 export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {

@@ -37,6 +37,42 @@ globalThis.HTMLElement = FakeElement;
 const storageAppModule = await import("../scripts/ui/storage-app.js?storage-app-test");
 const { StorageApp, formatStorageTransferError } = storageAppModule;
 
+test("narrative storage inspection renders saved instance read-only without following its source", async () => {
+  const { openStorageRowItem } = await import("../scripts/ui/storage-app.js");
+  const rendered = [];
+  class Sheet {
+    constructor(document) { this.document = document; }
+    async render() { assert.equal(this.isEditable, false); rendered.push(this.document.data); }
+  }
+  class ItemClass { constructor(data) { this.data = data; this.sheet = new Sheet(this); } }
+  const row = { sourceId: "Compendium.world.gear.Item.book", itemData: { _id: "source-book", name: "", type: "loot", system: { description: { value: "Saved chosen description" } },
+    flags: { "rebreya-main": { narrativeVariantId: "book-a", narrativeTitle: "Летопись" } } } };
+  const before = structuredClone(row);
+  assert.equal(await openStorageRowItem(row, { ItemClass }), true);
+  assert.equal(rendered[0].name, "Летопись");
+  assert.equal(rendered[0].system.description.value, "Saved chosen description");
+  assert.notEqual(rendered[0]._id, "source-book"); assert.deepEqual(row, before);
+  await openStorageRowItem(row, { ItemClass });
+  assert.match(rendered[0]._id, /^[a-zA-Z0-9]{16}$/u);
+  assert.notEqual(rendered[0]._id, rendered[1]._id);
+  const legacy = structuredClone(row);
+  delete legacy.itemData.flags["rebreya-main"].narrativeTitle;
+  await openStorageRowItem(legacy, { ItemClass, catalog: { byVariantId: new Map([["book-a", { title: "Летопись" }]]) } });
+  assert.equal(rendered[2].name, "Летопись");
+});
+
+test("saved Item inspection supplies the V2 document option and disables editing", async () => {
+  const { openStorageRowItem } = await import("../scripts/ui/storage-app.js");
+  let rendered = 0;
+  class SheetV2 extends foundry.applications.api.ApplicationV2 {
+    constructor(options) { super(options); this.document = options.document; }
+    async render() { assert.equal(this.document.data.name, "Дневник"); assert.equal(this.isEditable, false); rendered++; }
+  }
+  class ItemClass { constructor(data) { this.data = data; this.sheet = new SheetV2({ document: this }); } }
+  assert.equal(await openStorageRowItem({ itemData: { type: "loot", name: "Дневник", system: { description: { value: "Saved" } } } }, { ItemClass }), true);
+  assert.equal(rendered, 1);
+});
+
 test("storage transfer errors report accepted, failed and untouched rows", () => {
   assert.equal(
     formatStorageTransferError({

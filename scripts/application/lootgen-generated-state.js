@@ -1,10 +1,10 @@
-import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.393";
-import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.393";
-import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.393";
-import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.393";
+import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.395";
+import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.395";
+import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.395";
+import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.395";
 import { evaluateItemValue } from "../data/item-value.js?v=1.4.393";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
-import { pickLootgenNarrativeFields } from "../data/lootgen-narrative-catalog.js?v=1.4.317";
+import { pickLootgenNarrativeFields } from "../data/lootgen-narrative-catalog.js?v=1.4.395";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";
 
 const MODULE_ID="rebreya-main";

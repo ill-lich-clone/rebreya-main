@@ -6,6 +6,7 @@ const NARRATIVE_FIELD_NAMES = Object.freeze([
   "narrativeVariantId",
   "narrativeGearId",
   "narrativeTitle",
+  "narrativeBaseName",
   "narrativeDescription"
 ]);
 
@@ -98,6 +99,8 @@ export function applyLootgenNarrativeVariant(itemData, variant) {
 
   const heading = title ? `<h3>${escapeFoundryHtml(title)}</h3>` : "";
   const body = escapeFoundryHtml(description.replace(/\r\n?/gu, "\n")).replace(/\n/gu, "<br>");
+  const baseName = clean(result.flags?.[MODULE_ID]?.narrativeBaseName) || clean(variant.sourceName) || clean(result.name);
+  if (title) result.name = title;
   result.system ??= {};
   result.system.description ??= {};
   result.system.description.value = `${heading}<p>${body}</p>`;
@@ -108,6 +111,7 @@ export function applyLootgenNarrativeVariant(itemData, variant) {
     narrativeVariantId: variantId,
     narrativeGearId: gearId,
     narrativeTitle: title,
+    narrativeBaseName: baseName,
     narrativeDescription: description,
     nonStackable: true
   };
@@ -131,6 +135,7 @@ function narrativeCreationGearId(itemData = {}) {
 
 function narrativeCreationPatch(itemData = {}) {
   return {
+    name: itemData.name,
     system: {
       description: cloneFoundryValue(itemData?.system?.description ?? {}),
       quantity: 1
@@ -149,6 +154,7 @@ export function buildNarrativeItemCreationPatch(itemData, catalog, { random = Ma
     source.system.quantity = 1;
     source.flags ??= {};
     source.flags[MODULE_ID] = { ...moduleFlags, nonStackable: true };
+    Object.assign(source, buildNarrativeItemNamePatch(source, catalog));
     return narrativeCreationPatch(source);
   }
 
@@ -157,6 +163,15 @@ export function buildNarrativeItemCreationPatch(itemData, catalog, { random = Ma
   if (!Array.isArray(narrativeVariants) || narrativeVariants.length === 0) return null;
   const variant = selectLootgenNarrativeVariant({ narrativeVariants }, random);
   return narrativeCreationPatch(applyLootgenNarrativeVariant(source, variant));
+}
+
+/** Restore a missing instance name from saved identity, without selecting another variant. */
+export function buildNarrativeItemNamePatch(itemData, catalog) {
+  if (clean(itemData?.name)) return null;
+  const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  if (!clean(flags.narrativeVariantId)) return null;
+  const name = clean(flags.narrativeTitle) || clean(catalog?.byVariantId?.get?.(flags.narrativeVariantId)?.title);
+  return name ? { name } : null;
 }
 
 export async function loadLootgenNarrativeCatalog() {

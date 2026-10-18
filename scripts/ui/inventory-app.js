@@ -16,7 +16,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.393";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.395";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
@@ -68,6 +68,9 @@ export async function openInventoryItem(item, {
 
 export async function openInventoryItemSource(item, { moduleApi, hints = {}, openViewer } = {}) {
   if (isJournalRecordItem(item)) return openInventoryItem(item, { moduleApi, openViewer });
+  if (item?.flags?.[MODULE_ID]?.narrativeVariantId || item?.getFlag?.(MODULE_ID, "narrativeVariantId")) {
+    return canViewItem(item) ? openInventoryItem(item, { moduleApi, openViewer }) : null;
+  }
   let source = null;
   try { source = await moduleApi.resolveItemSource?.(item, hints) ?? null; }
   catch { /* An unavailable external source still permits the inventory Item sheet. */ }

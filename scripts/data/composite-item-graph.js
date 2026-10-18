@@ -1,4 +1,4 @@
-import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.393";
+import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.395";
 import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.389";
 import { getWeaponModHostDescriptor, validateWeaponAttachmentInstallation, validateModernizedPartInstallation } from "./weapon-mod-rules.js?v=1.4.389";
 import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.4.392";

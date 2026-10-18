@@ -47,6 +47,23 @@ for (const mixed of [false, true]) {
   });
 }
 
+test("narrative character and group claims preserve the exact saved physical instance", async () => {
+  for (const destination of ["self", "party"]) {
+    const h = createHarness();
+    const itemData = { name: "Летопись", type: "loot", system: { quantity: 1, description: { value: "<h3>Летопись</h3><p>Saved instance</p>" } },
+      flags: { "rebreya-main": { gearId: "book", narrativeVariantId: "book-saved", narrativeTitle: "Летопись", narrativeDescription: "Saved instance", nonStackable: true } } };
+    await h.storageService.configure(h.storageToken, { state: "opened", manualRows: [{ rowId: "saved-book", name: "Летопись", quantity: 1, itemData }] });
+    const request = { tokenUuid: h.storageToken.uuid, characterTokenUuid: h.characterToken.uuid, rowId: "saved-book", destination, quantity: 1,
+      mutationId: `saved-book-${destination}`, target: destination === "party" ? { groupActorId: h.groupActor.id, folderId: null } : null };
+    await h.service.claimRow(request, { sender: h.player });
+    assert.equal(h.itemGrants.length, 1);
+    assert.deepEqual(h.itemGrants[0].row.itemData, itemData);
+    assert.equal(h.itemGrants[0].destination, destination);
+    await h.service.claimRow(request, { sender: h.player });
+    assert.equal(h.itemGrants.length, 1);
+  }
+});
+
 test("moving a coin token to a character grants wallet currency without container materialization", async () => {
   const h = createHarness({ depositSource: resolveStorageDepositSource });
   h.storageToken.flags[MODULE_ID].groundPile = { enabled: true, coinPile: true };

@@ -17,6 +17,38 @@ import { buildStorageContainerRow } from "../scripts/data/storage-container-snap
 import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
 import { normalizeLootgenForm } from "../scripts/data/lootgen-generator.js";
 
+test("narrative legacy storage repairs once and its saved instance survives a claim", async () => {
+  const { prepareStorageNarrativeRows } = await import("../scripts/data/storage-narrative-rows.js");
+  const { normalizeLootgenNarrativeCatalog } = await import("../scripts/data/lootgen-narrative-catalog.js");
+  const catalog = normalizeLootgenNarrativeCatalog({ schemaVersion: 1, variants: [{ variantId: "book-test", gearId: "book", sourceName: "Книга", title: "Летопись", description: "История города.", rank: 1 }] });
+  let draws = 0;
+  const token = createStorageToken("legacy-book");
+  token.flags["rebreya-main"] = { storage: buildStorageTokenState({ state: "opened", manualRows: [{ rowId: "book", name: "Книга", quantity: 1,
+    itemData: { name: "Книга", type: "loot", system: { quantity: 1, description: { value: "generic" } }, flags: { "rebreya-main": { gearId: "book" } } }
+  }] }) };
+  let writes = 0;
+  const update = token.update.bind(token);
+  token.update = async patch => { writes++; return update(patch); };
+  const service = new StorageService({ prepareRows: (rows, options) => prepareStorageNarrativeRows(rows, catalog, { ...options, random: () => { draws++; return 0; } }) });
+  const opened = await service.open(token);
+  assert.equal(opened.rows[0].itemData.name, "Летопись");
+  assert.match(opened.rows[0].itemData.system.description.value, /История города/u);
+  const firstWrites = writes;
+  await service.open(token);
+  assert.equal(writes, firstWrites); assert.equal(draws, 1);
+  const claim = await service.claim(token, { rowId: "book", quantity: 1, mutationId: "same-book" });
+  assert.equal(claim.row.itemData.flags["rebreya-main"].narrativeVariantId, "book-test");
+  assert.equal(claim.row.itemData.name, "Летопись"); assert.equal(draws, 1);
+  const fresh = createStorageToken("already-personalised");
+  const selectedRows = prepareStorageNarrativeRows([{ rowId: "selected", quantity: 1, name: "Книга", itemData: {
+    name: "Книга", type: "loot", system: { quantity: 1 }, flags: { "rebreya-main": { gearId: "book" } }
+  } }], catalog, { random: () => 0 });
+  fresh.flags["rebreya-main"] = { storage: buildStorageTokenState({ state: "opened", manualRows: selectedRows }) };
+  fresh.update = async () => assert.fail("unchanged chosen instance must not write world state");
+  const unchanged = new StorageService({ prepareRows: (rows, options) => prepareStorageNarrativeRows(rows, catalog, { ...options, random: () => assert.fail("unchanged instance reroll") }) });
+  await unchanged.open(fresh);
+});
+
 test("storage material partial claim keeps native pieces and a persistent idempotent receipt", async () => {
   const service = new StorageService();
   const token = createStorageToken("fractional");
