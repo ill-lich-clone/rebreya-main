@@ -1,6 +1,6 @@
 # Personalised item instances on the map and after pickup
 
-Status: spec and plan approved by the user on 2026-10-18; implemented in release 1.4.395 and verified by offline regression tests. Live Foundry validation was unavailable.
+Status: spec and plan approved by the user on 2026-10-18; initial release 1.4.395 and follow-up correction 1.4.396 implemented and verified by offline regression tests. Live Foundry validation was unavailable.
 Scope is the existing narrative-item flow.
 
 ## User-visible result
@@ -87,3 +87,31 @@ commit only task files on lich_branch and push without force.
 Live acceptance: create/inspect/pick up a disposable personalised item in an
 authenticated Foundry v13 world if available; report the exact limit if no
 authorised session is reachable. Screenshots alone do not prove saved data.
+
+## Follow-up correction reported on 2026-10-18
+
+The user confirmed that variants with an empty authored title retain their
+source Item name and receive their personal description. Preserve the entire
+existing description HTML when adding narrative, including material, linked
+tool, Value, authored rules and formatting.
+
+The previous acceptance covered synthetic ASCII IDs. A real-data audit found
+that 9 of 160 narrative gear groups did not match normalized runtime gear IDs:
+Books ranks 2–9 and Encyclopedia (20 volumes). Normalize narrative gear IDs
+with the existing canonicalCatalogId policy. Keep source artifacts, variantId,
+rank boundaries and existing selected instance identity unchanged; no fuzzy
+name matching or new random draws for selected Items.
+
+Repair the missing material/tool/Value footer of an already selected Item only
+when its description exactly matches the old generated narrative HTML. Use
+its own saved metadata, preserve the selected narrative and manual names,
+and do not alter authored/custom descriptions. Existing guarded storage,
+preview and sheet-open paths own this repair; add no new hooks or services.
+
+For blank-title variants, restoring an empty Item name uses the saved base
+name (or the exact saved variant's sourceName) without another random draw.
+
+Pin coverage against all 160 groups of real normalized gear, with specific
+ranked Book/Encyclopedia cases and blank-title non-book Items. Verify original
+HTML preservation, exact legacy repair, custom-description exclusion and
+unchanged repeated opening. Release this correction as 1.4.396.

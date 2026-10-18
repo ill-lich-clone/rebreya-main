@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { buildNarrativeItemCreationPatch, pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.395";
+import { buildNarrativeItemCreationPatch, pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.396";
 
 export function hasStorageNarrativeCandidates(rows = []) {
   return rows.some(row => {

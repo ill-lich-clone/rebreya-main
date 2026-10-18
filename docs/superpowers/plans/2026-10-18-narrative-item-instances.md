@@ -79,3 +79,53 @@ Spec and plan approved by the user on 2026-10-18. Native execution selected.
 - `node --check`: 1023 tracked/new JS/MJS files passed; affected files rechecked after later changes. Tracked JSON parsing: 58 files passed. `git diff --check` passed.
 - Release: module.json and minimal forwarder use 1.4.395; affected import closure uses canonical versioned URLs. Historical forwarders remain.
 - Live acceptance remains unverified: no authenticated Foundry tab was available. Refresh GM/player clients before checking the installed release.
+
+### Task 2: Complete real-catalog coverage and retain source HTML
+
+Continuation of the same approved all-personalisable-item scope, requested
+after release 1.4.395. Native execution remains selected. The user explicitly
+confirmed keeping source names where authored titles are blank.
+
+**Owners:** `scripts/data/lootgen-narrative-catalog.js`, existing repair paths
+in `scripts/integrations/narrative-item-creation.js` and `scripts/ui/storage-app.js`.
+Use the existing `canonicalCatalogId`; preserve raw import artifacts and
+variant IDs. Add `buildNarrativeItemRepairPatch(itemData,catalog)` for name
+repair plus exact legacy generated-description footer repair, using saved
+material/tool/Value flags only. New narrative HTML precedes unchanged source
+HTML; custom descriptions are never reconstructed. Existing storage callback
+consumes this repair through `buildNarrativeItemCreationPatch`.
+
+- [x] Add real-data regression coverage for all 160 narrative groups after
+  `normalizeEconomyDataset` and `createDnd5eItemData`, first/last selection,
+  stable variant IDs/ranks, blank-title names, complete source HTML and price
+  preservation. Observe the 9 missing groups and description loss failing.
+- [x] Add exact legacy footer repair and no-change/custom-description cases;
+  verify owned sheet and detached preview preserve name, quantity and other
+  system fields. Observe RED before changing their owners.
+- [x] Normalize narrative gear IDs and creation lookup with canonical policy,
+  prepend narrative to source HTML, and implement guarded repair in the three
+  existing consumers. Run affected catalogue/creation/storage/claim suites.
+- [x] Release 1.4.396 and update the affected reverse import closure, forwarder,
+  version assertions, README and function passport. Run the full suite,
+  tracked/new syntax checks, tracked JSON parsing and diff checks.
+- [x] Obtain a compact independent Gemini review; verify claims, correct
+  material findings with RED/GREEN evidence, inspect final scope, commit and
+  push only task files on lich_branch.
+
+Diagnosis evidence: real normalized gear matched 151/160 groups; all 9
+failures have Cyrillic IDs in the narrative artifact and Latin canonical IDs
+in runtime gear. Original Value HTML was absent after application. Gemini's
+description-overwrite finding was verified; its proposed rank/name remapping,
+rank-root limits and quantity-policy changes were rejected against actual
+data and existing quantity-one/splitting contracts. The local bridge reports
+Foundry disconnected, so live acceptance is currently unavailable.
+
+Task 2 execution evidence:
+- Baseline: 76 passed. Six new regressions failed for real-ID coverage, source HTML, ranked physical copies, legacy repair, owned repair and preview repair; then 351 affected tests passed. Blank-title empty-name restoration additionally failed RED and passed with 83 relevant tests.
+- Final full `node --test --test-reporter=tap tests/*.test.mjs`: **4853 passed, 0 failed, 1 existing Handlebars dependency skip** (4854 tests). No new skip.
+- `node --check`: **1025 tracked/new JS/MJS files passed**. Tracked JSON: **58 passed**, including PowerShell `ConvertFrom-Json`. `git diff --check` passed.
+- Release 1.4.396: 43 affected runtime owners, 42 updated importers; 40 importer files contain only cache URL changes (line endings normalized for comparison). Stable variant IDs/raw source artifacts remain unchanged.
+- Independent Gemini review returned PASS with no actionable findings; its release synchronization uncertainty is covered by 66 release/coverage checks.
+- Blank-title source-name restoration is a necessary part of the already approved empty-name contract; it uses saved narrativeBaseName or exact-variant sourceName, without RNG.
+- Foundry MCP diagnostic reports the module disconnected. No live compatibility or visual acceptance is claimed.
+- Final task commit/push is reported in the chat; this execution record is part of that commit.

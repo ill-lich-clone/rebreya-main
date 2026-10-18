@@ -1,8 +1,8 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.395";
-import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.395";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.396";
+import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
-import { buildNarrativeItemNamePatch, loadLootgenNarrativeCatalog } from "../data/lootgen-narrative-catalog.js?v=1.4.395";
+import { buildNarrativeItemRepairPatch, loadLootgenNarrativeCatalog } from "../data/lootgen-narrative-catalog.js?v=1.4.396";
 import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.392";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
@@ -22,11 +22,12 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 export async function openStorageRowItem(row, { ItemClass = globalThis.CONFIG?.Item?.documentClass ?? globalThis.Item?.implementation ?? globalThis.Item, catalog } = {}) {
   if (!row?.itemData?.type || typeof ItemClass !== "function") return false;
   const data = structuredClone(row.itemData);
-  let namePatch = buildNarrativeItemNamePatch(data);
-  if (!namePatch && !clean(data.name) && data.flags?.[MODULE_ID]?.narrativeVariantId) {
-    namePatch = buildNarrativeItemNamePatch(data, catalog ?? await loadLootgenNarrativeCatalog());
+  let repair = buildNarrativeItemRepairPatch(data);
+  if (!repair?.name && !clean(data.name) && data.flags?.[MODULE_ID]?.narrativeVariantId) {
+    repair = buildNarrativeItemRepairPatch(data, catalog ?? await loadLootgenNarrativeCatalog());
   }
-  Object.assign(data, namePatch);
+  if (repair?.name) data.name = repair.name;
+  if (repair?.system) data.system = { ...data.system, ...repair.system };
   for (const field of ["_id", "id", "folder", "sort", "_stats"]) delete data[field];
   data._id = globalThis.foundry?.utils?.randomID?.()
     ?? globalThis.crypto.randomUUID().replaceAll("-", "").slice(0, 16);

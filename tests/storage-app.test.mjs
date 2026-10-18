@@ -61,6 +61,20 @@ test("narrative storage inspection renders saved instance read-only without foll
   assert.equal(rendered[2].name, "Летопись");
 });
 
+test("saved preview repairs legacy metadata locally without losing quantity price or manual name", async () => {
+  let rendered;
+  class Sheet { constructor(item) { this.item = item; } async render() { rendered = this.item.data; } }
+  class ItemClass { constructor(data) { this.data = data; this.sheet = new Sheet(this); } }
+  const row = { itemData: { name: "Моё имя", type: "loot", system: { quantity: 1, price: { value: 25, denomination: "gp" }, description: { value: "<h3>Летопись</h3><p>Записки.</p>" } },
+    flags: { [MODULE_ID]: { narrativeVariantId: "saved", narrativeTitle: "Летопись", narrativeDescription: "Записки.", linkedTool: "Каллиграфа", value: 36000 } } } };
+  const before = structuredClone(row);
+  await storageAppModule.openStorageRowItem(row, { ItemClass });
+  assert.match(rendered.system.description.value, /Value.*36000/u);
+  assert.equal(rendered.name, "Моё имя"); assert.equal(rendered.system.quantity, 1);
+  assert.deepEqual(rendered.system.price, row.itemData.system.price);
+  assert.deepEqual(row, before);
+});
+
 test("saved Item inspection supplies the V2 document option and disables editing", async () => {
   const { openStorageRowItem } = await import("../scripts/ui/storage-app.js");
   let rendered = 0;

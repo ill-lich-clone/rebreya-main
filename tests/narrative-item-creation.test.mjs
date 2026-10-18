@@ -74,6 +74,19 @@ test("opening an owned narrative Item restores an empty name from its saved titl
   assert.equal(await integrationModule.restoreNarrativeItemTitle(item, { catalog }), false);
 });
 
+test("opening a selected owned Item restores only the exact legacy metadata footer once", async () => {
+  const item = { id: "legacy", name: "Моё имя", isOwner: true, system: { quantity: 1, description: { value: "<h3>Летопись</h3><p>Записки.</p>" } },
+    flags: { "rebreya-main": { narrativeVariantId: "saved", narrativeTitle: "Летопись", narrativeDescription: "Записки.", linkedTool: "Каллиграфа", value: 36000 } },
+    toObject() { return { name: this.name, system: structuredClone(this.system), flags: structuredClone(this.flags) }; },
+    async update(patch) { assert.equal(patch.name, undefined); this.system = { ...this.system, ...patch.system }; this.updates = (this.updates ?? 0) + 1; }
+  };
+  item.collection = new Map([[item.id, item]]);
+  assert.equal(await integrationModule.restoreNarrativeItemTitle(item, { catalog }), true);
+  assert.match(item.system.description.value, /Value.*36000/u);
+  assert.equal(await integrationModule.restoreNarrativeItemTitle(item, { catalog }), false);
+  assert.equal(item.name, "Моё имя"); assert.equal(item.updates, 1);
+});
+
 test("registered preCreateItem hook never cancels creation and reports failures", async () => {
   const register = integrationModule.registerNarrativeItemCreationHooks;
   assert.equal(typeof register, "function");

@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { cloneFoundryValue, escapeFoundryHtml } from "../shared/foundry-values.js";
+import { canonicalCatalogId } from "../shared/canonical-catalog-id.js";
 
 const CATALOG_PATH = `modules/${MODULE_ID}/data/lootgen-narrative-variants.json`;
 const NARRATIVE_FIELD_NAMES = Object.freeze([
@@ -18,7 +19,7 @@ function clean(value) {
 
 function normalizeVariant(raw, index) {
   const variantId = clean(raw?.variantId);
-  const gearId = clean(raw?.gearId);
+  const gearId = clean(raw?.gearId) ? canonicalCatalogId(raw.gearId) : "";
   const sourceName = clean(raw?.sourceName);
   const title = clean(raw?.title);
   const description = clean(raw?.description);
@@ -88,6 +89,12 @@ export function pickLootgenNarrativeFields(value = {}) {
     .map((key) => [key, cloneFoundryValue(value[key])]));
 }
 
+function renderNarrativeHtml(title, description) {
+  const heading = clean(title) ? `<h3>${escapeFoundryHtml(clean(title))}</h3>` : "";
+  const body = escapeFoundryHtml(clean(description).replace(/\r\n?/gu, "\n")).replace(/\n/gu, "<br>");
+  return `${heading}<p>${body}</p>`;
+}
+
 export function applyLootgenNarrativeVariant(itemData, variant) {
   const result = cloneFoundryValue(itemData ?? {});
   if (!variant) return result;
@@ -97,13 +104,12 @@ export function applyLootgenNarrativeVariant(itemData, variant) {
   const description = clean(variant.description);
   if (!variantId || !gearId || !description) throw new Error("Invalid lootgen narrative variant");
 
-  const heading = title ? `<h3>${escapeFoundryHtml(title)}</h3>` : "";
-  const body = escapeFoundryHtml(description.replace(/\r\n?/gu, "\n")).replace(/\n/gu, "<br>");
+  const sourceHtml = result.system?.description?.value ?? "";
   const baseName = clean(result.flags?.[MODULE_ID]?.narrativeBaseName) || clean(variant.sourceName) || clean(result.name);
   if (title) result.name = title;
   result.system ??= {};
   result.system.description ??= {};
-  result.system.description.value = `${heading}<p>${body}</p>`;
+  result.system.description.value = `${renderNarrativeHtml(title, description)}${sourceHtml}`;
   result.system.quantity = 1;
   result.flags ??= {};
   result.flags[MODULE_ID] = {
@@ -154,12 +160,14 @@ export function buildNarrativeItemCreationPatch(itemData, catalog, { random = Ma
     source.system.quantity = 1;
     source.flags ??= {};
     source.flags[MODULE_ID] = { ...moduleFlags, nonStackable: true };
-    Object.assign(source, buildNarrativeItemNamePatch(source, catalog));
+    const repair = buildNarrativeItemRepairPatch(source, catalog);
+    if (repair?.name) source.name = repair.name;
+    if (repair?.system) source.system = { ...source.system, ...repair.system };
     return narrativeCreationPatch(source);
   }
 
   const gearId = narrativeCreationGearId(source);
-  const narrativeVariants = gearId ? catalog?.byGearId?.get?.(gearId) : null;
+  const narrativeVariants = gearId ? catalog?.byGearId?.get?.(canonicalCatalogId(gearId)) : null;
   if (!Array.isArray(narrativeVariants) || narrativeVariants.length === 0) return null;
   const variant = selectLootgenNarrativeVariant({ narrativeVariants }, random);
   return narrativeCreationPatch(applyLootgenNarrativeVariant(source, variant));
@@ -170,8 +178,26 @@ export function buildNarrativeItemNamePatch(itemData, catalog) {
   if (clean(itemData?.name)) return null;
   const flags = itemData?.flags?.[MODULE_ID] ?? {};
   if (!clean(flags.narrativeVariantId)) return null;
-  const name = clean(flags.narrativeTitle) || clean(catalog?.byVariantId?.get?.(flags.narrativeVariantId)?.title);
+  const variant = catalog?.byVariantId?.get?.(flags.narrativeVariantId);
+  const name = clean(flags.narrativeTitle) || clean(variant?.title) || clean(flags.narrativeBaseName) || clean(variant?.sourceName);
   return name ? { name } : null;
+}
+
+/** Repair only missing titles and the exact generated HTML which previously lost its metadata. */
+export function buildNarrativeItemRepairPatch(itemData, catalog) {
+  const patch = buildNarrativeItemNamePatch(itemData, catalog) ?? {};
+  const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  const description = itemData?.system?.description ?? {};
+  if (clean(flags.narrativeVariantId) && clean(flags.narrativeDescription)
+      && description.value === renderNarrativeHtml(flags.narrativeTitle, flags.narrativeDescription)) {
+    const rows = [["Преобладающий материал", flags.predominantMaterialName], ["Связанный инструмент", flags.linkedTool], ["Value", flags.value]]
+      .filter(([, value]) => value !== undefined && value !== null && value !== "");
+    if (rows.length) {
+      const footer = `<ul>${rows.map(([label, value]) => `<li><strong>${escapeFoundryHtml(label)}:</strong> ${escapeFoundryHtml(value)}</li>`).join("")}</ul>`;
+      patch.system = { description: { ...cloneFoundryValue(description), value: `${description.value}${footer}` } };
+    }
+  }
+  return Object.keys(patch).length ? patch : null;
 }
 
 export async function loadLootgenNarrativeCatalog() {

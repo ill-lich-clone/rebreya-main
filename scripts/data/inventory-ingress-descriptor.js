@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
 import { isDurabilityEligible } from "./durability-rules.js";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.395";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.396";
 import { readInventoryItemQuantity, readInventoryItemUnitWeight, readInventoryItemUnitPrice } from "./inventory-material-quantity.js?v=1.4.377";
 
 const COPPER_MULTIPLIERS = Object.freeze({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 });

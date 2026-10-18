@@ -1,5 +1,5 @@
-import { projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.395";
-import { readLootgenPreparedComposition } from "../data/lootgen-prepared-item.js?v=1.4.395";
+import { projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.396";
+import { readLootgenPreparedComposition } from "../data/lootgen-prepared-item.js?v=1.4.396";
 
 const MODULE_ID="rebreya-main";
 const number=new Intl.NumberFormat("ru-RU",{maximumFractionDigits:0});

@@ -1,4 +1,4 @@
-import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js?v=1.4.395";
+import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js?v=1.4.396";
 
 import { isEquipmentSize } from "../data/equipment-size-rules.js?v=1.4.393";
 export const INVENTORY_INGRESS_PLAN_VERSION = 1;

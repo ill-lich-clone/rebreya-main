@@ -1,22 +1,22 @@
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.395";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.396";
 import { normalizeLootgenComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
 import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
-import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.395";
+import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.396";
 import { buildRuntimeGraphDocuments, captureRuntimeItemGraph, materializeRuntimeItemGraph, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.4.385";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.395";
-import { readStorageState } from "./storage-service.js?v=1.4.395";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.396";
+import { readStorageState } from "./storage-service.js?v=1.4.396";
 import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,
   createPortableStorageContainerItemData,
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
-} from "./storage-container-snapshot.js?v=1.4.395";
+} from "./storage-container-snapshot.js?v=1.4.396";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.322";
-import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.395";
+import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.396";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation

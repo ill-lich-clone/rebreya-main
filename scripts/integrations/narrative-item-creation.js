@@ -1,9 +1,9 @@
 import { MODULE_ID } from "../constants.js";
 import {
   buildNarrativeItemCreationPatch,
-  buildNarrativeItemNamePatch,
+  buildNarrativeItemRepairPatch,
   loadLootgenNarrativeCatalog
-} from "../data/lootgen-narrative-catalog.js?v=1.4.395";
+} from "../data/lootgen-narrative-catalog.js?v=1.4.396";
 
 const registeredHookObjects = new WeakSet();
 const pendingNameRepairs = new WeakMap();
@@ -11,7 +11,7 @@ const repairingSheets = new WeakSet();
 
 export async function restoreNarrativeItemTitle(item, { catalog } = {}) {
   if (!item || item.pack || item.parent?.pack) return false;
-  const patch = buildNarrativeItemNamePatch(item.toObject?.() ?? item, catalog);
+  const patch = buildNarrativeItemRepairPatch(item.toObject?.() ?? item, catalog);
   if (!patch) return false;
   if (pendingNameRepairs.has(item)) return pendingNameRepairs.get(item);
   const task = (async () => {
