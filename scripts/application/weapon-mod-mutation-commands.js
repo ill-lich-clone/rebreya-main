@@ -1,6 +1,6 @@
 import { aggregateKey, keyedMutationScheduling } from "./socket-command-scheduling.js";
 import { weaponModFlag, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.389";
-import { isValidWeaponModAttackDecision, isValidWeaponModTargetDecision, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.386";
+import { isValidWeaponModAttackDecision, isValidWeaponModTargetDecision, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
 const object=value=>value && typeof value==="object" && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
 const text=value=>typeof value==="string" && value.length>0 && value.length<=256 && value.trim()===value && !/[\u0000-\u001f\u007f]/u.test(value);
 const exact=(value,keys,optional=[])=>Boolean(object(value) && keys.every(key=>Object.hasOwn(value,key)) && Object.keys(value).every(key=>keys.includes(key)||optional.includes(key)));

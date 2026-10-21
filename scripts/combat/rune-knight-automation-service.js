@@ -739,6 +739,15 @@ export class RuneKnightAutomationService {
     return true;
   }
 
+  async handleGroupedCombatPhase(combat, phase) {
+    const empty = { actor: null, token: null };
+    for (const member of collectionValues(combat?.combatants).filter(c => phase.memberIds.includes(c.id))) {
+      const previous = { round: phase.round, turn: combat.turn, combatant: phase.kind === "turn-end" ? member : empty };
+      const current = { round: phase.round, turn: combat.turn, combatant: phase.kind === "turn-start" ? member : empty };
+      await this.handleCombatTurnChange(combat, { ...current, current, previous }, { direction: 1, current, previous });
+    }
+  }
+
   async handleCombatTurnChange(combat, updateData = {}, updateOptions = {}) {
     const ended = this.#endedTurnCombatant(combat, updateData, updateOptions);
     const targetActor = ended?.actor ?? tokenActor(ended?.token);

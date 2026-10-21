@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.craftsmanGadgetHooksRegistered`;
 
@@ -158,6 +159,7 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
 
   if (gadgetService || zoneService || vehicleService) {
     Hooks.on("combatTurnChange", (combat) => {
+      if (hasGroupedCombatPhases(combat)) return true;
       const key = combatTurnKey(combat);
       if (gadgetService) runAsync(
         "Failed to advance Craftsman gadget turn state.",

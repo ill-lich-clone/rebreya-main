@@ -1,5 +1,7 @@
 ﻿{
   "TYPES.Item.state": "Государство",
+  "REBREYA_MAIN.Settings.CombatAutoPan.Name": "Камера в начале хода",
+  "REBREYA_MAIN.Settings.CombatAutoPan.Hint": "Перемещать камеру к существу, которое начинает ход в бою Ребреи.",
   "REBREYA.WeaponMods.Title": "Оружейные обвесы",
   "REBREYA.WeaponMods.Rebuild": "Пересборка · 500 зм",
   "REBREYA.WeaponMods.Missing": "Нет в инвентаре персонажа",

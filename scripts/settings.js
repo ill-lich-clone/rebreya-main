@@ -1,4 +1,4 @@
-﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js?v=1.4.271";
+﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js?v=1.4.397";
 import { refreshEconomyLauncher } from "./hooks.js?v=1.4.360";
 export {
   SOCKET_EVENT_SET_SETTING,
@@ -47,6 +47,10 @@ function refreshCanvasTokenEffects() {
 }
 
 export function registerSettings() {
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.COMBAT_AUTO_PAN, {
+    name: "REBREYA_MAIN.Settings.CombatAutoPan.Name", hint: "REBREYA_MAIN.Settings.CombatAutoPan.Hint",
+    scope: "client", config: true, type: Boolean, default: true
+  });
   game.settings.register(MODULE_ID,SETTINGS_KEYS.SCENE_ACTIVITY_STATE,{
     scope:"world",config:false,type:Object,
     default:{version:1,activeByGroup:{},groupRevisions:{},history:[],recentOperations:[]},

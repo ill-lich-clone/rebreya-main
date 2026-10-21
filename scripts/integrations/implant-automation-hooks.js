@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js";
 import { renderImplantItemSheetActions } from "./implant-item-sheet.js";
 
 const registeredHookSets = new WeakSet();
@@ -68,6 +69,7 @@ export function registerImplantAutomationHooks(moduleApi, { Hooks = globalThis.H
   ));
 
   Hooks.on("combatTurnChange", (combat, previous, current) => {
+    if (hasGroupedCombatPhases(combat)) return true;
     Promise.resolve(service.handleCombatTurnChange(combat, previous, current)).catch((error) => {
       console.error(`${MODULE_ID} | Failed to apply implant turn movement.`, error);
     });

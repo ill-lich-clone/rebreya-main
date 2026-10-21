@@ -162,6 +162,7 @@ export const REBREYA_TOOLS = [
 ];
 
 export const SETTINGS_KEYS = {
+  COMBAT_AUTO_PAN: "combatAutoPan",
   SCENE_ACTIVITY_STATE: "sceneActivityState",
   SHOW_BUTTON: "showEconomyButton",
   DEBUG_MODE: "debugMode",

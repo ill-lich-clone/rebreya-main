@@ -110,6 +110,25 @@ export class CraftsmanGadgetZoneService {
     return template;
   }
 
+  async handleGroupedCombatPhase(combat, phase) {
+    if (!this.#isActiveGmClient()) return false;
+    if (phase.kind === "each-turn") {
+      const key = turnKey(combat);
+      for (const [id, template] of [...this._templates]) if (cleanString(smokeState(template)?.expiresAtTurnKey) === key) await this.#deleteTemplate(id, template);
+    }
+    if (phase.kind !== "turn-start") return true;
+    const members = Array.from(combat?.combatants?.contents ?? combat?.combatants ?? []);
+    for (const member of members.filter(c => phase.memberIds.includes(c.id))) {
+      const token = member.token?.object ?? member.token, actor = member.actor;
+      if (!token || !actor) continue;
+      for (const template of this._templates.values()) {
+        const state = smokeState(template);
+        if (state?.poisoned === true && isTokenInsideCraftsmanSmoke(template, token)) await this.#applyPoisonDamage(actor, Math.max(1, Math.floor(Number(state.craftsmanLevel) || 1)), template);
+      }
+    }
+    return true;
+  }
+
   async handleCombatTurn(combat) {
     if (!this.#isActiveGmClient()) return false;
     const currentTurnKey = turnKey(combat);

@@ -10,7 +10,7 @@ import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.396";
 import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.4.396";
 // @rebreya-role canonical-composition-root
 import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.396";
-import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
+import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js?v=1.4.397";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { clearNamedIconCache } from "./data/compendium-utils.js?v=1.4.327";
 import {
@@ -117,8 +117,8 @@ import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.392";
-import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.4.389";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.392";
+import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.4.397";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.397";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.4.372";
@@ -314,9 +314,15 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.396";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.386";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.393";
-import { ImplantAutomationService } from "./combat/implant-automation-service.js";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.397";
+import { GroupedCombatService } from "./application/grouped-combat-service.js";
+import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js";
+import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
+import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js";
+import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js";
+import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.397";
+import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
 import { registerEquipmentSizeCommands } from "./application/equipment-size-commands.js?v=1.4.393";
@@ -326,9 +332,9 @@ import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./inte
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
-import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
+import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.4.397";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.4.392";
-import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.4.392";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.4.397";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
@@ -360,11 +366,11 @@ import {
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.393";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.397";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
 import { getActorHandReservations } from "./integrations/held-items.js?v=1.4.383";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
-import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
+import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js?v=1.4.397";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
 import { CraftsmanConstructorService } from "./combat/craftsman-constructor-service.js";
 import {
@@ -397,14 +403,14 @@ import { registerRationFoodConversionHook } from "./integrations/ration-food-con
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.327";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.396";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
-import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
+import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.4.397";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
 import {
   registerImplantDataModelPatch,
   registerImplantHooks
 } from "./integrations/implant-hooks.js";
-import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js";
+import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.4.397";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
@@ -435,7 +441,7 @@ import {
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
-} from "./settings.js?v=1.4.360";
+} from "./settings.js?v=1.4.397";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.396";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
@@ -1848,6 +1854,10 @@ export class RebreyaMainModule {
       macroProvider: () => globalThis.Macro,
       isActiveGmClient
     });
+    this.groupedCombatService = new GroupedCombatService({
+      repository: new GroupedCombatRepository(), coordinator: this.worldMutationCoordinator, isStorageActor,
+      effects: createGroupedCombatEffects({ planRebreyaPhase: (combat, phase) => planRebreyaCombatAutomation(this, combat, phase) })
+    });
     this.lootClaimService = new LootClaimService({
       getMessage: ({ messageId, lootId }) => (
         (messageId ? globalThis.game?.messages?.get?.(messageId) : null)
@@ -2089,6 +2099,10 @@ export class RebreyaMainModule {
     this.tradeRouteApps = new Map();
     this.referenceApps = new Map();
     this.#registerTypedSocketCommands();
+  }
+
+  startCombatFromSelection() {
+    return runStartCombatMacro(this);
   }
 
   createMapObjectToken(options = {}) {
@@ -2343,6 +2357,7 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    registerGroupedCombatCommands(this);
     registerWeaponModCommands(this,{register:(command,definition)=>this.privilegedMutationGateway.registerCommand(command,definition)});
     registerEquipmentSizeCommands(this, { register: (command, definition) => this.privilegedMutationGateway.registerCommand(command, definition) });
     this.privilegedMutationGateway.registerCommand("lootgen.publish-result", {
@@ -8421,6 +8436,8 @@ Hooks.once("ready", async () => {
   try {
     registerCombatHooks(moduleApi);
     registerImplantAutomationHooks(moduleApi);
+    registerGroupedCombatRuntime(moduleApi);
+    for (const combat of game.combats?.contents ?? []) await moduleApi.groupedCombatService.reconcile(combat);
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);

@@ -288,12 +288,22 @@ export class CurseUpgradeAutomationService {
     while (this.turns.size > 128) this.turns.delete(this.turns.keys().next().value);
     return pending;
   }
-  async _combatChanged(combat, previous = {}, current = {}) {
+  async handleGroupedCombatPhase(combat, phase) {
+    for (const member of values(combat?.combatants).filter(c => phase.memberIds.includes(c.id))) {
+      await this._combatChanged(combat, { round: phase.round, turn: -1 }, { round: phase.round, turn: combat.turn }, {
+        currentActor: phase.kind === "turn-start" ? member.actor : null,
+        previousActor: phase.kind === "turn-end" ? member.actor : null,
+        eventKey: `${combat.id}:${phase.round}:${phase.groupId}:${phase.kind}`
+      });
+    }
+  }
+  async _combatChanged(combat, previous = {}, current = {}, context = null) {
     if (!this.isAuthority()) return;
     if (Number(current.round) < Number(previous.round) || (current.round === previous.round && Number(current.turn) <= Number(previous.turn))) return;
-    const currentActor = combat.combatant?.actor;
-    const previousActor = combat.turns?.[previous.turn]?.actor;
+    const currentActor = context ? context.currentActor : combat.combatant?.actor;
+    const previousActor = context ? context.previousActor : combat.turns?.[previous.turn]?.actor;
     const stamp = `${combat.id}:${combat.round}:${combat.turn}`;
+    const eventKey = context?.eventKey ?? stamp;
     for (const actor of new Set(values(combat.combatants).map(c => c.actor).filter(Boolean))) {
       const deletes = []; const updates = [];
       for (const effect of values(actor.effects)) {
@@ -305,11 +315,11 @@ export class CurseUpgradeAutomationService {
       if (deletes.length) await actor.deleteEmbeddedDocuments("ActiveEffect", deletes, syncOptions());
       if (updates.length) await actor.updateEmbeddedDocuments("ActiveEffect", updates, syncOptions());
       for (const source of this.sources(actor, "obsidian")) {
-        if (this.state(source).combatEvent === stamp) continue;
-        if (actor.id === currentActor?.id) await this.writeState(source, { ac: 0, attackAction: false, combatEvent: stamp });
+        if (this.state(source).combatEvent === eventKey) continue;
+        if (actor.id === currentActor?.id) await this.writeState(source, { ac: 0, attackAction: false, combatEvent: eventKey });
         else if (actor.id === previousActor?.id && !this.state(source).attackAction) {
           const didAttack = await this.prompt(source, { title: "Проклятье обсидиана", body: "В завершившийся ход вы совершали действие Атака? Отдельная атака реакцией или бонусным действием не считается." });
-          await this.writeState(source, { ac: didAttack ? this.state(source).ac ?? 0 : -1, attackAction: didAttack, combatEvent: stamp });
+          await this.writeState(source, { ac: didAttack ? this.state(source).ac ?? 0 : -1, attackAction: didAttack, combatEvent: eventKey });
         }
       }
       await this.syncActor(actor);

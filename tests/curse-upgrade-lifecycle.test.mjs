@@ -159,6 +159,19 @@ test("obsidian end-of-turn notification is idempotent and penalty clears on own 
   assert.equal(f.state().ac, 0);
 });
 
+test("grouped obsidian start and end are distinct events at the same native position", async () => {
+  const f = fixture("obsidiana"), other = fixture("tsepey", "other").actor, combat = combatFor(f.actor, other);
+  const phase = { round: 1, groupId: "group", memberIds: [combat.combatants[0].id] };
+  let prompts = 0; f.service.prompt = async () => { prompts++; return false; };
+  await f.service.handleGroupedCombatPhase(combat, { ...phase, kind: "turn-start" });
+  await f.service.handleGroupedCombatPhase(combat, { ...phase, kind: "turn-end" });
+  await f.service.handleGroupedCombatPhase(combat, { ...phase, kind: "turn-end" });
+  assert.equal(prompts, 1); assert.equal(f.state().ac, -1);
+  combat.round = 2;
+  await f.service.handleGroupedCombatPhase(combat, { ...phase, round: 2, kind: "turn-start" });
+  assert.equal(f.state().ac, 0);
+});
+
 test("obsidian concurrent duplicate turn notifications prompt only once", async () => {
   const f = fixture("obsidiana");
   const other = fixture("tsepey", "other").actor;

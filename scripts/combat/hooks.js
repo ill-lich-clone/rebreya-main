@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js";
 
@@ -131,7 +132,7 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("dnd5e.preRollDeathSave", config => curseUpgrades.preDeathSave(config));
     Hooks.on("dnd5e.rollInitiative", (actor, combatants) => run(curseUpgrades.initiative(actor, combatants)));
     Hooks.on("updateCombatant", (combatant, changed) => { if (Object.hasOwn(changed, "initiative")) return run(curseUpgrades.initiative(combatant.actor, [combatant])); });
-    Hooks.on("combatTurnChange", (combat, previous, current) => run(curseUpgrades.combatChanged(combat, previous, current)));
+    Hooks.on("combatTurnChange", (combat, previous, current) => hasGroupedCombatPhases(combat) ? undefined : run(curseUpgrades.combatChanged(combat, previous, current)));
     Hooks.on("updateWorldTime", () => run(curseUpgrades.expireOutsideCombat()));
     Hooks.on("dnd5e.preRollDamage", config => curseUpgrades.damage.preRollDamage(config));
     Hooks.on("dnd5e.preApplyDamage", (actor, amount, updates, options) => curseUpgrades.preApplyDamage(actor, amount, updates, options));
@@ -496,6 +497,7 @@ export function registerCombatHooks(moduleApi) {
   }
 
   const advanceSorcererCooldowns = (combat, previous, current) => {
+    if (hasGroupedCombatPhases(combat)) return;
     if (!isActiveGmClient(globalThis.game) || combatTurnChangeDirection(previous, current) <= 0) {
       return;
     }
@@ -505,6 +507,7 @@ export function registerCombatHooks(moduleApi) {
   };
 
   Hooks.on("combatTurn", (combat, updateData, updateOptions) => {
+    if (hasGroupedCombatPhases(combat)) return;
     if (hasAttackService) {
       moduleApi.combatAttackService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
         console.error(`${MODULE_ID} | Failed to handle combat turn reaction processing.`, error);
@@ -1212,6 +1215,7 @@ export function registerCombatHooks(moduleApi) {
     }
 
     Hooks.on("combatTurnChange", (combat, previous, current) => {
+      if (hasGroupedCombatPhases(combat)) return;
       void previous;
       moduleApi.fighterAutomationService.handleCombatTurnChange(combat, current ?? {}).catch((error) => {
         console.error(`${MODULE_ID} | Failed to handle combat turn-change fighter automation.`, error);

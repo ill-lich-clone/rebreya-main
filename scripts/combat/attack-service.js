@@ -1,8 +1,9 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
+import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.389";
 import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.4.389";
-import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.386";
+import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { measureStorageTokenDistance, storageTokenFootprintCenters, measureStorageGridDistance } from "../data/storage-access.js";
@@ -916,7 +917,7 @@ export class CombatAttackService {
     const host=activity?.item,actor=host?.actor??host?.parent,combat=globalThis.game?.combat;
     const contributions=this.moduleApi.itemUpgradeAutomationService?.project?.(actor,host)?.contributions??[];
     const aim=getWeaponModAimState(host,combat,contributions),movement=actor?.getFlag?.(MODULE_ID,"weaponModMovement")??actor?.flags?.[MODULE_ID]?.weaponModMovement;
-    const movingNow=Boolean(combat && combat.combatant?.actor?.uuid===actor?.uuid && movement?.combatId===combat.id && movement.round===combat.round && movement.turn===combat.turn);
+    const movingNow=Boolean(combat && isCombatActorActive(combat,actor) && movement?.combatId===combat.id && movement.round===combat.round && movement.turn===combat.turn);
     const nativeProficiency=this.moduleApi.itemUpgradeAutomationService?.getWeaponModActivityProficiency?.(activity)??host?.system?.prof?.hasProficiency,legacyProficiency=host?.system?.proficient;
     const targetUuid=target?.document?.uuid??target?.uuid??null,visibility=config.workflow?.targetVisibility?.get?.(targetUuid);
     const water=actor?.getFlag?.(MODULE_ID,"underwater")??actor?.flags?.[MODULE_ID]?.underwater??globalThis.canvas?.scene?.getFlag?.(MODULE_ID,"underwater");
@@ -1382,7 +1383,7 @@ export class CombatAttackService {
     let after=null;
     if(marker.action==="aim"){
       const combat=globalThis.game?.combat;
-      if(!combat || combat.started===false || combat.combatant?.actor?.uuid!==actor.uuid)throw new Error("Прицеливаться можно в своём ходу.");
+      if(!combat || combat.started===false || !isCombatActorActive(combat,actor))throw new Error("Прицеливаться можно в своём ходу.");
       const known=this.getWeaponModAttackConditions({item:host,actor},null,{}),conditions=decision?resolveWeaponModConditions(known,decision):known;
       if(conditions.movedFeet==null)throw new Error("Уточните перемещение в этом ходу.");
       if(conditions.movedFeet>effect.maximumMovedFeet)throw new Error("Превышено допустимое перемещение для прицеливания.");
@@ -1452,23 +1453,35 @@ export class CombatAttackService {
     return response && typeof response==="object"?response:null;
   }
 
-  async handleWeaponModTurnChange(combat,{ended=false}={}) {
+  async handleGroupedCombatPhase(combat, phase) {
+    if (phase.kind === "each-turn") {
+      const state = combat.flags?.[MODULE_ID]?.groupedCombat;
+      const group = state?.groups.find(g => g.id === phase.groupId);
+      return this.handleWeaponModTurnChange(combat, { activeCombatants: combatantsOf(combat).filter(c => group?.memberIds.includes(c.id)) });
+    }
+    if (phase.kind === "turn-start") for (const c of combatantsOf(combat).filter(c => phase.memberIds.includes(c.id))) {
+      await this.refreshReaction(c.actor, { combat, round: phase.round, turn: combat.turn });
+    }
+  }
+
+  async handleWeaponModTurnChange(combat,{ended=false,activeCombatants=null}={}) {
     if(!isActiveGmClient(globalThis.game))return;
     const actors=new Map(Array.from(combat?.combatants?.contents??combat?.combatants??[]).map(combatant=>[combatant.actor?.uuid,combatant.actor]));
     if(combat?.combatant?.actor)actors.set(combat.combatant.actor.uuid,combat.combatant.actor);
+    const active = new Map((activeCombatants ?? [combat?.combatant]).filter(Boolean).map(c => [c.actor?.uuid, c]));
     for(const actor of actors.values()){
       if(!actor?.uuid)continue;
       await this.moduleApi.inventoryService?.mutationCoordinator.run(`inventory-organization:${actor.id}`,async()=>{
         if(!isActiveGmClient(globalThis.game))return;
         for(const host of actor.items?.contents??[]){
           const aim=host.getFlag?.(MODULE_ID,"weaponModAim");
-          if(aim && (ended || aim.combatId!==combat.id || aim.round!==combat.round || aim.turn!==combat.turn || combat.combatant?.actor?.uuid!==actor.uuid)){
+          if(aim && (ended || aim.combatId!==combat.id || aim.round!==combat.round || aim.turn!==combat.turn || !active.has(actor.uuid))){
             if(!isActiveGmClient(globalThis.game))return;
             await host.update({[`flags.${MODULE_ID}.-=weaponModAim`]:null},{render:false});
           }
         }
-        if(!ended && combat.combatant?.actor?.uuid===actor.uuid){
-          const token=combat.combatant.token,current=actor.getFlag?.(MODULE_ID,"weaponModMovement");
+        if(!ended && active.has(actor.uuid)){
+          const token=active.get(actor.uuid).token,current=actor.getFlag?.(MODULE_ID,"weaponModMovement");
           if(current?.combatId===combat.id && current.round===combat.round && current.turn===combat.turn)return;
           if(!isActiveGmClient(globalThis.game))return;
           await actor.update({[`flags.${MODULE_ID}.==weaponModMovement`]:{combatId:combat.id,round:combat.round,turn:combat.turn,feet:0,
@@ -1482,7 +1495,7 @@ export class CombatAttackService {
   async handleWeaponModTokenMove(token,changed={}) {
     if(!isActiveGmClient(globalThis.game) || !["x","y","elevation"].some(key=>Object.hasOwn(changed,key)))return;
     const actor=token?.actor,combat=globalThis.game?.combat;
-    if(!actor?.uuid || combat?.combatant?.actor?.uuid!==actor.uuid)return;
+    if(!actor?.uuid || !isCombatActorActive(combat,actor))return;
     // Native v13 movement measures the entire travelled path, including intermediate waypoints.
     const movement=token.movement,passed=movement?.passed,increment=passed?.waypoints?.some(point=>point.action==="displace" || globalThis.CONFIG?.Token?.movement?.actions?.[point.action]?.teleport)
       ?null:Number.isFinite(passed?.distance)?convertUnitsToFeet(passed.distance,token.parent?.grid?.units??"ft"):null;

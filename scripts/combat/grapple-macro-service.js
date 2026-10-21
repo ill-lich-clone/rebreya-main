@@ -9,6 +9,7 @@ export const DISARM_MACRO_SOURCE_ID = "disarm-macro";
 export const TWISTED_MACRO_SOURCE_ID = "twisted-macro";
 export const TREAT_WOUNDS_MACRO_SOURCE_ID = "treat-wounds-macro";
 export const CREATURE_SIZE_MACRO_SOURCE_ID = "resize-creature-macro";
+export const START_COMBAT_MACRO_SOURCE_ID = "start-combat-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -125,6 +126,11 @@ export function buildCreatureSizeMacroData(folderId, options = {}) {
     sourceId: CREATURE_SIZE_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
 }
 
+export function buildStartCombatMacroData(folderId, options = {}) {
+  return macroData({ name: "Начать сражение", command: "await game.rebreyaMain?.startCombatFromSelection?.();",
+    sourceId: START_COMBAT_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function macroSnapshot(macro) {
   return {
     name: macro?.name,
@@ -192,6 +198,9 @@ export class GrappleMacroService {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, CREATURE_SIZE_MACRO_SOURCE_ID, buildCreatureSizeMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
+      await this.#syncMacro(game, START_COMBAT_MACRO_SOURCE_ID, buildStartCombatMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       }))
     ];

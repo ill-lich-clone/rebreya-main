@@ -1,7 +1,8 @@
+import { isCombatActorActive } from "../combat/turn-group-rules.js";
 export const WEAPON_MOD_CONDITION_FIELDS=["movedFeet","prone","targetVisible","usesProficiency","underwater","aimMode"];
 export function getWeaponModAimState(host,combat,contributions=[]){
   const state=host?.flags?.["rebreya-main"]?.weaponModAim ?? host?.getFlag?.("rebreya-main","weaponModAim"),actor=host?.actor??host?.parent;
-  if(!state || !combat || combat.started===false || state.actorUuid!==actor?.uuid || state.hostItemId!==host.id || combat.combatant?.actor?.uuid!==actor?.uuid
+  if(!state || !combat || combat.started===false || state.actorUuid!==actor?.uuid || state.hostItemId!==host.id || !isCombatActorActive(combat,actor)
     || state.combatId!==combat.id || state.round!==combat.round || state.turn!==combat.turn)return null;
   return contributions.some(c=>c.scope==="weapon-mod" && c.kind==="aim" && c.hostItemId===host.id && c.childItemId===state.childItemId && c.mode===state.mode)?state:null;
 }

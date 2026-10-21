@@ -170,6 +170,7 @@ export class ImplantAutomationService {
     this.boostedActor = null;
     this.tokenMovementOrigins = new WeakMap();
     this.processedRegenerationTurns = new Set();
+    this.groupedTurnActors = new Map();
   }
 
   hasCapability(actor, type) {
@@ -204,6 +205,8 @@ export class ImplantAutomationService {
   }
 
   recordMovement(actor, distance) {
+    const grouped = this.groupedTurnActors.get(cleanText(actor?.uuid ?? actor?.id));
+    if (grouped && finiteNumber(distance, 0) > 0) { grouped.distance += finiteNumber(distance, 0); return true; }
     const activeKey = cleanText(this.activeTurnActor?.uuid ?? this.activeTurnActor?.id);
     const actorKey = cleanText(actor?.uuid ?? actor?.id);
     const numericDistance = finiteNumber(distance, 0);
@@ -232,6 +235,28 @@ export class ImplantAutomationService {
     const distance = this.#measureTokenMovement(token, origin, changed);
     this.recordMovement(token?.actor, distance);
     return true;
+  }
+
+  async handleGroupedCombatPhase(combat, phase) {
+    for (const c of collectionValues(combat?.combatants).filter(member => phase.memberIds.includes(member.id))) {
+      const actor = c.actor, key = cleanText(actor?.uuid ?? actor?.id);
+      if (!key) continue;
+      if (phase.kind === "turn-start") {
+        if (this.groupedTurnActors.has(key)) continue;
+        await this.#applyTurnRegeneration(combat, actor, key);
+        const record = { actor, distance: 0, boosted: false };
+        this.groupedTurnActors.set(key, record);
+        if (this.completedTurnDistances.get(key) === 0 && this.hasCapability(actor, "impulseLegs") && this.#isResponsibleClient(actor) && await this.#promptImpulseLegs(actor)) {
+          await this.#setMovementMultiplier(actor, 2); record.boosted = true;
+        }
+      } else if (phase.kind === "turn-end") {
+        const record = this.groupedTurnActors.get(key);
+        if (!record) continue;
+        this.completedTurnDistances.set(key, record.distance);
+        if (record.boosted) await this.#setMovementMultiplier(actor, 1);
+        this.groupedTurnActors.delete(key);
+      }
+    }
   }
 
   async handleCombatTurnChange(combat) {
@@ -269,6 +294,8 @@ export class ImplantAutomationService {
   }
 
   async handleCombatEnd() {
+    for (const record of this.groupedTurnActors.values()) if (record.boosted) await this.#setMovementMultiplier(record.actor, 1);
+    this.groupedTurnActors.clear();
     if (this.boostedActor) {
       await this.#setMovementMultiplier(this.boostedActor, 1);
     }
