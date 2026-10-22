@@ -97,7 +97,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.396";
+} from "./data/inventory-service.js?v=1.4.399";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -179,13 +179,15 @@ import {
 import {
   GROUP_INVENTORY_MERGE_LEGACY_COMMAND,
   GROUP_PARTY_DEFAULTS_UPDATE_COMMAND,
+  GROUP_PARTY_MEMBER_UPDATE_COMMAND,
   GROUP_REGISTRY_ACTIVATE_COMMAND,
   GROUP_REGISTRY_REGISTER_COMMAND,
   isValidGroupInventoryMergeLegacyPayload,
   isValidGroupPartyDefaultsUpdatePayload,
+  isValidGroupPartyMemberUpdatePayload,
   isValidGroupRegistryActivatePayload,
   isValidGroupRegistryRegisterPayload
-} from "./application/group-registry-mutation-commands.js?v=1.4.373";
+} from "./application/group-registry-mutation-commands.js?v=1.4.399";
 import {
   DOWNTIME_HISTORY_CLEAR_COMMAND,
   DOWNTIME_PROJECT_CLOSE_COMMAND,
@@ -396,7 +398,7 @@ import {
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.396";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.399";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -1649,7 +1651,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.4.396"
+          "./ui/inventory-app.js?v=1.4.399"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -2598,6 +2600,23 @@ export class RebreyaMainModule {
           groupActorId: payload.groupActorId, guard: context.assertActiveGm
         }),
         { actorIdsFromResult: () => [payload.groupActorId], traceContext: context }
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GROUP_PARTY_MEMBER_UPDATE_COMMAND, {
+      validate: isValidGroupPartyMemberUpdatePayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId),
+      scheduling: keyedMutationScheduling(payload => [groupKey(payload.groupActorId)]),
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.inventoryService.updatePartyMember(payload.actorId, payload.patch, {
+          groupActorId: payload.groupActorId,
+          guard: () => {
+            context.assertActiveGm();
+            if (!this.#canSenderManageGroup(context.sender, payload.groupActorId)) {
+              throw new Error("Отправитель больше не может управлять этой группой.");
+            }
+          }
+        }),
+        { actorIdsFromResult: () => [payload.groupActorId, payload.actorId], traceContext: context }
       )
     });
     const resolveAuthorizedDowntimeGroup = (groupId) => {
@@ -6613,10 +6632,28 @@ export class RebreyaMainModule {
     return result;
   }
 
-  async updatePartyMember(actorId, patch = {}) {
+  async updatePartyMember(actorId, patch = {}, { groupActorId = "" } = {}) {
+    let capturedGroupId = cleanSocketId(groupActorId);
+    if (!capturedGroupId) {
+      try {
+        const context = this.getGroupContext();
+        capturedGroupId = cleanSocketId(context?.groupId ?? context?.groupActor?.id);
+      }
+      catch (error) {
+        if (![GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP, GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP].includes(error?.message)) throw error;
+      }
+    }
+    if (capturedGroupId) {
+      const result = await this.privilegedMutationGateway.mutate(GROUP_PARTY_MEMBER_UPDATE_COMMAND, {
+        groupActorId: capturedGroupId, actorId, patch
+      });
+      if (!isActiveGmClient(globalThis.game)) this.#deferInventoryRefresh([capturedGroupId, actorId]);
+      return result;
+    }
+    const inventoryActor = await this.inventoryService.getInventoryActor({ create: false });
     return this.runInventoryMutation(
-      () => this.inventoryService.updatePartyMember(actorId, patch),
-      { actorIdsFromResult: () => [actorId] }
+      () => this.inventoryService.updatePartyMember(actorId, patch, { inventoryActor }),
+      { actorIdsFromResult: () => [inventoryActor?.id, actorId] }
     );
   }
 
@@ -8000,7 +8037,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.396");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.399");
 
       if (!this.inventoryApp) {
         this.inventoryApp = new InventoryApp(this);
@@ -8047,7 +8084,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.396");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.399");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

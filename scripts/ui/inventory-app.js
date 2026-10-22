@@ -16,7 +16,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.396";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.399";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
@@ -8291,7 +8291,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         try {
           this.#rememberExpandedPartyMembers(element);
-          await this.moduleApi.updatePartyMember(actorId, patch);
+          const groupActorId = this.inventorySnapshotCache?.actor?.type === "group" ? this.inventoryActorId : "";
+          await this.moduleApi.updatePartyMember(actorId, patch, { groupActorId });
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to update party member field '${fieldName}'.`, error);

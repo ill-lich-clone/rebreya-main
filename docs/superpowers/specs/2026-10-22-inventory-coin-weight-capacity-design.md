@@ -1,6 +1,6 @@
 # Inventory coin weight and capacity controls
 
-Status: written for user review on 2026-10-22; no runtime implementation yet.
+Status: approved by the user on 2026-10-22; implemented as release 1.4.399. Final verification and delivery are recorded in the linked implementation plan.
 
 ## Observable result
 

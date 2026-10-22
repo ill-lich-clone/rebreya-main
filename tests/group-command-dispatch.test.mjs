@@ -315,6 +315,137 @@ function commandRequest(command, senderId, payload, requestId = `${command}-requ
   };
 }
 
+test("party member command validates exact scope and only recognized serializable fields", () => {
+  const validate = groupRegistryMutationCommands.isValidGroupPartyMemberUpdatePayload;
+  assert.equal(typeof validate, "function");
+  const payload = { groupActorId: "group-a", actorId: "character-a", patch: { strOverride: "", capModOverride: "20", capBonusLb: 200 } };
+  assert.equal(validate(payload), true);
+  assert.equal(validate({ ...payload, patch: { tools: { smith: { owned: true, prof: false, mod: "2", rank: 1 } } } }), true);
+  for (const bad of [
+    { ...payload, extra: true }, { ...payload, groupActorId: " group-a" }, { ...payload, actorId: "" },
+    { ...payload, patch: { arbitrary: 3 } }, { ...payload, patch: { capModOverride: Infinity } },
+    { ...payload, patch: { capBonusLb: {} } }, { ...payload, patch: JSON.parse('{"__proto__":{}}') },
+    { ...payload, patch: { tools: { smith: { arbitrary: true } } } }
+  ]) assert.equal(validate(bad), false);
+});
+
+test("party member typed route persists the requested group's controls and rejects another owner", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    const api = new RebreyaMainModule();
+    fixture.store[SETTINGS_KEYS.GROUP_STATE] = api.getGroupRegistry();
+    const beforeA = clone(fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id]);
+    const payload = { groupActorId: fixture.groupB.id, actorId: fixture.memberB.id, patch: { capModOverride: "20", capBonusLb: "200" } };
+    await api.handleSocketMessage(commandRequest("group.party.member.update", fixture.users.playerB.id, payload, "member-b-update"));
+    await flushCommands();
+    assert.equal(resultFor(fixture, "member-b-update")?.ok, true);
+    const member = fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupB.id].memberStateByActorId[fixture.memberB.id];
+    assert.equal(member.capModOverride, 20); assert.equal(member.capBonusLb, 200);
+    assert.deepEqual(fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id], beforeA);
+    const writes = fixture.writes.length;
+    await api.handleSocketMessage(commandRequest("group.party.member.update", fixture.users.playerA.id, payload, "member-forged"));
+    await flushCommands();
+    assert.equal(resultFor(fixture, "member-forged")?.ok, false);
+    assert.equal(fixture.writes.length, writes);
+  } finally { fixture.restore(); }
+});
+
+test("inactive client sends member edits with captured group and never writes settings locally", async () => {
+  for (const currentUserId of ["gm-b", "player-a"]) {
+  const fixture = installFixture({ currentUserId, includeGroupB: true });
+  try {
+    const api = new RebreyaMainModule(), calls = [];
+    const group = currentUserId === "gm-b" ? fixture.groupB : fixture.groupA;
+    const member = currentUserId === "gm-b" ? fixture.memberB : fixture.memberA;
+    api.socketCommandBus.request = async (command, payload) => { calls.push({ command, payload }); return { capBonusLb: 200 }; };
+    await api.updatePartyMember(member.id, { capModOverride: "20", capBonusLb: "200" }, { groupActorId: group.id });
+    assert.deepEqual(calls, [{ command: "group.party.member.update", payload: { groupActorId: group.id, actorId: member.id, patch: { capModOverride: "20", capBonusLb: "200" } } }]);
+    assert.equal(fixture.writes.length, 0);
+  } finally { fixture.restore(); }
+  }
+});
+
+test("changing the active group while a member edit is queued retains the initially captured group", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  const api = new RebreyaMainModule(), gate = createDeferred(), entered = createDeferred();
+  fixture.groupB.system.members.push({ actor: fixture.memberA });
+  const blocker = api.worldMutationCoordinator.run("setting:groupState", async () => { entered.resolve(); await gate.promise; });
+  try {
+    await entered.promise;
+    const editing = api.updatePartyMember(fixture.memberA.id, { capBonusLb: 200 });
+    await flushCommands();
+    fixture.store[SETTINGS_KEYS.GROUP_STATE].activeGroupActorId = fixture.groupB.id;
+    gate.resolve(); await blocker; await editing;
+    const groups = fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById;
+    assert.equal(groups[fixture.groupA.id].memberStateByActorId[fixture.memberA.id].capBonusLb, 200);
+    assert.equal(groups[fixture.groupB.id].memberStateByActorId[fixture.memberA.id], undefined);
+  } finally { gate.resolve(); await blocker; fixture.restore(); }
+});
+
+test("queued member edit rechecks current group membership and active-GM authority before writing", async () => {
+  for (const change of ["removed", "replaced", "authority"]) {
+    const fixture = installFixture();
+    const api = new RebreyaMainModule(), gate = createDeferred(), entered = createDeferred();
+    const blocker = api.worldMutationCoordinator.run("setting:groupState", async () => { entered.resolve(); await gate.promise; });
+    try {
+      await entered.promise;
+      const editing = api.updatePartyMember(fixture.memberA.id, { capBonusLb: 200 }, { groupActorId: fixture.groupA.id });
+      await flushCommands();
+      if (change === "removed") fixture.groupA.system.members = [];
+      else if (change === "replaced") {
+        const index = game.actors.contents.indexOf(fixture.groupA);
+        game.actors.contents[index] = createGroup(fixture.groupA.id);
+      }
+      else game.users.activeGM = fixture.users.gmB;
+      gate.resolve(); await blocker;
+      await assert.rejects(editing);
+      assert.equal(fixture.writes.length, 0);
+    } finally { gate.resolve(); await blocker; fixture.restore(); }
+  }
+});
+
+test("queued member edit rechecks the remote sender's group access before the repository write", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  const api = new RebreyaMainModule(), gate = createDeferred(), entered = createDeferred();
+  fixture.groupA.system.members.push({ actor: fixture.memberB });
+  const blocker = api.worldMutationCoordinator.run("setting:groupState", async () => { entered.resolve(); await gate.promise; });
+  try {
+    await entered.promise;
+    const handling = api.handleSocketMessage(commandRequest("group.party.member.update", fixture.users.playerA.id,
+      { groupActorId: fixture.groupA.id, actorId: fixture.memberB.id, patch: { capBonusLb: 200 } }, "access-lost"));
+    await flushCommands();
+    fixture.groupA.system.members = [{ actor: fixture.memberB }];
+    gate.resolve(); await blocker; await handling; await flushCommands();
+    assert.equal(resultFor(fixture, "access-lost")?.ok, false);
+    assert.equal(fixture.writes.length, 0);
+  } finally { gate.resolve(); await blocker; fixture.restore(); }
+});
+
+test("explicit missing group cannot redirect member edits to the active group", async () => {
+  const fixture = installFixture();
+  try {
+    const api = new RebreyaMainModule();
+    for (const groupActorId of ["missing", fixture.memberA.id]) {
+      await assert.rejects(api.updatePartyMember(fixture.memberA.id, { capBonusLb: 200 }, { groupActorId }));
+    }
+    assert.equal(fixture.writes.length, 0);
+  } finally { fixture.restore(); }
+});
+
+test("committed member cargo edit refreshes the real group view and member sheet without touching another group", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    const api = new RebreyaMainModule(), refreshed = [];
+    api.inventoryApp = { rendered: true, inventoryActorId: fixture.groupA.id, async refreshInventorySnapshot() { refreshed.push("group-a"); } };
+    api.inventoryFolderApps.set("unrelated", { rendered: true, inventoryActorId: fixture.groupB.id, async refreshInventorySnapshot() { refreshed.push("group-b"); } });
+    ui.windows = { member: { rendered: true, actor: { id: fixture.memberA.id, type: "character" }, async render() { refreshed.push("member-a"); } } };
+    await api.updatePartyMember(fixture.memberA.id, { capModOverride: "20", capBonusLb: "200" }, { groupActorId: fixture.groupA.id });
+    await api.refreshInventoryViews({ actorIds: [fixture.memberA.id] });
+    assert.deepEqual([...new Set(refreshed)].sort(), ["group-a", "member-a"]);
+    assert.equal(fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id].memberStateByActorId[fixture.memberA.id].capBonusLb, 200);
+  } finally { fixture.restore(); }
+});
+
 test("group party defaults command validates exact scope and boolean coverage", () => {
   const validate = groupRegistryMutationCommands.isValidGroupPartyDefaultsUpdatePayload;
   assert.equal(typeof validate, "function");

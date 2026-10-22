@@ -2862,6 +2862,7 @@ test("getPartySnapshot counts carried character inventory weight against party c
     isOwner: true,
     flags: { [MODULE_ID]: { managedPartyGroup: true } },
     members: [{ actor: memberActor }],
+    currency: { gp: 50 },
     items: [groupItem]
   });
   const fixture = installInventoryFixture({
@@ -2889,12 +2890,13 @@ test("getPartySnapshot counts carried character inventory weight against party c
   try {
     const snapshot = await service.getPartySnapshot();
 
-    assert.equal(snapshot.partyInventoryWeight, 10);
-    assert.equal(snapshot.memberInventoryWeight, 12);
-    assert.equal(snapshot.inventoryWeight, 22);
-    assert.equal(snapshot.freeCapacityLb, 128);
-    assert.equal(snapshot.members[0].inventoryWeight, 12);
+    assert.equal(snapshot.partyInventoryWeight, 11, "10 lb goods + 50 group coins /50");
+    assert.equal(snapshot.memberInventoryWeight, 12.28, "12 lb goods + 14 member coins /50");
+    assert.equal(snapshot.inventoryWeight, 23.28);
+    assert.equal(snapshot.freeCapacityLb, 126.72);
+    assert.equal(snapshot.members[0].inventoryWeight, 12.28);
     assert.equal(snapshot.members[0].currencyGp, 23.45);
+    assert.equal((await service.getInventorySnapshot()).summary.totalWeight, 11);
   }
   finally {
     fixture.restore();
@@ -3835,6 +3837,41 @@ test("getPartySnapshot uses native group system.members and ignores stale partyS
   finally {
     fixture.restore();
   }
+});
+
+test("cargo edits preserve the shown group and round-trip the screenshot capacities after reopening", async () => {
+  const gartar = createActor({ id: "gartar", type: "character", abilities: { str: { value: 18 } } });
+  const others = [30, 30, 30, 24, 10].map((str, i) => createActor({ id: `other-${i}`, type: "character", abilities: { str: { value: str } } }));
+  const a = createActor({ id: "group-a", type: "group", isOwner: true, members: [gartar, ...others].map(actor => ({ actor })) });
+  const b = createActor({ id: "group-b", type: "group", isOwner: true, members: [{ actor: gartar }] });
+  const legacy = createActor({ id: "legacy", type: "npc", isOwner: true });
+  const fixture = installInventoryFixture({ actors: [a, b, legacy, gartar, ...others], partyState: { members: { gartar: { capBonusLb: 0 } } } });
+  const states = { [a.id]: { memberStateByActorId: {} }, [b.id]: { memberStateByActorId: { gartar: { capBonusLb: 77 } } } };
+  const beforeB = clone(states[b.id]);
+  const context = group => ({ groupActor: group, groupId: group.id, groupState: states[group.id], canManage: true });
+  const api = { async getModel() { return { gear: [], gearById: new Map(), materials: [], materialById: new Map(), materialByGoodId: new Map() }; }, groupContextService: {
+    resolveForCurrentUser: () => context(b),
+    resolveForGroup: id => id === a.id ? context(a) : id === b.id ? context(b) : null,
+    async mutateGroupState(id, mutator) { return mutator(states[id]); }
+  } };
+  const service = new InventoryService(api);
+  const read = () => service.getPartySnapshot({ actor: a });
+  try {
+    assert.equal((await read()).totalCapacityLb, 2130);
+    await service.updatePartyMember(gartar.id, { capModOverride: "20" }, { groupActorId: a.id });
+    await service.updatePartyMember(gartar.id, { capBonusLb: "200" }, { groupActorId: a.id });
+    let current = await read();
+    assert.equal(current.members.find(m => m.actorId === gartar.id).capacityLb, 560);
+    assert.equal(current.totalCapacityLb, 2420);
+    assert.equal((await new InventoryService(api).getPartySnapshot({ actor: a })).totalCapacityLb, 2420);
+    await service.updatePartyMember(gartar.id, { strOverride: "20", capModOverride: "20.5", capBonusLb: "200.25" }, { groupActorId: a.id });
+    assert.equal((await read()).members.find(m => m.actorId === gartar.id).capacityLb, 610.25);
+    await service.updatePartyMember(gartar.id, { strOverride: "", capModOverride: "", capBonusLb: "" }, { groupActorId: a.id });
+    assert.equal((await read()).totalCapacityLb, 2130);
+    await service.updatePartyMember(gartar.id, { capBonusLb: "99" }, { inventoryActor: legacy });
+    assert.equal(fixture.state.members.gartar.capBonusLb, 99, "captured legacy inventory must not redirect into active native group");
+    assert.deepEqual(states[b.id], beforeB);
+  } finally { fixture.restore(); }
 });
 
 test("native group member edits persist in scoped group state", async () => {

@@ -34,7 +34,7 @@ import {
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
-import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.4.237";
+import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.4.399";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
 import {
   getInventoryDismantleBlockReason,
@@ -7801,8 +7801,9 @@ export class InventoryService {
     return result;
   }
 
-  async #writeMemberStates(actorIds, mutator, { guard, inventoryActor = null } = {}) {
+  async #writeMemberStates(actorIds, mutator, { guard, inventoryActor } = {}) {
     const ids = [...new Set((actorIds ?? []).map(cleanId).filter(Boolean))];
+    const capturedActor = inventoryActor === undefined ? this.#getGroupInventoryActor() : inventoryActor;
     const writeLegacyState = () => this.#writeState((state) => {
       const members = new Map(ids.map((actorId) => [
         actorId,
@@ -7813,29 +7814,31 @@ export class InventoryService {
         state.members[actorId] = this.#normalizeMemberState(memberState, memberState.role);
       }
       return result;
-    }, { guard });
-    const groupActor = this.#isNativeGroupInventoryActor(inventoryActor)
-      ? inventoryActor
-      : this.#getGroupInventoryActor();
+    }, { guard, inventoryActor: capturedActor });
+    const groupActor = this.#isNativeGroupInventoryActor(capturedActor) ? capturedActor : null;
     if (!groupActor) {
+      if (!capturedActor && !game.user?.isGM) throw new Error("Партийным инвентарём управляют владельцы склада.");
       return writeLegacyState();
     }
 
-    const nativeMemberIds = new Set(getGroupMemberActors(groupActor)
-      .map((actor) => cleanId(actor?.id))
-      .filter(Boolean));
-    if (ids.some((actorId) => !nativeMemberIds.has(actorId))) {
-      throw new Error("Участник группы не найден в листе dnd5e группы.");
-    }
-    guard?.();
-    if (!this.canManagePartyInventory(groupActor)) {
-      throw new Error("Партийным инвентарём управляют владельцы склада.");
-    }
+    const assertScope = () => {
+      guard?.();
+      let currentActor = groupActor;
+      if (this.moduleApi.groupContextService?.resolveForGroup) {
+        currentActor = this.moduleApi.groupContextService.resolveForGroup(groupActor.id)?.groupActor;
+        if (currentActor?.id !== groupActor.id || currentActor.type !== "group") throw new Error("Групповой инвентарь больше недоступен.");
+      }
+      const nativeMemberIds = new Set(getGroupMemberActors(currentActor).map(actor => cleanId(actor?.id)).filter(Boolean));
+      if (ids.some(actorId => !nativeMemberIds.has(actorId))) throw new Error("Участник группы не найден в листе dnd5e группы.");
+      if (!this.canManagePartyInventory(currentActor)) throw new Error("Партийным инвентарём управляют владельцы склада.");
+    };
+    assertScope();
     if (typeof this.moduleApi.groupContextService?.mutateGroupState !== "function") {
       return writeLegacyState();
     }
     const legacyMembers = this.#getState().members;
     const result = await this.moduleApi.groupContextService.mutateGroupState(groupActor.id, (groupState) => {
+      assertScope();
       groupState.memberStateByActorId = groupState.memberStateByActorId
         && typeof groupState.memberStateByActorId === "object"
         ? groupState.memberStateByActorId
@@ -8133,11 +8136,12 @@ export class InventoryService {
     return { ...state, ...this.#getSupplyCoverage(state, groupActor) };
   }
 
-  async updatePartyMember(actorId, patch = {}) {
+  async updatePartyMember(actorId, patch = {}, { groupActorId = "", guard, inventoryActor } = {}) {
     if (!actorId) {
       throw new Error("Не выбран участник группы.");
     }
 
+    const capturedActor = cleanId(groupActorId) ? this.#resolveSupplyConsumptionActor(cleanId(groupActorId)) : inventoryActor;
     return this.#writeMemberStates([actorId], (members) => {
       const currentState = members.get(actorId);
       const nextRole = patch.role !== undefined ? normalizeRole(patch.role) : currentState.role;
@@ -8176,7 +8180,7 @@ export class InventoryService {
       const normalized = this.#normalizeMemberState(nextMember, nextRole);
       members.set(actorId, normalized);
       return foundry.utils.deepClone(normalized);
-    });
+    }, { guard, inventoryActor: capturedActor });
   }
 
   async updatePartyMemberTool(actorId, toolId, patch = {}) {

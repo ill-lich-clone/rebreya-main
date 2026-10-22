@@ -16,6 +16,10 @@ function roundWeight(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function currencyWeightLb(currency = {}) {
+  return ["cp", "sp", "ep", "gp", "pp"].reduce((sum, key) => sum + Math.floor(nonnegative(currency?.[key])), 0) / 50;
+}
+
 function hasWeightlessContents(item) {
   const properties = item?.system?.properties;
   return item?.type === "container" && (
@@ -75,14 +79,25 @@ export function buildActorInventoryWeightSnapshot(actor) {
   const children = new Map(items.map((item) => [item, []]));
   for (const [item, parent] of parents) if (parent) children.get(parent).push(item);
   const weights = new Map();
+  const currencyDeltas = new Map();
+  const ownCurrencyWeight = (item) => item.system?.currency && typeof item.system.currency === "object"
+    ? currencyWeightLb(item.system.currency)
+    : pounds(readNativeWeight(() => item.system?.currencyWeight) ?? 0, item.system?.weight?.units);
+  const contentsCurrencyDelta = (item) => ownCurrencyWeight(item)
+    - pounds(readNativeWeight(() => item.system?.currencyWeight) ?? 0, item.system?.weight?.units)
+    + children.get(item).reduce((sum, child) => sum + carriedCurrencyDelta(child), 0);
+  const carriedCurrencyDelta = (item) => {
+    if (!currencyDeltas.has(item)) currencyDeltas.set(item,
+      item.type === "container" && !hasWeightlessContents(item) ? contentsCurrencyDelta(item) : 0);
+    return currencyDeltas.get(item);
+  };
   const contentsWeight = (item) => {
     const nativeContents = nativeHierarchyValid
       ? readNativeWeight(() => item.system?.contentsWeight)
       : null;
-    if (nativeContents !== null) return pounds(nativeContents, item.system?.weight?.units);
-    const currencyWeight = readNativeWeight(() => item.system?.currencyWeight) ?? 0;
+    if (nativeContents !== null) return pounds(nativeContents, item.system?.weight?.units) + contentsCurrencyDelta(item);
     return children.get(item).reduce((sum, child) => sum + itemWeight(child), 0)
-      + pounds(currencyWeight, item.system?.weight?.units);
+      + ownCurrencyWeight(item);
   };
   const itemWeight = (item) => {
     if (weights.has(item)) return weights.get(item);
@@ -90,8 +105,9 @@ export function buildActorInventoryWeightSnapshot(actor) {
       ? readNativeWeight(() => item.system?.totalWeightIn?.("lb"))
       : null;
     if (nativeWeight !== null) {
-      weights.set(item, nativeWeight);
-      return nativeWeight;
+      const weight = nativeWeight + carriedCurrencyDelta(item);
+      weights.set(item, weight);
+      return weight;
     }
     const ownWeight = pounds(item.system?.weight?.value, item.system?.weight?.units);
     const weight = item.type === "container"
@@ -101,7 +117,8 @@ export function buildActorInventoryWeightSnapshot(actor) {
     return weight;
   };
 
-  const weightLb = roundWeight(items.reduce((sum, item) => sum + (parents.get(item) ? 0 : itemWeight(item)), 0));
+  const weightLb = roundWeight(currencyWeightLb(actor?.system?.currency)
+    + items.reduce((sum, item) => sum + (parents.get(item) ? 0 : itemWeight(item)), 0));
   const magicalContainers = items.filter(hasWeightlessContents).map((item) => {
     const capacity = item.system?.capacity?.weight;
     return {

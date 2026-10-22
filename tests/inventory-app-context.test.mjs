@@ -3909,6 +3909,31 @@ test("InventoryApp dismantle prompt starts at the canonical whole-output minimum
 });
 
 for (const [actorType, expectedGroupId] of [["group", "shown-group"], ["npc", ""]]) {
+test(`InventoryApp cargo fields capture the displayed ${actorType} scope and exact committed values`, async () => {
+  const restoreFoundry = installFoundryApplicationStub(), dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const fields = [createFakeControl({ dataset: { actorId: "gartar", field: "capModOverride" }, value: "20" }),
+    createFakeControl({ dataset: { actorId: "gartar", field: "capBonusLb" }, value: "200" })];
+  const root = createFakeElement(); root.querySelector = () => null;
+  root.querySelectorAll = selector => selector === "[data-action='party-field']" ? fields : [];
+  globalThis.ui = { notifications: { error() {} }, windows: {} };
+  try {
+    const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+    const api = createModuleApi({ getGroupContext: () => null }), calls = [];
+    api.updatePartyMember = async (actorId, patch, options) => calls.push({ actorId, patch, options });
+    const app = new InventoryApp(api); app.element = root;
+    app.inventorySnapshotCache = { actor: { id: "shown-group", type: actorType } };
+    await app._onRender({}, {});
+    for (const field of fields) await field.listeners.change[0]({ currentTarget: field });
+    assert.deepEqual(calls, [
+      { actorId: "gartar", patch: { capModOverride: "20" }, options: { groupActorId: expectedGroupId } },
+      { actorId: "gartar", patch: { capBonusLb: "200" }, options: { groupActorId: expectedGroupId } }
+    ]);
+  } finally { globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+}
+
+for (const [actorType, expectedGroupId] of [["group", "shown-group"], ["npc", ""]]) {
 test(`InventoryApp supply coverage captures the displayed ${actorType} scope`, async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
