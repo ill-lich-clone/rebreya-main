@@ -1,6 +1,6 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
 import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.4.398";
 import { GROUPED_NATIVE_WRITES } from "../infrastructure/foundry/grouped-combat-repository.js";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
@@ -58,7 +58,7 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   if (!CombatClass?.prototype) return () => {};
   const prototype = CombatClass.prototype;
   if (prototype[REGISTERED]) return prototype[REGISTERED];
-  const restores = [], hookIds = [], focusStamps = new Map(), publicStamps = new Map(), observers = new Map();
+  const restores = [], hookIds = [], focusStamps = new Map(), publicStamps = new Map(), observers = new Map(), transitions = new Map();
   const patch = (target, name, factory) => {
     if (!target || typeof target[name] !== "function") return;
     const own = Object.getOwnPropertyDescriptor(target, name), original = target[name]; target[name] = factory(original);
@@ -71,9 +71,14 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
     const live = groups.filter(g => g.memberIds.some(id => combatantsOf(combat).some(c => c.id === id && !c.isDefeated)));
     return live.length ? live : groups;
   };
+  const requestTransition = (combat, target) => {
+    if (transitions.has(combat.id)) return transitions.get(combat.id);
+    const pending = send(moduleApi, "transition", { combatId: combat.id, expectedRevision: stateOf(combat).revision,
+      targetRound: target.round, targetGroupId: target.groupId, operationId: operationId() }).finally(() => { if (transitions.get(combat.id) === pending) transitions.delete(combat.id); });
+    transitions.set(combat.id, pending); return pending;
+  };
   const navigate = async (combat, target) => {
-    if (target) notifyResult(await send(moduleApi, "transition", { combatId: combat.id, expectedRevision: stateOf(combat).revision,
-      targetRound: target.round, targetGroupId: target.groupId, operationId: operationId() }));
+    if (target) notifyResult(await requestTransition(combat, target));
     return combat;
   };
   for (const [method, direction] of [["nextTurn", 1], ["previousTurn", -1]]) patch(prototype, method, original => async function (...args) {
@@ -94,7 +99,7 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
       || (state.mode === "pending" && (data.round ?? this.round) < state.activateAtRound)) return original.call(this, data, options);
     const group = state.groups.find(g => g.memberIds.includes(this.turns?.[data.turn ?? this.turn]?.id)), round = data.round ?? this.round;
     if (!group || round < 1) throw new Error("Завершите бой перед сбросом общего порядка ходов.");
-    const result = await send(moduleApi, "transition", { combatId: this.id, expectedRevision: state.revision, targetRound: round, targetGroupId: group.id, operationId: operationId() });
+    const result = await requestTransition(this, { round, groupId: group.id });
     if (!result.ok) { notifyResult(result); throw new Error(result.code); }
     const rest = Object.fromEntries(Object.entries(data).filter(([key]) => !["round", "turn"].includes(key)));
     return Object.keys(rest).length ? original.call(this, rest, options) : this;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createGroupedCombatEffects, describeInitiative, inspectGroupedCombatSupport } from "../scripts/integrations/grouped-combat-effects.js";
-import { loadInstalledFunction } from "./helpers/installed-combat-providers.mjs";
+import { loadInstalledFunction, loadInstalledClass } from "./helpers/installed-combat-providers.mjs";
 
 const effect = (id, flags = {}, changes = []) => ({ id, uuid: `Actor.a.ActiveEffect.${id}`, flags, changes, duration: {}, toObject() { return { _id: id, flags }; } });
 function environment() {
@@ -47,6 +47,31 @@ test("initiative profiles retain fixed scores, advantage and authored terms whil
   assert.notEqual(describeInitiative(actor()).key, describeInitiative(actor({ advantage: true })).key);
   assert.equal(describeInitiative(actor({ customRule: true })).canShare, false);
   assert.equal(inspectGroupedCombatSupport({ game: { system: { id: "other" }, modules: new Map() }, Hooks: {} }).supported, false);
+});
+
+test("installed native D20Roll normalization stays shareable and all native semantic modifiers remain distinct", async () => {
+  class Die {
+    options = {}; isValid = true;
+    applyFlag() {} applyAdvantage() {} applyRange() {}
+  }
+  class BasicRoll {
+    constructor(formula, data, options) { this.formula = formula; this.options = { ...options }; this.terms = [new Die()]; }
+    resetFormula() {}
+  }
+  const D20Roll = await loadInstalledClass("../systems/dnd5e/dnd5e.mjs", "D20Roll", { BasicRoll, D20RollConfigurationDialog: class {}, CONFIG: { Dice: { D20Die: Die } }, foundry: { dice: { terms: { Die } } } });
+  const profile = options => {
+    const roll = new D20Roll("1d20 + 2 + 0.13", {}, { advantage: false, disadvantage: false, halflingLucky: false, maximum: Infinity, minimum: -Infinity, ...options });
+    assert.equal(roll.options.configured, true);
+    assert.equal(typeof roll.options.advantageMode, "number");
+    return describeInitiative({ getInitiativeRoll: () => roll });
+  };
+  const normal = profile({});
+  assert.equal(normal.canShare, true);
+  assert.equal(normal.key, profile({ flavor: "Другой тролль" }).key);
+  for (const options of [{ advantageMode: 1 }, { advantageMode: -1 }, { criticalSuccess: 19 }, { criticalFailure: 2 }, { target: 15 }]) {
+    const changed = profile(options); assert.equal(changed.canShare, true); assert.notEqual(changed.key, normal.key);
+  }
+  assert.equal(profile({ customRule: true }).canShare, false);
 });
 test("installed MIDI ActivityOverTime route awaits its registered handler and preserves private active/offline ownership", async () => {
   const calls = [], actor = { uuid: "Actor.a" }, e = effect("activity", {}, [{ key: "flags.midi-qol.ActivityOverTime.a", value: "Item.activity" }]);

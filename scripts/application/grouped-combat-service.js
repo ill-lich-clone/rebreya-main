@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { buildCombatTurnGroups, planGroupTransition, buildPhaseStepKey, combatantsOf } from "../combat/turn-group-rules.js";
-import { describeInitiative } from "../integrations/grouped-combat-effects.js";
+import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.4.398";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js";
 

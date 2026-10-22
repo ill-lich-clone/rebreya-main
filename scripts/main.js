@@ -314,12 +314,12 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.396";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.397";
-import { GroupedCombatService } from "./application/grouped-combat-service.js";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.398";
+import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.4.398";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
-import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js";
-import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js";
+import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.4.398";
+import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.4.398";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.397";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
@@ -403,14 +403,14 @@ import { registerRationFoodConversionHook } from "./integrations/ration-food-con
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.327";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.396";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
-import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.4.397";
+import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.4.398";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
 import {
   registerImplantDataModelPatch,
   registerImplantHooks
 } from "./integrations/implant-hooks.js";
-import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.4.397";
+import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.4.398";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";

@@ -36,6 +36,33 @@ test("normal next advances an entire group once; ordinary combat delegates; regi
   dispose(); delete globalThis.game;
 });
 
+test("repeated navigation and a positional update join the pending transition rather than sending stale revisions", async () => {
+  const e = fixture(), combat = new e.Combat(); let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  e.moduleApi.groupedCombatService.transition = async request => {
+    e.calls.push(request); await gate;
+    const state = combat.flags["rebreya-main"].groupedCombat;
+    state.current = { round: request.targetRound, groupId: request.targetGroupId }; state.revision++;
+    combat.round = request.targetRound; combat.turn = request.targetGroupId === "pc" ? 2 : 0;
+    return { ok: true };
+  };
+  const dispose = registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat, CombatantClass: e.Combatant });
+  const next = combat.nextTurn(), repeated = combat.nextTurn(), updated = combat.update({ round: 1, turn: 2 });
+  try {
+    assert.equal(e.calls.length, 1, "one in-flight workflow must not receive duplicate requests with the old revision");
+    release(); await Promise.all([next, repeated, updated]);
+    await combat.nextTurn(); assert.equal(e.calls.length, 2); assert.equal(e.calls[1].targetRound, 2);
+  } finally { release(); await Promise.allSettled([next, repeated, updated]); dispose(); }
+});
+
+test("a failed transition releases navigation so the next action can be attempted", async () => {
+  const e = fixture(), combat = new e.Combat(); let attempts = 0;
+  e.moduleApi.groupedCombatService.transition = async () => { attempts++; if (attempts === 1) throw new Error("transport-failed"); return { ok: true }; };
+  const dispose = registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat, CombatantClass: e.Combatant });
+  try { await assert.rejects(combat.nextTurn(), /transport-failed/); await combat.nextTurn(); assert.equal(attempts, 2); }
+  finally { dispose(); }
+});
+
 test("deleting a pending combat releases an observing client's lifecycle listener", async () => {
   const e = fixture(); e.moduleApi.groupedCombatService.isAuthority = () => false;
   const dispose = registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat, CombatantClass: e.Combatant });

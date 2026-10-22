@@ -99,6 +99,14 @@ test("start rolls once per group; repeat preserves combat position and effects; 
   assert.ok(e.calls.indexOf("turn-end:c") < e.calls.indexOf("turn-start:pc"));
 });
 
+test("native configured initiative options still produce one NPC group and one native roll", async () => {
+  const e = setup();
+  for (const token of e.tokens) token.actor.getInitiativeRoll = () => ({ formula: "1d20 + 2 + 0.13", options: { advantage: false, disadvantage: false, advantageMode: 0, configured: true } });
+  assert.equal((await e.start("native-rolls")).ok, true);
+  assert.deepEqual(e.calls.filter(c => c.startsWith("roll:")), ["roll:a", "roll:pc"]);
+  assert.deepEqual(e.repository.readState().groups[0].memberIds, ["a", "b", "c"]);
+});
+
 test("conversion of an already started native combat waits for the next round without replaying the old round", async () => {
   const e = setup();
   await e.repository.createMissingCombatants(e.combat, e.tokens);

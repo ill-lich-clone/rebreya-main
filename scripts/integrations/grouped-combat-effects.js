@@ -32,7 +32,7 @@ export function describeInitiative(actor) {
   const roll = actor?.getInitiativeRoll?.();
   if (!roll) return { key: null, canShare: false };
   const options = roll.options ?? {};
-  const semantic = ["advantage", "disadvantage", "fixed", "minimum", "maximum", "halflingLucky", "reliableTalent", "elvenAccuracy", "critical", "fumble", "targetValue", "rollMode", "flavor", "configured", "preRollClassHook", "evaluate"];
+  const semantic = ["advantage", "disadvantage", "advantageMode", "fixed", "minimum", "maximum", "halflingLucky", "reliableTalent", "elvenAccuracy", "critical", "criticalSuccess", "fumble", "criticalFailure", "target", "targetValue", "rollMode", "flavor", "configured", "preRollClassHook", "evaluate"];
   if (Object.keys(options).some(key => !semantic.includes(key))) return { key: null, canShare: false };
   const rules = Object.fromEntries(Object.entries(options).filter(([key]) => !["flavor", "rollMode", "configured", "evaluate", "preRollClassHook"].includes(key)));
   // Native formula already resolves referenced actor data; unrelated HP/name never enter the key.
