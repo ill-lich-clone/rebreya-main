@@ -518,6 +518,20 @@ test("Fire Rune prompts once on a weapon hit and adds one fire roll plus shackle
   assert.equal(shackles.flags["rebreya-main"].runeKnight.sourceItemUuid, harness.fire.uuid);
 });
 
+test("whirlwind Fire Rune bonus is halved and restricted to the chosen hit token", async () => {
+  const harness = createFireHarness();
+  harness.workflow.activity.flags = { "rebreya-main": { whirlwindAttack: { version: 1 } } };
+  harness.workflow.activity.item.system = { properties: ["lchWhirl"] };
+  harness.workflow.rebreyaWhirlwind = { selectedTargetUuid: harness.targetToken.uuid };
+  harness.workflow.hitTargets = new Set([{ uuid: "Scene.scene.Token.other", actor: createActor({ level: 1 }) }, harness.targetToken]);
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+  await harness.service.applyMidiPreDamageRollComplete(harness.workflow);
+  const properties = harness.workflow.bonusDamageRolls[0].options?.properties ?? [];
+  assert.ok(properties.includes("rebreyaWhirlHalf"));
+  assert.ok(properties.includes(`rebreyaWhirlTarget:${harness.targetToken.uuid}`));
+  assert.ok(harness.target.effects.find(effect => effect.flags?.["rebreya-main"]?.runeKnight?.automation === "fire-shackles"));
+});
+
 test("Fire Rune is weapon-only and rolls back payment when damage integration fails", async () => {
   const spellHarness = createFireHarness({ weapon: false });
   await spellHarness.service.repairActor(spellHarness.actor);

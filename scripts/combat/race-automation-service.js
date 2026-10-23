@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { whirlwindEffectTargets, isWhirlwindActivity } from "./whirlwind-attack.js?v=1.5.1";
 import {
   buildGiantTribeAdvancement,
   createAutomationActivity
@@ -638,6 +639,8 @@ function speakerForActor(actor) {
 }
 
 function targetListFromWorkflow(workflow) {
+  const whirlwind = whirlwindEffectTargets(workflow);
+  if (whirlwind) return whirlwind;
   const targets = Array.from(workflow?.hitTargets ?? workflow?.targets ?? []);
   if (targets.length) {
     return targets;
@@ -1089,7 +1092,8 @@ export class RaceAutomationService {
       await this.#applyDamage(actor, payload.formula, payload.damageType, {
         sourceActor,
         sourceItemUuid: payload.sourceItemUuid,
-        label: payload.label
+        label: payload.label,
+        multiplier: payload.halfDamage === true ? 0.5 : 1
       });
       return true;
     }
@@ -1466,7 +1470,8 @@ export class RaceAutomationService {
     await this.#applyDamage(target, "@prof", defaultDamageTypeFromWorkflow(workflow), {
       sourceActor: actor,
       sourceItemUuid: feature.uuid,
-      label: "Зоркий глаз"
+      label: "Зоркий глаз",
+      multiplier: isWhirlwindActivity(workflow.activity) ? 0.5 : 1
     });
     return true;
   }
@@ -1536,7 +1541,8 @@ export class RaceAutomationService {
     this._turnDamageKeys.add(key);
     await this.#applyDamage(target, "2d6", defaultDamageTypeFromWorkflow(workflow), {
       sourceActor: actor,
-      label: "Внезапность"
+      label: "Внезапность",
+      multiplier: isWhirlwindActivity(workflow.activity) ? 0.5 : 1
     });
     await this.#createEffect(target, activeEffectData("Иммунитет к Внезапности", [{
       key: `${DAMAGE_REDUCTION_FLAG}.surpriseAttackImmunity.${actor.id}`,
@@ -1568,7 +1574,8 @@ export class RaceAutomationService {
     this._turnDamageKeys.add(key);
     await this.#applyDamage(resolveActorFromTarget(hitTargets[0]), "@details.level", "radiant", {
       sourceActor: actor,
-      label: "Небесное откровение"
+      label: "Небесное откровение",
+      multiplier: isWhirlwindActivity(workflow.activity) ? 0.5 : 1
     });
     return true;
   }
@@ -2001,7 +2008,8 @@ export class RaceAutomationService {
         damageType,
         sourceActorUuid: options.sourceActor?.uuid,
         sourceItemUuid: options.sourceItemUuid,
-        label: options.label
+        label: options.label,
+        halfDamage: options.multiplier === 0.5
       });
       return true;
     }
@@ -2014,7 +2022,8 @@ export class RaceAutomationService {
     };
     await actor.applyDamage([damage], {
       sourceActorUuid: options.sourceActor?.uuid,
-      sourceItemUuid: options.sourceItemUuid
+      sourceItemUuid: options.sourceItemUuid,
+      multiplier: options.multiplier === 0.5 ? 0.5 : 1
     });
     await roll.toMessage({
       speaker: speakerForActor(options.sourceActor ?? actor),

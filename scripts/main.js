@@ -20,7 +20,7 @@ import {
 } from "./data/icon-badge-build.js?v=1.4.330";
 import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.330";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.1";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.4.355";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.330";
@@ -316,14 +316,14 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.396";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.398";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.1";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.4.398";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.4.398";
 import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.4.398";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.397";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.1";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
@@ -335,7 +335,7 @@ import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
-import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.4.397";
+import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.1";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.4.392";
 import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.4.397";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js";
@@ -353,21 +353,21 @@ import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
-import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.96";
+import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.5.1";
 import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.96-sorcerer-cooldown-card&cooldown-context=4";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
-} from "./combat/paladin-automation-service.js?v=1.4.96";
+} from "./combat/paladin-automation-service.js?v=1.5.1";
 import { PaladinDogmaAutomationService } from "./combat/paladin-dogma-automation-service.js?v=1.4.111-paladin-dogmas";
-import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.96-rebreya-open-position";
+import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.5.1";
 import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.4.96";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
-import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
+import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.1";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.397";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";

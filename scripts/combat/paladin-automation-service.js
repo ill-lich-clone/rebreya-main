@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { whirlwindEffectTargets } from "./whirlwind-attack.js?v=1.5.1";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION = "character-class-automation";
@@ -318,7 +319,7 @@ function resolveActorFromTarget(target) {
 }
 
 function targetActorsFromWorkflow(workflow) {
-  const targets = [
+  const targets = whirlwindEffectTargets(workflow) ?? [
     ...collectionValues(workflow?.hitTargets),
     ...collectionValues(workflow?.hitTargetsEC)
   ];

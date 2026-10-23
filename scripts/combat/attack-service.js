@@ -8,7 +8,7 @@ import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { measureStorageTokenDistance, storageTokenFootprintCenters, measureStorageGridDistance } from "../data/storage-access.js";
 import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
-import { createDnd5eItemData } from "../data/gear-compendium.js?v=1.4.330";
+import { createDnd5eItemData } from "../data/gear-compendium.js?v=1.5.1";
 import {
   hasActiveRepeatingShot,
   inferAmmunitionItemSubtype,
@@ -16,6 +16,7 @@ import {
 } from "../data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
 import { getNaturalReachFeet } from "./natural-reach.js";
+import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.1";
 import { getWeaponSizeUse } from "../data/equipment-size-rules.js?v=1.4.393";
 import {
   buildHeldItemHandUpdate,
@@ -1516,6 +1517,7 @@ export class CombatAttackService {
   }
 
   async initialize() {
+    registerWhirlwindNativeTargetOptions();
     const queue = this.moduleApi?.reactionQueueService;
     if (typeof queue?.registerType === "function") {
       queue.registerType(PROVOKED_ATTACK_REACTION_KIND, this.#attackReactionProvider(PROVOKED_ATTACK_REACTION_KIND));
@@ -2498,12 +2500,152 @@ export class CombatAttackService {
     return weaponBonus + naturalBonus;
   }
 
-  #resolveFinalMeleeReachFeet(item, options = {}) {
+  getMeleeReachFeet(item, options = {}) {
     const actor = options.actor ?? item.actor ?? item.parent ?? null;
     const sizeBase = getCharacterSizeRule(actor?.system?.traits?.size).baseReachFeet;
     const independentBonuses = this.#resolveReachBonusFeet(item, { ...options, actor });
 
     return Math.max(0, sizeBase + independentBonuses);
+  }
+
+  prepareWhirlwindUse(activity, usageConfig = {}, messageConfig = {}) {
+    if (!isWhirlwindActivity(activity)) return true;
+    const actor = activity.actor ?? activity.item.actor;
+    const scene = globalThis.canvas?.scene;
+    const active = actor?.getActiveTokens?.() ?? [];
+    const controlled = globalThis.canvas?.tokens?.controlled?.filter(token => token.actor === actor) ?? [];
+    const source = usageConfig.workflow?.token ?? actor?.token?.object ?? actor?.token
+      ?? (controlled.length === 1 ? controlled[0] : active.length === 1 ? active[0] : null);
+    const sourceDocument = source?.document ?? source;
+    if (!source || !scene || sourceDocument.parent !== scene) {
+      globalThis.ui?.notifications?.warn?.("Для круговой атаки выберите один токен атакующего на текущей сцене.");
+      return false;
+    }
+    const targets = collectWhirlwindTargets(source, scene.tokens, this.getMeleeReachFeet(activity.item), (from, to) => {
+      const fromObject = from.object ?? from, toObject = to.object ?? to;
+      const midiDistance = globalThis.MidiQOL?.computeDistance?.(fromObject, toObject, { wallsBlock: true, includeCover: false, includeElevation: true });
+      const distance = midiDistance ?? measureStorageTokenDistance(from, to);
+      if (distance < 0) return Infinity;
+      if (midiDistance === undefined && fromObject.checkCollision?.(toObject.center, { type: "move", mode: "any" })) return Infinity;
+      return convertUnitsToFeet(distance, scene.grid?.units ?? "ft");
+    });
+    if (!targets.length) {
+      globalThis.ui?.notifications?.warn?.("В досягаемости круговой атаки нет существ.");
+      return false;
+    }
+    const placeables = targets.map(token => token.object ?? token);
+    usageConfig.midiOptions ??= {};
+    usageConfig.midiOptions.targetsToUse = new Set(placeables);
+    usageConfig.midiOptions.workflowOptions = { ...usageConfig.midiOptions.workflowOptions, targetConfirmation: "never" };
+    usageConfig.workflow?.setTargets?.(placeables);
+    const context = { sourceTokenUuid: sourceDocument.uuid, targetUuids: targets.map(token => (token.document ?? token).uuid) };
+    if (usageConfig.workflow) usageConfig.workflow.rebreyaWhirlwind = context;
+    messageConfig.data ??= {};
+    foundry.utils.setProperty(messageConfig.data, `flags.${MODULE_ID}.whirlwindAttack`, context);
+    foundry.utils.setProperty(messageConfig.data, "flags.dnd5e.targets", targets.map(token => ({
+      uuid: token.actor?.uuid, tokenUuid: (token.document ?? token).uuid, name: token.name ?? token.actor?.name ?? "Существо",
+      img: token.texture?.src ?? token.actor?.img, ac: token.actor?.system?.attributes?.ac?.value
+    })));
+    return true;
+  }
+
+  async resolveWhirlwindHits(workflow) {
+    if (!isWhirlwindActivity(workflow?.activity)) return true;
+    if (globalThis.MidiQOL?.configSettings?.()?.autoCheckHit === "none" && typeof workflow.checkHits === "function") await workflow.checkHits();
+    return true;
+  }
+
+  async reportWhirlwindAttack(rolls, context) {
+    if (!isWhirlwindActivity(context?.subject) || globalThis.game?.modules?.get?.("midi-qol")?.active) return;
+    const roll = rolls?.[0];
+    const targets = roll?.options?.rebreyaWhirlwindTargets;
+    const message = roll?.parent;
+    if (!message?.update || !targets?.length) return;
+    const targetKey = target => target.tokenUuid ?? target.uuid;
+    const hits = new Set(whirlwindHitTargets(targets.map(target => ({ ...target, actor: { system: { attributes: { ac: { value: target.ac } } } } })), roll).map(targetKey));
+    const escape = text => String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    const content = `<section data-rebreya-whirlwind><p>Круговая атака: половина урона</p><ul>${targets.map(target => `<li>${escape(target.name)}: ${hits.has(targetKey(target)) ? "попадание" : "промах"}</li>`).join("")}</ul></section>`;
+    const snapshot = { targetUuids: targets.map(targetKey), hitTokenUuids: [...hits] };
+    await message.update({ content: `${String(message.content ?? "").replace(/<section data-rebreya-whirlwind>[\s\S]*?<\/section>/gu, "")}${content}`, [`flags.${MODULE_ID}.whirlwindAttack`]: snapshot });
+    const originId = message.getFlag?.("dnd5e", "originatingMessage");
+    const origin = originId && globalThis.game?.messages?.get?.(originId);
+    if (origin?.isOwner) await origin.update({ [`flags.${MODULE_ID}.whirlwindAttack`]: snapshot });
+  }
+
+  prepareWhirlwindDamageCard(config, message) {
+    const activity = config.subject;
+    if (!isWhirlwindActivity(activity)) return;
+    if (config.workflow) {
+      const workflow = config.workflow;
+      const tokens = [...(workflow.hitTargets ?? []), ...(workflow.hitTargetsEC ?? [])];
+      message.data ??= {};
+      foundry.utils.setProperty(message.data, `flags.${MODULE_ID}.whirlwindAttack`, workflow.rebreyaWhirlwind ?? {});
+      foundry.utils.setProperty(message.data, "flags.dnd5e.targets", tokens.map(token => ({ uuid: token.actor.uuid, tokenUuid: token.document?.uuid ?? token.uuid, name: token.name ?? token.actor.name })));
+      return;
+    }
+    const id = message.data?.flags?.dnd5e?.originatingMessage
+      ?? config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId;
+    const origin = id && globalThis.game?.messages?.get?.(id);
+    const snapshot = origin?.getFlag?.(MODULE_ID, "whirlwindAttack");
+    if (!snapshot) {
+      this.prepareWhirlwindUse(activity, { workflow: config.workflow }, message);
+      return;
+    }
+    const tokens = (snapshot.hitTokenUuids ?? snapshot.targetUuids ?? []).map(uuid => globalThis.fromUuidSync?.(uuid)).filter(token => token?.actor);
+    message.data ??= {};
+    foundry.utils.setProperty(message.data, `flags.${MODULE_ID}.whirlwindAttack`, snapshot);
+    foundry.utils.setProperty(message.data, "flags.dnd5e.targets", tokens.map(token => ({ uuid: token.actor.uuid, tokenUuid: token.uuid, name: token.name ?? token.actor.name })));
+  }
+
+  async chooseWhirlwindEffectTarget(workflow) {
+    if (!isWhirlwindActivity(workflow?.activity)) return true;
+    const hits = [...(workflow.hitTargets ?? []), ...(workflow.hitTargetsEC ?? [])];
+    workflow.rebreyaWhirlwind ??= {};
+    if (Object.hasOwn(workflow.rebreyaWhirlwind, "selectedTargetUuid")) return true;
+    let selected = hits.length === 1 ? (hits[0].document?.uuid ?? hits[0].uuid) : null;
+    if (hits.length > 1) {
+      if (this.moduleApi.promptWhirlwindTarget) selected = await this.moduleApi.promptWhirlwindTarget(hits);
+      else {
+        const escape = text => foundry.utils.escapeHTML(String(text));
+        selected = await globalThis.foundry?.applications?.api?.DialogV2?.input?.({
+          window: { title: "Круговая атака: дополнительные эффекты" },
+          content: `<p>Дополнительные эффекты и урон применяются только к одной поражённой цели. Их урон также делится пополам.</p><select name="target">${hits.map(token => `<option value="${escape(token.document?.uuid ?? token.uuid)}">${escape(token.name ?? token.actor?.name ?? "Существо")}</option>`).join("")}</select>`,
+          ok: { label: "Выбрать", callback: (_event, button) => (button.form ?? button.closest?.("form"))?.querySelector?.('[name="target"]')?.value },
+          rejectClose: false, modal: true
+        });
+      }
+    }
+    workflow.rebreyaWhirlwind.selectedTargetUuid = hits.some(token => (token.document?.uuid ?? token.uuid) === selected) ? selected : null;
+    return true;
+  }
+
+  prepareWhirlwindExtraDamage(workflow, config) {
+    if (isWhirlwindActivity(workflow?.activity)) markWhirlwindDamageRolls(config, workflow.rebreyaWhirlwind?.selectedTargetUuid ?? null);
+    return true;
+  }
+
+  applyWhirlwindDamage(actor, damages, options) {
+    return applyWhirlwindDamage(actor, damages, options);
+  }
+
+  routeWhirlwindConsumption(activity, updates) {
+    return routeWhirlwindConsumption(activity, updates);
+  }
+
+  scopeWhirlwindEffects(workflow, restore = false) {
+    if (!isWhirlwindActivity(workflow?.activity)) return true;
+    if (restore) {
+      if (workflow.rebreyaWhirlwind?.effectHits) {
+        [workflow.hitTargets, workflow.hitTargetsEC] = workflow.rebreyaWhirlwind.effectHits;
+        delete workflow.rebreyaWhirlwind.effectHits;
+      }
+    } else {
+      workflow.rebreyaWhirlwind ??= {};
+      workflow.rebreyaWhirlwind.effectHits ??= [workflow.hitTargets, workflow.hitTargetsEC];
+      workflow.hitTargets = new Set(whirlwindEffectTargets(workflow));
+      workflow.hitTargetsEC = new Set();
+    }
+    return true;
   }
 
   #getLichAutomationState(item, options = {}) {
@@ -2958,6 +3100,18 @@ export class CombatAttackService {
         recovery: []
       }
     };
+  }
+
+  async repairWhirlwindActivities(document) {
+    let updated = 0;
+    for (const item of document instanceof Actor ? collectionValues(document.items) : [document]) {
+      if (item?.type !== "weapon" || item.isOwner === false) continue;
+      const changes = whirlwindActivityUpdates(item);
+      if (!Object.keys(changes).length) continue;
+      await item.update(changes, { render: false, [MODULE_ID]: { whirlwindSync: true } });
+      updated++;
+    }
+    return { updated };
   }
 
   async repairFirearmActivities(document) {
@@ -4357,7 +4511,8 @@ export class CombatAttackService {
       const activityRangeUnits = String(
         foundry.utils.getProperty(activity, "range.units") ?? itemRangeUnits ?? "ft"
       ).trim().toLowerCase() || "ft";
-      const finalReachFeet = this.#resolveFinalMeleeReachFeet(item, {
+      if (!this.prepareWhirlwindUse(activity, usageConfig, messageConfig)) return false;
+      const finalReachFeet = this.getMeleeReachFeet(item, {
         actor: activity.actor ?? item.actor ?? item.parent ?? null
       });
       const nextReach = convertFeetToUnits(finalReachFeet, activityRangeUnits);
@@ -4435,6 +4590,14 @@ export class CombatAttackService {
 
   applyDnd5eAttackRollConfig(config = {}, dialog = {}, message = {}) {
     const activity = config?.subject ?? null;
+    if (isWhirlwindActivity(activity)) {
+      if (!this.prepareWhirlwindUse(activity, { workflow: config.workflow }, message)) return false;
+      config.target = undefined;
+      for (const roll of config.rolls ?? []) {
+        roll.options ??= {};
+        roll.options.rebreyaWhirlwindTargets = message.data.flags.dnd5e.targets;
+      }
+    }
     if (!this.#isWeaponAttackActivity(activity)) {
       return true;
     }
@@ -4512,6 +4675,7 @@ export class CombatAttackService {
   }
 
   applyDnd5ePostAttackRoll(rolls = [], context = {}) {
+    this.reportWhirlwindAttack(rolls, context).catch(error => console.error(`${MODULE_ID} | Whirlwind hit report failed.`, error));
     const activity = context?.subject ?? null;
     if(activity?.flags?.[MODULE_ID]?.weaponModActivity)return true;
     if (!this.#isWeaponAttackActivity(activity)) {
@@ -4766,6 +4930,10 @@ export class CombatAttackService {
 
   applyDnd5eDamageRollConfig(config = {}, dialog = {}, message = {}) {
     const activity = config?.subject ?? null;
+    if (isWhirlwindActivity(activity)) {
+      markWhirlwindDamageRolls(config);
+      this.prepareWhirlwindDamageCard(config, message);
+    }
     if (!this.#isWeaponAttackActivity(activity)) {
       return true;
     }

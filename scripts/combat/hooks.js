@@ -71,6 +71,23 @@ export function registerCombatHooks(moduleApi) {
   }
   game[HOOKS_REGISTERED_KEY] = true;
 
+  if (hasAttackService) {
+    Hooks.on("midi-qol.hitsChecked", async workflow => {
+      await moduleApi.combatAttackService.resolveWhirlwindHits(workflow);
+      return moduleApi.combatAttackService.chooseWhirlwindEffectTarget(workflow);
+    });
+    Hooks.on("dnd5e.preCalculateDamage", (actor, damages, options) => moduleApi.combatAttackService.applyWhirlwindDamage(actor, damages, options));
+    Hooks.on("dnd5e.activityConsumption", (activity, _usage, _message, updates) => moduleApi.combatAttackService.routeWhirlwindConsumption(activity, updates));
+    Hooks.on("midi-qol.preDamageRoll", async workflow => {
+      await moduleApi.combatAttackService.resolveWhirlwindHits(workflow);
+      return moduleApi.combatAttackService.chooseWhirlwindEffectTarget(workflow);
+    });
+    Hooks.on("midi-qol.preApplyDynamicEffects", workflow => moduleApi.combatAttackService.scopeWhirlwindEffects(workflow));
+    for (const hook of ["midi-qol.postApplyDynamicEffects", "midi-qol.preAbort"]) {
+      Hooks.on(hook, workflow => moduleApi.combatAttackService.scopeWhirlwindEffects(workflow, true));
+    }
+  }
+
   if (moduleApi.midiReactionAdapter) {
     Hooks.on("midi-qol.midiReady", () => moduleApi.midiReactionAdapter.initialize());
   }
@@ -561,6 +578,11 @@ export function registerCombatHooks(moduleApi) {
       });
     });
     Hooks.on("updateItem", (item, changed, options = {}) => {
+      if (!options?.[MODULE_ID]?.whirlwindSync) {
+        moduleApi.combatAttackService.repairWhirlwindActivities?.(item)?.catch(error => {
+          console.error(`${MODULE_ID} | Failed to synchronize whirlwind activity.`, error);
+        });
+      }
       if (options?.[MODULE_ID]?.firearmPropertySync === true) {
         return;
       }
@@ -571,12 +593,14 @@ export function registerCombatHooks(moduleApi) {
 
     const repairFirearmActor = (app) => {
       const actor = app?.actor ?? app?.document ?? null;
+      moduleApi.combatAttackService.repairWhirlwindActivities?.(actor)?.catch(error => console.error(`${MODULE_ID} | Whirlwind repair failed.`, error));
       moduleApi.combatAttackService.repairFirearmActivities(actor).catch((error) => {
         console.error(`${MODULE_ID} | Failed to repair firearm activities.`, error);
       });
     };
     const repairFirearmItem = (app) => {
       const item = app?.document ?? app?.item ?? null;
+      moduleApi.combatAttackService.repairWhirlwindActivities?.(item)?.catch(error => console.error(`${MODULE_ID} | Whirlwind repair failed.`, error));
       moduleApi.combatAttackService.repairFirearmActivities(item).catch((error) => {
         console.error(`${MODULE_ID} | Failed to repair firearm item activities.`, error);
       });
@@ -596,6 +620,10 @@ export function registerCombatHooks(moduleApi) {
     ]) {
       Hooks.on(hookName, repairFirearmItem);
     }
+
+    Hooks.on("midi-qol.preTargetingV2", ({ workflow, usage, message }) => {
+      return moduleApi.combatAttackService.prepareWhirlwindUse(workflow.activity, usage, message);
+    });
 
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
@@ -1422,5 +1450,8 @@ export function registerCombatHooks(moduleApi) {
         return true;
       }
     });
+  }
+  if (hasAttackService) {
+    Hooks.on("midi-qol.preDamageRoll", (workflow, _activity, config) => moduleApi.combatAttackService.prepareWhirlwindExtraDamage(workflow, config));
   }
 }

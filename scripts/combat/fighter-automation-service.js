@@ -1,4 +1,5 @@
 import { CLASS_FEATURES_COMPENDIUM_NAME, CLASSES_COMPENDIUM_NAME, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { whirlwindEffectTargets } from "./whirlwind-attack.js?v=1.5.1";
 import {
   getClassStartingEquipmentConfig,
   getClassStartingEquipmentConfigBySourceType,
@@ -228,7 +229,7 @@ function resolveActorFromTarget(target) {
 }
 
 function targetActorsFromWorkflow(workflow) {
-  return collectionValues(workflow?.hitTargets ?? workflow?.targets)
+  return (whirlwindEffectTargets(workflow) ?? collectionValues(workflow?.hitTargets ?? workflow?.targets))
     .map(resolveActorFromTarget)
     .filter((actor) => actor instanceof Actor);
 }

@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { whirlwindEffectTargets, isWhirlwindActivity, markWhirlwindDamageRolls } from "./whirlwind-attack.js?v=1.5.1";
 import { getCreatureTokenFootprint } from "../data/equipment-size-rules.js?v=1.4.393";
 
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
@@ -1409,7 +1410,7 @@ export class RuneKnightAutomationService {
   async #prepareFireRune(workflow, key) {
     const actor = workflow?.actor ?? workflow?.activity?.actor ?? null;
     const sourceItem = workflow?.item ?? workflow?.activity?.item ?? null;
-    const hitTargets = collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC);
+    const hitTargets = whirlwindEffectTargets(workflow) ?? collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC);
     if (
       !isActorDocument(actor)
       || sourceItem?.type !== "weapon"
@@ -1498,7 +1499,7 @@ export class RuneKnightAutomationService {
       !isActorDocument(actor)
       || !this.#giantMightFormEffect(actor)
       || !this.#isWeaponOrUnarmed(item)
-      || !collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC).length
+      || !(whirlwindEffectTargets(workflow) ?? collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC)).length
     ) return true;
     const damageKey = this.#giantMightDamageKey(workflow, actor);
     if (!damageKey || this._giantMightDamageKeys.has(damageKey)) return true;
@@ -1516,6 +1517,7 @@ export class RuneKnightAutomationService {
         actor,
         "Мощь великана"
       );
+      if (isWhirlwindActivity(workflow.activity)) markWhirlwindDamageRolls({ rolls: [roll] }, workflow.rebreyaWhirlwind?.selectedTargetUuid ?? null);
       const nextRolls = [...previousRolls, roll];
       if (typeof workflow?.setBonusDamageRolls === "function") {
         await workflow.setBonusDamageRolls(nextRolls);
@@ -1583,6 +1585,7 @@ export class RuneKnightAutomationService {
     const previousRolls = [...(workflow?.bonusDamageRolls ?? [])];
     try {
       const roll = await this.#createDamageRoll("2d6", "fire", state.actor, "Огненная руна");
+      if (isWhirlwindActivity(workflow.activity)) markWhirlwindDamageRolls({ rolls: [roll] }, workflow.rebreyaWhirlwind?.selectedTargetUuid ?? null);
       const nextRolls = [...previousRolls, roll];
       if (typeof workflow?.setBonusDamageRolls === "function") {
         await workflow.setBonusDamageRolls(nextRolls);

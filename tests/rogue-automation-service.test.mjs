@@ -775,6 +775,29 @@ test("rogue sneak attack does not lock itself forever when combat is inactive", 
   assert.equal(secondConfig.rolls.length, 1);
 });
 
+test("whirlwind sneak attack addresses only the selected hit token and keeps its own turn limit", async () => {
+  const rogue = new TestActor({ items: [], level: 5 });
+  const target = new TestActor({ id: "shared", items: [] });
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  workflow.activity.item.type = "weapon";
+  workflow.activity.item.system.properties = ["lchWhirl"];
+  workflow.activity.flags = { "rebreya-main": { whirlwindAttack: { version: 1 } } };
+  workflow.hitTargets = new Set([{ actor: target, document: { uuid: "Token.A" } }, { actor: target, document: { uuid: "Token.B" } }]);
+  workflow.rebreyaWhirlwind = { selectedTargetUuid: "Token.B" };
+  let prompts = 0;
+  const service = new RogueAutomationService({}, { promptSneakAttack: async (_actor, details) => {
+    prompts++;
+    assert.equal(details.targets.length, 1);
+    return { targetUuid: target.uuid };
+  } });
+  const config = makeDamageConfig();
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+  assert.ok(config.rolls[0].options.properties.includes("rebreyaWhirlTarget:Token.B"));
+  assert.ok(config.rolls[0].options.properties.includes("rebreyaWhirlHalf"));
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, makeDamageConfig());
+  assert.equal(prompts, 1);
+});
+
 test("rogue sneak attack automation hooks into midi pre-damage roll", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;

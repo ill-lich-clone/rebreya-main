@@ -4,6 +4,8 @@
 
 ## Частичные переносы и экземпляры (R3)
 
+Круговая атака `lchWhirl`: native activity, досягаемость, все фракции, половина урона, выбранная цель дополнительных эффектов — [профильный паспорт](whirlwind-attack-function-passport.md).
+
 Точки входа `ItemInstanceWorkflow`, `ItemInstanceDocuments`, `planItemInstanceMutation`, `DurableMutationJournal.listPending`, расширенный `moveInventoryItemToFolder`, hero assign/clear/normalize, typed commands и UI: [профильный паспорт](item-instance-passport.md). Он дополняет разделы application infrastructure, inventory, sheet integrations и UI ниже.
 
 ## Контракт актуальности паспорта

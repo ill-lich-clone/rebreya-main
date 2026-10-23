@@ -30,13 +30,14 @@ import {
   finiteNumber as toFiniteNumber
 } from "../shared/foundry-values.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { buildWhirlwindActivity } from "../combat/whirlwind-attack.js?v=1.5.1";
 
 export { buildGearIconLookup };
 
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 25;
+const GEAR_TEMPLATE_VERSION = 26;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const STORAGE_COIN_DENOMINATION_BY_NAME = Object.freeze({
@@ -981,6 +982,17 @@ function buildSystemData(item, classification, descriptionHtml, presentation = n
       }
       if (isFirearmClassification(classification)) {
         baseData.activities = buildFirearmActivities(item);
+      }
+      else if ((baseData.properties ?? []).includes("lchWhirl")) {
+        const normal = buildWhirlwindActivity({ type: "weapon", system: baseData });
+        delete normal.flags;
+        delete normal.target;
+        delete normal.attackRollPerTarget;
+        normal._id = "lchMeleeAttack01";
+        normal.name = "Атака";
+        baseData.activities = { [normal._id]: normal };
+        const whirlwind = buildWhirlwindActivity({ type: "weapon", system: baseData }, normal);
+        baseData.activities[whirlwind._id] = whirlwind;
       }
       break;
 

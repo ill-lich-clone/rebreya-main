@@ -442,6 +442,22 @@ test("fury-small appends its damage to the triggering damage roll like Divine Sm
   assert.equal(target.damageApplications.length, 0);
 });
 
+test("whirlwind racial bonus ignores an unselected eligible enemy", async () => {
+  const source = new TestActor({ id: "whirl-source", size: "sm", disposition: 1, items: [makeFuryFeature()] });
+  const enemy = new TestActor({ id: "whirl-enemy", size: "med", disposition: -1 });
+  const ally = new TestActor({ id: "whirl-ally", size: "med", disposition: 1 });
+  const wf = workflow({ source, target: enemy });
+  wf.activity.flags = { "rebreya-main": { whirlwindAttack: { version: 1 } } };
+  wf.activity.item = { type: "weapon", system: { properties: ["lchWhirl"] } };
+  enemy.token.document.uuid = "Token.enemy";
+  ally.token.document.uuid = "Token.ally";
+  wf.hitTargets = new Set([enemy.token, ally.token]);
+  wf.rebreyaWhirlwind = { selectedTargetUuid: "Token.ally" };
+  let prompts = 0; setConfirmHandler(async () => { prompts++; return true; });
+  await new RaceAutomationService({}).applyMidiPreDamageRoll(wf, wf.activity, { rolls: [] });
+  assert.equal(prompts, 0);
+});
+
 test("an owned race stores and transfers only the selected ability penalty", async () => {
   const race = makeOwnedRace();
   const actor = new TestActor({ id: "actor-race", items: [race] });
