@@ -79,6 +79,17 @@ export class ReactionCapabilityIndex {
     }));
   }
 
+  ownsActivity(activity) {
+    this._ensureBuilt();
+    for (const entries of this._entriesByKind.values()) {
+      for (const entry of entries.values()) {
+        if (entry.actorUuid === activity?.actor?.uuid && entry.itemUuid === activity?.item?.uuid
+          && (!entry.activityId || entry.activityId === String(activity?.id ?? activity?._id ?? ""))) return true;
+      }
+    }
+    return false;
+  }
+
   rebuildScene(scene = this._sceneProvider()) {
     this._entriesByKind.clear();
     this._keysByActor.clear();

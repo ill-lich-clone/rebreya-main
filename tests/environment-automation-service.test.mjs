@@ -7,6 +7,28 @@ const {
 } = await import("../scripts/combat/environment-automation-service.js");
 const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 
+test("reaction lifecycle hooks retry MIDI setup and recover messages after GM presence changes once", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const listeners = new Map();
+  const calls = [];
+  globalThis.game = {};
+  globalThis.Hooks = { on(name, fn) { listeners.set(name, fn); } };
+  try {
+    const api = {
+      reactionQueueService: { async recoverExpiredReactionMessages() { calls.push("recover"); } },
+      midiReactionAdapter: { async initialize() { calls.push("midi"); } }
+    };
+    registerCombatHooks(api);
+    registerCombatHooks(api);
+    assert.equal(typeof listeners.get("midi-qol.midiReady"), "function");
+    await listeners.get("midi-qol.midiReady")();
+    await listeners.get("userConnected")();
+    assert.deepEqual(calls, ["midi", "recover"]);
+  }
+  finally { globalThis.Hooks = previousHooks; globalThis.game = previousGame; }
+});
+
 function createToken(id, x, y, disposition, actor = {}) {
   return {
     id,

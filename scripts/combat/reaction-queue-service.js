@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { ManagedReactionSessions } from "./managed-reaction-session.js";
 
 export const REACTION_PROMPT_TIMEOUT_MS = 10_000;
 export const REACTION_RESULT_TTL_MS = 60_000;
@@ -156,10 +157,67 @@ export class ReactionQueueService {
     this._completed = new Map();
     this._pendingPromptRequests = new Map();
     this._pendingTriggerRequests = new Map();
+    this._managed = new ManagedReactionSessions(this);
   }
 
   async initialize() {
+    await this.recoverExpiredReactionMessages();
     return this;
+  }
+
+  resolveManagedReaction(request, execute) {
+    return this._managed.resolve(request, execute);
+  }
+
+  async _beginReactionMessage({ triggerId, candidate = {}, kind, managed }) {
+    try {
+      const Message = this._options.chatMessageClass ?? globalThis.ChatMessage;
+      if (typeof Message?.create !== "function") return null;
+      const resolved = candidate.actor
+        ?? await (this._options.actorResolver ?? globalThis.fromUuid)?.(candidate.actorUuid || candidate.tokenUuid);
+      const actor = resolved?.actor ?? resolved;
+      const actorName = cleanString(actor?.name ?? candidate.name) || "Персонаж";
+      return await Message.create({
+        content: `${escapeHtml(actorName)} выбирает реакцию`,
+        flags: { [MODULE_ID]: { reactionChoice: {
+          triggerId, candidateActorUuid: candidate.actorUuid ?? actor?.uuid ?? "", kind,
+          actorName, state: "choosing", expiresAt: (this._options.now?.() ?? Date.now()) + REACTION_PROMPT_TIMEOUT_MS,
+          ...(managed ? { managed } : {})
+        } } }
+      });
+    }
+    catch (error) {
+      this._options.logger?.warn?.("Reaction chat unavailable", error);
+      return null;
+    }
+  }
+
+  async _finishReactionMessage(message, applied) {
+    if (!message) return;
+    try {
+      if (applied) await message.delete();
+      else {
+        const choice = message.flags?.[MODULE_ID]?.reactionChoice ?? {};
+        await message.update({
+          content: `${escapeHtml(choice.actorName || "Персонаж")} не применил реакцию`,
+          flags: { [MODULE_ID]: { reactionChoice: { ...choice, state: "declined" } } }
+        });
+      }
+    }
+    catch (error) { this._options.logger?.warn?.("Reaction chat finalization failed", error); }
+  }
+
+  async recoverExpiredReactionMessages() {
+    if (!this._isCoordinator()) return;
+    await this._managed.reconcile();
+    const game = this._options.gameProvider?.() ?? globalThis.game;
+    const now = this._options.now?.() ?? Date.now();
+    for (const message of collectionValues(game?.messages)) {
+      const choice = message.flags?.[MODULE_ID]?.reactionChoice;
+      if (choice?.state === "choosing" && Number(choice.expiresAt) <= now) {
+        await this._finishReactionMessage(message, false);
+      }
+    }
   }
 
   registerType(kind, provider) {
@@ -244,6 +302,7 @@ export class ReactionQueueService {
     const accepted = [];
 
     for (const candidate of candidates) {
+      if (!await this._hasReactionCapacity(candidate, provider)) continue;
       if (await provider.isTriggerValid?.(context) === false) {
         return { triggerId, kind, status: "invalidated", accepted };
       }
@@ -251,33 +310,37 @@ export class ReactionQueueService {
         continue;
       }
       const prompt = await provider.buildPrompt?.(candidate, context) ?? {};
-      const choice = await this._promptWithTimeout({
-        candidate,
-        context,
-        kind,
-        prompt,
-        triggerId
-      });
-      if (choice?.accepted === true) {
-        const transaction = await this._executeAccepted({
+      const message = await this._beginReactionMessage({ triggerId, candidate, kind });
+      let applied = false;
+      try {
+        const choice = await this._promptWithTimeout({
           candidate,
-          choice,
           context,
           kind,
-          provider,
+          prompt,
           triggerId
         });
-        if (transaction.accepted !== true) {
-          continue;
-        }
-        const effect = typeof provider.serializeEffect === "function"
-          ? await provider.serializeEffect(transaction.effect, candidate, context)
-          : { applied: true };
-        accepted.push({ candidate, choice, transaction, effect });
-        if (await provider.isTriggerValid?.(context) === false) {
-          return { triggerId, kind, status: "invalidated", accepted };
+        if (choice?.accepted === true) {
+          const transaction = await this._executeAccepted({
+            candidate,
+            choice,
+            context,
+            kind,
+            provider,
+            triggerId
+          });
+          if (transaction.accepted !== true) continue;
+          applied = true;
+          const effect = typeof provider.serializeEffect === "function"
+            ? await provider.serializeEffect(transaction.effect, candidate, context)
+            : { applied: true };
+          accepted.push({ candidate, choice, transaction, effect });
+          if (await provider.isTriggerValid?.(context) === false) {
+            return { triggerId, kind, status: "invalidated", accepted };
+          }
         }
       }
+      finally { await this._finishReactionMessage(message, applied); }
     }
 
     return { triggerId, kind, status: "completed", accepted };
@@ -356,6 +419,7 @@ export class ReactionQueueService {
   }
 
   async handleSocketMessage(message, transportSenderId = "") {
+    if (await this._managed.handle(message, transportSenderId)) return true;
     if (message?.type === REACTION_TRIGGER_EVENT) {
       await this._handleTriggerRequest(message, transportSenderId);
       return true;
@@ -680,6 +744,7 @@ export class ReactionQueueService {
   async _executeAccepted({ candidate, choice, context, kind, provider, triggerId }) {
     const transaction = { payment: null, effect: null, reaction: null };
     try {
+      if (!await this._hasReactionCapacity(candidate, provider)) return { accepted: false, reason: "reactionReserved", ...transaction };
       transaction.payment = typeof provider.pay === "function"
         ? await provider.pay(candidate, choice, context, transaction)
         : { paid: true };
@@ -733,6 +798,13 @@ export class ReactionQueueService {
     }
   }
 
+  async _hasReactionCapacity(candidate, provider) {
+    const reserved = this._managed.reservedUses(candidate.actorUuid);
+    if (!reserved || provider.consumesReaction === false || candidate.consumesReaction === false) return true;
+    const actor = candidate.actor ?? await (this._options.actorResolver ?? globalThis.fromUuid)?.(candidate.actorUuid);
+    return this.moduleApi?.combatAttackService?.canUseReaction?.(actor, reserved + 1)?.canUse === true;
+  }
+
   _logProviderError(error, details) {
     this._options.logger?.error?.("Reaction provider failed", {
       ...details,
@@ -741,6 +813,7 @@ export class ReactionQueueService {
   }
 
   destroy() {
+    this._managed.destroy();
     for (const [requestId, entry] of this._pendingPromptRequests) {
       this._pendingPromptRequests.delete(requestId);
       entry.signal?.removeEventListener?.("abort", entry.abortHandler);

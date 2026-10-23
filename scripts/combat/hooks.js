@@ -62,7 +62,7 @@ export function registerCombatHooks(moduleApi) {
   const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
   const hasMagicItemsCompendium = Boolean(moduleApi?.magicItemsCompendium);
   const hasAlchemyBombService = Boolean(moduleApi?.alchemyBombRuntimeService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !hasAlchemyBombService && !curseUpgrades && !simpleUpgrades) {
+  if (!moduleApi?.reactionQueueService && !moduleApi?.midiReactionAdapter && !hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !hasAlchemyBombService && !curseUpgrades && !simpleUpgrades) {
     return;
   }
 
@@ -70,6 +70,13 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (moduleApi.midiReactionAdapter) {
+    Hooks.on("midi-qol.midiReady", () => moduleApi.midiReactionAdapter.initialize());
+  }
+  if (moduleApi.reactionQueueService) {
+    Hooks.on("userConnected", () => moduleApi.reactionQueueService.recoverExpiredReactionMessages());
+  }
 
   if (hasAlchemyBombService) {
     Hooks.on("midi-qol.preItemRollV2", async ({ workflow } = {}) => {

@@ -333,6 +333,7 @@ import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/e
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
+import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.4.397";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.4.392";
@@ -1983,6 +1984,7 @@ export class RebreyaMainModule {
       capabilityIndex: this.reactionCapabilityIndex,
       logger: console
     });
+    this.midiReactionAdapter = new MidiReactionAdapter(this);
     this.longRestPipelineService = new LongRestPipelineService({
       logger: console,
       notifyError: (message) => globalThis.ui?.notifications?.error?.(message)
@@ -3505,6 +3507,7 @@ export class RebreyaMainModule {
 
     try {
       await this.reactionQueueService.initialize();
+      await this.midiReactionAdapter.initialize();
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize global reaction queue.`, error);

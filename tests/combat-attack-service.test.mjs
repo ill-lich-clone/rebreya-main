@@ -83,6 +83,20 @@ globalThis.Roll = TestRoll;
 const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
 const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
 
+test("concurrent native reaction receipts spend distinct available uses exactly once", async () => {
+  const actor = makeActor([]);
+  actor.flags[MODULE_ID].reactionState = {usesMax: 2, usesRemaining: 2};
+  const originalSetFlag = actor.setFlag.bind(actor);
+  actor.setFlag = async (...args) => { await Promise.resolve(); return originalSetFlag(...args); };
+  const service = new CombatAttackService({});
+  const results = await Promise.all(['native-a','native-b'].map(idempotencyKey => service.consumeReaction(actor, {idempotencyKey, reactionType: 'midi-native'})));
+  assert.equal(results.every(result => result.consumed), true);
+  assert.equal(service.getReactionState(actor).usesRemaining, 0);
+  const reconnected = new CombatAttackService({});
+  assert.equal((await reconnected.consumeReaction(actor, {idempotencyKey: 'native-a', reactionType: 'midi-native'})).consumed, true);
+  assert.equal(reconnected.getReactionState(actor).usesRemaining, 0);
+});
+
 function makeActor(items, {
   id = "actor-a",
   name = "Стрелок",

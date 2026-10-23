@@ -19,6 +19,15 @@ function token(id, actorDocument) {
   };
 }
 
+test("native MIDI deduplication recognizes indexed module activities without scanning the world", () => {
+  const guardian = actor("guard");
+  const index = new ReactionCapabilityIndex({ sceneProvider: () => ({ id: "s", tokens: [token("t", guardian)] }) });
+  index.registerProvider("guard", () => [{ actorUuid: guardian.uuid, itemUuid: "Item.guard", activityId: "a" }]);
+  assert.equal(index.ownsActivity({ actor: guardian, item: { uuid: "Item.guard" }, id: "a" }), true);
+  assert.equal(index.ownsActivity({ actor: guardian, item: { uuid: "Item.guard" }, id: "b" }), false);
+  assert.equal(index.ownsActivity({ actor: actor("other"), item: { uuid: "Item.guard" }, id: "a" }), false);
+});
+
 test("reaction capability index lazily builds the active scene once", () => {
   const caster = actor("caster", [{ uuid: "Actor.caster.Item.counterspell" }]);
   const scene = { id: "scene-1", tokens: [token("caster-token", caster)] };

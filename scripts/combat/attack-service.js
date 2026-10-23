@@ -5027,6 +5027,8 @@ export class CombatAttackService {
     next.usesRemaining = clampInteger(next.usesRemaining, 0, next.usesMax);
     next.available = next.usesRemaining > 0;
 
+    const spendKeys = patch.reactionSpendKeys ?? actor.getFlag(MODULE_ID, REACTION_STATE_FLAG)?.reactionSpendKeys;
+
     await actor.setFlag(MODULE_ID, REACTION_STATE_FLAG, {
       usesMax: next.usesMax,
       usesRemaining: next.usesRemaining,
@@ -5034,7 +5036,8 @@ export class CombatAttackService {
       lastRefreshRound: Math.floor(toNumber(next.lastRefreshRound, 0)),
       lastRefreshTurn: Math.floor(toNumber(next.lastRefreshTurn, -1)),
       lastReactionType: String(next.lastReactionType ?? ""),
-      lastReactionAt: next.lastReactionAt ?? null
+      lastReactionAt: next.lastReactionAt ?? null,
+      ...(Array.isArray(spendKeys) ? { reactionSpendKeys: spendKeys.slice(-64) } : {})
     });
 
     return this.getReactionState(actor);
@@ -5103,6 +5106,24 @@ export class CombatAttackService {
       };
     }
 
+    this._reactionSpendQueue ??= new Map();
+    const key = actor.uuid || actor.id;
+    const previous = this._reactionSpendQueue.get(key) ?? Promise.resolve();
+    const pending = previous.catch(() => undefined).then(() => this.#consumeReactionNow(actor, options));
+    this._reactionSpendQueue.set(key, pending);
+    try { return await pending; }
+    finally {
+      if (this._reactionSpendQueue.get(key) === pending) this._reactionSpendQueue.delete(key);
+    }
+  }
+
+  async #consumeReactionNow(actor, options = {}) {
+    const idempotencyKey = cleanText(options.idempotencyKey);
+    const spendKeys = actor.getFlag(MODULE_ID, REACTION_STATE_FLAG)?.reactionSpendKeys ?? [];
+    if (idempotencyKey && spendKeys.includes(idempotencyKey)) {
+      return { actorId: actor.id, consumed: true, replayed: true, state: this.getReactionState(actor) };
+    }
+
     const safeUses = Math.max(1, Math.floor(toNumber(options.uses, 1)));
     const check = this.canUseReaction(actor, safeUses);
     if (!check.canUse) {
@@ -5117,7 +5138,8 @@ export class CombatAttackService {
     const nextState = await this.#setReactionState(actor, {
       usesRemaining: Math.max(0, (check.state?.usesRemaining ?? 0) - safeUses),
       lastReactionType: String(options.reactionType ?? ""),
-      lastReactionAt: new Date().toISOString()
+      lastReactionAt: new Date().toISOString(),
+      ...(idempotencyKey ? { reactionSpendKeys: [...spendKeys, idempotencyKey].slice(-64) } : {})
     });
 
     return {
