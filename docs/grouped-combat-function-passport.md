@@ -26,12 +26,12 @@ Focused: `tests/grouped-combat-rules.test.mjs`.
 | Метод | Контракт |
 | --- | --- |
 | `isManaged(combat)` | Наличие versioned flag; mode отличает pending от active/blocked |
-| `save(combat,state)` | Authority/live Combat recheck и repository CAS по revision перед каждым flag write |
+| `save(combat,state,{receiptKey=null}={})` | Authority/live Combat recheck; полный checkpoint либо partial receipt+revision через repository CAS |
 | `eligible(token,sceneId)` | Только same-scene character/npc, без storage/mapObject/system object и actorless tokens |
 | `members(combat)` | Live eligible snapshots и native initiative profiles; не доверяет client Member |
 | `start(request,{sender})` | GM, exact request/preflight до изменений; idempotent Combatant, native grouped initiative, сохранение раунда/хода/старых scores; новый member открытой группы получает только свой start |
 | `transition(request,{sender})` | Exact live target/revision; GM либо OWNER solo character, player может только закончить текущий собственный ход; прунит удалённых участников |
-| `runPipeline(combat,state,phases,target,operationId,begin=false)` | Running receipt → awaited step → done; native позиции также имеют operation-specific receipts и сохраняются до начала группы; временной delta считается по логическим группам |
+| `runPipeline(combat,state,phases,target,operationId,begin=false)` | Phase checkpoint после планирования сохраняет metadata/anchors; partial running receipt → awaited step → partial done. Native позиции имеют отдельные checkpoints; history/recovery/логический time delta сохранены |
 | `observeNativeTransition(combat)` | Promise существующей операции, без повторной очереди и повторных effects |
 | `recoverPending(combat,state)` | Остаточный running становится uncertain/blocked перед новым ingress; только подтверждённые done steps можно пропустить при продолжении pending operation |
 | `reconcile(combat)` | На active GM после reload/handover под общим lock восстанавливает pending; неоднозначный шаг не повторяет |
@@ -49,6 +49,8 @@ Focused: `tests/grouped-combat-service.test.mjs` (включая concurrent/stal
 
 - `getCombat(id)`, `getActiveCombat(sceneId)`, `createCombat(sceneId)` разрешают scene-linked live Documents.
 - `readState(combat)` возвращает detached flag; `writeState(combat,state,{expectedRevision})` проверяет live revision и атомарно заменяет flag через native `==groupedCombat`, удаляя завершённые transient fields и retry receipt.
+- `writeReceipt(combat,state,key,{expectedRevision})` проверяет live revision и наличие pending checkpoint, сохраняет только revision и `receipts.==key` native patch. Прочая history/anchors/memberStarts не клонируется и не отправляется. `stateOf` читает live flag для CAS; `progressOptions` помечает active pending writes как `options[MODULE_ID].groupedCombatProgress:true` с render/turnEvents false.
+- `isGroupedCombatProgressUpdate(combat,changed,options)` принимает только явно помеченный active pending write одного module flag; разрешает native backend `_id` этого Combat, отвергает position/foreign/mixed fields. Это UI optimization, не authorization bypass.
 - `withNativeChanges(combat,operation)` ограничивает внутренний native ingress; `createMissingCombatants(combat,tokens)` не создаёт повторных Token combatants.
 - `commitNativePosition(combat,position,options)` сохраняет нативные round/turn и time delta; emits один native pre-change combatTurn/combatRound. `beginCombat(combat,position)` сохраняет native startCombat/encounter recovery и выбирает первую подходящую позицию через combatStart hook.
 - `GROUPED_NATIVE_WRITES` — process-local WeakSet для reentrancy, не wire-claim о полномочиях.
@@ -63,7 +65,7 @@ Focused: `tests/grouped-combat-repository.test.mjs` (реальные Foundry ex
 
 - `inspectGroupedCombatSupport({game,Hooks})` и `createGroupedCombatEffects(dependencies).inspect()` сверяют active provider versions, известные callback contracts и наличие нужных API. Поддержанная база: Foundry 13.351, dnd5e 5.2.5; DAE 13.0.27, Times Up 13.1.9, MIDI-QOL 13.0.61, Effect Macro 13.0.4 при их активности. Незнакомый нужный контракт отклоняет conversion до world writes.
 - `describeInitiative(actor) -> {key,canShare}` читает native unevaluated formula/options; authored parts/fixed/advantage сохраняются. Native normalized advantageMode и criticalSuccess/criticalFailure/target включены в semantic signature. configured/flavor не разделяют NPC, неизвестный semantic option выключает объединение конкретной записи.
-- `plan(combat,phase,state?) -> EffectStep[]` снимает applicable effects + enchantments, готовит отдельные persistent step keys и awaited closures; authored duration не переписывает. `durationExpired` сопоставляет сохранённый start с логическими группами. `installNativeGuards()` один раз подавляет только дублирующие turn callbacks активного управляемого Combat; native rest/create/delete hooks остаются.
+- `plan(combat,phase,state?) -> EffectStep[]` снимает applicable effects + enchantments, готовит отдельные persistent step keys и awaited closures; authored duration не переписывает. `durationExpired` сопоставляет сохранённый start с логическими группами. `installNativeGuards()` подавляет identified updateCombat turn-provider callbacks active/blocked Combat также на flag writes: Times Up иначе сканирует native durations при каждом receipt. Pending/ordinary Combat и native rest/create/delete hooks сохранены.
 - Times Up выполняет expiry своим `expireEffect`, DAE — `daeMacro("each",...,{turn:"startTurn"|"endTurn"})`, включая Any/source specialDuration.
 - MIDI legacy — `doOverTimeEffect`; `activityOverTime(actor,effect,startTurn)` разрешает native activity и вызывает зарегистрированный `localActivityOverTimeEffect` через awaited `MidiQOL.socket().executeAsUser`. Private/self выполняет active owner; иначе active GM. Native workflow сохраняет saves, consumption, resistance/temp HP, concentration и RollComplete затихающего урона. Native action-state cleanup также сохраняется.
 - Effect Macro — существующие `utils.hasMacro/callMacro/getExecutor`. `ensureOwnerSocket()` регистрирует receipt-bound handler `groupedEffectMacro` через уже установленный socketlib; remote handler никогда не выполняется на GM и проверяет designated player, persisted running receipt, effect и phase. На GM эффекты исполняет локальный coordinator.
@@ -82,6 +84,8 @@ Focused: `tests/grouped-combat-provider-contracts.test.mjs`; `tests/helpers/inst
 - `registerCombatHooks`, `registerImplantAutomationHooks`, `registerCraftsmanGadgetHooks` не дублируют managed phases через прежние turn callbacks; остальные hooks прежние.
 
 `registerGroupedCombatRuntime(moduleApi,{Hooks,CombatClass,CombatantClass,CombatTrackerClass}) -> disposer` оборачивает native Next/Previous/round/update, protected `_manageTurnEvents`, comparator, grouping key и `renderGroups`. Существующий tracker строит группы и раскрываемые children; отдельный app не создаётся. Регистрация idempotent, disposer восстанавливает прежние методы. Observing lifecycle waiters снимаются при завершении, deleteCombat и dispose. Сброс round до нуля внутри управляемого боя явно отклоняется: сначала завершить бой; backward между начатыми ходами поддержан.
+
+На strict progress update wrapper `_onUpdate` сохраняет native bookkeeping, но process-local WeakSet подавляет `updateCombatantActors` и `Combatant.refreshDynamicRing` в этом стеке. Реальные native positions, финальный/blocked commit и ordinary/mixed updates обновляют окна/rings прежним путём. Проверка использует настоящие Foundry13.351/dnd5e5.2.5 methods в VM: `tests/grouped-combat-progress.test.mjs`; это не live FPS measurement.
 
 Внутренний `requestTransition(combat,target)` объединяет повторную навигацию/positional update того же клиента в один in-flight Promise на Combat. До окончания ожидаемого workflow второй запрос с устаревающей ревизией не отправляется; после resolve/reject следующий запрос разрешён. Другие поля public update сохраняются после ожидания. Серверные revision/security checks для разных клиентов не ослаблены.
 

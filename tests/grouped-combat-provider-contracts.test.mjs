@@ -34,8 +34,11 @@ test("source durations expire on the source member, Any repeats include suppress
   const api = createGroupedCombatEffects({ gameProvider: () => game, Hooks, TimesUp: { async expireEffect(e) { calls.push([e.id, "expired"]); } }, DAE: { async daeMacro(_each, actor, _e, opts) { calls.push([actor.id, opts.turn]); } } });
   api.installNativeGuards();
   Hooks.events.updateCombat[0].fn(combat, { turn: 2 });
+  Hooks.events.updateCombat[0].fn(combat, { flags: { "rebreya-main": { groupedCombat: { revision: 2 } } } });
   Hooks.events.updateCombat[0].fn({ flags: {} }, { turn: 2 });
   assert.equal(ordinaryCalls, 1);
+  Hooks.events.updateCombat[0].fn({ flags: { "rebreya-main": { groupedCombat: { mode: "pending" } } } }, { turn: 2 });
+  assert.equal(ordinaryCalls, 2, "pending native round must keep its original provider handler");
   for (const step of api.plan(combat, { kind: "turn-start", round: 2, groupId: "g", memberIds: ["a", "b", "c"] })) await step.run();
   assert.equal(calls.some(c => c[0] === "a" && c[1] === "startTurn"), false);
   assert.equal(calls.some(c => c[0] === "b" && c[1] === "startTurn"), true);

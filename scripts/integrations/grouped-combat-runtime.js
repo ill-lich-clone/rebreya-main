@@ -1,7 +1,7 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
 import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.4.398";
-import { GROUPED_NATIVE_WRITES } from "../infrastructure/foundry/grouped-combat-repository.js";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.2";
+import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
@@ -59,12 +59,24 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   const prototype = CombatClass.prototype;
   if (prototype[REGISTERED]) return prototype[REGISTERED];
   const restores = [], hookIds = [], focusStamps = new Map(), publicStamps = new Map(), observers = new Map(), transitions = new Map();
+  const progressUpdates = new WeakSet();
   const patch = (target, name, factory) => {
     if (!target || typeof target[name] !== "function") return;
     const own = Object.getOwnPropertyDescriptor(target, name), original = target[name]; target[name] = factory(original);
     restores.push(() => { if (own) Object.defineProperty(target, name, own); else delete target[name]; });
   };
   const hook = (name, fn) => { const id = Hooks?.on?.(name, fn); if (id != null) hookIds.push([name, id]); };
+  patch(prototype, "_onUpdate", original => function (changed, options, userId) {
+    if (!isGroupedCombatProgressUpdate(this, changed, options)) return original.call(this, changed, options, userId);
+    progressUpdates.add(this);
+    try { return original.call(this, changed, options, userId); } finally { progressUpdates.delete(this); }
+  });
+  patch(prototype, "updateCombatantActors", original => function (...args) {
+    if (!progressUpdates.has(this)) return original.apply(this, args);
+  });
+  patch(CombatantClass?.prototype, "refreshDynamicRing", original => function (...args) {
+    if (!progressUpdates.has(this.parent)) return original.apply(this, args);
+  });
   const usableGroups = combat => {
     const groups = stateOf(combat)?.groups ?? [];
     if (!combat.settings?.skipDefeated) return groups;

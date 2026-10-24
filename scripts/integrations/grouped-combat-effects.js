@@ -103,7 +103,7 @@ export function createGroupedCombatEffects(dependencies = {}) {
       const original = callback(list[i]), provider = providerOf(original);
       if (!provider || original[GUARDED]) continue;
       const wrapped = function (...args) {
-        if (hasGroupedCombatPhases(args[0]) && (args[1]?.round !== undefined || args[1]?.turn !== undefined)) return;
+        if (hasGroupedCombatPhases(args[0])) return;
         return original.apply(this, args);
       };
       Object.defineProperty(wrapped, GUARDED, { value: provider });

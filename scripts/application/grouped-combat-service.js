@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { buildCombatTurnGroups, planGroupTransition, buildPhaseStepKey, combatantsOf } from "../combat/turn-group-rules.js";
-import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.4.398";
+import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.2";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js";
 
@@ -12,10 +12,11 @@ export class GroupedCombatService {
     this.tickets = new Map();
   }
   isManaged(combat) { return Boolean(this.repository.readState(combat)); }
-  async save(combat, state) {
+  async save(combat, state, { receiptKey = null } = {}) {
     if (!this.isAuthority()) throw new Error("active-gm-changed");
     if (!this.repository.getCombat(combat.id)) throw new Error("combat-unavailable");
-    return this.repository.writeState(combat, state, { expectedRevision: state.revision ?? 0 });
+    const options = { expectedRevision: state.revision ?? 0 };
+    return receiptKey === null ? this.repository.writeState(combat, state, options) : this.repository.writeReceipt(combat, state, receiptKey, options);
   }
   members(combat) {
     return combatantsOf(combat).filter(c => this.eligible(c.token?.document ?? c.token, combat.scene?.id ?? combat.sceneId)).map(c => {
@@ -188,23 +189,25 @@ export class GroupedCombatService {
           const started = state.memberStarts[JSON.stringify({ round: phase.round, groupId: phase.groupId })] ?? [];
           memberIds = memberIds.filter(id => started.includes(id));
         }
-        for (const step of this.effects.plan(combat, { ...phase, memberIds }, state)) {
+        const steps = this.effects.plan(combat, { ...phase, memberIds }, state);
+        await this.save(combat, state);
+        for (const step of steps) {
           if (state.receipts[step.key]?.status === "done") continue;
           if (step.combatantId) {
             const member = combatantsOf(combat).find(c => c.id === step.combatantId);
             if (!member?.actor || (step.actorUuid && member.actor.uuid !== step.actorUuid) || (step.actorSourceId && member.token?.baseActor?.id !== step.actorSourceId)) {
               state.receipts[step.key] = { status: "done", operationId, reason: "member-unavailable" };
-              await this.save(combat, state); continue;
+              await this.save(combat, state, { receiptKey: step.key }); continue;
             }
           }
           if (state.receipts[step.key]?.status === "uncertain") throw new Error("uncertain-combat-step");
           state.receipts[step.key] = { status: "running", operationId, provider: step.provider, combatantId: step.combatantId, effectUuid: step.effectUuid, phase: phase.kind };
-          await this.save(combat, state);
+          await this.save(combat, state, { receiptKey: step.key });
           if (!this.isAuthority()) throw new Error("active-gm-changed");
           const outcome = await step.run();
           if (outcome?.status === "cancelled") throw new Error("combat-step-cancelled");
           state.receipts[step.key].status = "done";
-          await this.save(combat, state);
+          await this.save(combat, state, { receiptKey: step.key });
         }
         if (phase.kind === "turn-start") {
           const key = JSON.stringify({ round: phase.round, groupId: phase.groupId });

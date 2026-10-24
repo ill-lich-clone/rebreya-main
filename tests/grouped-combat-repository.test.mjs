@@ -27,3 +27,30 @@ test("persistent step keys cannot become dotted Foundry paths or special update 
   const key = buildPhaseStepKey("fight", { kind: "turn-start", round: 1, groupId: "g" }, "a", "midi-qol", "Actor.a.Item.spell.ActiveEffect.effect");
   assert.equal(key.includes("."), false); assert.equal(key.startsWith("==") || key.startsWith("-="), false);
 });
+
+test("receipt patches preserve native flags/CAS and their size does not grow with completed history", async () => {
+  const updates = [], combat = { id: "fight", flags: {}, async update(data, options) { updates.push({ data, options }); mergeObject(this, expandObject(data), { performDeletions: true }); } };
+  const repository = new GroupedCombatRepository(), key = buildPhaseStepKey("fight", { round: 1, groupId: "g", kind: "turn-start" }, "a", "dae", "Actor.a.ActiveEffect.active");
+  const state = { version: 1, mode: "active", revision: 0, groups: [], receipts: {}, pendingTransition: { operationId: "op" }, durationAnchors: { old: { round: 1 } } };
+  for (let i = 0; i < 1000; i++) state.receipts[`old${i}`] = { status: "done", operationId: `old-operation-${i}` };
+  await repository.writeState(combat, state);
+  const fullBytes = Buffer.byteLength(JSON.stringify(updates[0].data));
+  state.receipts[key] = { status: "running", provider: "dae", effectUuid: "Actor.a.ActiveEffect.active" };
+  await repository.writeReceipt(combat, state, key, { expectedRevision: state.revision });
+  const patch = updates.at(-1);
+  assert.ok(Buffer.byteLength(JSON.stringify(patch.data)) < 1000);
+  assert.ok(Buffer.byteLength(JSON.stringify(patch.data)) < fullBytes / 50);
+  assert.equal(patch.options["rebreya-main"].groupedCombatProgress, true);
+  assert.equal(repository.readState(combat).receipts.old999.status, "done");
+  assert.deepEqual(repository.readState(combat).durationAnchors, state.durationAnchors);
+  state.receipts[key].status = "done";
+  await repository.writeReceipt(combat, state, key, { expectedRevision: state.revision });
+  assert.equal(repository.readState(combat).receipts[key].status, "done");
+  state.receipts[key] = { status: "done", reason: "member-unavailable" };
+  await repository.writeReceipt(combat, state, key, { expectedRevision: state.revision });
+  assert.deepEqual(repository.readState(combat).receipts[key], state.receipts[key], "replacement must not retain stale effect metadata");
+  await assert.rejects(repository.writeReceipt(combat, state, key, { expectedRevision: state.revision - 1 }), /stale-combat/);
+  delete state.pendingTransition;
+  await repository.writeState(combat, state, { expectedRevision: state.revision });
+  assert.equal(repository.readState(combat).pendingTransition, undefined);
+});

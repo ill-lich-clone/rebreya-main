@@ -15,6 +15,7 @@ function setup() {
       state.revision = (previous?.revision ?? 0) + 1;
       combat.flags["rebreya-main"] = { groupedCombat: structuredClone(state) }; return state;
     },
+    async writeReceipt(combat, state, _key, options) { return this.writeState(combat, state, options); },
     async createMissingCombatants(_combat, selection) {
       for (const token of selection) if (!combat.combatants.some(c => c.token?.id === token.id)) combat.combatants.push({ id: token.id, token, actor: token.actor, initiative: null });
       combat.turns = combat.combatants;
@@ -30,6 +31,20 @@ function setup() {
   const start = operationId => service.start({ sceneId: "s", tokenUuids: tokens.map(t => t.uuid), operationId }, { sender: { id: "gm", isGM: true } });
   return { service, combat, calls, positions, repository, tokens, start, setFail: id => { fail = id; }, setGate: value => { gate = value; } };
 }
+
+test("phase checkpoints precede partial receipts and keep full-history writes off the step hot path", async () => {
+  const e = setup(), full = e.repository.writeState.bind(e.repository); let snapshots = 0, patches = 0;
+  e.repository.writeState = async (...args) => { snapshots++; return full(...args); };
+  e.repository.writeReceipt = async (combat, state, key, options) => {
+    patches++;
+    assert.ok(e.repository.readState().pendingTransition, "recovery metadata is durable before the first receipt workflow");
+    assert.ok(["running", "done"].includes(state.receipts[key].status));
+    return full(combat, state, options);
+  };
+  assert.equal((await e.start("start")).ok, true);
+  assert.ok(patches > 0); assert.ok(snapshots < patches);
+  assert.equal(e.repository.readState().pendingTransition, undefined);
+});
 
 test("a native position failure has an explicit receipt and can be retried without repeating completed effects", async () => {
   const e = setup(), original = e.repository.beginCombat;
