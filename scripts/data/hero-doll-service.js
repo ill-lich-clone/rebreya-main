@@ -439,7 +439,8 @@ export class HeroDollService {
     const stale = () => new ItemInstanceError("stale-slot", "Предмет или слот изменился во время экипировки. Проверьте текущее состояние.");
     let actorAttempted = false;
     try {
-      if (Object.keys(itemPatch).length && itemPatch["system.equipped"] !== beforeEquipped) await item.update(itemPatch);
+      // Foundry expands dotted keys in place; retain our expected patch for checks and recovery.
+      if (Object.keys(itemPatch).length && itemPatch["system.equipped"] !== beforeEquipped) await item.update({ ...itemPatch });
       if (!sameItem() || !matches("before")) throw stale();
       if (Object.keys(itemPatch).length && item.system.equipped !== itemPatch["system.equipped"]) throw stale();
       const actorPatch = patch(changes.map(entry => [entry.path, entry.after]));

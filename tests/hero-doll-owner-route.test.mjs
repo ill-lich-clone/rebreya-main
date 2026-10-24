@@ -23,6 +23,67 @@ function setup(t, options = {}) {
   return fx;
 }
 
+function emulateFoundryUpdateArgumentMutation(item) {
+  const update = item.update.bind(item);
+  item.update = async data => {
+    // Foundry 13 Document.update adds _id; ClientDatabaseBackend replaces the
+    // caller's dotted keys with expanded data in the very same object.
+    data._id = item.id;
+    const flat = structuredClone(data), expanded = {};
+    for (const [key, value] of Object.entries(data)) foundry.utils.setProperty(expanded, key, value);
+    for (const key of Object.keys(data)) delete data[key];
+    Object.assign(data, expanded);
+    return update(flat);
+  };
+}
+
+for (const mode of ["assign", "clear"]) {
+  test(`owner ${mode} survives Foundry expanding the update argument in place`, async t => {
+    const fx = setup(t, { itemSystem: { equipped: mode === "clear" } });
+    if (mode === "clear") fx.hero.flags["rebreya-main"].heroDoll = { version: 1, slots: { neck: { itemId: "rope" } } };
+    emulateFoundryUpdateArgumentMutation(fx.source);
+    if (mode === "assign") assert.equal(await fx.assign(), fx.source);
+    else assert.equal(await fx.service.clearSlot(fx.hero, "neck"), true);
+    assert.equal(fx.source.system.equipped, mode === "assign");
+    assert.deepEqual(fx.hero.getFlag("rebreya-main", "heroDoll").slots, mode === "assign" ? { neck: { itemId: "rope" } } : {});
+    assert.equal(fx.total(), 1);
+    assert.equal(fx.settings.size, 0);
+    assert.equal(fx.requests.length, 0);
+  });
+
+  test(`owner ${mode} compensates placement failure after native argument normalization`, async t => {
+    const fx = setup(t, { itemSystem: { equipped: mode === "clear" } });
+    const slots = mode === "clear" ? { neck: { itemId: "rope" } } : {};
+    fx.hero.flags["rebreya-main"].heroDoll = { version: 1, slots: structuredClone(slots) };
+    emulateFoundryUpdateArgumentMutation(fx.source);
+    fx.failAt("placement", "after");
+    await assert.rejects(mode === "assign" ? fx.assign() : fx.service.clearSlot(fx.hero, "neck"), /fault placement after/);
+    assert.equal(fx.source.system.equipped, mode === "clear");
+    assert.deepEqual(fx.hero.getFlag("rebreya-main", "heroDoll").slots, slots);
+    assert.equal(fx.requests.length, 0);
+  });
+}
+
+test("visible native item update can settle before the next queued doll action without false conflict", async t => {
+  const fx = setup(t, { itemFlags: { heroDollSlots: ["ring1", "ring2"] } });
+  emulateFoundryUpdateArgumentMutation(fx.source);
+  const update = fx.source.update.bind(fx.source);
+  let acknowledge, changed;
+  const acknowledgement = new Promise(resolve => { acknowledge = resolve; });
+  const visibleChange = new Promise(resolve => { changed = resolve; });
+  fx.source.update = async data => { const item = await update(data); changed(); await acknowledgement; return item; };
+  const first = fx.assign("ring1");
+  await visibleChange;
+  assert.equal(fx.source.system.equipped, true);
+  const next = fx.assign("ring2");
+  assert.equal(fx.calls.filter(([phase]) => phase === "placement").length, 0);
+  acknowledge();
+  await Promise.all([first, next]);
+  assert.deepEqual(fx.hero.getFlag("rebreya-main", "heroDoll").slots, { ring2: { itemId: "rope" } });
+  assert.equal(fx.calls.filter(([phase]) => phase === "equip").length, 1);
+  assert.equal(fx.requests.length, 0);
+});
+
 test("owner without GM equips and clears a singleton without sockets or world writes", async t => {
   const fx = setup(t);
   assert.equal(await fx.assign(), fx.source);
