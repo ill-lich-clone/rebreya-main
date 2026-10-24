@@ -12,11 +12,23 @@ export function normalizeAggregateKeys(keys) {
   if (!Array.isArray(keys)) {
     throw new TypeError("Mutation scheduling keys must be an array");
   }
-  const normalized = [...new Set(
-    keys
-      .map((key) => String(key ?? "").trim())
-      .filter(Boolean)
-  )].sort();
+  const resources = new Set();
+  for (const value of keys) {
+    const key = String(value ?? "").trim();
+    if (!key) continue;
+    const separator = key.indexOf(":"), kind = key.slice(0, separator), identity = key.slice(separator + 1);
+    resources.add(kind === "actor" ? aggregateKey(kind, identity) : key);
+    let actorUuid = kind === "group" ? identity : kind === "actor" ? identity : "";
+    if (kind === "document") {
+      actorUuid = identity.match(/^(Actor\.[^.]+|Scene\.[^.]+\.Token\.[^.]+\.Actor\.[^.]+)(?:\.|$)/)?.[1] ?? "";
+    }
+    if (actorUuid) {
+      resources.add(aggregateKey("actor", actorUuid));
+      const tokenUuid = actorUuid.match(/^(Scene\.[^.]+\.Token\.[^.]+)\.Actor\.[^.]+$/)?.[1];
+      if (tokenUuid) resources.add(aggregateKey("document", tokenUuid));
+    }
+  }
+  const normalized = [...resources].sort();
   if (!normalized.length) {
     throw new Error("Mutation scheduling resolved no aggregate keys");
   }
@@ -25,10 +37,11 @@ export function normalizeAggregateKeys(keys) {
 
 export function aggregateKey(kind, identity) {
   const cleanKind = String(kind ?? "").trim();
-  const cleanIdentity = String(identity ?? "").trim();
+  let cleanIdentity = String(identity ?? "").trim();
   if (!cleanKind || !cleanIdentity) {
     throw new Error("Aggregate key requires kind and identity");
   }
+  if (cleanKind === "actor" && /^Actor\.[^.]+$/.test(cleanIdentity)) cleanIdentity = cleanIdentity.slice(6);
   return `${cleanKind}:${cleanIdentity}`;
 }
 

@@ -8,7 +8,7 @@ import {
   normalizeTransportFuelSelector
 } from "./transport-fuel-item.js?v=1.4.377";
 import { normalizeTransportFuelConsumption } from "./transport-fuel-consumption.js";
-import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js?v=1.5.3";
 
 export const TRANSPORT_IMPORT_COMMAND = "group.transport.importActor";
 export const TRANSPORT_SELECT_FUEL_COMMAND = "group.transport.selectFuel";

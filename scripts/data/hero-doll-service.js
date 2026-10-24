@@ -9,6 +9,7 @@ import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js
 import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.4.385";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js?v=1.4.383";
+import { readInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
 
 export const HERO_DOLL_ASSIGN_COMMAND = "hero-doll.assign";
 export const HERO_DOLL_NORMALIZE_COMMAND = "hero-doll.normalize-stack";
@@ -106,6 +107,7 @@ function buildEmptySnapshot(actor = null) {
 }
 
 export class HeroDollService {
+  #assignmentPromises = new Map();
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
     this.pendingAssignments = new Map();
@@ -361,11 +363,25 @@ export class HeroDollService {
     return this.#submitAssignment(actor, slotId, dropData, "assign");
   }
 
-  async #submitAssignment(actor, slotId, dropData, mode) {
+  #submitAssignment(actor, slotId, dropData, mode) {
     const key = JSON.stringify([actor?.uuid, dropData?.uuid, slotId, mode]);
-    const payload = this.pendingAssignments.get(key) ?? {
+    if (this.#assignmentPromises.has(key)) return this.#assignmentPromises.get(key);
+    const promise = this.#performAssignment(actor, slotId, dropData, mode, key)
+      .finally(() => this.#assignmentPromises.delete(key));
+    this.#assignmentPromises.set(key, promise);
+    return promise;
+  }
+
+  async #performAssignment(actor, slotId, dropData, mode, key) {
+    const pending = this.pendingAssignments.get(key);
+    const payload = pending ?? {
       actorUuid: actor?.uuid, sourceItemUuid: dropData?.uuid, slotId, operationId: crypto.randomUUID()
     };
+    // An ambiguous GM intent must be replayed, even if its source now looks local.
+    if (!pending) {
+      const item = await this.#tryOwnerAssignment(actor, payload, mode);
+      if (item) return item;
+    }
     this.pendingAssignments.set(key, payload);
     try {
       const method = {assign:"assignHeroDollItem",normalize:"normalizeHeroDollStack",clear:"clearHeroDollSlot"}[mode];
@@ -373,7 +389,81 @@ export class HeroDollService {
       this.pendingAssignments.delete(key);
       return actor.items.get(result.itemId) ?? await fromUuid(`${actor.uuid}.Item.${result.itemId}`);
     } catch (error) {
-      if (!["request-timeout", "ambiguous-outcome", "active-gm-changed", "manual-review", "pending-instance-operation"].includes(error?.code)) this.pendingAssignments.delete(key);
+      if (!["request-timeout", "operation-timeout", "ambiguous-outcome", "active-gm-changed", "manual-review", "pending-instance-operation"].includes(error?.code)) this.pendingAssignments.delete(key);
+      throw error;
+    }
+  }
+
+  #tryOwnerAssignment(actor, payload, mode) {
+    const prefix = `${actor?.uuid}.Item.`;
+    if (mode === "normalize" || !payload.sourceItemUuid?.startsWith(prefix)) return null;
+    if (!isValidHeroDollAssignPayload(payload)) throw new ItemInstanceError("invalid-payload", "Некорректные данные экипировки.");
+    return this.moduleApi.worldMutationCoordinator.run(`inventory-organization:${actor.id}`, async () => {
+      const item = actor.items.get(payload.sourceItemUuid.slice(prefix.length));
+      const intent = { mode, heroSlotId: payload.slotId };
+      await this.#authorizeAssignment({ sourceActor: actor, targetActor: actor, sourceItem: item }, intent, game.user);
+      if (!item) throw new ItemInstanceError("item-not-found", "Предмет больше не принадлежит персонажу.");
+      if (readInventoryItemQuantity(item.toObject()) !== 1) return null;
+      const occupied = this.#normalizeState(actor).slots[payload.slotId]?.itemId;
+      if (mode === "assign" && occupied && occupied !== item.id) return null;
+      return this.#writeOwnerAssignment(actor, item, payload.slotId, mode);
+    });
+  }
+
+  async #writeOwnerAssignment(actor, item, slotId, mode) {
+    const root = `flags.${MODULE_ID}.heroDoll`, slots = actor.getFlag(MODULE_ID, "heroDoll")?.slots ?? {};
+    const changes = [];
+    const read = path => foundry.utils.getProperty(actor, path);
+    const equal = (left, right) => itemInstanceFingerprint(left) === itemInstanceFingerprint(right);
+    const change = (path, after) => changes.push({ path, before: foundry.utils.deepClone(read(path)), after });
+    for (const [slot, entry] of Object.entries(slots)) {
+      if (entry?.itemId === item.id && (mode === "clear" || slot !== slotId)) change(`${root}.slots.${slot}`, undefined);
+    }
+    if (mode === "assign") {
+      change(`${root}.slots.${slotId}`, { itemId: item.id });
+      const ghostPath = `flags.${MODULE_ID}.heroDollPresets.ghosts.${slotId}`;
+      if (read(ghostPath) !== undefined) change(ghostPath, undefined);
+    }
+    const patch = entries => Object.fromEntries(entries.map(([path, value]) =>
+      value === undefined ? [path.replace(/\.([^.]+)$/, ".-=$1"), null] : [path, value]));
+    const itemPatch = buildHeroDollEquippedUpdate(item, mode === "assign");
+    const beforeEquipped = item.system.equipped, beforeHands = getItemHeldHands(item);
+    const beforeItemSlots = Object.keys(slots).filter(slot => slots[slot]?.itemId === item.id).sort();
+    const afterItemSlots = mode === "assign" ? [slotId] : [];
+    const currentItemSlots = () => Object.entries(actor.getFlag(MODULE_ID, "heroDoll")?.slots ?? {})
+      .filter(([, entry]) => entry?.itemId === item.id).map(([slot]) => slot).sort();
+    const sameItem = () => actor.items.get(item.id) === item && readInventoryItemQuantity(item.toObject()) === 1
+      && equal(getItemHeldHands(item), beforeHands);
+    const matches = field => changes.every(entry => equal(read(entry.path), entry[field]))
+      && equal(currentItemSlots(), field === "before" ? beforeItemSlots : afterItemSlots);
+    const stale = () => new ItemInstanceError("stale-slot", "Предмет или слот изменился во время экипировки. Проверьте текущее состояние.");
+    let actorAttempted = false;
+    try {
+      if (Object.keys(itemPatch).length && itemPatch["system.equipped"] !== beforeEquipped) await item.update(itemPatch);
+      if (!sameItem() || !matches("before")) throw stale();
+      if (Object.keys(itemPatch).length && item.system.equipped !== itemPatch["system.equipped"]) throw stale();
+      const actorPatch = patch(changes.map(entry => [entry.path, entry.after]));
+      if (read(`${root}.version`) === undefined) actorPatch[`${root}.version`] = 1;
+      actorAttempted = true;
+      await actor.update(actorPatch);
+      if (!sameItem() || !matches("after")
+        || (Object.keys(itemPatch).length && item.system.equipped !== itemPatch["system.equipped"])) throw stale();
+      return item;
+    } catch (error) {
+      // Restore only this small owner edit, and only while its fields still match.
+      // Native ownership updates do not provide a transaction across clients.
+      const conflicted = !sameItem() || (!matches("before") && !matches("after"));
+      try {
+        if (!conflicted && actorAttempted && matches("after")) await actor.update(patch(changes.map(entry => [entry.path, entry.before])));
+        // A different item taking the target slot does not prevent restoring our
+        // equipped flag; a newer placement of this item does.
+        if (!sameItem() || !equal(currentItemSlots(), beforeItemSlots) || (!conflicted && !matches("before"))) throw stale();
+        if (Object.keys(itemPatch).length && item.system.equipped === itemPatch["system.equipped"]
+          && item.system.equipped !== beforeEquipped) await item.update({ "system.equipped": beforeEquipped });
+      } catch {
+        throw new ItemInstanceError("ambiguous-outcome", "Не удалось подтвердить восстановление экипировки. Проверьте предмет и слот.");
+      }
+      if (conflicted) throw new ItemInstanceError("ambiguous-outcome", "Экипировка пересеклась с другим изменением. Проверьте предмет и слот; чужое изменение сохранено.");
       throw error;
     }
   }
@@ -464,7 +554,7 @@ export class HeroDollService {
       if (["create","save","apply"].includes(action)) this.selectPreset(actor,result.presetId);
       return result;
     } catch (error) {
-      if (!["request-timeout","ambiguous-outcome","active-gm-changed","manual-review","pending-instance-operation"].includes(error?.code)) this.pendingPresets.delete(key);
+      if (!["request-timeout","operation-timeout","ambiguous-outcome","active-gm-changed","manual-review","pending-instance-operation"].includes(error?.code)) this.pendingPresets.delete(key);
       throw error;
     }
   }

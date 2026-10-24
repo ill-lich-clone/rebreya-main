@@ -1,4 +1,4 @@
-import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js?v=1.5.3";
 
 export const SUMMON_LIFECYCLE_MUTATION_COMMAND = "summon-lifecycle-mutation";
 

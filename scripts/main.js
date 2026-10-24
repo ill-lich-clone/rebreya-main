@@ -112,7 +112,7 @@ import {
 } from "./application/inventory-ingress-planner.js?v=1.4.396";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.4.392";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.3";
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
@@ -133,13 +133,13 @@ import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarm
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js?v=1.4.377";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.377";
-import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
+import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js?v=1.5.3";
 import {
   EXCLUSIVE_MUTATION_SCHEDULING,
   QUERY_SCHEDULING,
   aggregateKey,
   keyedMutationScheduling
-} from "./application/socket-command-scheduling.js";
+} from "./application/socket-command-scheduling.js?v=1.5.3";
 import {
   GLOBAL_EVENTS_CREATE_COMMAND,
   GLOBAL_EVENTS_DELETE_COMMAND,
@@ -222,7 +222,7 @@ import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-s
 import { PurchaseBasketJournalRepository } from "./infrastructure/foundry/purchase-basket-journal-repository.js";
 import { PurchaseBasketFoundryOperations } from "./infrastructure/foundry/purchase-basket-operations.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
-import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
+import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js?v=1.5.3";
 import { createSocketCommandTraceSink } from "./infrastructure/foundry/socket-command-trace.js";
 import {
   GRAPPLE_DRAG_COMMAND,
@@ -239,7 +239,7 @@ import {
   isValidTwistedReleaseAndMovePayload
 } from "./infrastructure/foundry/grapple-command-contract.js";
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
-import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
+import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js?v=1.5.3";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { LootgenTemplateItemService } from "./data/lootgen-template-item.js?v=1.4.396";
 import {

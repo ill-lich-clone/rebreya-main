@@ -1,4 +1,4 @@
-import { keyedMutationScheduling } from "../../application/socket-command-scheduling.js";
+import { keyedMutationScheduling } from "../../application/socket-command-scheduling.js?v=1.5.3";
 const text = (value, maximum = 128) => typeof value === "string" && value.length > 0 && value.length <= maximum && value === value.trim();
 const exact = (value, keys) => value && [Object.prototype, null].includes(Object.getPrototypeOf(value)) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const integer = value => Number.isSafeInteger(value) && value >= 0;

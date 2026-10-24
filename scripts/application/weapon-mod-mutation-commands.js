@@ -1,4 +1,4 @@
-import { aggregateKey, keyedMutationScheduling } from "./socket-command-scheduling.js";
+import { aggregateKey, keyedMutationScheduling } from "./socket-command-scheduling.js?v=1.5.3";
 import { weaponModFlag, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.389";
 import { isValidWeaponModAttackDecision, isValidWeaponModTargetDecision, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
 const object=value=>value && typeof value==="object" && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));

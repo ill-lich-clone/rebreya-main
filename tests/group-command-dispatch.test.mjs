@@ -7,12 +7,12 @@ import {
   COMMAND_RESULT_TYPE,
   SOCKET_CHANNEL,
   SocketCommandBus
-} from "../scripts/infrastructure/foundry/socket-command-bus.js";
+} from "../scripts/infrastructure/foundry/socket-command-bus.js?v=1.5.3";
 import {
   QUERY_SCHEDULING,
   resolveSocketScheduling
-} from "../scripts/application/socket-command-scheduling.js";
-import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
+} from "../scripts/application/socket-command-scheduling.js?v=1.5.3";
+import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js?v=1.5.3";
 import { normalizeTravelState } from "../scripts/data/travel-service.js";
 import { normalizeGroupTransportState } from "../scripts/data/group-context-service.js";
 import { requestSettingsUpdate } from "../scripts/legacy/settings-socket-relay.js";
@@ -561,27 +561,27 @@ test("inventory and storage socket commands declare scoped scheduling policies",
     );
     assert.deepEqual(resolve("group.party.defaults.update", {
       groupActorId: "group-a", patch: { coverFoodExpenses: true }
-    }).keys, ["group:group-a"]);
+    }).keys, ["actor:group-a", "group:group-a"]);
     assert.deepEqual(resolve("group.party.defaults.update", {
       groupActorId: "group-a", patch: { defaultCapMod: "4.5" }
-    }).keys, ["group:group-a", "setting:partyState"]);
+    }).keys, ["actor:group-a", "group:group-a", "setting:partyState"]);
     assert.deepEqual(resolve("inventory.take", {
       inventoryActorId: "group-a",
       targetActorId: "character-a"
-    }).keys, ["actor:character-a", "group:group-a"]);
+    }).keys, ["actor:character-a", "actor:group-a", "group:group-a"]);
     assert.deepEqual(resolve("inventory.import", {
       inventoryActorId: "group-a",
       itemUuid: "Compendium.rebreya.items.Item.sword"
-    }).keys, ["document:Compendium.rebreya.items.Item.sword", "group:group-a"]);
+    }).keys, ["actor:group-a", "document:Compendium.rebreya.items.Item.sword", "group:group-a"]);
     assert.deepEqual(resolve("inventory.ingress.direct", {
       groupActorId: "group-a",
       sourceOrigin: "manual-entry"
-    }).keys, ["group:group-a", "inventory-ingress:manual-entry"]);
+    }).keys, ["actor:group-a", "group:group-a", "inventory-ingress:manual-entry"]);
     assert.deepEqual(resolve("storage.claim-row", {
       destination: "party",
       target: { groupActorId: "group-a" },
       tokenUuid: "Scene.scene.Token.chest"
-    }).keys, ["group:group-a", "storage:Scene.scene.Token.chest"]);
+    }).keys, ["actor:group-a", "group:group-a", "storage:Scene.scene.Token.chest"]);
     assert.deepEqual(resolve("storage.triggers.save", {
       tokenUuid: "Scene.scene.Token.chest"
     }).keys, ["storage:Scene.scene.Token.chest"]);
@@ -614,11 +614,11 @@ test("composition explicitly classifies every typed socket command", () => {
       payload,
       {}
     );
-    assert.deepEqual(resolve("group.calendar.patch", { groupActorId: "group-a" }).keys, ["group:group-a"]);
+    assert.deepEqual(resolve("group.calendar.patch", { groupActorId: "group-a" }).keys, ["actor:group-a", "group:group-a"]);
     assert.deepEqual(resolve("downtime.request.create", {
       groupId: "group-a",
       actorId: "character-a"
-    }).keys, ["actor:character-a", "group:group-a"]);
+    }).keys, ["actor:character-a", "actor:group-a", "group:group-a"]);
     assert.deepEqual(resolve("trader.sell", {
       actorId: "character-a",
       cityId: "city-a",
@@ -632,7 +632,7 @@ test("composition explicitly classifies every typed socket command", () => {
     assert.deepEqual(resolve("summon-lifecycle-mutation", {
       actorUuid: "Actor.character-a",
       sceneUuid: "Scene.scene-a"
-    }).keys, ["actor:Actor.character-a", "scene:Scene.scene-a"]);
+    }).keys, ["actor:character-a", "scene:Scene.scene-a"]);
     assert.equal(resolve("economy.world-data.reset", {}).mode, "exclusive-mutation");
   }
   finally {

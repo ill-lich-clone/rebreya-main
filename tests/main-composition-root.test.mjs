@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
-import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
+import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js?v=1.5.3";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.4.330";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.396";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
@@ -15,7 +15,7 @@ import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-pre
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE
-} from "../scripts/infrastructure/foundry/socket-command-bus.js";
+} from "../scripts/infrastructure/foundry/socket-command-bus.js?v=1.5.3";
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
 
@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.2");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.2.js"]);
+  assert.equal(manifest.version, "1.5.3");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.3.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.399/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.396/u);

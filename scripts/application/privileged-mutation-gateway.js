@@ -1,7 +1,7 @@
 import {
   normalizeSocketScheduling,
   resolveSocketScheduling
-} from "./socket-command-scheduling.js";
+} from "./socket-command-scheduling.js?v=1.5.3";
 
 export const PRIVILEGED_WORLD_QUEUE_KEY = "world";
 
@@ -421,7 +421,7 @@ export class PrivilegedMutationGateway {
   #ambiguousOutcome(command, operationId) {
     return new PrivilegedMutationError(
       "ambiguous-outcome",
-      "Privileged mutation outcome is ambiguous; refresh authoritative state before trying again.",
+      "Подтверждение действия не получено: оно могло выполниться или ещё ожидает выполнения. Проверьте состояние; повторяйте только исходную операцию.",
       { command, operationId }
     );
   }

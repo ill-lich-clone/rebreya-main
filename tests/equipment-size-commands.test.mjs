@@ -13,7 +13,7 @@ test("typed command uses existing Actor queue and forwards authenticated sender 
   registerEquipmentSizeCommands({ equipmentSizeService: { authorizeCreatureResize: async (_, sender) => sender.id === "owner",
     resizeCreature: async (...args) => invocation = args } }, { register: (c, d) => { command = c; definition = d; } });
   assert.equal(command, "equipment.resize-creature");
-  assert.deepEqual(definition.scheduling.keys(payload()), ["actor:Actor.hero"]);
+  assert.deepEqual(definition.scheduling.keys(payload()), ["actor:hero"]);
   assert.equal(await definition.authorize(payload(), { sender: { id: "owner" } }), true);
   let asserted = false;
   await definition.execute(payload(), { sender: { id: "owner" }, assertActiveGm: () => { asserted = true; } });

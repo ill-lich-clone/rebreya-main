@@ -1,4 +1,4 @@
-import { normalizeAggregateKeys } from "./socket-command-scheduling.js";
+import { normalizeAggregateKeys } from "./socket-command-scheduling.js?v=1.5.3";
 
 export const MAX_COMPLETED_MUTATION_RESULTS = 256;
 const NOOP_TRACE = () => {};

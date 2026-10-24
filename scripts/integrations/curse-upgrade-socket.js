@@ -1,5 +1,5 @@
 import { isDamageOnlySaveActivity } from "../combat/curse-upgrade-saves.js";
-import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js?v=1.5.3";
 
 const text = value => typeof value === "string" && value.length > 0 && value.length < 512;
 const exact = (payload, keys) => payload && typeof payload === "object" && !Array.isArray(payload)

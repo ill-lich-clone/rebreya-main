@@ -3,7 +3,7 @@ import {
   EXCLUSIVE_MUTATION_SCHEDULING,
   normalizeSocketScheduling,
   resolveSocketScheduling
-} from "../../application/socket-command-scheduling.js";
+} from "../../application/socket-command-scheduling.js?v=1.5.3";
 import { MODULE_ID } from "../../constants.js";
 import { getActiveGm, isActiveGmClient } from "./active-gm.js";
 import { NOOP_SOCKET_COMMAND_TRACE } from "./socket-command-trace.js";
@@ -261,39 +261,43 @@ export class SocketCommandBus {
     }
 
     const pendingKey = this.#pendingKey(normalizedRequestId, command, senderId);
-    if (this.#pending.has(pendingKey)) {
+    const payloadKey = JSON.stringify({ payload }, (_key, value) => isPlainObject(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]]))
+      : value);
+    const pending = this.#pending.get(pendingKey);
+    if (pending) {
+      if (pending.payloadKey === payloadKey && pending.expectedActiveGmId === expectedActiveGmId) {
+        return pending.promise;
+      }
       return Promise.reject(new SocketCommandError(
         "duplicate-request",
-        "A matching socket command request is already pending"
+        "A different socket command payload or GM is already pending for this request id"
       ));
     }
-    return new Promise((resolve, reject) => {
-      const entry = {
-        command,
-        expectedActiveGmId,
-        forUserId: senderId,
-        phase: "acceptance",
-        reject,
-        requestId: normalizedRequestId,
-        resolve,
-        timeoutId: undefined
-      };
-      this.#pending.set(pendingKey, entry);
-      this.#armPendingTimeout(pendingKey, entry, {
-        code: "request-timeout",
-        message: `Socket command timed out after ${this.#requestTimeoutMs} ms before acceptance`,
-        milliseconds: this.#requestTimeoutMs
-      });
-
-      try {
-        game.socket.emit(this.#socketChannel, envelope);
-      }
-      catch (error) {
-        this.#pending.delete(pendingKey);
-        this.#clearTimeout(entry.timeoutId);
-        reject(error);
-      }
+    let resolve, reject;
+    const promise = new Promise((onResolve, onReject) => {
+      resolve = onResolve;
+      reject = onReject;
     });
+    const entry = {
+      command, expectedActiveGmId, forUserId: senderId, payloadKey, promise,
+      phase: "acceptance", reject, requestId: normalizedRequestId, resolve, timeoutId: undefined
+    };
+    this.#pending.set(pendingKey, entry);
+    this.#armPendingTimeout(pendingKey, entry, {
+      code: "request-timeout",
+      message: `Socket command timed out after ${this.#requestTimeoutMs} ms before acceptance`,
+      milliseconds: this.#requestTimeoutMs
+    });
+    try {
+      game.socket.emit(this.#socketChannel, envelope);
+    }
+    catch (error) {
+      this.#pending.delete(pendingKey);
+      this.#clearTimeout(entry.timeoutId);
+      reject(error);
+    }
+    return promise;
   }
 
   handleMessage(message, { transportSenderId = "" } = {}) {

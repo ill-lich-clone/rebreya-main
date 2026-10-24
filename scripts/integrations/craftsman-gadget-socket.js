@@ -1,5 +1,5 @@
 import { CRAFTSMAN_GADGET_IDS } from "../data/craftsman-gadget-definitions.js";
-import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js?v=1.5.3";
 
 export const CRAFTSMAN_GADGET_MUTATION_COMMAND = "craftsman.gadget.mutate";
 

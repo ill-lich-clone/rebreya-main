@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../../constants.js";
-import { SOCKET_CHANNEL } from "./socket-command-bus.js";
+import { SOCKET_CHANNEL } from "./socket-command-bus.js?v=1.5.3";
 import { isActiveGmClient } from "./active-gm.js";
 
 export const STORAGE_TRIGGER_PROMPT_REQUEST = "rebreya.storage-trigger.prompt";

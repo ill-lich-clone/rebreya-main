@@ -1,5 +1,5 @@
 import { isEquipmentSize } from "../data/equipment-size-rules.js?v=1.4.393";
-import { aggregateKey, keyedMutationScheduling } from "./socket-command-scheduling.js";
+import { aggregateKey, keyedMutationScheduling } from "./socket-command-scheduling.js?v=1.5.3";
 
 const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));

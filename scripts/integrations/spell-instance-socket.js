@@ -1,4 +1,4 @@
-import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js?v=1.5.3";
 
 export const SPELL_INSTANCE_MUTATION_COMMAND = "spell-instance-mutation";
 

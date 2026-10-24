@@ -235,6 +235,34 @@ test("WorldMutationCoordinator runs disjoint scoped mutations concurrently", asy
   assert.deepEqual(await Promise.all([first, second]), ["A", "B"]);
 });
 
+test("scheduling shares world Actor ownership across ID, UUID, group and embedded Item footprints", async () => {
+  assert.equal(aggregateKey("actor", "Actor.hero"), "actor:hero");
+  const coordinator = new WorldMutationCoordinator(), gate = createDeferred(), started = [];
+  const first = coordinator.runScoped({ keys: ["actor:Actor.hero"] }, () => gate.promise);
+  const jobs = ["actor:hero", "group:hero", "document:Actor.hero.Item.sword"].map(key =>
+    coordinator.runScoped({ keys: [key] }, () => started.push(key)));
+  const unrelated = coordinator.runScoped({ keys: ["actor:other"] }, () => started.push("other"));
+  try {
+    await flushTasks();
+    assert.deepEqual(started, ["other"]);
+  } finally { gate.resolve(); await Promise.all([first, unrelated, ...jobs]); }
+  assert.deepEqual(started, ["other", "actor:hero", "group:hero", "document:Actor.hero.Item.sword"]);
+});
+
+test("scheduling keeps synthetic Actors independent and shares their token and embedded Item footprint", async () => {
+  const coordinator = new WorldMutationCoordinator(), gate = createDeferred(), started = [];
+  const first = coordinator.runScoped({ keys: ["actor:Scene.scene.Token.one.Actor.hero"] }, () => gate.promise);
+  const same = coordinator.runScoped({ keys: ["document:Scene.scene.Token.one.Actor.hero.Item.sword"] }, () => started.push("same"));
+  const token = coordinator.runScoped({ keys: ["document:Scene.scene.Token.one"] }, () => started.push("token"));
+  const other = coordinator.runScoped({ keys: ["actor:Scene.scene.Token.two.Actor.hero"] }, () => started.push("other"));
+  const world = coordinator.runScoped({ keys: ["actor:hero"] }, () => started.push("world"));
+  try {
+    await flushTasks();
+    assert.deepEqual(started, ["other", "world"]);
+  } finally { gate.resolve(); await Promise.all([first, same, token, other, world]); }
+  assert.deepEqual(started, ["other", "world", "same", "token"]);
+});
+
 test("WorldMutationCoordinator serializes overlapping scoped mutations in arrival order", async () => {
   const coordinator = new WorldMutationCoordinator();
   const firstGate = createDeferred();
@@ -727,7 +755,7 @@ test("SocketCommandBus executes queries while an exclusive mutation is blocked",
   await blocker;
 });
 
-test("SocketCommandBus rejects a duplicate outbound pending key without replacing the first request", async () => {
+test("SocketCommandBus rejects a conflicting outbound payload without replacing the first request", async () => {
   const emitted = [];
   const timers = createFakeTimers();
   const player = { id: "player-a", isGM: false, active: true };
@@ -748,6 +776,61 @@ test("SocketCommandBus rejects a duplicate outbound pending key without replacin
   await assert.rejects(duplicate, (error) => error?.code === "duplicate-request");
   timers.pending.get(1).callback();
   await assert.rejects(first, (error) => error?.code === "request-timeout");
+});
+
+for (const outcome of ["success", "failure", "timeout"]) {
+  test(`SocketCommandBus joins identical pending intents through ${outcome}`, async () => {
+    const emitted = [], timers = createFakeTimers();
+    const player = { id: "player-a", isGM: false, active: true };
+    const gm = { id: "gm-a", isGM: true, active: true };
+    const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+    const bus = new SocketCommandBus({ gameProvider: () => game,
+      setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn });
+    const first = bus.request("test.intent", { day: 4, options: { a: 1, b: [2, 3] } }, { requestId: "same" });
+    const second = bus.request("test.intent", { options: { b: [2, 3], a: 1 }, day: 4 }, { requestId: "same" });
+    const third = bus.request("test.intent", { day: 4, options: { a: 1, b: [2, 3] } }, { requestId: "same" });
+    const settled = Promise.allSettled([first, second, third]);
+    try {
+      assert.equal(second, first);
+      assert.equal(third, first);
+      assert.equal(emitted.length, 1);
+      assert.equal(timers.pending.size, 1);
+    } finally {
+      if (outcome === "timeout") timers.pending.values().next().value.callback();
+      else bus.handleMessage({ type: COMMAND_RESULT_TYPE, command: "test.intent", requestId: "same",
+        senderId: gm.id, forUserId: player.id, ok: outcome === "success",
+        ...(outcome === "success" ? { data: { changed: true } } : { error: { code: "denied", message: "Denied" } })
+      }, { transportSenderId: gm.id });
+      await settled;
+    }
+    const results = await settled;
+    assert.deepEqual(results.map(result => result.status), Array(3).fill(outcome === "success" ? "fulfilled" : "rejected"));
+    for (const result of results) {
+      if (outcome === "success") assert.deepEqual(result.value, { changed: true });
+      else assert.equal(result.reason.code, outcome === "timeout" ? "request-timeout" : "denied");
+    }
+  });
+}
+
+test("SocketCommandBus snapshots pending payloads and keeps distinct intent IDs independent", async () => {
+  const emitted = [], timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true }, gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({ gameProvider: () => game, setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn });
+  const payload = { quantity: 1 };
+  const first = bus.request("test.buy", payload, { requestId: "first" });
+  const handledFirst = first.catch(error => error.code);
+  payload.quantity = 2;
+  await assert.rejects(bus.request("test.buy", payload, { requestId: "first" }), error => error.code === "duplicate-request");
+  const second = bus.request("test.buy", { quantity: 1 }, { requestId: "second" });
+  const handledSecond = second.catch(error => error.code);
+  assert.equal(emitted.length, 2);
+  for (const timer of [...timers.pending.values()]) timer.callback();
+  assert.deepEqual(await Promise.all([handledFirst, handledSecond]), ["request-timeout", "request-timeout"]);
+  const retry = bus.request("test.buy", { quantity: 1 }, { requestId: "first" }).catch(error => error.code);
+  assert.equal(emitted.length, 3);
+  [...timers.pending.values()].at(-1).callback();
+  assert.equal(await retry, "request-timeout");
 });
 
 test("SocketCommandBus executes a duplicate typed request once and re-emits its settled result", async () => {

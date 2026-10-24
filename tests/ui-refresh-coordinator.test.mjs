@@ -172,6 +172,50 @@ test("UiRefreshCoordinator remains usable after an individual refresh rejects", 
   assert.equal(successfulRuns, 1);
 });
 
+test("UiRefreshCoordinator lets an unrelated caller finish while an earlier window is rendering", async () => {
+  const coordinator = new UiRefreshCoordinator();
+  let release, healthyFinished = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  const slow = coordinator.request([{ key: "trader", run: () => gate }]);
+  await new Promise(resolve => setImmediate(resolve));
+  const healthy = coordinator.request([{ key: "inventory", run: () => "fresh inventory" }])
+    .then(results => { healthyFinished = true; assert.deepEqual(results, [{ status: "fulfilled", value: "fresh inventory" }]); });
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(healthyFinished, true);
+  } finally { release(); await Promise.all([slow, healthy]); }
+});
+
+test("UiRefreshCoordinator only waits for the caller's own pass of a busy app", async () => {
+  const coordinator = new UiRefreshCoordinator();
+  let releaseFirst, releaseSecond, firstFinished = false;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  const secondGate = new Promise(resolve => { releaseSecond = resolve; });
+  const first = coordinator.request([{ key: "inventory", run: () => firstGate }]).then(() => { firstFinished = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  let secondRuns = 0;
+  const second = coordinator.request([{ key: "inventory", run: () => { secondRuns++; return secondGate; } }]);
+  const joined = coordinator.request([{ key: "inventory", run: () => { throw Error("coalescing failed"); } }]);
+  releaseFirst();
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(firstFinished, true);
+    assert.equal(secondRuns, 1);
+  } finally { releaseSecond(); await Promise.all([first, second, joined]); }
+});
+
+test("UiRefreshCoordinator retains a reentrant refresh after the current render fails", async () => {
+  const coordinator = new UiRefreshCoordinator();
+  let next, runs = 0;
+  const first = await coordinator.request([{ key: "inventory", run: () => {
+    next = coordinator.request([{ key: "inventory", run: () => ++runs }]);
+    throw Error("render failed");
+  } }]);
+  assert.equal(first[0].status, "rejected");
+  assert.deepEqual(await next, [{ status: "fulfilled", value: 1 }]);
+  assert.equal(runs, 1);
+});
+
 test("UiRefreshCoordinator isolates synchronous render failures without dropping sibling tasks", async () => {
   const coordinator = new UiRefreshCoordinator();
   const calls = [];
