@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "moduleId": "smalltime",
+  "moduleRoot": "D:\\FoundryVTT\\Data\\modules\\smalltime",
+  "beforeVersion": "2.0.4",
+  "afterVersion": "2.0.5",
+  "backupRoot": "C:\\Users\\ill_lich\\.codex\\backups\\smalltime-pinned-click-2026-10-25\\2026-10-25T13-33-13-933Z",
+  "patch": "patches/smalltime.patch",
+  "files": [
+    {
+      "path": "module.json",
+      "beforeSha256": "3130dcaf11e01f04da7a0bca25d26dba60ba525533536d27b0281dedc3a4dae7",
+      "afterSha256": "38333086d20a548d094122fd1971da7b7d1915dcaf69830da036b69b60085ebe"
+    },
+    {
+      "path": "scripts/smalltime-app.mjs",
+      "beforeSha256": "611e102af642158e1380872b16f7b737bbd7fd3d40c7dad4d186838e9e0e7457",
+      "afterSha256": "341b0934b912c18f8961d17c6ba2dd73081c302322fa0333c876d9388098b0c7"
+    },
+    {
+      "path": "scripts/smalltime-app-2.0.5.mjs",
+      "beforeSha256": null,
+      "afterSha256": "dcaf0aeee8dacd0e0c6dd22af01b06565b86997aab15fea5fe0ee748e362ee6a"
+    }
+  ]
+}

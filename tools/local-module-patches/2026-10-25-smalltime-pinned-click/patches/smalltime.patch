@@ -1,0 +1,46 @@
+diff --git a/smalltime/module.json b/smalltime/module.json
+index aab382c..272102a 100644
+--- a/smalltime/module.json
++++ b/smalltime/module.json
+@@ -2,7 +2,7 @@
+     "id": "smalltime",
+     "title": "SmallTime",
+     "description": "A small module for displaying and controlling the current time of day.",
+-    "version": "2.0.4",
++    "version": "2.0.5",
+     "readme": "https://github.com/unsoluble/smalltime/blob/main/README.md",
+     "bugs": "https://github.com/unsoluble/smalltime/issues",
+     "changelog": "https://github.com/unsoluble/smalltime/releases",
+@@ -32,7 +32,7 @@
+         }
+     ],
+     "esmodules": [
+-        "scripts/smalltime-app.mjs"
++        "scripts/smalltime-app-2.0.5.mjs"
+     ],
+     "scripts": [
+         "scripts/draggabilly.min.js"
+diff --git a/smalltime/scripts/smalltime-app-2.0.5.mjs b/smalltime/scripts/smalltime-app-2.0.5.mjs
+new file mode 100644
+index 0000000..f269aa4
+--- /dev/null
++++ b/smalltime/scripts/smalltime-app-2.0.5.mjs
+@@ -0,0 +1 @@
++import "./smalltime-app.mjs?v=2.0.5";
+diff --git a/smalltime/scripts/smalltime-app.mjs b/smalltime/scripts/smalltime-app.mjs
+index 110dba5..966f820 100644
+--- a/smalltime/scripts/smalltime-app.mjs
++++ b/smalltime/scripts/smalltime-app.mjs
+@@ -1117,6 +1117,12 @@ class SmallTimeApp extends foundry.applications.api.HandlebarsApplicationMixin(f
+     window.removeEventListener('pointerup', this._boundOnDragEnd);
+     window.removeEventListener('pointercancel', this._boundOnDragEnd);
+ 
++    if (dragState.wasPinnedAtStart && !dragState.hasUnpinnedOnThisDrag) {
++      this.element.style.animation = '';
++      this._dragState = null;
++      return;
++    }
++
+     const droppedInPinZone = this.computePinZone(event.clientX, event.clientY) || dragState.pinZone;
+ 
+     if (droppedInPinZone) {
