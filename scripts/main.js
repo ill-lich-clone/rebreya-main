@@ -382,7 +382,7 @@ import {
   refreshPlayerInventoryQuickButton,
   registerSceneControlsHook,
   unregisterExternalPanelTool
-} from "./hooks.js?v=1.4.360";
+} from "./hooks.js?v=1.5.5";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,

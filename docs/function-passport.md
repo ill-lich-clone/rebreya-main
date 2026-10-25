@@ -2,6 +2,8 @@
 
 Этот документ содержит подробные точки реализации, владельцев, data flow и профильные тесты. Начинай с корневого `AGENTS.md`, находи нужный раздел через `rg` и не загружай паспорт целиком без прямой необходимости.
 
+BG3 HUD 3.4.6: player reconnect/teleport recovery, scene+token identity, эффекты, MIDI counters, GM isolation и canonical compatibility imports Rebreya 1.5.5 — [профильный паспорт](bg3-hud-function-passport.md). Runtime остаётся во внешнем BG3; обратимый patch и actual-source tests находятся в `tools/local-module-patches/2026-10-25-bg3-hud-recovery/`.
+
 ## Частичные переносы и экземпляры (R3)
 
 Круговая атака `lchWhirl`: native activity, досягаемость, все фракции, половина урона, выбранная цель дополнительных эффектов — [профильный паспорт](whirlwind-attack-function-passport.md).

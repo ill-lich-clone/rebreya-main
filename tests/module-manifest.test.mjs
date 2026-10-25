@@ -21,12 +21,21 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.4");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.4.js"]);
+  assert.equal(manifest.version, "1.5.5");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.5.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.4.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.5.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
+});
+
+test("BG3 compatibility hook imports share the updated runtime cache key", async () => {
+  for (const file of ["main.js", "settings.js"]) {
+    const source = await readFile(new URL(`../scripts/${file}`, import.meta.url), "utf8");
+    const specifier = source.match(/from ["'](\.\/hooks\.js\?[^"']+)["']/u)?.[1];
+    assert.ok(specifier, `${file} imports canonical hooks`);
+    assert.equal(new URL(specifier, "file:///scripts/").searchParams.get("v"), "1.5.5");
+  }
 });
 
 test("clock and inventory runtime owners each share one canonical module URL", async () => {
@@ -135,8 +144,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.4");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.4.js"]);
+  assert.equal(manifest.version, "1.5.5");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.5.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -196,7 +205,7 @@ test("canonical entrypoint cache-busts the player-list inventory token launcher"
 
   assert.match(
     entrypointSource,
-    /from "\.\/hooks\.js\?v=1\.4\.360";/u
+    /from "\.\/hooks\.js\?v=1\.5\.5";/u
   );
   assert.match(
     entrypointSource,
@@ -441,7 +450,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.4.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.5.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

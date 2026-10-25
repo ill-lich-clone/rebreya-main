@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-25T11:33:00.818Z",
+  "module": "bg3-inspired-hotbar",
+  "beforeVersion": "3.4.5",
+  "afterVersion": "3.4.6",
+  "entrypoint": "scripts/module-3.4.6.js",
+  "backupRoot": "C:/Users/ill_lich/.codex/backups/bg3-hud-recovery-2026-10-25/2026-10-25T11-03-01-917Z",
+  "patch": "patches/bg3-inspired-hotbar.patch",
+  "files": [
+    {
+      "path": "module.json",
+      "beforeSha256": "3412d337c52965d922922e3b974cfb69e594aa277d4b52f336debe954433771d",
+      "afterSha256": "a86e54c991715cca8c197d650abb487cef4840fbbef997abd9bcff40021ba3a6"
+    },
+    {
+      "path": "scripts/bg3-hotbar.js",
+      "beforeSha256": "4bdb484af6b54a2c8e35d31b9f7cfc68be47c8324a89c07236befdf6627e4b3d",
+      "afterSha256": "8402aacbee8e813480846e20c654a0e885e8310345e416671055106889b09c70"
+    },
+    {
+      "path": "scripts/components/buttons/BaseButton.js",
+      "beforeSha256": "37ce3b58c05f5b644ca1b4b16b6c8bfb3a1df5f361fc6b6929c72600e3f447a1",
+      "afterSha256": "ef935e8f810465e351b6ef840dfe0fdb13422eb10d2334b9228a37f3ea69f4ec"
+    },
+    {
+      "path": "scripts/components/buttons/activeButton.js",
+      "beforeSha256": "2252515c7de10d781c556416251c01f810d8d2ab3b477d8fcc2c55853aef2902",
+      "afterSha256": "7ecf3badaf74d17f2d50b5d70c513c66e2767d4bfac75fc657b279570184e03d"
+    },
+    {
+      "path": "scripts/components/buttons/filterButton.js",
+      "beforeSha256": "e2edb496a5ed9e0fac568bdafb5c4d9aa2ec0a1bb35fd3e3e111f5fe5f19e42a",
+      "afterSha256": "3b91f3a7b00b11809b96f703dcd2715c50f4c45d8a82ca3a42aa8b0c46ac388d"
+    },
+    {
+      "path": "scripts/components/buttons/itemButton.js",
+      "beforeSha256": "76862adf3e41cb151965b476c2f869d2b4eb624cfac602b910f1c87bd7eaa1ff",
+      "afterSha256": "fbdd2de7c7ede764ddbe331d2eda8eb6ffcf5b85a88ff1ec7eac594dddacbd8f"
+    },
+    {
+      "path": "scripts/components/buttons/passiveButton.js",
+      "beforeSha256": "d7a02d81d5942615d885b32bb046e45a1f84f3bca6a9661c9bf26c439b7e1cb6",
+      "afterSha256": "f83d9f2aee587408f5ad7f81f4827d710ff62604a14b39bc39a620318e709210"
+    },
+    {
+      "path": "scripts/components/component.js",
+      "beforeSha256": "d6c0da0dd3f08793bb65a140eaa79dc723b88decb076fb6e396c16aede5f4dab",
+      "afterSha256": "0647f5c21a5fde22b92ba50d5288a6e76ee740fd72686d0018dad18e2d44989a"
+    },
+    {
+      "path": "scripts/components/containers/AbilityContainer.js",
+      "beforeSha256": "0e4c543c118b2d4bae5927470f2aaa4ae5cefd64381286f6354c65982aeb5062",
+      "afterSha256": "d48f3b89779a69c0b92888b20ffa25fb9a2fb7f7c31bc597d0ef101bc2b7e57a"
+    },
+    {
+      "path": "scripts/components/containers/ActiveContainer.js",
+      "beforeSha256": "f4aa7f8a9a90f2c4ea49f776854226592ce8e004da0728097289aa6d8f92d3ea",
+      "afterSha256": "5a58faf2f49366d1d9c9f8189158cc2dbe7202e350b52306d900b326e834a1d7"
+    },
+    {
+      "path": "scripts/components/containers/AdvContainer.js",
+      "beforeSha256": "fbc700629a8b582638c78ddabb9c6e01154e119cdd9563d0ecf47b0d6b9e0691",
+      "afterSha256": "89f1200554768fe98624d7cbced8f8360108c6f279b8ac14b0f16feadaf473c6"
+    },
+    {
+      "path": "scripts/components/containers/ContainerPopover.js",
+      "beforeSha256": "ec1755f16aa7d61ebacacf91543b1fd818504b44e3c171fc9b85ab2895a4b1af",
+      "afterSha256": "63957c95c73b5b23cc7a414496b14d3371a1e58d91b5113ba08cd754fc8ec2e4"
+    },
+    {
+      "path": "scripts/components/containers/ControlContainer.js",
+      "beforeSha256": "2f80967836f4915c3f2b33b18138bd829fd30f0b64c31c073b7d4783796f5d3e",
+      "afterSha256": "aadb76d7b875c7f97e2164b05004dde207a70eaa166a6917792988bd62d69c37"
+    },
+    {
+      "path": "scripts/components/containers/DeathSavesContainer.js",
+      "beforeSha256": "0a69053c7cd50a3acd0d725a803f21a044f9be6d91411b5546fd3ee0c41b3805",
+      "afterSha256": "0e7dbf7264314c5ee58e4edd627d2ed653195bede72aefdf4d562b3ddae2ae0f"
+    },
+    {
+      "path": "scripts/components/containers/DragBar.js",
+      "beforeSha256": "b43ec80c48d1d7bd732bd0fa34775cfffec097df1ef951ac2938e89ae9d06045",
+      "afterSha256": "c55fa0302abddaba5813802d4a732d17fa30d231b04cc6bea3d1645ef2100628"
+    },
+    {
+      "path": "scripts/components/containers/FilterContainer.js",
+      "beforeSha256": "6d025866664779dc55b1265629367d0fc0405dd8af4ed400d10442ac32cb9a7e",
+      "afterSha256": "46dcc34d940f19fdab7a01f15da1e260c63bb73dc5c724f29f84171633dbb3cf"
+    },
+    {
+      "path": "scripts/components/containers/GridCell.js",
+      "beforeSha256": "f0266b6df4cd7a56616a22fd567f9415e2fe89655ef1dcddf4476b678f878757",
+      "afterSha256": "8d32cec72b8012e9fae5877b0cb4eb4b728180cc9529a7329f46076ea5af0d17"
+    },
+    {
+      "path": "scripts/components/containers/GridContainer.js",
+      "beforeSha256": "aabf1fbbc73ca16bff4ba632762c9abd48ee22fa90acdfcf3012d6478ea37f69",
+      "afterSha256": "26969c349e54e3efd6c7406bd9134716dcdb3245b70588c66e39968191fdc6ca"
+    },
+    {
+      "path": "scripts/components/containers/HotbarContainer.js",
+      "beforeSha256": "02b9d605c4f5d7f6461bc58b2467d610b3d38c01cd3303d3265fd105ebf744b5",
+      "afterSha256": "4b756e76f398f908e65d2c4e2429a1d8c30d725cbaa56637210a022990c04c1b"
+    },
+    {
+      "path": "scripts/components/containers/MenuContainer.js",
+      "beforeSha256": "6bcd7f00deef0937372aa85dca1b94668ab56003b136da42357a66ce3aa2d3b9",
+      "afterSha256": "10ea07fabb9fed866f1c335011471c1290a78a150cd52b99df10896ff1f9514b"
+    },
+    {
+      "path": "scripts/components/containers/PassiveContainer.js",
+      "beforeSha256": "7b3eef622385ab9446678456501627d34fbf0b033bf941a63f6d7d7a0f8ad43f",
+      "afterSha256": "90686a76d381ca70f9f3651fa73cd0a07b8acac1599039c732e763bab9770441"
+    },
+    {
+      "path": "scripts/components/containers/PortraitContainer.js",
+      "beforeSha256": "8f35f8f63b62aa59afcf3a9b6e398cda1ae4fd187e8fd1616bcf00a751f3d1b2",
+      "afterSha256": "12b80e9af56268394137eabc44543a1f1af4b5b52255d29e62db3531c6b394ea"
+    },
+    {
+      "path": "scripts/components/containers/PortraitHealth.js",
+      "beforeSha256": "664f32a06d5ca80b6ba0b0dd4a3abc5a43cc43be6435dac2805ae5a6418f86c2",
+      "afterSha256": "19dc124c01b9163c4716f7b195a5a789bb8563ef43e6380073e66c1f709c4bcf"
+    },
+    {
+      "path": "scripts/components/containers/RestTurnContainer.js",
+      "beforeSha256": "f6640cb83abe90dc70bb2c7447a74e4eb6e02af4cd117ed59e6f603ff70a127f",
+      "afterSha256": "31d86deae9ec1d3d5692953ab701eec08a4b065dc3e3bb985dcb3ae78193b0f9"
+    },
+    {
+      "path": "scripts/components/containers/WeaponContainer.js",
+      "beforeSha256": "8cd784c10a0aecddf5677f6fbfdd8df5ade8709d8069b443f6bf6805ba852efc",
+      "afterSha256": "348af35a5b0902da1b3ee28c0a589d7274af182cbf6db3e8f94712d84c2c7d1f"
+    },
+    {
+      "path": "scripts/components/dialog/CPRActionsDialog.js",
+      "beforeSha256": "2c921c484d71e9555d0b59327f752cf8a2943d1688edf665b48b5d31e668ac76",
+      "afterSha256": "779983f3753f1abde5a2b7794bf99af60a360441206463ddf404c3ed339a3fd4"
+    },
+    {
+      "path": "scripts/components/dialog/ExtraInfosDialog.js",
+      "beforeSha256": "70058d0b9a29e2b7339174fa00262ec3028ff6da623f92c19c98eb95b956fa3f",
+      "afterSha256": "ae98d8413ecc45b29335566802c4c746b8aae008ad64f507fa28ff60866b6213"
+    },
+    {
+      "path": "scripts/components/dialog/SettingDialog.js",
+      "beforeSha256": "e6fe3cb470a84ad322c7ab5b1a7bddaa5a88e21002db7cec89d56bad2656f6ef",
+      "afterSha256": "ee918b902fab9f2e1400de64bdfe8c40f9e48dc71cb15496b95e125b63ef1b76"
+    },
+    {
+      "path": "scripts/components/dialog/ThemeSettingDialog.js",
+      "beforeSha256": "cebb4d1422e6832e2654cedfe88194fba066744eefb8c5db9d11e3472fc00679",
+      "afterSha256": "30b26e28453a5346de8922289d79c2e34396b0dfdb51380e18ded544df3ed53c"
+    },
+    {
+      "path": "scripts/features/AutoPopulateContainer.js",
+      "beforeSha256": "30c199306e4d467bd78072d2d06a947ebfadf2244dd733828a079813db23a628",
+      "afterSha256": "c0f87dbf274dfb790cd59aad44af9bc4110e49bf0aae105296601ef39682c49b"
+    },
+    {
+      "path": "scripts/features/AutoPopulateCreateToken.js",
+      "beforeSha256": "a7f2972dca4c7d9e90b2d2f93467e0cfe6cb0345bf42d068a986ce84e0ecba8a",
+      "afterSha256": "9855f3b422c7d945ce4f966a58745a0c63a6d5229764a20ea3b99fb4313f49df"
+    },
+    {
+      "path": "scripts/features/AutoSort.js",
+      "beforeSha256": "e4dfedf76c1105f33e1dd6f0b594da4845409b934f51a90995ce2c4289341cac",
+      "afterSha256": "447cf481700a82768ca7e20d0ef991ee83f74b9eefae8bf9ff57f907b3cdc4fa"
+    },
+    {
+      "path": "scripts/managers/ControlsManager.js",
+      "beforeSha256": "5c5cca0d9c839c9602c47c775d83086532d43cb6cead81d90235ccccea1001a1",
+      "afterSha256": "8b05330ecbba82031ed37dfeea8af0e0c4fe52638d2f70d1332c774ebb13e357"
+    },
+    {
+      "path": "scripts/managers/DragDropManager.js",
+      "beforeSha256": "c02a24ffe40242803dea1629c6009163892bfc1241475af09be880fe145c4b3d",
+      "afterSha256": "d6348f765c5d01c1598fba9070a66f539e3ccc599b3762cba128eee3401ee61f"
+    },
+    {
+      "path": "scripts/managers/HotbarManager.js",
+      "beforeSha256": "fbefe628bb6f8a4fabbeedc0da4e684d0d3342c12cd47421ff53429ccca337d7",
+      "afterSha256": "663faa59bb1eb301a14702096054d5ab7c611f1e46be63d8392be211e9d72035"
+    },
+    {
+      "path": "scripts/managers/ItemUpdateManager.js",
+      "beforeSha256": "48de4b7e3b4e3e36711400157861f086cfa80c120143047e9f7c6a839fb62643",
+      "afterSha256": "e02b04414e63c51afd702cc992de5a08e73f9fe0d44ca6f7d1833ac4fb22493c"
+    },
+    {
+      "path": "scripts/managers/TargetSelector.js",
+      "beforeSha256": "6ac7a55c7ab07e4228b93b865061090c189005d8e38ea428904db62c7fb1dde6",
+      "afterSha256": "e11dc651120195a0bc145318d294ff800990661217c0cb5338af2f2d6b6c2d2c"
+    },
+    {
+      "path": "scripts/managers/TooltipManager.js",
+      "beforeSha256": "d80ddf814de57c4fcb110927aaca44e830ab11384d09e8e9d7f95a8b1c5e6474",
+      "afterSha256": "55423035bf8709084be0e522113e358ef3288d49d0a909c98016d0fcb6e1219e"
+    },
+    {
+      "path": "scripts/module-3.4.5.js",
+      "beforeSha256": "ad5abb3448ed32c777c28670a0cbe235c9b13db950eef43ff670a3aaf504eb34",
+      "afterSha256": "1bc06d6006bcd9c754d35598150f0bc94f1ce39c23a97744f83fdaff3c47d649"
+    },
+    {
+      "path": "scripts/module-3.4.6.js",
+      "beforeSha256": null,
+      "afterSha256": "1bc06d6006bcd9c754d35598150f0bc94f1ce39c23a97744f83fdaff3c47d649"
+    },
+    {
+      "path": "scripts/module.js",
+      "beforeSha256": "1faa330c3523c8295a1bbbd5cdc8437d21221adc2d90514db628b8e5cb24c88d",
+      "afterSha256": "7e311eb6d1840f7d52326d84bcda68c0a282d95af961fdb13ddf4ff8385c64a0"
+    },
+    {
+      "path": "scripts/utils/config.js",
+      "beforeSha256": "928c038e9e8343d15211d678f5c7fc4da1aedcdb31995b5558f8e2a9be2710b7",
+      "afterSha256": "7e7a9e388677dbad65c756fc3a4e2e76c71e58722e013e05f32df4357fd14883"
+    },
+    {
+      "path": "tests/runtime-policy.test.mjs",
+      "beforeSha256": "49f02824d2279bb0a47b62a872974dfcfeddfcde3cbb944539bf3e6bd240c85c",
+      "afterSha256": "8c34946ee16cd7281a834ab08e72fca75eb9b3530a20c844bbf5481c21cb84f2"
+    }
+  ]
+}

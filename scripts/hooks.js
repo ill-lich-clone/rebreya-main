@@ -13,6 +13,10 @@ const DND5E_ACTOR_SIZES = new Set(["tiny", "sm", "med", "lg", "huge", "grg"]);
 const BG3_HOTBAR_MODULE_ID = "bg3-inspired-hotbar";
 const BG3_DEATH_SAVES_CONTAINER_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/components/containers/DeathSavesContainer.js`;
 const BG3_AUTO_POPULATE_CREATE_TOKEN_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/features/AutoPopulateCreateToken.js`;
+function getBg3RuntimeModuleUrl(path) {
+  const version = globalThis.game?.modules?.get?.(BG3_HOTBAR_MODULE_ID)?.version;
+  return version ? `${path}?v=${encodeURIComponent(version)}` : path;
+}
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 const BG3_STORAGE_COMMON_ACTIONS_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3StorageCommonActionsPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
@@ -116,7 +120,7 @@ export async function patchBg3HotbarDeathSavesContainer({
 
   let module;
   try {
-    module = await importModule(BG3_DEATH_SAVES_CONTAINER_PATH);
+    module = await importModule(getBg3RuntimeModuleUrl(BG3_DEATH_SAVES_CONTAINER_PATH));
   }
   catch (error) {
     console.warn(`${MODULE_ID} | Failed to load BG3 hotbar death saves component for compatibility patch.`, error);
@@ -145,7 +149,7 @@ export async function patchBg3HotbarStorageCommonActions({
 
   let module;
   try {
-    module = await importModule(BG3_AUTO_POPULATE_CREATE_TOKEN_PATH);
+    module = await importModule(getBg3RuntimeModuleUrl(BG3_AUTO_POPULATE_CREATE_TOKEN_PATH));
   }
   catch (error) {
     console.warn(`${MODULE_ID} | Failed to load BG3 hotbar token auto-populate for storage compatibility patch.`, error);

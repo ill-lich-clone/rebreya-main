@@ -355,6 +355,23 @@ test("BG3 hotbar death saves container getData is patched to avoid missing death
   }
 });
 
+test("BG3 compatibility patches import the installed runtime class cache key", async () => {
+  const previousGame = globalThis.game;
+  const paths = [];
+  globalThis.game = { modules: new Map([["bg3-inspired-hotbar", { active: true, version: "3.4.6" }]]) };
+  class DeathSavesContainer {}
+  class AutoPopulateCreateToken { static async _getCombatActionsList() { return []; } }
+  try {
+    const importModule = async path => { paths.push(path); return { DeathSavesContainer, AutoPopulateCreateToken }; };
+    assert.equal(await patchBg3HotbarDeathSavesContainer({ importModule }), true);
+    assert.equal(await patchBg3HotbarStorageCommonActions({ importModule }), true);
+    assert.deepEqual(paths, [
+      "/modules/bg3-inspired-hotbar/scripts/components/containers/DeathSavesContainer.js?v=3.4.6",
+      "/modules/bg3-inspired-hotbar/scripts/features/AutoPopulateCreateToken.js?v=3.4.6"
+    ]);
+  } finally { globalThis.game = previousGame; }
+});
+
 test("fixed-size Rebreya race items update character size after creation", async () => {
   const updates = [];
   const actor = {

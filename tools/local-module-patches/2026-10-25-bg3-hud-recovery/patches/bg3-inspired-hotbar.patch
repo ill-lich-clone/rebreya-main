@@ -1,0 +1,979 @@
+diff --git a/bg3-inspired-hotbar/module.json b/bg3-inspired-hotbar/module.json
+index faf17d8a..c985e1eb 100644
+--- a/bg3-inspired-hotbar/module.json
++++ b/bg3-inspired-hotbar/module.json
+@@ -2,7 +2,7 @@
+   "id": "bg3-inspired-hotbar",
+   "title": "BG3 Inspired HUD",
+   "description": "A custom, persistent, token-specific HUD inspired by Baldur's Gate 3's interface. Provides an intuitive and modern way to manage abilities, spells, and effects for your tokens.",
+-  "version": "3.4.5",
++  "version": "3.4.6",
+   "authors": [
+     {
+       "name": "BragginRites",
+@@ -20,7 +20,7 @@
+     "verified": "13.346"
+   },
+   "esmodules": [
+-    "scripts/module-3.4.5.js"
++    "scripts/module-3.4.6.js"
+   ],
+   "styles": [
+     "styles/index.css"
+diff --git a/bg3-inspired-hotbar/scripts/bg3-hotbar.js b/bg3-inspired-hotbar/scripts/bg3-hotbar.js
+index 37ede6af..8b46486e 100644
+--- a/bg3-inspired-hotbar/scripts/bg3-hotbar.js
++++ b/bg3-inspired-hotbar/scripts/bg3-hotbar.js
+@@ -1,18 +1,18 @@
+ // BG3 Inspired Hotbar Module - Main Entry Point
+ 
+-import { HotbarContainer } from './components/containers/HotbarContainer.js?v=3.4.5';
+-import { PortraitContainer } from './components/containers/PortraitContainer.js?v=3.4.5';
+-import { RestTurnContainer } from './components/containers/RestTurnContainer.js?v=3.4.5';
+-import { WeaponContainer } from './components/containers/WeaponContainer.js?v=3.4.5';
+-import { ThemeSettingDialog } from './components/dialog/ThemeSettingDialog.js?v=3.4.5';
+-import { AutoPopulateCreateToken } from './features/AutoPopulateCreateToken.js?v=3.4.5';
+-import { ControlsManager } from './managers/ControlsManager.js?v=3.4.5';
+-import { DragDropManager } from './managers/DragDropManager.js?v=3.4.5';
+-import { HotbarManager } from './managers/HotbarManager.js?v=3.4.5';
+-import { ItemUpdateManager } from './managers/ItemUpdateManager.js?v=3.4.5';
+-import { BG3CONFIG, preloadHandlebarsTemplates } from './utils/config.js?v=3.4.5';
+-import { BG3TooltipManager } from './managers/TooltipManager.js?v=3.4.5';
+-import { AdvContainer } from './components/containers/AdvContainer.js?v=3.4.5';
++import { HotbarContainer } from './components/containers/HotbarContainer.js?v=3.4.6';
++import { PortraitContainer } from './components/containers/PortraitContainer.js?v=3.4.6';
++import { RestTurnContainer } from './components/containers/RestTurnContainer.js?v=3.4.6';
++import { WeaponContainer } from './components/containers/WeaponContainer.js?v=3.4.6';
++import { ThemeSettingDialog } from './components/dialog/ThemeSettingDialog.js?v=3.4.6';
++import { AutoPopulateCreateToken } from './features/AutoPopulateCreateToken.js?v=3.4.6';
++import { ControlsManager } from './managers/ControlsManager.js?v=3.4.6';
++import { DragDropManager } from './managers/DragDropManager.js?v=3.4.6';
++import { HotbarManager } from './managers/HotbarManager.js?v=3.4.6';
++import { ItemUpdateManager } from './managers/ItemUpdateManager.js?v=3.4.6';
++import { BG3CONFIG, preloadHandlebarsTemplates } from './utils/config.js?v=3.4.6';
++import { BG3TooltipManager } from './managers/TooltipManager.js?v=3.4.6';
++import { AdvContainer } from './components/containers/AdvContainer.js?v=3.4.6';
+ 
+ export class BG3Hotbar extends Application {
+     constructor() {
+@@ -31,9 +31,19 @@ export class BG3Hotbar extends Application {
+         this.generateTimeout = null;
+         this.colorPicker = null;
+         this.overrideGMHotbar = false;
++        this._generation = 0;
++        this._generationQueue = Promise.resolve();
++        this._lastActorId = null;
++        this._canvasTransition = false;
++        this._manualDeselect = false;
+ 
+         /** Hooks Event **/
+-        // Hooks.once("canvasReady", this._onCanvasReady.bind(this));
++        Hooks.on("canvasReady", this._onCanvasReady.bind(this));
++        Hooks.on("canvasTearDown", this._onCanvasTearDown.bind(this));
++        game.socket?.io?.on("reconnect", () => {
++            this._manualDeselect = false;
++            this._scheduleRecovery();
++        });
+         Hooks.on("createToken", this._onCreateToken.bind(this));
+         Hooks.on("controlToken", this._onControlToken.bind(this));
+         Hooks.on("deleteToken", this._onDeleteToken.bind(this));
+@@ -100,13 +110,53 @@ export class BG3Hotbar extends Application {
+     }
+ 
+     async _onCanvasReady() {
+-        const token = canvas.tokens.controlled?.[0];
+-        if(token) await this._onControlToken(token, canvas.tokens.controlled);
+-        else if(this.manager.canGMHotbar()) await this.generate(null);
++        this._canvasTransition = false;
++        this._manualDeselect = false;
++        if (this.generateTimeout) clearTimeout(this.generateTimeout);
++        this.generateTimeout = null;
++        const controlled = canvas.tokens?.controlled ?? [];
++        await this.generate(this._getRecoveryToken(controlled.length === 1 ? controlled[0] : null));
++    }
++
++    _getRecoveryToken(preferred = null) {
++        if (game.user?.isGM || !canvas?.ready || this._canvasTransition) return null;
++        const tokens = (canvas.tokens?.placeables ?? []).filter(token =>
++            token.actor && token.isOwner && !token.document?.hidden && token.document?.parent?.id === canvas.scene?.id);
++        preferred = preferred?.object ?? preferred;
++        if (tokens.includes(preferred)) return preferred;
++        if (tokens.includes(this.manager?.token)) return this.manager.token;
++        const previous = tokens.find(token => token.actor.id === this._lastActorId);
++        if (previous) return previous;
++        const character = tokens.find(token => token.actor.id === game.user.character?.id);
++        if (character) return character;
++        const selected = tokens.find(token => canvas.tokens.controlled.includes(token));
++        return selected ?? (tokens.length === 1 ? tokens[0] : null);
++    }
++
++    _scheduleRecovery(preferred = null) {
++        if (game.user?.isGM || !this.manager) return;
++        if (this.generateTimeout) clearTimeout(this.generateTimeout);
++        this.generateTimeout = setTimeout(async () => {
++            this.generateTimeout = null;
++            if (this._canvasTransition || !canvas?.ready) return;
++            await this.generate(this._getRecoveryToken(preferred));
++        }, 0);
++    }
++
++    _onCanvasTearDown() {
++        this._canvasTransition = true;
++        this._generation++;
++        if (this.generateTimeout) clearTimeout(this.generateTimeout);
++        this.generateTimeout = null;
++        this.components = {};
++        this.combat = [];
++        this._generationQueue = this._generationQueue.then(() => this.close());
++        return this._generationQueue;
+     }
+ 
+     async _onCreateToken(token) {
+         if (!token?.actor) return;
++        if (!this._manualDeselect && !this.manager?.token && token.parent?.id === canvas.scene?.id) this._scheduleRecovery();
+         // Strictly avoid autopopulate for player characters on token creation
+         if (token.actor.type === 'character') return;
+         setTimeout(async () => {
+@@ -115,6 +165,8 @@ export class BG3Hotbar extends Application {
+     }
+ 
+     async _onControlToken(token, controlled) {
++        if (token?.document?.parent?.id !== canvas.scene?.id || this._canvasTransition) return;
++        if (!controlled && canvas.tokens?.get(token.id) !== token) return;
+         if (this.overrideGMHotbar && game.settings.get(BG3CONFIG.MODULE_NAME, 'enableGMHotbar')) {
+             return;
+         }
+@@ -127,12 +179,18 @@ export class BG3Hotbar extends Application {
+ 
+         if(this.manager.canGMHotbar() && ControlsManager.isSettingLocked('deselect')) return;
+         this.generateTimeout = setTimeout(async () => {
+-            if (((!controlled && !canvas.tokens.controlled.length) || canvas.tokens.controlled.length > 1) && !ControlsManager.isSettingLocked('deselect')) {
+-                if (!canvas.tokens.controlled.length || canvas.tokens.controlled.length > 1) this.generate(null);
++            this.generateTimeout = null;
++            if (this._canvasTransition || !canvas?.ready) return;
++            const selected = canvas.tokens.controlled;
++            if (!selected.length) {
++                if (!ControlsManager.isSettingLocked('deselect')) {
++                    this._manualDeselect = true;
++                    await this.generate(null);
++                }
++                return;
+             }
+-            if (!controlled || !canvas.tokens.controlled.length || canvas.tokens.controlled.length > 1) return;
+-
+-            if(game.settings.get(BG3CONFIG.MODULE_NAME, 'uiEnabled')) await this.generate(token);
++            this._manualDeselect = false;
++            await this.generate(this._getRecoveryToken(selected.length === 1 ? selected[0] : null));
+         })
+     }
+ 
+@@ -159,30 +217,14 @@ export class BG3Hotbar extends Application {
+         }
+     }
+ 
+-    async _onDeleteToken(tokenData, scene) {
++    async _onDeleteToken(tokenData, options = {}) {
+         if (!this.manager) return;
+-
+-        // const token = canvas.tokens.get(tokenData._id);
+-        const isPlayerCharacter = tokenData?.actor?.hasPlayerOwner;
+-        const isCurrentToken = tokenData._id === this.manager.currentTokenId;
+-        const isLocked = ControlsManager.isSettingLocked('deselect');
+-
+-        // Only clean up data if:
+-        // 1. It's an unlinked token, OR
+-        // 2. It's the current token AND either:
+-        //    - It's not a player character, OR
+-        //    - It's not locked
+-        if (!tokenData?.actorLink || (isCurrentToken && (!isPlayerCharacter || !isLocked))) {
+-            await ui.BG3HOTBAR.manager.cleanupTokenData(tokenData._id);
+-        }
+-
+-        // Handle UI cleanup based on token type and current status
+-        if (isCurrentToken) {
+-            // Only clear currentTokenId if it's not a locked player character
+-            if (!isPlayerCharacter || !isLocked) {
+-                await this.generate(null);
+-            }
+-        }
++        if (tokenData.parent?.id !== this.manager.currentSceneId || tokenData.id !== this.manager.currentTokenId) return;
++        // Deletion already removes an unlinked source document. Never clear flags
++        // through the current canvas: a destination can reuse the same token ID.
++        const replacementUuid = options.replacements?.[tokenData.id];
++        const replacement = replacementUuid ? fromUuidSync(replacementUuid) : null;
++        this._scheduleRecovery(replacement);
+     }
+ 
+     async _onCreateActor(actor, options, userId) {
+@@ -275,14 +317,18 @@ export class BG3Hotbar extends Application {
+     }
+ 
+     async _onUpdateActive(effect) {
+-        if (effect?.parent?.id !== this.manager?.actor?.id) return;
++        const actor = this.manager?.actor;
++        const parent = effect?.parent?.actor ?? effect?.parent;
++        if (!actor || this._canvasTransition || (parent !== actor && (!parent?.uuid || parent.uuid !== actor.uuid))) return;
++        const generation = this._generation;
+         try {
+             const container = this.components?.container?.components?.activeContainer;
+             if (container) await container.render();
++            if (generation !== this._generation || this._canvasTransition || this.manager.actor !== actor) return;
+             const fc = this.components?.container?.components?.filterContainer;
+-            if (fc && ['dnd5ebonusaction', 'dnd5ereaction000'].includes(effect.id)) fc._checkBonusReactionUsed();
++            if (fc) fc._checkBonusReactionUsed();
+         } catch (e) {
+-            // no-op
++            if (generation === this._generation && !this._canvasTransition) console.error('BG3 Hotbar | Effect refresh failed:', e);
+         }
+     }
+ 
+@@ -332,8 +378,8 @@ export class BG3Hotbar extends Application {
+         
+ 
+         // Import targeting utilities
+-                    const { needsActivityTargeting, getActivityTargetRequirements } = await import('./utils/targetingRules.js?v=3.4.5');
+-        const { TargetSelector } = await import('./managers/TargetSelector.js?v=3.4.5');
++                    const { needsActivityTargeting, getActivityTargetRequirements } = await import('./utils/targetingRules.js?v=3.4.6');
++        const { TargetSelector } = await import('./managers/TargetSelector.js?v=3.4.6');
+ 
+         // Hook into button clicks instead of submit method
+         setTimeout(() => {
+@@ -589,20 +635,42 @@ export class BG3Hotbar extends Application {
+ 
+     async generate(token) {
+         if (!this.manager) return;
+-        if(!token) {
+-            this.manager.currentTokenId = null;
+-            if(!this.manager.canGMHotbar()) {
++        token = token?.object ?? token;
++        const generation = ++this._generation;
++        this._generationQueue = this._generationQueue.then(async () => {
++            if (generation !== this._generation) return;
++            const enabled = !game.user?.isGM && game.settings.get(BG3CONFIG.MODULE_NAME, 'uiEnabled');
++            const valid = enabled && !this._canvasTransition && canvas?.ready && token?.isOwner
++                && !token.document?.hidden && token.document?.parent?.id === canvas.scene?.id
++                && canvas.tokens?.get(token.id) === token;
++            if (!valid) {
++                this.manager.currentTokenId = null;
++                this.manager.currentSceneId = null;
+                 await this.close();
+                 if(game.settings.get(BG3CONFIG.MODULE_NAME, 'collapseFoundryMacrobar') === 'select') this._applyMacrobarCollapseSetting();
+                 return;
+             }
+-        } else this.manager.currentTokenId = token.id;
+-        await this.manager._loadTokenData();
+-        this.render(true);
++            this.manager.currentTokenId = token.id;
++            this.manager.currentSceneId = token.document.parent.id;
++            this._lastActorId = token.actor.id;
++            await this.manager._loadTokenData({readOnly: true});
++            if (generation !== this._generation || this.manager.token !== token) return;
++            await this._render(true);
++        }).catch(error => {
++            if (generation === this._generation && !this._canvasTransition) console.error('BG3 Hotbar | HUD generation failed:', error);
++        });
++        return this._generationQueue;
+     }
+ 
+     async _render(force=false, options={}) {
+-        await super._render(force, options);
++        if (game.user?.isGM || !game.settings.get(BG3CONFIG.MODULE_NAME, 'uiEnabled') || !this.manager?.token || this._canvasTransition) return;
++        try {
++            await super._render(force, options);
++        } catch (error) {
++            // Match Application.render's recovery state when awaited directly.
++            this._state = Application.RENDER_STATES.ERROR;
++            throw error;
++        }
+         if(this.components?.container?.components?.filterContainer) this.components.container.components.filterContainer._checkBonusReactionUsed();
+         if(game.settings.get(BG3CONFIG.MODULE_NAME, 'collapseFoundryMacrobar') === 'select') this._applyMacrobarCollapseSetting();
+     }
+@@ -610,6 +678,9 @@ export class BG3Hotbar extends Application {
+     async _renderInner(data) {        
+         const element = await super._renderInner(data),
+             html = element[0];
++        this.components = {};
++        this.combat = [];
++        if (!this.manager.token || this._canvasTransition) return element;
+ 
+         // Apply setting
+         html.style.setProperty('--bg3-scale-ui', this.updateUIScale());
+@@ -665,4 +736,4 @@ export class BG3Hotbar extends Application {
+     refresh() {
+         if (this.rendered) this.render(true);
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/bg3-inspired-hotbar/scripts/components/buttons/BaseButton.js b/bg3-inspired-hotbar/scripts/components/buttons/BaseButton.js
+index 86d1810f..f448d6b6 100644
+--- a/bg3-inspired-hotbar/scripts/components/buttons/BaseButton.js
++++ b/bg3-inspired-hotbar/scripts/components/buttons/BaseButton.js
+@@ -1,4 +1,4 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ export class BaseButton extends BG3Component {
+     constructor(data, parent) {
+diff --git a/bg3-inspired-hotbar/scripts/components/buttons/activeButton.js b/bg3-inspired-hotbar/scripts/components/buttons/activeButton.js
+index e8fb9cbc..fe52167d 100644
+--- a/bg3-inspired-hotbar/scripts/components/buttons/activeButton.js
++++ b/bg3-inspired-hotbar/scripts/components/buttons/activeButton.js
+@@ -1,4 +1,4 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ 
+ export class ActiveButton extends BG3Component {
+diff --git a/bg3-inspired-hotbar/scripts/components/buttons/filterButton.js b/bg3-inspired-hotbar/scripts/components/buttons/filterButton.js
+index 322aac7a..2f839141 100644
+--- a/bg3-inspired-hotbar/scripts/components/buttons/filterButton.js
++++ b/bg3-inspired-hotbar/scripts/components/buttons/filterButton.js
+@@ -1,5 +1,5 @@
+-import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.5";
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.6";
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ 
+ export class FilterButton extends BG3Component {
+diff --git a/bg3-inspired-hotbar/scripts/components/buttons/itemButton.js b/bg3-inspired-hotbar/scripts/components/buttons/itemButton.js
+index 563f570f..aee92ff5 100644
+--- a/bg3-inspired-hotbar/scripts/components/buttons/itemButton.js
++++ b/bg3-inspired-hotbar/scripts/components/buttons/itemButton.js
+@@ -1,4 +1,4 @@
+-import { BaseButton } from "./BaseButton.js?v=3.4.5";
++import { BaseButton } from "./BaseButton.js?v=3.4.6";
+ 
+ 
+ export class ItemButton extends BaseButton {
+diff --git a/bg3-inspired-hotbar/scripts/components/buttons/passiveButton.js b/bg3-inspired-hotbar/scripts/components/buttons/passiveButton.js
+index 7b9acc5f..97b44f99 100644
+--- a/bg3-inspired-hotbar/scripts/components/buttons/passiveButton.js
++++ b/bg3-inspired-hotbar/scripts/components/buttons/passiveButton.js
+@@ -1,4 +1,4 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ 
+ export class PassiveButton extends BG3Component {
+diff --git a/bg3-inspired-hotbar/scripts/components/component.js b/bg3-inspired-hotbar/scripts/components/component.js
+index bb59c1e3..dc21f1b5 100644
+--- a/bg3-inspired-hotbar/scripts/components/component.js
++++ b/bg3-inspired-hotbar/scripts/components/component.js
+@@ -1,4 +1,4 @@
+-import { BG3CONFIG } from '../utils/config.js?v=3.4.5';
++import { BG3CONFIG } from '../utils/config.js?v=3.4.6';
+ 
+ export class BG3Component {
+     constructor(data, parent) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/AbilityContainer.js b/bg3-inspired-hotbar/scripts/components/containers/AbilityContainer.js
+index 8a78eabb..8a5c2524 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/AbilityContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/AbilityContainer.js
+@@ -1,5 +1,5 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { MenuContainer } from "./MenuContainer.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { MenuContainer } from "./MenuContainer.js?v=3.4.6";
+ 
+ export class AbilityContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/ActiveContainer.js b/bg3-inspired-hotbar/scripts/components/containers/ActiveContainer.js
+index 898e0420..dc8e2fde 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/ActiveContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/ActiveContainer.js
+@@ -1,5 +1,5 @@
+-import { ActiveButton } from '../buttons/activeButton.js?v=3.4.5';
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { ActiveButton } from '../buttons/activeButton.js?v=3.4.6';
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ export class ActiveContainer extends BG3Component {
+     constructor(data) {
+@@ -11,10 +11,8 @@ export class ActiveContainer extends BG3Component {
+     }
+ 
+     get activesList() {
+-        if(!this.token && !this.actor) return null;
+-
+         // Get active effects from the actor's sheet.
+-       return this.actor.effects?.contents || [];
++        return this.actor?.effects?.contents ?? [];
+     }
+ 
+     async render() {
+@@ -33,4 +31,4 @@ export class ActiveContainer extends BG3Component {
+         
+         return this.element;
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/AdvContainer.js b/bg3-inspired-hotbar/scripts/components/containers/AdvContainer.js
+index e6b41b4b..b15f9d08 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/AdvContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/AdvContainer.js
+@@ -1,6 +1,6 @@
+-import { BaseButton } from "../buttons/BaseButton.js?v=3.4.5";
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
++import { BaseButton } from "../buttons/BaseButton.js?v=3.4.6";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
+ 
+ export class AdvContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/ContainerPopover.js b/bg3-inspired-hotbar/scripts/components/containers/ContainerPopover.js
+index 75b8a0ad..a181d69f 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/ContainerPopover.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/ContainerPopover.js
+@@ -1,10 +1,10 @@
+ // File: scripts/components/containers/ContainerPopover.js
+ 
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { GridContainer } from "./GridContainer.js?v=3.4.5";
+-import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.5";
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
+-import { AutoSort } from "../../features/AutoSort.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { GridContainer } from "./GridContainer.js?v=3.4.6";
++import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.6";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
++import { AutoSort } from "../../features/AutoSort.js?v=3.4.6";
+ 
+ /**
+  * Container Popover component for displaying container contents in a grid layout
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/ControlContainer.js b/bg3-inspired-hotbar/scripts/components/containers/ControlContainer.js
+index 78b01cb8..650c0a19 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/ControlContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/ControlContainer.js
+@@ -1,8 +1,8 @@
+-import { BaseButton } from "../buttons/BaseButton.js?v=3.4.5";
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
+-import { MenuContainer } from "./MenuContainer.js?v=3.4.5";
+-import { ControlsManager } from "../../managers/ControlsManager.js?v=3.4.5";
++import { BaseButton } from "../buttons/BaseButton.js?v=3.4.6";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
++import { MenuContainer } from "./MenuContainer.js?v=3.4.6";
++import { ControlsManager } from "../../managers/ControlsManager.js?v=3.4.6";
+ 
+ export class ControlContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/DeathSavesContainer.js b/bg3-inspired-hotbar/scripts/components/containers/DeathSavesContainer.js
+index a32cc82e..f356400e 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/DeathSavesContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/DeathSavesContainer.js
+@@ -1,5 +1,5 @@
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ export class DeathSavesContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/DragBar.js b/bg3-inspired-hotbar/scripts/components/containers/DragBar.js
+index 0ca350f6..4d62ffca 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/DragBar.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/DragBar.js
+@@ -1,4 +1,4 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ export class DragBar extends BG3Component {
+     constructor(data, parent) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/FilterContainer.js b/bg3-inspired-hotbar/scripts/components/containers/FilterContainer.js
+index 99488950..7731ab0c 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/FilterContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/FilterContainer.js
+@@ -1,6 +1,6 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
+-import { FilterButton } from "../buttons/filterButton.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
++import { FilterButton } from "../buttons/filterButton.js?v=3.4.6";
+ 
+ export class FilterContainer extends BG3Component {
+     constructor(data) {
+@@ -185,16 +185,22 @@ export class FilterContainer extends BG3Component {
+     }
+         
+     _checkBonusReactionUsed() {
+-        // effect._id === "dnd5ebonusaction"
+-        // effect._id === "dnd5ereaction000"
+-        if(!game.settings.get(BG3CONFIG.MODULE_NAME,'synchroBRMidiQoL') || !ui.BG3HOTBAR.components.container.components.activeContainer) return;
+-
+-        const bonusFilter = this.components.find(f => f.data.id === 'bonus'),
+-            reactionFilter = this.components.find(f => f.data.id === 'reaction');
+-
+-        if((ui.BG3HOTBAR.components.container.components.activeContainer.activesList.find(a => a._id === 'dnd5ebonusaction') && !this.used.includes(bonusFilter)) || (!ui.BG3HOTBAR.components.container.components.activeContainer.activesList.find(a => a._id === 'dnd5ebonusaction') && this.used.includes(bonusFilter))) this.used = bonusFilter;
+-
+-        if((ui.BG3HOTBAR.components.container.components.activeContainer.activesList.find(a => a._id === 'dnd5ereaction000') && !this.used.includes(reactionFilter)) || (!ui.BG3HOTBAR.components.container.components.activeContainer.activesList.find(a => a._id === 'dnd5ereaction000') && this.used.includes(reactionFilter))) this.used = reactionFilter;
++        if(!game.settings.get(BG3CONFIG.MODULE_NAME,'synchroBRMidiQoL') || !this.actor) return;
++        const midi = game.modules.get('midi-qol')?.active ? globalThis.MidiQOL : null;
++        const actions = game.modules.get('midi-qol')?.active ? this.actor.getFlag('midi-qol', 'actions') : null;
++        const effects = ui.BG3HOTBAR?.components?.container?.components?.activeContainer?.activesList ?? [];
++        for (const [id, method, usedKey, maxKey, effectId] of [
++            ['bonus', 'hasUsedBonusAction', 'bonusActionsUsed', 'bonusActionsMax', 'dnd5ebonusaction'],
++            ['reaction', 'hasUsedReaction', 'reactionsUsed', 'reactionsMax', 'dnd5ereaction000']
++        ]) {
++            const filter = this.components.find(component => component.data.id === id);
++            if (!filter) continue;
++            const spent = typeof midi?.[method] === 'function' ? Boolean(midi[method](this.actor))
++                : actions && (actions[usedKey] !== undefined || actions[maxKey] !== undefined)
++                    ? Number(actions[usedKey] ?? 0) >= Number(actions[maxKey] ?? 1)
++                    : effects.some(effect => effect._id === effectId);
++            if (this.used.includes(filter) !== spent) this.used = filter;
++        }
+     }
+ 
+     async getExtendedFilter() {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/GridCell.js b/bg3-inspired-hotbar/scripts/components/containers/GridCell.js
+index 4cf8f38b..b6004a9b 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/GridCell.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/GridCell.js
+@@ -1,8 +1,8 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.5";
+-import { ControlsManager } from "../../managers/ControlsManager.js?v=3.4.5";
+-import { MenuContainer } from "./MenuContainer.js?v=3.4.5";
+-import { ContainerPopover } from "./ContainerPopover.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.6";
++import { ControlsManager } from "../../managers/ControlsManager.js?v=3.4.6";
++import { MenuContainer } from "./MenuContainer.js?v=3.4.6";
++import { ContainerPopover } from "./ContainerPopover.js?v=3.4.6";
+ 
+ export class GridCell extends BG3Component {
+     constructor(data, parent) {
+@@ -347,7 +347,7 @@ export class GridCell extends BG3Component {
+             if (targetSelectorEnabled && item.system?.activities?.size === 1) {
+                 // Single activity item - check if it needs targeting
+                 const activity = Array.from(item.system.activities.values())[0];
+-                    const { needsActivityTargeting, getActivityTargetRequirements } = await import('../../utils/targetingRules.js?v=3.4.5');
++                    const { needsActivityTargeting, getActivityTargetRequirements } = await import('../../utils/targetingRules.js?v=3.4.6');
+                 
+                     if (needsActivityTargeting(activity)) {
+                     
+@@ -362,7 +362,7 @@ export class GridCell extends BG3Component {
+                     const requirements = getActivityTargetRequirements(activity, item);
+                     
+                     // Create and show target selector
+-                    const { TargetSelector } = await import('../../managers/TargetSelector.js?v=3.4.5');
++                    const { TargetSelector } = await import('../../managers/TargetSelector.js?v=3.4.6');
+                     const targetSelector = new TargetSelector({
+                         token: currentToken,
+                         requirements: requirements
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/GridContainer.js b/bg3-inspired-hotbar/scripts/components/containers/GridContainer.js
+index b1fe9421..9ebd77bf 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/GridContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/GridContainer.js
+@@ -1,8 +1,8 @@
+-import { AutoPopulateDialog } from "../../features/AutoPopulateContainer.js?v=3.4.5";
+-import { AutoSort } from "../../features/AutoSort.js?v=3.4.5";
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { GridCell } from "./GridCell.js?v=3.4.5";
+-import { ContainerPopover } from "./ContainerPopover.js?v=3.4.5";
++import { AutoPopulateDialog } from "../../features/AutoPopulateContainer.js?v=3.4.6";
++import { AutoSort } from "../../features/AutoSort.js?v=3.4.6";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { GridCell } from "./GridCell.js?v=3.4.6";
++import { ContainerPopover } from "./ContainerPopover.js?v=3.4.6";
+ 
+ export class GridContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/HotbarContainer.js b/bg3-inspired-hotbar/scripts/components/containers/HotbarContainer.js
+index 67059c3e..e904ed6e 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/HotbarContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/HotbarContainer.js
+@@ -1,10 +1,10 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { ActiveContainer } from "./ActiveContainer.js?v=3.4.5";
+-import { ControlContainer } from "./ControlContainer.js?v=3.4.5";
+-import { DragBar } from "./DragBar.js?v=3.4.5";
+-import { FilterContainer } from "./FilterContainer.js?v=3.4.5";
+-import { GridContainer } from "./GridContainer.js?v=3.4.5";
+-import { PassiveContainer } from "./PassiveContainer.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { ActiveContainer } from "./ActiveContainer.js?v=3.4.6";
++import { ControlContainer } from "./ControlContainer.js?v=3.4.6";
++import { DragBar } from "./DragBar.js?v=3.4.6";
++import { FilterContainer } from "./FilterContainer.js?v=3.4.6";
++import { GridContainer } from "./GridContainer.js?v=3.4.6";
++import { PassiveContainer } from "./PassiveContainer.js?v=3.4.6";
+ 
+ export class HotbarContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/MenuContainer.js b/bg3-inspired-hotbar/scripts/components/containers/MenuContainer.js
+index 23874249..010558f2 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/MenuContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/MenuContainer.js
+@@ -1,4 +1,4 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ export class MenuContainer extends BG3Component {
+     constructor(data, parent, event, standalone) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/PassiveContainer.js b/bg3-inspired-hotbar/scripts/components/containers/PassiveContainer.js
+index 162475cb..91ea098d 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/PassiveContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/PassiveContainer.js
+@@ -1,6 +1,6 @@
+-import { BG3CONFIG } from '../../utils/config.js?v=3.4.5';
+-import { PassiveButton } from '../buttons/passiveButton.js?v=3.4.5';
+-import { BG3Component } from "../component.js?v=3.4.5";
++import { BG3CONFIG } from '../../utils/config.js?v=3.4.6';
++import { PassiveButton } from '../buttons/passiveButton.js?v=3.4.6';
++import { BG3Component } from "../component.js?v=3.4.6";
+ 
+ export class PassiveContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/PortraitContainer.js b/bg3-inspired-hotbar/scripts/components/containers/PortraitContainer.js
+index f2a91290..2bc037c2 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/PortraitContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/PortraitContainer.js
+@@ -1,10 +1,10 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { AbilityContainer } from "./AbilityContainer.js?v=3.4.5";
+-import { DeathSavesContainer } from "./DeathSavesContainer.js?v=3.4.5";
+-import { MenuContainer } from "./MenuContainer.js?v=3.4.5";
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
+-import { PortraitHealth } from "./PortraitHealth.js?v=3.4.5";
+-import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { AbilityContainer } from "./AbilityContainer.js?v=3.4.6";
++import { DeathSavesContainer } from "./DeathSavesContainer.js?v=3.4.6";
++import { MenuContainer } from "./MenuContainer.js?v=3.4.6";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
++import { PortraitHealth } from "./PortraitHealth.js?v=3.4.6";
++import { fromUuid } from "../../utils/foundryUtils.js?v=3.4.6";
+ 
+ export class PortraitContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/PortraitHealth.js b/bg3-inspired-hotbar/scripts/components/containers/PortraitHealth.js
+index 09bd6252..661f1895 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/PortraitHealth.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/PortraitHealth.js
+@@ -1,8 +1,8 @@
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { AbilityContainer } from "./AbilityContainer.js?v=3.4.5";
+-import { DeathSavesContainer } from "./DeathSavesContainer.js?v=3.4.5";
+-import { MenuContainer } from "./MenuContainer.js?v=3.4.5";
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { AbilityContainer } from "./AbilityContainer.js?v=3.4.6";
++import { DeathSavesContainer } from "./DeathSavesContainer.js?v=3.4.6";
++import { MenuContainer } from "./MenuContainer.js?v=3.4.6";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
+ 
+ export class PortraitHealth extends BG3Component {
+     constructor(data, parent) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/RestTurnContainer.js b/bg3-inspired-hotbar/scripts/components/containers/RestTurnContainer.js
+index e0b898f6..856819d6 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/RestTurnContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/RestTurnContainer.js
+@@ -1,6 +1,6 @@
+-import { BaseButton } from "../buttons/BaseButton.js?v=3.4.5";
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
++import { BaseButton } from "../buttons/BaseButton.js?v=3.4.6";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
+ 
+ export class RestTurnContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/containers/WeaponContainer.js b/bg3-inspired-hotbar/scripts/components/containers/WeaponContainer.js
+index 57d69058..cf8ead25 100644
+--- a/bg3-inspired-hotbar/scripts/components/containers/WeaponContainer.js
++++ b/bg3-inspired-hotbar/scripts/components/containers/WeaponContainer.js
+@@ -1,6 +1,6 @@
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
+-import { BG3Component } from "../component.js?v=3.4.5";
+-import { GridContainer } from "./GridContainer.js?v=3.4.5";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
++import { BG3Component } from "../component.js?v=3.4.6";
++import { GridContainer } from "./GridContainer.js?v=3.4.6";
+ 
+ export class WeaponContainer extends BG3Component {
+     constructor(data) {
+diff --git a/bg3-inspired-hotbar/scripts/components/dialog/CPRActionsDialog.js b/bg3-inspired-hotbar/scripts/components/dialog/CPRActionsDialog.js
+index 51a5415a..b643474e 100644
+--- a/bg3-inspired-hotbar/scripts/components/dialog/CPRActionsDialog.js
++++ b/bg3-inspired-hotbar/scripts/components/dialog/CPRActionsDialog.js
+@@ -1,4 +1,4 @@
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
+ 
+ export class CPRActionsDialog extends FormApplication {
+     constructor () {
+diff --git a/bg3-inspired-hotbar/scripts/components/dialog/ExtraInfosDialog.js b/bg3-inspired-hotbar/scripts/components/dialog/ExtraInfosDialog.js
+index 5c349f5c..e0f15271 100644
+--- a/bg3-inspired-hotbar/scripts/components/dialog/ExtraInfosDialog.js
++++ b/bg3-inspired-hotbar/scripts/components/dialog/ExtraInfosDialog.js
+@@ -1,4 +1,4 @@
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
+ 
+ export class ExtraInfosDialog extends FormApplication {
+     constructor () {
+diff --git a/bg3-inspired-hotbar/scripts/components/dialog/SettingDialog.js b/bg3-inspired-hotbar/scripts/components/dialog/SettingDialog.js
+index 5c7db656..3550f63b 100644
+--- a/bg3-inspired-hotbar/scripts/components/dialog/SettingDialog.js
++++ b/bg3-inspired-hotbar/scripts/components/dialog/SettingDialog.js
+@@ -1,4 +1,4 @@
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
+ 
+ export class ThemeSettingDialog extends FormApplication {
+     constructor () {
+diff --git a/bg3-inspired-hotbar/scripts/components/dialog/ThemeSettingDialog.js b/bg3-inspired-hotbar/scripts/components/dialog/ThemeSettingDialog.js
+index c86f1d7d..0c9d25a3 100644
+--- a/bg3-inspired-hotbar/scripts/components/dialog/ThemeSettingDialog.js
++++ b/bg3-inspired-hotbar/scripts/components/dialog/ThemeSettingDialog.js
+@@ -1,4 +1,4 @@
+-import { BG3CONFIG } from "../../utils/config.js?v=3.4.5";
++import { BG3CONFIG } from "../../utils/config.js?v=3.4.6";
+ 
+ export class ThemeSettingDialog extends FormApplication {
+     constructor () {
+diff --git a/bg3-inspired-hotbar/scripts/features/AutoPopulateContainer.js b/bg3-inspired-hotbar/scripts/features/AutoPopulateContainer.js
+index c7e82da3..877b6463 100644
+--- a/bg3-inspired-hotbar/scripts/features/AutoPopulateContainer.js
++++ b/bg3-inspired-hotbar/scripts/features/AutoPopulateContainer.js
+@@ -1,5 +1,5 @@
+-import { BG3CONFIG, shouldEnforceSpellPreparation } from "../utils/config.js?v=3.4.5";
+-import { AutoSort } from "./AutoSort.js?v=3.4.5";
++import { BG3CONFIG, shouldEnforceSpellPreparation } from "../utils/config.js?v=3.4.6";
++import { AutoSort } from "./AutoSort.js?v=3.4.6";
+ 
+ export class AutoPopulateContainer {
+   static async populateContainer(container, itemTypes = []) {
+diff --git a/bg3-inspired-hotbar/scripts/features/AutoPopulateCreateToken.js b/bg3-inspired-hotbar/scripts/features/AutoPopulateCreateToken.js
+index e8a9477d..66b1c142 100644
+--- a/bg3-inspired-hotbar/scripts/features/AutoPopulateCreateToken.js
++++ b/bg3-inspired-hotbar/scripts/features/AutoPopulateCreateToken.js
+@@ -1,9 +1,9 @@
+ // Auto Populate Create Token Feature
+ // Handles populating hotbar when creating unlinked tokens
+ 
+-import { BG3CONFIG, shouldEnforceSpellPreparation } from '../utils/config.js?v=3.4.5';
+-import { HotbarManager } from '../managers/HotbarManager.js?v=3.4.5';
+-import { AutoSort } from './AutoSort.js?v=3.4.5';
++import { BG3CONFIG, shouldEnforceSpellPreparation } from '../utils/config.js?v=3.4.6';
++import { HotbarManager } from '../managers/HotbarManager.js?v=3.4.6';
++import { AutoSort } from './AutoSort.js?v=3.4.6';
+ 
+ export class AutoPopulateDefaults extends FormApplication {
+     static get defaultOptions() {
+diff --git a/bg3-inspired-hotbar/scripts/features/AutoSort.js b/bg3-inspired-hotbar/scripts/features/AutoSort.js
+index b53efdf9..7486fbed 100644
+--- a/bg3-inspired-hotbar/scripts/features/AutoSort.js
++++ b/bg3-inspired-hotbar/scripts/features/AutoSort.js
+@@ -1,7 +1,7 @@
+ // Auto Sort Feature
+ // Handles sorting items in containers
+ 
+-import { fromUuid } from '../utils/foundryUtils.js?v=3.4.5';
++import { fromUuid } from '../utils/foundryUtils.js?v=3.4.6';
+ 
+ export class AutoSort {
+     static async sortContainer(container) {
+diff --git a/bg3-inspired-hotbar/scripts/managers/ControlsManager.js b/bg3-inspired-hotbar/scripts/managers/ControlsManager.js
+index 7b8de3f6..9fb4a121 100644
+--- a/bg3-inspired-hotbar/scripts/managers/ControlsManager.js
++++ b/bg3-inspired-hotbar/scripts/managers/ControlsManager.js
+@@ -1,4 +1,4 @@
+-import { BG3CONFIG } from "../utils/config.js?v=3.4.5";
++import { BG3CONFIG } from "../utils/config.js?v=3.4.6";
+ 
+ export class ControlsManager {
+     static getMasterLock() {
+diff --git a/bg3-inspired-hotbar/scripts/managers/DragDropManager.js b/bg3-inspired-hotbar/scripts/managers/DragDropManager.js
+index b84755c8..8346e950 100644
+--- a/bg3-inspired-hotbar/scripts/managers/DragDropManager.js
++++ b/bg3-inspired-hotbar/scripts/managers/DragDropManager.js
+@@ -1,6 +1,6 @@
+-import { BG3CONFIG } from '../utils/config.js?v=3.4.5';
+-import { fromUuid } from '../utils/foundryUtils.js?v=3.4.5';
+-import { ContainerPopover } from '../components/containers/ContainerPopover.js?v=3.4.5';
++import { BG3CONFIG } from '../utils/config.js?v=3.4.6';
++import { fromUuid } from '../utils/foundryUtils.js?v=3.4.6';
++import { ContainerPopover } from '../components/containers/ContainerPopover.js?v=3.4.6';
+ 
+ export class DragDropManager {
+     constructor() {
+diff --git a/bg3-inspired-hotbar/scripts/managers/HotbarManager.js b/bg3-inspired-hotbar/scripts/managers/HotbarManager.js
+index 6f6122b0..10650fc8 100644
+--- a/bg3-inspired-hotbar/scripts/managers/HotbarManager.js
++++ b/bg3-inspired-hotbar/scripts/managers/HotbarManager.js
+@@ -1,12 +1,13 @@
+ // Hotbar Manager Component
+ 
+-import { BG3CONFIG } from '../utils/config.js?v=3.4.5';
++import { BG3CONFIG } from '../utils/config.js?v=3.4.6';
+ 
+ export class HotbarManager {
+     constructor() {
+ 
+         this.containers = {};
+         this.currentTokenId = null;
++        this.currentSceneId = null;
+ 
+         this.globalMenu = null;
+         
+@@ -14,6 +15,7 @@ export class HotbarManager {
+     }
+ 
+     get token() {
++        if (this.currentSceneId && this.currentSceneId !== canvas?.scene?.id) return null;
+         return canvas?.tokens?.get(this.currentTokenId) ?? null;
+     }
+ 
+@@ -79,7 +81,7 @@ export class HotbarManager {
+         }
+     }
+ 
+-    async _loadTokenData() {
++    async _loadTokenData({readOnly = false} = {}) {
+         if((!this.token || !this.actor) && !this.canGMHotbar()) return;
+         const containersData = this.actor ? this.actor.getFlag(BG3CONFIG.MODULE_NAME, BG3CONFIG.CONTAINERS_NAME) : game.settings.get(BG3CONFIG.MODULE_NAME, 'gmHotbarData'),
+             savedData = this.actor?.getFlag(BG3CONFIG.MODULE_NAME, BG3CONFIG.FLAG_NAME) ?? null;
+@@ -87,7 +89,7 @@ export class HotbarManager {
+         if(containersData) {
+             this.containers = foundry.utils.deepClone(containersData);
+             // Update Chris Premade Common Actions Section if needed
+-            if(this.containers.combat?.[0]?.items && game.modules.get("chris-premades")?.active && game.modules.get("tidy5e-sheet")?.active) {
++            if(!readOnly && this.containers.combat?.[0]?.items && game.modules.get("chris-premades")?.active && game.modules.get("tidy5e-sheet")?.active) {
+                 for(const key in this.containers.combat[0].items) {
+                     const item = this.actor.items.find(i => i.uuid === this.containers.combat[0].items[key].uuid);
+                     if(item && item.getFlag('chris-premades', 'info')?.source === 'chris-premades' && item.getFlag('tidy5e-sheet', 'section') !== 'CHRISPREMADES.Generic.Actions') item.setFlag('tidy5e-sheet', 'section', 'CHRISPREMADES.Generic.Actions')
+@@ -133,7 +135,7 @@ export class HotbarManager {
+     async socketUpdateData(actor, changes) {
+         if(this.currentTokenId) {
+             // Check if this update affects our current token to force UI update
+-            const token = canvas.tokens.get(this.currentTokenId);
++            const token = this.token;
+             if (!!token && this.actor?.id === actor.id && !!ui.BG3HOTBAR.element?.[0]) {
+                 await ui.BG3HOTBAR.generate(token);
+             }
+@@ -144,4 +146,4 @@ export class HotbarManager {
+         if(this.actor) this.actor.setFlag(BG3CONFIG.MODULE_NAME, BG3CONFIG.CONTAINERS_NAME, this.containers);
+         else if(this.canGMHotbar()) game.settings.set(BG3CONFIG.MODULE_NAME, 'gmHotbarData', this.containers);
+     }
+-} 
+\ No newline at end of file
++} 
+diff --git a/bg3-inspired-hotbar/scripts/managers/ItemUpdateManager.js b/bg3-inspired-hotbar/scripts/managers/ItemUpdateManager.js
+index 4038d2c4..4b311d1c 100644
+--- a/bg3-inspired-hotbar/scripts/managers/ItemUpdateManager.js
++++ b/bg3-inspired-hotbar/scripts/managers/ItemUpdateManager.js
+@@ -1,6 +1,6 @@
+-import { BG3CONFIG } from "../utils/config.js?v=3.4.5";
+-import { fromUuid } from "../utils/foundryUtils.js?v=3.4.5";
+-import { ContainerPopover } from "../components/containers/ContainerPopover.js?v=3.4.5";
++import { BG3CONFIG } from "../utils/config.js?v=3.4.6";
++import { fromUuid } from "../utils/foundryUtils.js?v=3.4.6";
++import { ContainerPopover } from "../components/containers/ContainerPopover.js?v=3.4.6";
+ 
+ export class ItemUpdateManager {
+     constructor() {
+@@ -28,7 +28,7 @@ export class ItemUpdateManager {
+         if (!actor || actor.type === 'group') return;
+ 
+         // Create a temporary hotbar manager to work with this actor's data
+-        const { HotbarManager } = await import('./HotbarManager.js?v=3.4.5');
++        const { HotbarManager } = await import('./HotbarManager.js?v=3.4.6');
+         const tempManager = new HotbarManager();
+ 
+         // Find a token for this actor (prefer linked tokens, fall back to any token)
+diff --git a/bg3-inspired-hotbar/scripts/managers/TargetSelector.js b/bg3-inspired-hotbar/scripts/managers/TargetSelector.js
+index 2c34609d..271d36ff 100644
+--- a/bg3-inspired-hotbar/scripts/managers/TargetSelector.js
++++ b/bg3-inspired-hotbar/scripts/managers/TargetSelector.js
+@@ -1,6 +1,6 @@
+-import { TargetSelectorUI } from './TargetSelectorUI.js?v=3.4.5';
+-import { TargetSelectorMath } from './TargetSelectorMath.js?v=3.4.5';
+-import { TargetSelectorEvents } from './TargetSelectorEvents.js?v=3.4.5';
++import { TargetSelectorUI } from './TargetSelectorUI.js?v=3.4.6';
++import { TargetSelectorMath } from './TargetSelectorMath.js?v=3.4.6';
++import { TargetSelectorEvents } from './TargetSelectorEvents.js?v=3.4.6';
+ 
+ /**
+  * BG3 Target Selector - Refactored version with separated concerns
+diff --git a/bg3-inspired-hotbar/scripts/managers/TooltipManager.js b/bg3-inspired-hotbar/scripts/managers/TooltipManager.js
+index 4c02ae62..1e9cea62 100644
+--- a/bg3-inspired-hotbar/scripts/managers/TooltipManager.js
++++ b/bg3-inspired-hotbar/scripts/managers/TooltipManager.js
+@@ -1,4 +1,4 @@
+-import { BG3CONFIG, patchFunc } from "../utils/config.js?v=3.4.5";
++import { BG3CONFIG, patchFunc } from "../utils/config.js?v=3.4.6";
+ 
+ export class BG3TooltipManager {
+     constructor() {
+diff --git a/bg3-inspired-hotbar/scripts/module-3.4.5.js b/bg3-inspired-hotbar/scripts/module-3.4.5.js
+index 1e6667f6..f6608bb7 100644
+--- a/bg3-inspired-hotbar/scripts/module-3.4.5.js
++++ b/bg3-inspired-hotbar/scripts/module-3.4.5.js
+@@ -1 +1 @@
+-import "./module.js?v=3.4.5";
++import "./module.js?v=3.4.6";
+diff --git a/bg3-inspired-hotbar/scripts/module-3.4.6.js b/bg3-inspired-hotbar/scripts/module-3.4.6.js
+new file mode 100644
+index 00000000..f6608bb7
+--- /dev/null
++++ b/bg3-inspired-hotbar/scripts/module-3.4.6.js
+@@ -0,0 +1 @@
++import "./module.js?v=3.4.6";
+diff --git a/bg3-inspired-hotbar/scripts/module.js b/bg3-inspired-hotbar/scripts/module.js
+index ad1b7ae8..50506e90 100644
+--- a/bg3-inspired-hotbar/scripts/module.js
++++ b/bg3-inspired-hotbar/scripts/module.js
+@@ -1,6 +1,6 @@
+ // Module Lifecycle Management
+-import { BG3Hotbar } from './bg3-hotbar.js?v=3.4.5';
+-import { BG3CONFIG, registerKeybinding, updateSettingsDisplay, registerEarly, registerSettings, registerHandlebars, registerLibWrapper } from './utils/config.js?v=3.4.5';
++import { BG3Hotbar } from './bg3-hotbar.js?v=3.4.6';
++import { BG3CONFIG, registerKeybinding, updateSettingsDisplay, registerEarly, registerSettings, registerHandlebars, registerLibWrapper } from './utils/config.js?v=3.4.6';
+ 
+ Hooks.once('init', () => {
+     if (game.user?.isGM) return;
+diff --git a/bg3-inspired-hotbar/scripts/utils/config.js b/bg3-inspired-hotbar/scripts/utils/config.js
+index 00b37e29..9881bc95 100644
+--- a/bg3-inspired-hotbar/scripts/utils/config.js
++++ b/bg3-inspired-hotbar/scripts/utils/config.js
+@@ -1,14 +1,14 @@
+ // Configuration constants for the BG3 Hotbar
+ 
+ // import { AutoPopulateDefaults } from "../components/dialog/AutoPopulateCreateToken.js";
+-import { AutoPopulateDefaults } from "../features/AutoPopulateCreateToken.js?v=3.4.5";
+-import { ExtraInfosDialog } from "../components/dialog/ExtraInfosDialog.js?v=3.4.5";
+-import { ThemeSettingDialog } from "../components/dialog/ThemeSettingDialog.js?v=3.4.5";
+-import { AutoPopulateSettingDialog, CombatSettingDialog, GlobalSettingDialog, HotbarSettingDialog, MidiQoLSettingDialog, PortraitSettingDialog, TooltipSettingDialog } from "../components/dialog/SettingDialog.js?v=3.4.5";
++import { AutoPopulateDefaults } from "../features/AutoPopulateCreateToken.js?v=3.4.6";
++import { ExtraInfosDialog } from "../components/dialog/ExtraInfosDialog.js?v=3.4.6";
++import { ThemeSettingDialog } from "../components/dialog/ThemeSettingDialog.js?v=3.4.6";
++import { AutoPopulateSettingDialog, CombatSettingDialog, GlobalSettingDialog, HotbarSettingDialog, MidiQoLSettingDialog, PortraitSettingDialog, TooltipSettingDialog } from "../components/dialog/SettingDialog.js?v=3.4.6";
+ // import ColorSetting from "/modules/colorsettings/colorSetting.js";
+ import Picker from "/modules/colorsettings/lib/vanilla-picker.min.mjs";
+ import API from "/modules/colorsettings/api.js";
+-import { CPRActionsDialog } from "../components/dialog/CPRActionsDialog.js?v=3.4.5";
++import { CPRActionsDialog } from "../components/dialog/CPRActionsDialog.js?v=3.4.6";
+ 
+ export const BG3CONFIG = {
+     // UI Constants
+diff --git a/bg3-inspired-hotbar/tests/runtime-policy.test.mjs b/bg3-inspired-hotbar/tests/runtime-policy.test.mjs
+index cf49e229..9604174c 100644
+--- a/bg3-inspired-hotbar/tests/runtime-policy.test.mjs
++++ b/bg3-inspired-hotbar/tests/runtime-policy.test.mjs
+@@ -14,7 +14,7 @@ async function evaluateWithMocks(relativePath, globals, mocks) {
+     });
+ 
+     await subject.link(async (specifier) => {
+-        const exports = mocks[specifier];
++        const exports = mocks[specifier.split('?')[0]];
+         if (!exports) throw new Error(`Missing mock for ${specifier}`);
+         const names = Object.keys(exports);
+         return new vm.SyntheticModule(names, function () {

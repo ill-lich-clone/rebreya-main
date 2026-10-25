@@ -1,0 +1,2 @@
+# Keep reversible patch bytes and unified-diff context whitespace intact.
+patches/*.patch -text -whitespace
