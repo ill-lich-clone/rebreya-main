@@ -84,6 +84,24 @@ test("expired immunity removed exactly on world hour; unrelated effects preserve
   await f.service.cleanupExpiredEffects(4600);assert.deepEqual(f.actor.effects.map(e=>e.id),["unrelated"]);
   f.service.isActiveGm=()=>false;assert.equal(await f.service.cleanupExpiredEffects(5000),0);
 });
+
+test("cleanup continues after exact already-deleted immunity and preserves unrelated errors",async()=>{
+  const f=fixture();await f.service.start(f.intent,f.context);
+  f.actor.effects.push({id:"second",flags:{"rebreya-main":{treatWounds:true}},duration:{startTime:1000,seconds:3600}});
+  const calls=[];
+  f.actor.deleteEmbeddedDocuments=async(_type,ids)=>{
+    calls.push([...ids]);
+    if(ids.includes("0"))throw Error('ActiveEffect "0" does not exist!');
+    f.actor.effects=f.actor.effects.filter(effect=>!ids.includes(effect.id));
+  };
+  await assert.doesNotReject(()=>f.service.cleanupExpiredEffects(4600));
+  assert.ok(calls.some(ids=>ids.includes("second")));
+  assert.equal(f.actor.effects.some(effect=>effect.id==="second"),false);
+  const denied=Error("Permission denied");f.actor.deleteEmbeddedDocuments=async()=>{throw denied;};
+  await assert.rejects(()=>f.service.cleanupExpiredEffects(4600),error=>error===denied);
+  const wrongId=Error('ActiveEffect "foreign" does not exist!');f.actor.deleteEmbeddedDocuments=async()=>{throw wrongId;};
+  await assert.rejects(()=>f.service.cleanupExpiredEffects(4600),error=>error===wrongId);
+});
 test("journal error just after performed check still publishes exact result and does not reroll",async()=>{
   const f=fixture();const original=f.journal.checkpoint.bind(f.journal);let failed=false;
   f.journal.checkpoint=async(...args)=>{if(args[2]==="medicine-rolled"&&!failed){failed=true;throw Error("checkpoint unavailable");}return original(...args);};

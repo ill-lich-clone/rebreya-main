@@ -6,6 +6,9 @@ test("selection defaults to self but rejects ambiguous targets",()=>{
   assert.deepEqual(resolveTreatWoundsSelection({},[healer],[]),{sourceTokenUuid:"Scene.s.Token.h",targetTokenUuid:"Scene.s.Token.h"});
   assert.throws(()=>resolveTreatWoundsSelection({},[],[]));assert.throws(()=>resolveTreatWoundsSelection({},[healer],[healer,healer]));
 });
+test("ambiguous selection exposes expected invalid-tokens without accepting an arbitrary healer",()=>{
+  assert.throws(()=>resolveTreatWoundsSelection({},[],[]),error=>error.code==="invalid-tokens");
+});
 test("native dialog supports group kit and GM custom DC, escapes labels and cancels explicitly",async()=>{
   let config;
   const DialogV2={async wait(c){config=c;return c.buttons.find(b=>b.action==="cancel").callback();}};

@@ -121,11 +121,11 @@ import { registerWeaponModCommands } from "./application/weapon-mod-mutation-com
 import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.397";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
-import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.4.372";
+import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.6";
 import { TreatWoundsDnd5eAdapter } from "./integrations/treat-wounds-dnd5e-adapter.js?v=1.4.372";
 import { TreatWoundsDocuments } from "./infrastructure/foundry/treat-wounds-documents.js?v=1.4.372";
 import { TREAT_WOUNDS_ACTIONS, isValidTreatWoundsPayload, authorizeTreatWoundsSender } from "./infrastructure/foundry/treat-wounds-command-contract.js?v=1.4.372";
-import { resolveTreatWoundsSelection, promptTreatWounds, buildTreatWoundsChatContent, bindTreatWoundsChat } from "./ui/treat-wounds-dialog.js?v=1.4.372";
+import { resolveTreatWoundsSelection, promptTreatWounds, buildTreatWoundsChatContent, bindTreatWoundsChat } from "./ui/treat-wounds-dialog.js?v=1.5.6";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.384";
 import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.384";
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
@@ -369,7 +369,7 @@ import {
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.1";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.397";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.6";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
 import { getActorHandReservations } from "./integrations/held-items.js?v=1.4.383";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
@@ -398,7 +398,7 @@ import {
 } from "./integrations/durability-hooks.js?v=1.4.396";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
-import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
+import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.6";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.399";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
@@ -8367,6 +8367,7 @@ if (Hooks.on instanceof Function) {
 Hooks.once("ready", async () => {
   try {
     patchDnd5eTooltipRaceGuard();
+    patchDnd5eInventoryResizeGuard();
   }
   catch (error) {
     console.warn(`${MODULE_ID} | Failed to patch dnd5e tooltip race.`, error);

@@ -22,7 +22,15 @@ export class TreatWoundsService {
         if (!this.isActiveGm()) return removed;
         const expired = values(actor.effects).filter(e => flag(e, "treatWounds") && Number.isFinite(Number(e.duration?.startTime))
           && Number(e.duration?.startTime) + Number(e.duration?.seconds) <= worldTime).map(e => e.id);
-        if (expired.length) { await actor.deleteEmbeddedDocuments("ActiveEffect", expired); removed += expired.length; }
+        for (const id of expired) {
+          if (!this.isActiveGm()) return removed;
+          try {
+            await actor.deleteEmbeddedDocuments("ActiveEffect", [id]);
+            removed++;
+          } catch (error) {
+            if (error?.message !== `ActiveEffect "${id}" does not exist!`) throw error;
+          }
+        }
       }
       return removed;
     });

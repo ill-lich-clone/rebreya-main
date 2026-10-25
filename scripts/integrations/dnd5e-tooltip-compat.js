@@ -1,4 +1,5 @@
 const PATCH_STATE = Symbol.for("rebreya-main.dnd5eTooltipRaceGuard");
+const RESIZE_PATCH_STATE = Symbol.for("rebreya-main.dnd5eInventoryResizeGuard");
 
 function isStaleTooltipDatasetRace(error, game) {
   return game?.tooltip?.element == null
@@ -17,6 +18,7 @@ export function patchDnd5eTooltipRaceGuard({
   if (typeof original !== "function" || tooltips[PATCH_STATE]) return false;
 
   const guardedHoverContentLink = async function (...args) {
+    if (args[0] == null) return undefined;
     try {
       return await original.apply(this, args);
     }
@@ -33,5 +35,30 @@ export function patchDnd5eTooltipRaceGuard({
     writable: false
   });
   tooltips._onHoverContentLink = guardedHoverContentLink;
+  return true;
+}
+
+export function patchDnd5eInventoryResizeGuard({
+  gameProvider = () => globalThis.game,
+  customElementsProvider = () => globalThis.customElements
+} = {}) {
+  if (gameProvider?.()?.system?.id !== "dnd5e") return false;
+  const prototype = customElementsProvider?.()?.get?.("dnd5e-inventory")?.prototype;
+  const original = prototype?._onResize;
+  if (typeof original !== "function" || prototype[RESIZE_PATCH_STATE]) return false;
+  const pending = new WeakMap();
+  prototype._onResize = function (entries) {
+    if (this.isConnected === false) return;
+    const view = this.ownerDocument?.defaultView;
+    if (!view?.requestAnimationFrame) return original.call(this, entries);
+    if (pending.has(this)) { pending.set(this, entries); return; }
+    pending.set(this, entries);
+    view.requestAnimationFrame(() => {
+      const latest = pending.get(this);
+      pending.delete(this);
+      if (this.isConnected !== false) original.call(this, latest);
+    });
+  };
+  Object.defineProperty(prototype, RESIZE_PATCH_STATE, { value: { original } });
   return true;
 }

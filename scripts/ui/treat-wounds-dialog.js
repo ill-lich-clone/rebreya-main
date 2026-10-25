@@ -1,9 +1,10 @@
 import { escapeFoundryHtml as escape } from "../shared/foundry-values.js";
+import { TreatWoundsError } from "../application/treat-wounds-rules.js?v=1.4.372";
 const outcomeLabels = { "critical-success": "Успех на 5 и более", success: "Успех", failure: "Провал: без лечения и урона", "critical-failure": "Провал на 5 и более" };
 const bindings = new WeakMap();
 export function resolveTreatWoundsSelection(options = {}, controlled = globalThis.canvas?.tokens?.controlled ?? [], targets = Array.from(globalThis.game?.user?.targets ?? [])) {
   const uuid = t => t?.document?.uuid ?? t?.uuid;
-  if ((!options.sourceTokenUuid && controlled.length !== 1) || (!options.targetTokenUuid && targets.length > 1)) throw new Error("Выберите одного лекаря и не более одного пациента.");
+  if ((!options.sourceTokenUuid && controlled.length !== 1) || (!options.targetTokenUuid && targets.length > 1)) throw new TreatWoundsError("invalid-tokens", "Выберите одного лекаря и не более одного пациента.");
   const sourceTokenUuid = options.sourceTokenUuid ?? uuid(controlled[0]);
   return { sourceTokenUuid, targetTokenUuid: options.targetTokenUuid ?? (targets.length ? uuid(targets[0]) : sourceTokenUuid) };
 }

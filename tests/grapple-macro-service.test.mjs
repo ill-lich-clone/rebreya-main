@@ -5,12 +5,22 @@ import {
   buildGrappleMacroData,
   buildMoveGrappledMacroData,
   buildTwistedMacroData,
+  buildTreatWoundsMacroData,
   GRAPPLE_FOLDER_SOURCE_ID,
   GRAPPLE_MACRO_SOURCE_ID,
   GrappleMacroService,
   MOVE_GRAPPLED_MACRO_SOURCE_ID,
   TWISTED_MACRO_SOURCE_ID
 } from "../scripts/combat/grapple-macro-service.js";
+
+test("managed treat wounds macro handles only expected selection failure", async () => {
+  const command = buildTreatWoundsMacroData("folder").command;
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const execute = new AsyncFunction("game", command);
+  await assert.doesNotReject(() => execute({ rebreyaMain: { treatWounds: async () => { throw Object.assign(new Error("select healer"), { code: "invalid-tokens" }); } } }));
+  const failure = new Error("database unavailable");
+  await assert.rejects(() => execute({ rebreyaMain: { treatWounds: async () => { throw failure; } } }), error => error === failure);
+});
 
 function collection(contents = []) {
   return { contents };

@@ -1,6 +1,6 @@
 # BG3 HUD: функции и границы совместимости
 
-Текущее состояние: локальный `bg3-inspired-hotbar` 3.4.6, Foundry 13.351, dnd5e 5.2.5. Runtime принадлежит sibling-модулю BG3; repository record — `tools/local-module-patches/2026-10-25-bg3-hud-recovery/`. Midi-QOL и DAE не изменяются.
+Текущее состояние: локальный `bg3-inspired-hotbar` 3.4.7, Foundry 13.351, dnd5e 5.2.5. Runtime принадлежит sibling-модулю BG3; records — `tools/local-module-patches/2026-10-25-bg3-hud-recovery/` и `tools/local-module-patches/2026-10-25-console-followup-fixes/`. Midi-QOL и DAE source не изменяются.
 
 ## Lifecycle и контекст
 
@@ -42,7 +42,17 @@ Data flow: Foundry hooks/socket → current-scene candidate → generation queue
 
 `scripts/hooks.js`: private `getBg3RuntimeModuleUrl(path)` добавляет `?v=<installed BG3 version>` из module metadata либо сохраняет bare path без известной версии. `patchBg3HotbarDeathSavesContainer({force = false, importModule})` и `patchBg3HotbarStorageCommonActions({force = false, importModule})` используют этот canonical URL, сохраняя прежние guards и patch behavior. `main.js` и `settings.js` используют один `hooks.js?v=1.5.5`.
 
-BG3 manifest/forwarder и все относительные runtime JS imports используют 3.4.6; rebreya manifest 1.5.5 указывает тонкий `main-1.5.5.js`. Старые entrypoint-файлы остаются доступны. Новые manifests требуют штатного обновления серверной metadata и клиентов; автоматический перезапуск чужой игры не выполняется.
+BG3 manifest/forwarder и все относительные runtime JS imports используют 3.4.7; Rebreya manifest 1.5.6 указывает тонкий `main-1.5.6.js`. Неизменённый `hooks.js?v=1.5.5` и оба его importers сохраняют один ESM key, BG3 URL берёт установленную версию из module metadata. Старые entrypoint-файлы остаются доступны. Новые manifests требуют штатного обновления серверной metadata и клиентов; автоматический перезапуск чужой игры не выполняется.
+
+## Item UUID и async use после переноса
+
+- `scripts/utils/foundryUtils.js`: `fromUuid(uuid,{token}={})` сначала разрешает только canonical `Scene.old.Token.T.Actor.A.Item.I` с T/A текущего TokenDocument/Actor через текущую `actor.items.get(I)`. Живой Token T в другой исходной сцене сохраняет прежний native resolver даже при совпадении actor ID; перенос разрешается после удаления исходного Token. Отсутствующий свой Item возвращает null без fallback к старой сцене/поиска по имени. Другой token/actor, world Actor, Macro и Compendium идут прежним native resolver. Flags и сохранённая layout не переписываются. Поддерживается native перенос с сохранением token ID; неоднозначный новый ID не переадресуется по одному actor ID.
+- `isItemUseContextCurrent(item,token)` проверяет identity manager token, token текущего canvas, scene и exact current own Item. Для внешнего reference прежняя допустимость сохраняется при неизменном acting token.
+- Private `resolveCurrentTokenItem(uuid,token)` владеет проверкой canonical synthetic Item и native-transfer identity для обоих методов: возвращает current Item/null только для подтверждённой собственной ссылки, иначе undefined означает прежний native resolver. Источник данных — TokenDocument parent/actor/items и `game.scenes` без Document writes; профильные transfer tests проверяют live foreign-scene исключение.
+- `GridCell.item` передаёт manager token в канонический resolver; `getItemUses()` и click/use безопасны без Item. `useItemDirectly(item,event,extraOptions={})` проверяет context до запуска и после await targeting; `_onRenderActivityDialog(app,html)` — перед selector и после него. При context loss notification завершает ещё не начатое действие без `.use()`/target mutation/replay. Отложенное очищение targets действует только в прежнем контексте, сохраняя targets следующего токена. Stable context сохраняет прежние activity/Item options, advantage/disadvantage и один use.
+- Внутренний `onActivityClick(event)` в `_onRenderActivityDialog` проверяет текущий Item/token до разделения native/targeting путей. Для native активности без targeting снимает собственный capture listener по точной function identity и `capture=true`, затем вызывает один native click; `arguments.callee` не используется. Исчезнувший HUD/manager или устаревший собственный Item безопасно отклоняет оба пути с прежним уведомлением до native click/use/target writes.
+- Core evidence: `Actor.isToken` использует parent TokenDocument, `Document.uuid` → `foundry.utils.buildUuid()` добавляет documentName/id после parent.uuid; canonical synthetic Item содержит `Actor.A`. Тестовый regression исполняет настоящие helper/GridCell/HUD methods с внешними DOM/target selector doubles.
+- Focused: `tools/local-module-patches/2026-10-25-console-followup-fixes/bg3-transfer.test.mjs` (14 cases), прежние 36 HUD и 34 console compatibility cases сохранены. Уже созданные MIDI workflows и старые chat cards автоматически не переигрываются; live teleport не проверялся.
 
 ## Проверки
 

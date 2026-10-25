@@ -109,7 +109,7 @@ function buildManagedFolderData() {
 }
 
 export function buildTreatWoundsMacroData(folderId, options = {}) {
-  return macroData({ name: "Перевязка ран", command: "await game.rebreyaMain?.treatWounds?.();",
+    return macroData({ name: "Перевязка ран", command: "try { await game.rebreyaMain?.treatWounds?.(); } catch (error) { if (error?.code !== 'invalid-tokens') throw error; }",
     sourceId: TREAT_WOUNDS_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
 }
 

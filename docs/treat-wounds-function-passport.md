@@ -15,6 +15,12 @@
 
 ## Durable data flow и recovery
 
+### Validation и cleanup
+
+`resolveTreatWoundsSelection(options,controlled,targets)` сохраняет прежние cardinality/self правила и выдаёт `TreatWoundsError('invalid-tokens',...)` при неоднозначном выборе. Публичный `treatWounds()` по-прежнему уведомляет и rejects; generated managed macro из `buildTreatWoundsMacroData()` ловит только `invalid-tokens`, остальные ошибки пробрасывает. Никаких preview/roll/debit при отказе selection нет.
+
+`cleanupExpiredEffects(worldTime)` сохраняет active-GM и coordinator guards, Actor UUID dedupe и точный world-time deadline. Удаление запрошенных expired ActiveEffect выполняется по одному; только exact `ActiveEffect "<requested id>" does not exist!` считается уже завершённым внешним удалением. Missing другого ID, permission и прочие ошибки не скрываются; authority перепроверяется перед каждой мутацией. Другие effects, HP, kits и receipts не меняются. Direct imports изменённых dialog/service/macro владельцев используют `?v=1.5.6`. Тесты: `tests/treat-wounds-dialog.test.mjs`, `tests/treat-wounds-service.test.mjs`, `tests/grapple-macro-service.test.mjs`.
+
 Selected tokens → authenticated preview → player Foundry DialogV2 → typed start on active GM → prepared receipt → Medicine roll/serialized result → обязательная публикация → result dice/amount → whole-kit debit → immunity effect → stored HP plan/atomic health receipt → completed/terminal и обновлённая карточка. Journal keys initial `treat-wounds:<id>` и continuation `treat-wounds:<id>:continue` используют existing inventory journal/settings и его bounded terminal retention (64). Продолжение хранит отдельный receipt: дополнительные HP равны initial amount, без reroll/debit. Initial/continuation replay показывает последнюю карточку.
 
 Любая выполненная Medicine проверка остаётся в чате при обычном/критическом провале и последующих ошибках. Известный roll, запись которого дала transient error, сохраняется повторным checkpoint либо публикуется из памяти; неоднозначный rolling record после прерывания не перебрасывается, нужен manual-review. Living eligibility перепроверяется до неприменённого health write в resume/continuation. Недоступность самого ChatMessage persistence не может гарантировать немедленную публикацию: подтверждённый результат хранится для resume. Повторная доставка проверяет стабильный fingerprint независимо от порядка ключей. Concurrent pending source/target блокируются; старое продолжение запрещено после нового старта или pending операции пациента.
