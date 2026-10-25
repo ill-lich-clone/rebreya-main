@@ -35,7 +35,7 @@ Source-only QA выбрана пользователем. Live GM/player telepor
 
 Gemini получил два self-contained inline source excerpts и вернул exit 0/status SUCCESS. Предложение менять ошибку отсутствия комплектов отклонено после проверки: canonical `TreatWoundsDocuments.preview()` всегда возвращает `kits` array, а изменение этого отказа выходит за согласованный контракт. Exact missing-effect message подтверждён установленным core/логом; остальные ошибки намеренно пробрасываются. Сохранены прежнее закрытие activity dialog перед selector и отмена без replay. Более ранний stdin review не подтвердил получение контекста и был отвергнут целиком.
 
-Alias SHA-256 совпадают с canonical image: `fd1767951f0c27b36714a292299646a06ab1bb021d0cbe25874c55c7a09aa304`. HTTP HEAD не подтверждён: локальный сервер закрывал соединение (`UND_ERR_SOCKET`) для обоих aliases и самой ранее доступной canonical картинки. Перезапуск сервера и изменения игровых документов для проверки не выполнялись.
+Alias SHA-256 совпадают с canonical image: `fd1767951f0c27b36714a292299646a06ab1bb021d0cbe25874c55c7a09aa304`. Первоначальная проверка обычного HTTP на локальном порту была непоказательной: активный сервер использует HTTPS, а его настройки находятся в `D:/FoundryVTT/Config/options.json`, не в старом `Data/Config/options.json`. Повторная проверка 2026-10-26 через рабочий HTTPS адрес подтвердила оба aliases: HEAD **200**, `image/webp`. Оба manifests возвращают HTTP 200 и версии Rebreya 1.5.6/BG3 3.4.7; пять runtime entry/helper файлов побайтово совпадают с локальными. Подробности: [startup follow-up](startup-check-2026-10-26.md). Агент не перезапускал сервер и не изменял игровые документы для проверки.
 
 ## Source record, установка и откат
 
