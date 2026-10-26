@@ -1732,6 +1732,27 @@ test("typed inventory dismantle preserves explicit ownership of the exact group 
   }
 });
 
+test("completed selected import replay authenticates the recorded source owner after source deletion", async () => {
+  const fixture = installFixture(), previousFromUuid = globalThis.fromUuid;
+  try {
+    const api = new RebreyaMainModule(), calls = [];
+    const itemUuid = "Actor.character-a.Item.depleted";
+    const ingressPlan = buildLootgenIngressPlan(fixture.groupA.id, ["item"]);
+    const payload = { inventoryActorId: fixture.groupA.id, itemUuid, mutationId: "selected-replay", folderId: null, ingressPlan, quantity: 1, expectedSourceQuantity: 1 };
+    globalThis.fromUuid = async uuid => uuid === "Actor.character-a" ? fixture.memberA : null;
+    api.inventoryService.mutationJournal.find = async () => ({ terminal: true, fingerprint: JSON.stringify({ groupActorId: fixture.groupA.id, sourceOrigin: "import", serializedPlan: ingressPlan, sourceExpectation: { itemUuid, quantity: 1, expectedSourceQuantity: 1, sourceActorUuid: "Actor.character-a" } }) });
+    api.inventoryService.executeImportMutation = async request => { calls.push(request); return { replayed: true }; };
+    await api.handleSocketMessage(commandRequest("inventory.import", fixture.users.playerA.id, payload, "replay-owner"), fixture.users.playerA.id);
+    await api.handleSocketMessage(commandRequest("inventory.import", fixture.users.playerB.id, payload, "replay-foreign"), fixture.users.playerB.id);
+    await api.handleSocketMessage(commandRequest("inventory.import", fixture.users.playerA.id, { ...payload, itemUuid: "Actor.character-a.Item.other" }, "replay-wrong-item"), fixture.users.playerA.id);
+    await flushCommands();
+    assert.equal(resultFor(fixture, "replay-owner")?.ok, true);
+    assert.equal(resultFor(fixture, "replay-foreign")?.error.code, "unauthorized");
+    assert.equal(resultFor(fixture, "replay-wrong-item")?.error.code, "unauthorized");
+    assert.deepEqual(calls, [payload]);
+  } finally { globalThis.fromUuid = previousFromUuid; fixture.restore(); }
+});
+
 test("typed inventory import lets group members copy compendium items into the party inventory", async () => {
   const fixture = installFixture();
   const previousFromUuid = globalThis.fromUuid;
@@ -2552,6 +2573,11 @@ test("Lootgen composition grant delegates Item rows once and handles coins outsi
 
 test("module API carries the exact party folder target through storage and direct Item import", async () => {
   const fixture = installFixture();
+  const previousFromUuid = globalThis.fromUuid;
+  globalThis.fromUuid = async uuid => {
+    assert.equal(uuid, "Compendium.world.items.Item.torch");
+    return { documentName: "Item", uuid, parent: null };
+  };
   try {
     const moduleApi = new RebreyaMainModule();
     const storageCalls = [];
@@ -2652,6 +2678,7 @@ test("module API carries the exact party folder target through storage and direc
     });
   }
   finally {
+    globalThis.fromUuid = previousFromUuid;
     fixture.restore();
   }
 });

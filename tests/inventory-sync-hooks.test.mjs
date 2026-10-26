@@ -67,6 +67,43 @@ async function flushAsyncHooks() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+test("managed party sheet drop consumes native creation synchronously and selects one exact scoped transfer", async () => {
+  const previous = { game: globalThis.game, foundry: globalThis.foundry, fromUuidSync: globalThis.fromUuidSync, ui: globalThis.ui };
+  const hooks = {}, calls = [];
+  const gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  globalThis.ui = { notifications: { error(message) { assert.fail(message); } } };
+  let answer = 2, prompts = 0;
+  globalThis.foundry = { applications: { api: { DialogV2: { prompt: async () => { prompts++; return answer; } } } } };
+  const source = createTransferItem({ id: "stock", uuid: "Actor.group.Item.stock", quantity: 5, parentType: "group" });
+  source.parent.id = "group"; source.parent.flags = { "rebreya-main": { managedPartyGroup: true } };
+  source.parent.getFlag = (_scope, key) => key === "managedPartyGroup";
+  globalThis.fromUuidSync = uuid => uuid === source.uuid ? source : null;
+  const api = { takeInventoryItemToCharacter: async (...args) => calls.push(args) };
+  try {
+    registerInventorySyncHooks(api, { Hooks: { on: (name, callback) => hooks[name] = callback }, force: true });
+    const drag = buildPartyInventoryItemDragData(source.uuid, source);
+    const target = { id: "hero", type: "character", isOwner: true };
+    assert.equal(typeof hooks.dropActorSheetData, "function");
+    assert.equal(hooks.dropActorSheetData(target, {}, drag), false);
+    assert.equal(hooks.dropActorSheetData(target, {}, drag), false);
+    await flushAsyncHooks();
+    assert.equal(prompts, 1); assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], "stock");
+    assert.deepEqual({ ...calls[0][1], mutationId: "stable" }, { actorId: "hero", groupActorId: "group", quantity: 2, expectedSourceQuantity: 5, mutationId: "stable" });
+    answer = null; const cancelled = buildPartyInventoryItemDragData(source.uuid, source);
+    assert.equal(hooks.dropActorSheetData(target, {}, cancelled), false); await flushAsyncHooks(); assert.equal(calls.length, 1);
+    assert.equal(hooks.dropActorSheetData(target, {}, { type: "Item", uuid: "Item.catalog" }), undefined);
+    source.system.quantity = 1;
+    const single = buildPartyInventoryItemDragData(source.uuid, source);
+    assert.equal(hooks.dropActorSheetData(target, {}, single), false); await flushAsyncHooks();
+    assert.equal(prompts, 2); assert.equal(calls.length, 2); assert.equal(calls[1][1].quantity, 1);
+    source.system.quantity = 1.5; answer = 0.5;
+    assert.equal(hooks.dropActorSheetData(target, {}, buildPartyInventoryItemDragData(source.uuid, source)), false);
+    await flushAsyncHooks(); assert.equal(calls[2][1].quantity, 0.5); assert.equal(calls[2][1].expectedSourceQuantity, 1.5);
+  } finally { Object.assign(globalThis, previous); }
+});
+
 function createTransferItem({
   id,
   uuid,
@@ -355,6 +392,7 @@ test("inventory sync hooks coalesce affected Actor ids through the existing hook
   assert.deepEqual(Object.keys(hooks.listeners).sort(), [
     "createItem",
     "deleteItem",
+    "dropActorSheetData",
     "preUpdateItem",
     "updateActor",
     "updateItem"

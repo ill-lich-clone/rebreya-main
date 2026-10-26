@@ -16,7 +16,8 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.399";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.10";
+import { promptStorageTransferQuantity } from "./storage-transfer-ui.js?v=1.5.10";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
@@ -2928,9 +2929,12 @@ export async function promptInventoryPartialTransfer({ quantity, step = 1, folde
     ], rejectClose: false
   });
   if (result?.confirmed !== true) return null;
+  const selectedQuantity = await promptStorageTransferQuantity(quantity, {
+    material: step !== 1 && step !== 0.01, prompt: async () => result.quantity
+  });
   planItemInstanceMutation({ source: { quantity, step }, quantity: result.quantity, sameActor: true, sameFolder: false, forHeroSlot: false });
   if (result.folderId !== null && !folders.some(folder => folder.id === result.folderId)) throw new Error("Папка назначения недоступна.");
-  return { quantity: result.quantity, folderId: result.folderId };
+  return { quantity: selectedQuantity, folderId: result.folderId };
 }
 
 export async function promptInventoryFolderColor(initialColor = null) {
@@ -4352,11 +4356,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (cleanText(snapshot.actor?.id) !== groupActorId) throw new Error("Группа инвентаря изменилась.");
     const item = (snapshot.allItems ?? snapshot.items ?? []).find(entry => (entry.itemId ?? entry.id) === itemId);
     if (!item) throw new Error("Предмет больше не существует.");
-    const result = await promptInventoryPartialTransfer({
-      quantity: item.quantity, step: item.sourceType === "material" ? 1e-12 : 1,
+    if (!chooseFolder && (cleanText(item.folderId) || null) === folderId) return null;
+    const result = !chooseFolder && item.sourceType !== "material" && item.quantity === 1
+      ? { quantity: 1, folderId }
+      : await promptInventoryPartialTransfer({
+      quantity: item.quantity, step: item.sourceType === "material" ? 1e-12 : Number.isInteger(item.quantity) ? 1 : 0.01,
       folders: snapshot.folders ?? [], folderId, chooseFolder
     });
     if (!result) return null;
+    if ((cleanText(item.folderId) || null) === result.folderId) return null;
     return this.#submitPartialTransfer({ groupActorId, itemId, ...result, expectedSourceQuantity: item.quantity, operationId: crypto.randomUUID() });
   }
 
@@ -7103,6 +7111,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
+    element.querySelectorAll("[data-action='open-second-inventory']").forEach(button => {
+      button.addEventListener("click", async () => {
+        await this.moduleApi.openInventoryApp({ newWindow: true });
+      }, listenerOptions);
+    });
+
     element.querySelectorAll("[data-action='switch-tab']").forEach((button) => {
       button.addEventListener("click", (event) => {
         this.setActiveTab(event.currentTarget.dataset.tab || "inventory");
@@ -7862,6 +7876,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       button.addEventListener("click", async (event) => {
         const itemId = event.currentTarget.dataset.itemId;
         const currentQuantity = event.currentTarget.dataset.quantity ?? "0";
+        const groupActorId = this.inventoryActorId;
         const itemName = event.currentTarget.dataset.itemName ?? "Предмет";
 
         try {
@@ -7884,7 +7899,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             precision: event.currentTarget.dataset.sourceType === "material" ? 12 : 2,
             min: 0
           });
-          await this.moduleApi.updateInventoryItemQuantity(itemId, parsedQuantity);
+          await this.moduleApi.updateInventoryItemQuantity(itemId, parsedQuantity, {
+            groupActorId, expectedSourceQuantity: Number(currentQuantity)
+          });
           ui.notifications?.info(`Количество предмета «${itemName}» обновлено.`);
           bringAppToFront(this);
         }
@@ -8111,13 +8128,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       dropzone.addEventListener("drop", async (event) => {
         const accepted = readAcceptedDrop(event);
-        const partialTransfer = event.shiftKey === true;
         const groupActorId = this.inventoryActorId;
         const rootFolderId = this.rootFolderId;
         activeInventoryTreeDragSession = null;
         clearDropState();
         if (!accepted) return;
         event.preventDefault();
+        event.stopPropagation?.();
 
         try {
           const snapshot = await this.moduleApi.getInventorySnapshot({ createActor: false, groupActorId });
@@ -8146,7 +8163,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await this.refreshInventorySnapshot();
             return;
           }
-          if (partialTransfer && action.kind === "item") {
+          if (action.kind === "item") {
             await this.#transferInventoryPart(action.internal.itemId, target.folderId, { snapshot, groupActorId });
             return;
           }

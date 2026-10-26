@@ -407,6 +407,31 @@ test("inventory refresh without actor ids does not render every open Actor sheet
   }
 });
 
+test("second full inventory reuses its own window, refreshes with main and closes independently", async () => {
+  const fixture = installUiFixture();
+  try {
+    fixture.moduleApi.inventoryService.getInventoryActor = async () => ({ id: "group-a" });
+    const main = await fixture.moduleApi.openInventoryApp();
+    const second = await fixture.moduleApi.openInventoryApp({ newWindow: true });
+    assert.notEqual(second, main);
+    assert.notEqual(second.id, main.id);
+    assert.equal(second.rootFolderId, null);
+    assert.equal(second.groupActorId, "");
+    assert.equal(await fixture.moduleApi.openInventoryApp({ newWindow: true }), second);
+    second.search = "sword"; second.typeFilter = "weapon";
+    assert.equal(main.search, ""); assert.equal(main.typeFilter, "all");
+    let mainRefresh = 0, secondRefresh = 0;
+    main.refreshInventorySnapshot = async () => mainRefresh++;
+    second.refreshInventorySnapshot = async () => secondRefresh++;
+    await fixture.moduleApi.refreshInventoryViews();
+    assert.equal(mainRefresh, 1); assert.equal(secondRefresh, 1);
+    await second.close();
+    assert.equal(main.rendered, true);
+    assert.equal(fixture.moduleApi.inventoryFolderApps.has("full:secondary"), false);
+    assert.notEqual(await fixture.moduleApi.openInventoryApp({ newWindow: true }), second);
+  } finally { fixture.restore(); }
+});
+
 test("folder popout registry reuses exact scopes, keeps distinct scopes separate and unregisters by identity", async () => {
   const fixture = installUiFixture();
   const userFlagWrites = [];

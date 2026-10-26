@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import { makeInstanceDocumentsFixture } from "./helpers/item-instance-documents-fixture.mjs";
 const intent={groupActorId:"g",itemId:"rope",folderId:"bag",quantity:3,operationId:"split",expectedSourceQuantity:10};
 
+for (const quantity of [1.5, 0.5]) test(`ordinary fractional folder transfer preserves stock: ${quantity}`, async () => {
+  const fx = makeInstanceDocumentsFixture({ quantity: 1.5 });
+  try {
+    const result = await fx.api.inventoryService.moveInventoryItemToFolder({ ...intent, quantity, expectedSourceQuantity: 1.5 });
+    assert.equal(fx.total(), 1.5);
+    assert.equal(fx.group.items.get(result.itemId).system.quantity, quantity);
+    assert.equal(fx.source.system.quantity, quantity === 1.5 ? 1.5 : 1);
+  } finally { fx.restore(); }
+});
+
 test("folder split creates one exact target, preserves seven source units and replays",async()=>{
   const fx=makeInstanceDocumentsFixture();try{
     const result=await fx.api.inventoryService.moveInventoryItemToFolder(intent);

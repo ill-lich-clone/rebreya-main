@@ -1,10 +1,12 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, inventoryMaterialQuantitiesMatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch, buildInventoryItemQuantityPatch, readInventoryItemUnitWeight, readInventoryItemUnitPrice } from "../data/inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
+import { isManagedPartyGroup } from "../data/group-context-service.js?v=1.4.377";
+import { promptStorageTransferQuantity } from "../ui/storage-transfer-ui.js?v=1.5.10";
 import {
   captureInventoryTransferIdentity,
   inventoryTransferIdentityMatches,
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT
-} from "../data/inventory-service.js?v=1.4.399";
+} from "../data/inventory-service.js?v=1.5.10";
 
 const PARTY_INVENTORY_TRANSFER_FLAG = "partyInventoryTransfer";
 const DEFAULT_REFRESH_DEBOUNCE_MS = 0;
@@ -17,6 +19,7 @@ let pendingTransferTimeout = null;
 const pendingAcceptedTransfers = new Map();
 const registeredSockets = new WeakSet();
 const inventoryRefreshSchedules = new WeakMap();
+const consumedSheetDrops = new Map();
 let transferSequence = 0;
 
 function cleanId(value) {
@@ -538,6 +541,35 @@ function scheduleInventoryRefresh(moduleApi, actorIds = [], debounceMs = DEFAULT
   return completion;
 }
 
+function handlePartyInventorySheetDrop(actor, _sheet, data, moduleApi) {
+  const transfer = data?.flags?.[MODULE_ID]?.[PARTY_INVENTORY_TRANSFER_FLAG];
+  if (actor?.type !== "character" || actor.isToken === true || data?.type !== "Item"
+    || !cleanId(transfer?.transferId) || transfer.sourceItemUuid !== data.uuid) return;
+  const transferId = cleanId(transfer.transferId);
+  if (consumedSheetDrops.has(transferId)) return false;
+  if (pendingTransfer?.transferId === transferId) clearPendingTransfer();
+  const operation = Promise.resolve().then(async () => {
+    const source = globalThis.fromUuidSync?.(data.uuid) ?? await globalThis.fromUuid?.(data.uuid);
+    if (!source || !isManagedPartyGroup(source.parent)) throw new Error("Исходный групповой предмет недоступен.");
+    if (actor.isOwner !== true && globalThis.game?.user?.isGM !== true) throw new Error("Нет прав на персонажа назначения.");
+    const expectedSourceQuantity = itemQuantityOf(source);
+    const quantity = await promptStorageTransferQuantity(expectedSourceQuantity, {
+      material: isInventoryMaterialItemData(source.toObject?.() ?? source)
+    });
+    if (quantity === null) return;
+    await moduleApi.takeInventoryItemToCharacter(source.id, {
+      actorId: actor.id, groupActorId: source.parent.id, quantity,
+      expectedSourceQuantity, mutationId: transferId
+    });
+  }).catch(error => {
+    console.error(`${MODULE_ID} | Failed to transfer party inventory drop.`, error);
+    globalThis.ui?.notifications?.error?.(error.message || "Не удалось перенести предмет персонажу.");
+  });
+  consumedSheetDrops.set(transferId, operation);
+  if (consumedSheetDrops.size > 256) consumedSheetDrops.delete(consumedSheetDrops.keys().next().value);
+  return false;
+}
+
 export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks, debounceMs = DEFAULT_REFRESH_DEBOUNCE_MS, force = false } = {}) {
   if ((!force && hookRegistered) || typeof Hooks?.on !== "function") {
     return false;
@@ -545,6 +577,7 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
 
   hookRegistered = true;
   registerSourceDepletionSocket();
+  Hooks.on("dropActorSheetData", (actor, sheet, data) => handlePartyInventorySheetDrop(actor, sheet, data, moduleApi));
   Hooks.on("preUpdateItem", (item, changes, options, userId) => {
     if (!isCurrentUserHook(userId) || !isCharacterItem(item) || !pendingTransfer || pendingTransfer.expiresAt < Date.now()) return;
     const data = item?.toObject?.() ?? item;

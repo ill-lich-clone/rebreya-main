@@ -21,10 +21,10 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.9");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.9.js"]);
+  assert.equal(manifest.version, "1.5.10");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.10.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.9.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.10.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -53,7 +53,7 @@ test("clock and inventory runtime owners each share one canonical module URL", a
   }
   assert.ok(imports >= 12);
   for(const [owner,keys] of cacheKeys)assert.deepEqual(keys,new Set([
-    ["inventory-app.js", "inventory-service.js", "inventory-sync.js"].includes(owner) ? "1.4.399" : "1.4.377"
+    ["inventory-app.js", "inventory-service.js", "inventory-sync.js"].includes(owner) ? "1.5.10" : "1.4.377"
   ]),owner);
 });
 
@@ -144,8 +144,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.9");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.9.js"]);
+  assert.equal(manifest.version, "1.5.10");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.10.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -363,7 +363,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.327",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.399",
+    "data/inventory-service.js?v=1.5.10",
     "data/inventory-ingress-descriptor.js?v=1.4.396",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.360",
@@ -374,7 +374,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/durability-hooks.js?v=1.4.396",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.396",
-    "integrations/inventory-sync.js?v=1.4.399",
+    "integrations/inventory-sync.js?v=1.5.10",
     "data/gear-compendium.js?v=1.5.1",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.396",
@@ -450,7 +450,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.9.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.10.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

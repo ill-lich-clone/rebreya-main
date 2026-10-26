@@ -63,10 +63,10 @@ export function storageGridColumns(itemCount) {
   return Math.max(4, Math.ceil(Math.sqrt(count * 1.25)));
 }
 
-async function defaultQuantityPrompt({ max, value, material = false }) {
+async function defaultQuantityPrompt({ max, value, material = false, step = 1 }) {
   const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   const bounded = Number.isFinite(max) && max > 0;
-  const rangeLabel = bounded ? ` (${material ? "0 <" : "1-"}${max})` : "";
+  const rangeLabel = bounded ? ` (${material ? "0 <" : `${step}-`}${max})` : "";
   const maximumAttribute = bounded ? ` max="${max}"` : "";
   if (typeof DialogV2?.prompt !== "function") {
     const fallback = globalThis.prompt?.(`Сколько перенести?${rangeLabel}`, String(value));
@@ -77,7 +77,7 @@ async function defaultQuantityPrompt({ max, value, material = false }) {
     content: `
       <form class="rm-storage-quantity-dialog">
         <label>Количество${rangeLabel}</label>
-        <input type="number" name="quantity" min="${material ? "0.000000000001" : "1"}"${maximumAttribute} step="${material ? "any" : "1"}" value="${value}" autofocus>
+        <input type="number" name="quantity" min="${material ? "0.000000000001" : step}"${maximumAttribute} step="${material ? "any" : step}" value="${value}" autofocus>
       </form>
     `,
     ok: {
@@ -121,14 +121,18 @@ async function defaultGroundPileRotationPrompt({ name, img, width, height }) {
 }
 
 export async function promptStorageTransferQuantity(maxQuantity, { prompt = defaultQuantityPrompt, material = !Number.isInteger(maxQuantity) } = {}) {
-  const max = material ? positiveQuantity(maxQuantity) : positiveInteger(maxQuantity);
+  const fractional = !material && !Number.isInteger(maxQuantity);
+  const normalize = value => material ? positiveQuantity(value)
+    : fractional ? (Number.isFinite(Number(value)) && Number(Number(value).toFixed(2)) === Number(value) ? positiveQuantity(value) : 0)
+      : positiveInteger(value);
+  const max = normalize(maxQuantity);
   if (!max) throw new Error("В источнике нет доступных предметов.");
   if (!material && max === 1) return 1;
-  const value = await prompt({ max, value: max, ...(material ? { material: true } : {}) });
+  const value = await prompt({ max, value: max, ...(material ? { material: true } : fractional ? { step: 0.01 } : {}) });
   if (value === null || value === undefined || value === false || value === "") return null;
-  const quantity = material ? positiveQuantity(value) : positiveInteger(value);
+  const quantity = normalize(value);
   if (!quantity || quantity > max) {
-    throw new Error(`Количество должно быть целым числом от 1 до ${max}.`);
+    throw new Error(material || fractional ? `Количество должно быть положительным и не превышать ${max}.` : `Количество должно быть целым числом от 1 до ${max}.`);
   }
   return quantity;
 }

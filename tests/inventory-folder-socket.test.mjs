@@ -208,6 +208,7 @@ const FILTER_RULE = {
 };
 
 const COMMAND_CASES = [
+  { command: "inventory.item.quantity.update", method: "executeItemQuantityMutation", payload: { groupActorId: "group-a", itemId: "item-a", nextQuantity: 7, expectedSourceQuantity: 10 }, wrongValue: p => ({ ...p, nextQuantity: -1 }) },
   {command: INVENTORY_FOLDER_COLOR_COMMAND, method:"setInventoryFolderColor", payload:{groupActorId:"group-a",folderId:"a",color:"#AA7733"}, wrongValue:p=>({...p,color:"url(x)"})},
   {
     command: INVENTORY_FOLDER_CREATE_COMMAND,
@@ -273,6 +274,65 @@ const COMMAND_CASES = [
     wrongValue: (payload) => ({ ...payload, ruleId: null })
   }
 ];
+
+test("quantity editing uses the exact group and checks fresh stock before updating or deleting", async () => {
+  const fixture = installFixture({ groupAItems: [{ id: "item-a" }] });
+  try {
+    const api = new RebreyaMainModule();
+    const item = fixture.groupA.items.get("item-a");
+    let quantity = 10, deleted = false;
+    item.toObject = () => ({ type: "loot", system: { quantity }, flags: {} });
+    item.update = async patch => { quantity = patch["system.quantity"]; };
+    item.delete = async () => { deleted = true; };
+    const payload = { groupActorId: "group-a", itemId: "item-a", nextQuantity: 7.25, expectedSourceQuantity: 10 };
+    assert.equal((await api.inventoryService.executeItemQuantityMutation(payload)).actorId, "group-a");
+    assert.equal(quantity, 7.25);
+    await assert.rejects(api.inventoryService.executeItemQuantityMutation(payload), /количество|изменил/iu);
+    assert.equal(quantity, 7.25);
+    await api.inventoryService.executeItemQuantityMutation({ ...payload, expectedSourceQuantity: 7.25, nextQuantity: 0 });
+    assert.equal(deleted, true);
+  } finally { fixture.restore(); }
+});
+
+test("group member quantity editing requests GM authority without direct Actor ownership", async () => {
+  const fixture = installFixture({ currentUserId: "player-a", groupAItems: [{ id: "item-a" }] });
+  try {
+    const api = new RebreyaMainModule();
+    fixture.groupA.isOwner = false;
+    const item = fixture.groupA.items.get("item-a");
+    item.toObject = () => ({ type: "loot", system: { quantity: 10 }, flags: {} });
+    item.update = () => assert.fail("player must not write the warehouse Item");
+    const requests = [];
+    api.socketCommandBus.request = async (command, payload) => { requests.push({ command, payload }); return { actorId: "group-a" }; };
+    assert.equal(await api.inventoryService.updateItemQuantity("item-a", 3, { groupActorId: "group-a", expectedSourceQuantity: 10 }), item);
+    assert.deepEqual(requests, [{ command: "inventory.item.quantity.update", payload: { groupActorId: "group-a", itemId: "item-a", nextQuantity: 3, expectedSourceQuantity: 10 } }]);
+  } finally { fixture.restore(); }
+});
+
+test("quantity commands preserve member authorization and reject invalid or forged edits", async () => {
+  const fixture = installFixture({ groupAItems: [{ id: "item-a" }] });
+  try {
+    const api = new RebreyaMainModule(); api.refreshInventoryViews = async () => {};
+    const item = fixture.groupA.items.get("item-a"); let quantity = 10;
+    item.toObject = () => ({ type: "loot", system: { quantity }, flags: {} });
+    item.update = async patch => quantity = patch["system.quantity"];
+    const payload = { groupActorId: "group-a", itemId: "item-a", nextQuantity: 7, expectedSourceQuantity: 10 };
+    for (const [id, sender, patch, transport] of [
+      ["member", "player-a", {}], ["foreign", "player-b", { nextQuantity: 99 }],
+      ["unknown", "missing", {}], ["forged", "player-a", {}, "player-b"],
+      ["negative", "player-a", { nextQuantity: -1 }], ["nan", "player-a", { nextQuantity: NaN }],
+      ["stale", "player-a", { nextQuantity: 8 }]
+    ]) {
+      await api.handleSocketMessage(commandRequest("inventory.item.quantity.update", sender, { ...payload, ...patch }, `quantity-${id}`), transport);
+      await flushCommands();
+    }
+    assert.equal(quantity, 7);
+    assert.equal(resultFor(fixture, "quantity-member").ok, true);
+    for (const [id, code] of [["foreign", "unauthorized"], ["unknown", "unknown-sender"], ["forged", "sender-mismatch"], ["negative", "invalid-payload"], ["nan", "invalid-payload"], ["stale", "command-failed"]]) {
+      assert.equal(resultFor(fixture, `quantity-${id}`).error.code, code);
+    }
+  } finally { fixture.restore(); }
+});
 
 test("inventory organization commands dispatch exact payloads and refresh only the returned Actor", async () => {
   const fixture = installFixture();

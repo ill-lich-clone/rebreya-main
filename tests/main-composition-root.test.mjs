@@ -49,17 +49,17 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.9");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.9.js"]);
+  assert.equal(manifest.version, "1.5.10");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.10.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
-  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.399/u);
+  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.10/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.396/u);
-  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.399/u);
-  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.399/u);
-  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.399/u);
+  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.5\.10/u);
+  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.5\.10/u);
+  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.5\.10/u);
   assert.match(serviceSource, /gear-icon-resolver\.js\?v=1\.4\.327/u);
-  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.399/gu)?.length ?? 0, 3);
+  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.5\.10/gu)?.length ?? 0, 3);
   for (const source of [serviceSource, appSource]) {
     assert.match(source, /inventory-folder-tree\.js\?v=1\.4\.318/u);
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
@@ -541,7 +541,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.399/u,
+    /\.\/data\/inventory-service\.js\?v=1\.5\.10/u,
     "inventory-service cache key must change with the catalog icon workflow"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

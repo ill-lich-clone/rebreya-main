@@ -513,6 +513,21 @@ function createFakeControl({ dataset = {}, value = "", disabled = false, closest
   return control;
 }
 
+function acceptWholeInventoryTransfers() {
+  foundry.applications.api.DialogV2.wait = async config => {
+    const maximum = config.content.match(/max="([^"]+)"/u)?.[1];
+    assert.ok(maximum, "expected an inventory quantity dialog");
+    return config.buttons.find(button => button.action === "confirm").callback(null, { form: { elements: { quantity: { value: maximum } } } });
+  };
+}
+
+function wholeTransferRoute(payload, available) {
+  const { quantity, expectedSourceQuantity, operationId, ...route } = payload;
+  assert.equal(quantity, available); assert.equal(expectedSourceQuantity, available);
+  assert.match(operationId, /^[\da-f-]{36}$/iu);
+  return route;
+}
+
 test("manual dismantle UI reports skip and leaves success notification absent", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
@@ -556,6 +571,26 @@ test("material quantity UI preserves tiny relative edits and sends no mutation o
   finally { globalThis.Dialog = previousDialog; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
 });
 
+test("quantity edit retains displayed group when the group changes during the dialog", async () => {
+  const restoreFoundry = installFoundryApplicationStub(), dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog, previousUi = globalThis.ui;
+  const writes = [];
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?quantity-scope=${Date.now()}`);
+  const button = createFakeControl({ dataset: { itemId: "ammo", itemName: "Ammo", quantity: "10" } });
+  const root = createFakeElement();
+  root.querySelectorAll = selector => selector === "[data-action='edit-item-quantity']" ? [button] : [];
+  root.querySelector = () => null;
+  const api = createModuleApi({ inventorySnapshot: createFolderInventorySnapshot(), calls: [] });
+  api.updateInventoryItemQuantity = async (...args) => writes.push(args);
+  const app = new InventoryApp(api, { groupActorId: "group-a" }); app.element = root;
+  globalThis.ui = { notifications: { info() {}, error(message) { assert.fail(message); } } };
+  globalThis.Dialog = class { constructor(config) { this.config = config; } render() { app.groupActorId = "group-b"; const form = createFakeElement(); form.querySelector = () => ({ value: "-2" }); this.config.buttons.confirm.callback(form); } };
+  try {
+    await app._onRender({}, {}); await dispatchClick(button);
+    assert.deepEqual(writes, [["ammo", 8, { groupActorId: "group-a", expectedSourceQuantity: 10 }]]);
+  } finally { globalThis.Dialog = previousDialog; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+
 async function dispatchClick(button, { required = true } = {}) {
   const listener = button.listeners.click?.[0];
   if (!listener) {
@@ -569,6 +604,19 @@ async function dispatchClick(button, { required = true } = {}) {
   });
   return true;
 }
+
+test("inventory top button opens a second full inventory using the existing launcher", async () => {
+  const restoreFoundry = installFoundryApplicationStub(), dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?second-button=${Date.now()}`);
+  const button = createFakeControl();
+  const root = createFakeElement(); root.querySelector = () => null;
+  root.querySelectorAll = selector => selector === "[data-action='open-second-inventory']" ? [button] : [];
+  const api = createModuleApi({ inventorySnapshot: createFolderInventorySnapshot(), calls: [] });
+  const calls = []; api.openInventoryApp = async options => calls.push(options);
+  const app = new InventoryApp(api); app.element = root;
+  try { await app._onRender({}, {}); await dispatchClick(button); assert.deepEqual(calls, [{ newWindow: true }]); }
+  finally { dom.restore(); restoreFoundry(); }
+});
 
 test("InventoryApp _prepareContext surfaces known no-group display context errors", async () => {
   const restoreFoundry = installFoundryApplicationStub();
@@ -1445,6 +1493,7 @@ test("InventoryApp acquisition history presents storage provenance in human-read
 
 test("InventoryApp pinned drops revalidate a fresh folder and never fall back to root when the pin is stale", async () => {
   const restoreFoundry = installFoundryApplicationStub();
+  acceptWholeInventoryTransfers();
   const dom = installMinimalDom();
   const previousTextEditor = globalThis.TextEditor;
   const previousUi = globalThis.ui;
@@ -1459,7 +1508,7 @@ test("InventoryApp pinned drops revalidate a fresh folder and never fall back to
   let refreshes = 0;
   const moduleApi = createModuleApi({ inventorySnapshot: initial, getGroupContext: () => null });
   moduleApi.getInventorySnapshot = async (options) => { reads.push(options); return liveSnapshot; };
-  moduleApi.moveInventoryItemToFolder = async (payload) => moves.push(payload);
+  moduleApi.moveInventoryItemToFolder = async (payload) => moves.push(wholeTransferRoute(payload, 2));
   let pin;
   pin = createFakeElement({
     dataset: { folderDropId: "alpha" },
@@ -2202,8 +2251,36 @@ test("InventoryApp serializes Item and folder drags and rejects cross-group, sel
   }
 });
 
+test("ordinary inventory drop selects quantity without Shift and cancellation or same-folder drop writes nothing", async () => {
+  const restoreFoundry = installFoundryApplicationStub(), dom = installMinimalDom();
+  const previousTextEditor = globalThis.TextEditor, previousUi = globalThis.ui;
+  globalThis.TextEditor = { getDragEventData: event => event.dragData };
+  globalThis.ui = { notifications: { info() {}, warn() {}, error(message) { assert.fail(message); } } };
+  const { InventoryApp, extendInventoryItemDragData } = await import(`../scripts/ui/inventory-app.js?ordinary-stack=${Date.now()}`);
+  const snapshot = createFolderInventorySnapshot(), calls = [];
+  const api = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  api.moveInventoryItemToFolder = async payload => { calls.push(payload); };
+  let answer = 1, prompts = 0;
+  foundry.applications.api.DialogV2.wait = async config => { prompts++; return answer === null ? null : config.buttons.find(b => b.action === "confirm").callback(null, { form: { elements: { quantity: { value: answer } } } }); };
+  let target;
+  target = createFakeElement({ dataset: { folderDropId: "beta" }, closest: selector => selector === "[data-folder-drop-id]" || selector.includes("rm-inventory-folder-row") ? target : null });
+  const dropzone = createFakeElement(); dropzone.contains = node => node === target;
+  const root = createFakeElement(); root.querySelectorAll = () => []; root.querySelector = selector => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
+  const app = new InventoryApp(api); app.element = root;
+  const dragData = extendInventoryItemDragData({ type: "Item", uuid: "Actor.group-a.Item.alpha-item" }, { groupActorId: "group-a", itemId: "alpha-item" });
+  const drop = () => dropzone.listeners.drop[0]({ target, dragData, preventDefault() {}, stopPropagation() {} });
+  try {
+    await app._prepareContext(); await app._onRender({}, {});
+    await drop(); assert.equal(prompts, 1); assert.equal(calls[0].quantity, 1); assert.equal(calls[0].expectedSourceQuantity, 3);
+    assert.equal(calls[0].folderId, "beta"); assert.equal(typeof calls[0].operationId, "string");
+    answer = null; await drop(); assert.equal(calls.length, 1);
+    target.dataset.folderDropId = "alpha"; await drop(); assert.equal(prompts, 2); assert.equal(calls.length, 1);
+  } finally { globalThis.TextEditor = previousTextEditor; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+
 test("InventoryApp routes internal and external drops to exact folder or root targets in main and popout", async () => {
   const restoreFoundry = installFoundryApplicationStub();
+  acceptWholeInventoryTransfers();
   const dom = installMinimalDom();
   const previousTextEditor = globalThis.TextEditor;
   const previousUi = globalThis.ui;
@@ -2216,7 +2293,7 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
   const snapshot = createFolderInventorySnapshot();
   const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
   moduleApi.moveInventoryFolder = async (payload) => calls.push(["moveFolder", payload]);
-  moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(["moveItem", payload]);
+  moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(["moveItem", wholeTransferRoute(payload, 4)]);
   moduleApi.importInventoryDrop = async (dragData, options) => calls.push(["import", dragData, options]);
   moduleApi.updateInventoryItemQuantity = async () => calls.push(["quantity"]);
   moduleApi.deleteInventoryItem = async () => calls.push(["delete"]);
@@ -2304,6 +2381,7 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
 
 test("InventoryApp revalidates item destinations on drop and cancels stale targets with a refresh", async () => {
   const restoreFoundry = installFoundryApplicationStub();
+  acceptWholeInventoryTransfers();
   const dom = installMinimalDom();
   const previousTextEditor = globalThis.TextEditor;
   const previousUi = globalThis.ui;
@@ -2317,9 +2395,9 @@ test("InventoryApp revalidates item destinations on drop and cancels stale targe
     { groupActorId: "group-a", itemId: "root-item" });
   const cases = [
     { name: "deep item", itemId: "deep-item", expected: "alpha-5" },
-    { name: "root item in popout", itemId: "root-item", rootFolderId: "alpha", expected: null },
+    { name: "root item in popout", itemId: "root-item", rootFolderId: "alpha", expected: null, noop: true },
     { name: "popout background", rootFolderId: "alpha", expected: "alpha" },
-    { name: "main background", expected: null },
+    { name: "main background", expected: null, noop: true },
     { name: "changed membership", itemId: "alpha-item", change: (s) => { s.allItems.find(i => i.itemId === "alpha-item").folderId = "beta"; }, expected: "beta" },
     { name: "deleted target", itemId: "alpha-item", change: (s) => { s.allItems = s.allItems.filter(i => i.itemId !== "alpha-item"); }, rejected: true },
     { name: "deleted popout root", rootFolderId: "alpha", change: (s) => { s.folders = s.folders.filter(f => f.id !== "alpha"); }, rejected: true },
@@ -2335,7 +2413,7 @@ test("InventoryApp revalidates item destinations on drop and cancels stale targe
       let refreshes = 0;
       const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
       moduleApi.getInventorySnapshot = async (options) => { reads.push(options); return snapshot; };
-      moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(payload);
+      moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(wholeTransferRoute(payload, 2));
       let target;
       target = createFakeElement({ dataset: scenario.itemId ? { itemId: scenario.itemId } : {},
         closest: (selector) => scenario.itemId && selector === ".rm-inventory-tree-row--item[data-item-id]" ? target : null });
@@ -2363,6 +2441,9 @@ test("InventoryApp revalidates item destinations on drop and cancels stale targe
         assert.deepEqual(calls, [], scenario.name);
         assert.equal(refreshes, 1, scenario.name);
         assert.equal(warnings.length, 1, scenario.name);
+      } else if (scenario.noop) {
+        assert.deepEqual(calls, [], scenario.name);
+        assert.equal(refreshes, 0, scenario.name);
       } else {
         assert.deepEqual(calls, [{ groupActorId: "group-a", itemId: "root-item", folderId: scenario.expected }], scenario.name);
       }
@@ -2379,6 +2460,7 @@ test("InventoryApp revalidates item destinations on drop and cancels stale targe
 
 test("InventoryApp accepts protected browser dragover and treats any non-folder surface descendant as root", async () => {
   const restoreFoundry = installFoundryApplicationStub();
+  acceptWholeInventoryTransfers();
   const dom = installMinimalDom();
   const previousGame = globalThis.game;
   const previousFromUuidSync = globalThis.fromUuidSync;
@@ -2419,7 +2501,7 @@ test("InventoryApp accepts protected browser dragover and treats any non-folder 
     inventorySnapshot: createFolderInventorySnapshot(),
     getGroupContext: () => null
   });
-  moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(payload);
+  moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(wholeTransferRoute(payload, 4));
 
   const itemRow = createFakeElement({
     dataset: {
@@ -8131,6 +8213,17 @@ test("folder color dialog distinguishes cancellation, reset and valid color", as
   } finally {globalThis.foundry.applications.api.DialogV2.wait=previous;restoreFoundry();}
 });
 
+
+test("ordinary fractional dialog keeps whole and partial two-decimal transfers", async () => {
+  const restore = installFoundryApplicationStub();
+  try {
+    const { promptInventoryPartialTransfer } = await import("../scripts/ui/inventory-app.js");
+    for (const quantity of [1.5, 0.5]) {
+      foundry.applications.api.DialogV2.wait = async config => config.buttons.find(button => button.action === "confirm").callback(null, { form: { elements: { quantity: { value: quantity } } } });
+      assert.deepEqual(await promptInventoryPartialTransfer({ quantity: 1.5, step: 0.01 }), { quantity, folderId: null });
+    }
+  } finally { restore(); }
+});
 
 test("partial transfer dialog cancels without intent and validates fractional material quantities",async()=>{
   const restore=installFoundryApplicationStub();

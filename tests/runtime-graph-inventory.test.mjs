@@ -32,7 +32,7 @@ test("character import moves an upgraded container into a folder and resumes sou
     await assert.rejects(f.api.inventoryService.importDroppedItem({ uuid: bag.uuid, mutationId: "import-tree" }, options), /fault delete before/);
     assert.equal(f.group.items.contents.length, 4);
     assert.equal(f.hero.items.get("inside"), undefined);
-    await f.api.inventoryService.importDroppedItem({ uuid: bag.uuid }, options);
+    await f.api.inventoryService.importDroppedItem({ uuid: bag.uuid }, { ...options, quantity: 1, expectedSourceQuantity: 1 });
     assert.equal(f.hero.items.contents.length, 0);
     assert.equal(f.group.items.contents.length, 4);
     const root = f.group.items.contents.find(i => i.name === "Bag"), upgrade = f.group.items.contents.find(i => i.name === "Upgrade"), inside = f.group.items.contents.find(i => i.name === "Renamed child");

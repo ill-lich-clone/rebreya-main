@@ -10,7 +10,7 @@ import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/it
 import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.385";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.385";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.396";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.5.10";
 import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
@@ -100,6 +100,7 @@ export const INVENTORY_FOLDER_MOVE_COMMAND = "inventory.folder.move";
 export const INVENTORY_FOLDER_DELETE_COMMAND = "inventory.folder.delete";
 export const INVENTORY_FOLDER_BATCH_COMMAND = "inventory.folder.batch";
 export const INVENTORY_ITEM_FOLDER_MOVE_COMMAND = "inventory.item.folder.move";
+export const INVENTORY_ITEM_QUANTITY_COMMAND = "inventory.item.quantity.update";
 export const INVENTORY_INGRESS_RULE_CREATE_COMMAND = "inventory.ingress-rule.create";
 export const INVENTORY_INGRESS_RULE_UPDATE_COMMAND = "inventory.ingress-rule.update";
 export const INVENTORY_INGRESS_RULE_DELETE_COMMAND = "inventory.ingress-rule.delete";
@@ -3039,7 +3040,8 @@ export class InventoryService {
       sourceActorId: cleanId(inventoryActor?.id),
       sourceItemId: cleanId(itemId),
       targetActorId: cleanId(targetActor?.id),
-      quantity: roundStockQuantity(toNumber(quantity, 1))
+      quantity: roundStockQuantity(toNumber(quantity, 1)),
+      ...(options.expectedSourceQuantity != null ? { expectedSourceQuantity: options.expectedSourceQuantity } : {})
     });
     this.#claimSimpleMutationFingerprint(operationId, fingerprint);
     const record = await this.mutationJournal.find(operationId);
@@ -3060,13 +3062,17 @@ export class InventoryService {
 
   async #executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity = 1, {
     mutationId = "",
-    fingerprint = ""
+    fingerprint = "",
+    expectedSourceQuantity = null
   } = {}) {
     if (!isActorDocument(targetActor) || targetActor.type !== "character") {
       throw new Error("Предмет можно забрать только в лист персонажа.");
     }
     const operationId = createInventoryMutationId("inventory-take", mutationId);
     const existing = await this.mutationJournal.find(operationId);
+    if (!existing && expectedSourceQuantity !== null) {
+      this.#assertTransferStock(this.#getInventoryItem(inventoryActor, itemId), quantity, expectedSourceQuantity);
+    }
     if (existing?.kind === INVENTORY_GRAPH_TRANSFER_KIND) {
       return transferInventoryGraph({ source: inventoryActor, target: targetActor, itemId, quantity, operationId, fingerprint,
         journal: this.mutationJournal, assertAuthority: () => this.#assertSourceDepletionAuthority(), record: existing });
@@ -4572,7 +4578,8 @@ export class InventoryService {
     allowPreparedLootgenGraph = false,
     acquisitionContext = {}
   } = {}) {
-    const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
+    const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan",
+      ...(Object.hasOwn(request ?? {}, "sourceExpectation") ? ["sourceExpectation"] : [])];
     if (!request || typeof request !== "object" || Array.isArray(request)
       || Object.keys(request).length !== exactKeys.length
       || !exactKeys.every((key) => Object.hasOwn(request, key))) {
@@ -4594,7 +4601,8 @@ export class InventoryService {
       throw new InventoryIngressRuleError("planner-unavailable", "Inventory ingress planner is unavailable.");
     }
     const serializedPlan = foundry.utils.deepClone(request.serializedPlan);
-    const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan });
+    const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan,
+      ...(request.sourceExpectation ? { sourceExpectation: request.sourceExpectation } : {}) });
     const operationId = `inventory-ingress:${batchMutationId}`;
     const existing = await this.mutationJournal.find(operationId);
     if (existing?.kind === "inventory-simple-v1") {
@@ -4935,6 +4943,10 @@ export class InventoryService {
         catch (error) {
           failedSourceKey = row.sourceKey;
           failure = error;
+          if (error.inventorySourceDebitUncertain === true) {
+            rollbackFailure = error;
+            break;
+          }
           try {
             for (const receipt of [...row.targetReceipts].reverse()) {
               this.#assertSourceDepletionAuthority();
@@ -5037,7 +5049,8 @@ export class InventoryService {
     allowPreparedLootgenGraph = false,
     acquisitionContext = {}
   } = {}) {
-    const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
+    const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan",
+      ...(Object.hasOwn(request ?? {}, "sourceExpectation") ? ["sourceExpectation"] : [])];
     if (!request || typeof request !== "object" || Array.isArray(request)
       || Object.keys(request).length !== exactKeys.length
       || !exactKeys.every((key) => Object.hasOwn(request, key))) {
@@ -5059,7 +5072,8 @@ export class InventoryService {
       throw new InventoryIngressRuleError("planner-unavailable", "Inventory ingress planner is unavailable.");
     }
     const serializedPlan = foundry.utils.deepClone(request.serializedPlan);
-    const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan });
+    const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan,
+      ...(request.sourceExpectation ? { sourceExpectation: request.sourceExpectation } : {}) });
     const operationId = `inventory-ingress:${batchMutationId}`;
 
     return this.#runInventoryOrganizationMutation(groupActorId, async (actor) => {
@@ -7043,14 +7057,42 @@ export class InventoryService {
     };
   }
 
-  async updateItemQuantity(itemId, nextQuantity) {
-    const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
+  async updateItemQuantity(itemId, nextQuantity, { groupActorId = "", expectedSourceQuantity = null } = {}) {
+    const actor = await this.getInventoryActor({ create: true, groupActorId });
+    if (!this.canDropInventoryItems(actor)) this.#assertCanManagePartyInventory(actor);
     const item = actor?.items.get(itemId) ?? null;
     if (!item) {
       throw new Error("Предмет не найден в партийном инвентаре.");
     }
 
+    if (!Number.isFinite(nextQuantity) || nextQuantity < 0) throw new Error("Некорректное количество предмета.");
+    if (isManagedPartyGroup(actor)) {
+      const payload = {
+        groupActorId: actor.id, itemId: cleanId(itemId), nextQuantity,
+        expectedSourceQuantity: expectedSourceQuantity ?? getRawQuantity(item.toObject())
+      };
+      await this.moduleApi.executeItemQuantityMutation(payload);
+      return nextQuantity <= 0 ? null : actor.items.get(itemId) ?? null;
+    }
+    return this.#writeItemQuantity(item, nextQuantity);
+  }
+
+  async executeItemQuantityMutation({ groupActorId, itemId, nextQuantity, expectedSourceQuantity }) {
+    this.#assertSourceDepletionAuthority();
+    return this.#runInventoryOrganizationMutation(groupActorId, async actor => {
+      this.#assertSourceDepletionAuthority();
+      const item = actor?.items.get(itemId);
+      if (!item) throw new Error("Предмет не найден в партийном инвентаре.");
+      if (!Number.isFinite(nextQuantity) || nextQuantity < 0) throw new Error("Некорректное количество предмета.");
+      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), expectedSourceQuantity, item.toObject())) {
+        throw new Error("Количество предмета изменилось. Откройте редактирование заново.");
+      }
+      await this.#writeItemQuantity(item, nextQuantity);
+      return { actorId: actor.id, itemId, quantity: nextQuantity };
+    });
+  }
+
+  async #writeItemQuantity(item, nextQuantity) {
     const safeQuantity = isInventoryMaterialItemData(item.toObject())
       ? roundStockQuantity(toNumber(nextQuantity, 0)) : roundNumber(toNumber(nextQuantity, 0), 2);
     if (safeQuantity <= 0) {
@@ -7085,8 +7127,8 @@ export class InventoryService {
     return this.#deleteInventoryItemFromActor(actor, itemId);
   }
 
-  async takeInventoryItemToCharacter(itemId, { actorId = "", quantity = 1, mutationId = "" } = {}) {
-    const actor = await this.getInventoryActor({ create: true });
+  async takeInventoryItemToCharacter(itemId, { actorId = "", quantity = 1, mutationId = "", groupActorId = "", expectedSourceQuantity = null } = {}) {
+    const actor = await this.getInventoryActor({ create: true, groupActorId });
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -7107,6 +7149,7 @@ export class InventoryService {
         itemId: cleanId(itemId),
         mutationId: operationId,
         quantity: roundStockQuantity(toNumber(quantity, 1)),
+        ...(expectedSourceQuantity !== null ? { expectedSourceQuantity } : {}),
         targetActorId: targetActor.id
       });
     }
@@ -7130,7 +7173,7 @@ export class InventoryService {
       };
     }
 
-    return this.#takeInventoryItemFromActor(actor, itemId, targetActor, quantity, { mutationId: operationId });
+    return this.#takeInventoryItemFromActor(actor, itemId, targetActor, quantity, { mutationId: operationId, expectedSourceQuantity });
   }
 
   async sellInventoryItem(itemId, quantity = 1, { mutationId = "" } = {}) {
@@ -8657,7 +8700,9 @@ export class InventoryService {
   async importDroppedItem(dropData, {
     groupActorId = "",
     folderId = null,
-    ingressPlan = null
+    ingressPlan = null,
+    quantity = undefined,
+    expectedSourceQuantity = null
   } = {}) {
     const normalizedGroupActorId = cleanId(groupActorId);
     const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
@@ -8677,6 +8722,15 @@ export class InventoryService {
       return this.moduleApi.claimLootgenChatRowToInventory(lootgenClaim.lootId, lootgenClaim.rowId);
     }
 
+    const previousImport = await this.#readSelectedImportRecord({
+      groupActorId: actor.id, itemUuid: dropData?.uuid, mutationId: dropData?.mutationId,
+      quantity, expectedSourceQuantity, folderId: normalizedFolderId
+    }, ingressPlan);
+    if (previousImport) {
+      if (!this.canDropInventoryItems(actor)) throw new Error("Недостаточно прав на групповой инвентарь.");
+      const terminal = this.#readInventoryTerminal(previousImport);
+      if (terminal.terminal) return terminal.value;
+    }
     const itemDocument = dropData?.uuid ? await resolveUuid(dropData.uuid) : null;
     if (!isItemDocument(itemDocument)) {
       throw new Error("Перетащите предмет из листа персонажа или компендиума.");
@@ -8687,12 +8741,14 @@ export class InventoryService {
     if (sourceActor && sourceActor.isOwner === false) {
       throw new Error("У вас нет прав на исходный предмет.");
     }
+    if (quantity !== undefined && expectedSourceQuantity === null) expectedSourceQuantity = getRawQuantity(itemDocument.toObject());
 
     if (sourceActor?.id === actor.id) {
       return this.moveInventoryItemToFolder({
         groupActorId: actor.id,
         itemId: itemDocument.id,
-        folderId: normalizedFolderId
+        folderId: normalizedFolderId,
+        ...(quantity !== undefined ? { quantity, expectedSourceQuantity, operationId: createInventoryMutationId("inventory-folder-drop", dropData?.mutationId) } : {})
       });
     }
 
@@ -8700,7 +8756,7 @@ export class InventoryService {
     const prepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
       folderId: normalizedFolderId,
       serializedPlan: ingressPlan,
-      operationId
+      operationId, quantity, expectedSourceQuantity
     });
     if (prepared.cancelled) return prepared.result;
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
@@ -8709,6 +8765,7 @@ export class InventoryService {
         itemUuid: itemDocument.uuid,
         mutationId: operationId,
         folderId: normalizedFolderId,
+        ...(quantity !== undefined ? { quantity, expectedSourceQuantity } : {}),
         ingressPlan: prepared.serializedPlan
       });
     }
@@ -8737,8 +8794,30 @@ export class InventoryService {
       mutationId: operationId,
       groupActorId: actor.id,
       folderId: normalizedFolderId,
-      serializedPlan: prepared.serializedPlan
+      serializedPlan: prepared.serializedPlan,
+      quantity, expectedSourceQuantity
     });
+  }
+
+  async #readSelectedImportRecord({ groupActorId, itemUuid, mutationId, folderId, quantity, expectedSourceQuantity }, serializedPlan = null) {
+    if (quantity === undefined || !cleanId(mutationId)) return null;
+    const record = await this.mutationJournal.find(`inventory-ingress:${cleanId(mutationId)}`);
+    if (!record) return null;
+    const saved = JSON.parse(record.fingerprint ?? "null");
+    const expectation = saved?.sourceExpectation;
+    const legacyGraph = !expectation && record.rows?.find(row => row.nativeImportSource?.itemUuid === itemUuid && row.quantity === quantity);
+    if (legacyGraph && saved?.sourceOrigin === "import" && saved.groupActorId === groupActorId
+      && saved.serializedPlan?.requestedFolderId === folderId
+      && (expectedSourceQuantity == null || expectedSourceQuantity === legacyGraph.quantity)
+      && (!serializedPlan || JSON.stringify(serializedPlan) === JSON.stringify(saved.serializedPlan))) return record;
+    if (saved?.sourceOrigin !== "import" || saved.groupActorId !== groupActorId
+      || saved.serializedPlan?.requestedFolderId !== folderId || expectation?.itemUuid !== itemUuid
+      || expectation.quantity !== quantity
+      || (expectedSourceQuantity != null && expectation.expectedSourceQuantity !== expectedSourceQuantity)
+      || (serializedPlan && JSON.stringify(serializedPlan) !== JSON.stringify(saved.serializedPlan))) {
+      throw this.#simpleTransferError("mutation-conflict", "Запрос переноса отличается от сохранённой операции.");
+    }
+    return record;
   }
 
   async #resolveNativeImportMutationId(itemDocument, actor, folderId, mutationId) {
@@ -8757,16 +8836,28 @@ export class InventoryService {
   async #prepareImportedItemIngress(actor, itemDocument, {
     folderId = null,
     serializedPlan = null,
-    operationId = ""
+    operationId = "",
+    quantity: selectedQuantity = undefined,
+    expectedSourceQuantity = null
   } = {}) {
     const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
     const existing = operationId ? await this.mutationJournal.find(`inventory-ingress:${operationId}`) : null;
-    const saved = existing?.rows?.find(row => row.nativeImportSource);
-    if (saved && (existing.groupActorId !== actor.id || saved.nativeImportSource.itemUuid !== itemDocument.uuid
+    if (selectedQuantity !== undefined && existing) {
+      await this.#readSelectedImportRecord({ groupActorId: actor.id, itemUuid: itemDocument.uuid, mutationId: operationId,
+        folderId, quantity: selectedQuantity, expectedSourceQuantity }, serializedPlan);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return { cancelled: true, result: terminal.value };
+    }
+    const saved = existing?.rows?.find(row => row.nativeImportSource || (selectedQuantity !== undefined && row.sourceKey === "item"));
+    if (saved?.nativeImportSource && (existing.groupActorId !== actor.id || saved.nativeImportSource.itemUuid !== itemDocument.uuid
       || saved.nativeImportSource.actorUuid !== sourceActor?.uuid || existing.requestedFolderId !== normalizeInventoryFolderTarget(folderId))) {
       throw this.#simpleTransferError("graph-manual-review", "Источник или назначение переноса изменились.");
     }
-    const itemData = saved ? foundry.utils.deepClone(saved.itemData) : sanitizeEmbeddedItemData(itemDocument.toObject(), { sourceUuid: itemDocument.uuid });
+    let itemData = saved ? foundry.utils.deepClone(saved.itemData) : sanitizeEmbeddedItemData(itemDocument.toObject(), { sourceUuid: itemDocument.uuid });
+    if (selectedQuantity !== undefined && !saved) {
+      this.#assertTransferStock(itemDocument, selectedQuantity, expectedSourceQuantity);
+      itemData = withInventoryItemQuantity(itemData, selectedQuantity);
+    }
     let nativeImportSource = saved?.nativeImportSource ?? null;
     if (sourceActor && !saved) {
       if (itemDocument.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId) throw new Error("Сначала снимите усовершенствование с предмета.");
@@ -8834,7 +8925,7 @@ export class InventoryService {
       cleanId(payload.itemId),
       targetActor,
       payload.quantity,
-      { mutationId: cleanId(payload.mutationId) }
+      { mutationId: cleanId(payload.mutationId), expectedSourceQuantity: payload.expectedSourceQuantity ?? null }
     );
   }
 
@@ -9026,6 +9117,14 @@ export class InventoryService {
   async executeImportMutation(payload = {}) {
     const groupActorId = cleanId(payload.inventoryActorId);
     const inventoryActor = await this.getInventoryActor({ create: false, groupActorId });
+    const previousImport = await this.#readSelectedImportRecord({
+      groupActorId, itemUuid: payload.itemUuid, mutationId: payload.mutationId, folderId: payload.folderId,
+      quantity: payload.quantity, expectedSourceQuantity: payload.expectedSourceQuantity
+    }, payload.ingressPlan);
+    if (previousImport) {
+      const terminal = this.#readInventoryTerminal(previousImport);
+      if (terminal.terminal) return { ...terminal.value, actorId: inventoryActor.id, itemUuid: cleanId(payload.itemUuid) };
+    }
     const itemDocument = await resolveUuid(payload.itemUuid);
     if (!isManagedPartyGroup(inventoryActor) || !(itemDocument instanceof Item)) {
       throw new Error("Некорректные документы импорта предмета.");
@@ -9035,7 +9134,9 @@ export class InventoryService {
       mutationId: cleanId(payload.mutationId),
       groupActorId,
       folderId: normalizeInventoryFolderTarget(payload.folderId),
-      serializedPlan: payload.ingressPlan
+      serializedPlan: payload.ingressPlan,
+      quantity: payload.quantity,
+      expectedSourceQuantity: payload.expectedSourceQuantity ?? null
     });
     return {
       ...foundry.utils.deepClone(importResult),
@@ -9601,14 +9702,22 @@ export class InventoryService {
     mutationId = "",
     groupActorId = "",
     folderId = null,
-    serializedPlan = null
+    serializedPlan = null,
+    quantity = undefined,
+    expectedSourceQuantity = null
   } = {}) {
     assertPhysicalInventoryItem(itemDocument);
     const operationId = await this.#resolveNativeImportMutationId(itemDocument, actor, normalizeInventoryFolderTarget(folderId), mutationId);
+    const previous = await this.#readSelectedImportRecord({ groupActorId: actor.id, itemUuid: itemDocument.uuid,
+      mutationId: operationId, folderId, quantity, expectedSourceQuantity }, serializedPlan);
+    if (previous && !JSON.parse(previous.fingerprint).sourceExpectation) {
+      quantity = undefined;
+      expectedSourceQuantity = null;
+    }
     const prepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
       folderId,
       serializedPlan,
-      operationId
+      operationId, quantity, expectedSourceQuantity
     });
     if (prepared.cancelled) return prepared.result;
     const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
@@ -9618,13 +9727,14 @@ export class InventoryService {
       groupActorId: cleanId(groupActorId || actor?.id),
       batchMutationId: operationId,
       sourceOrigin: "import",
-      serializedPlan: prepared.serializedPlan
+      serializedPlan: prepared.serializedPlan,
+      ...(quantity !== undefined ? { sourceExpectation: { itemUuid: itemDocument.uuid, quantity, expectedSourceQuantity, sourceActorUuid: sourceActor?.uuid ?? "" } } : {})
     }, {
       resolveRows: async () => {
         const livePrepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
           folderId,
           serializedPlan: prepared.serializedPlan,
-          operationId
+          operationId, quantity, expectedSourceQuantity
         });
         return [livePrepared.row];
       },
@@ -9633,6 +9743,7 @@ export class InventoryService {
         if (this.#nativeImportRows.has(row)) {
           return this.#debitNativeImportGraph(sourceActor, actor, row, context);
         }
+        if (quantity !== undefined) return this.#debitImportedStack(itemDocument, quantity, expectedSourceQuantity, captureInventoryTransferIdentity(row.itemData), context);
         const sourceStillExists = () => sourceActor.items?.get?.(itemDocument.id)
           ?? sourceActor.items?.contents?.find?.((candidate) => candidate.id === itemDocument.id)
           ?? null;
@@ -9651,6 +9762,64 @@ export class InventoryService {
         sourceName: cleanId(sourceToken?.name ?? sourceActor?.name)
       }
     });
+  }
+
+  #assertTransferStock(item, quantity, expectedSourceQuantity = null) {
+    const data = item?.toObject?.();
+    const available = data ? getRawQuantity(data) : 0;
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > available
+      || (expectedSourceQuantity !== null && (!Number.isFinite(expectedSourceQuantity)
+        || !inventoryQuantitiesMatch(available, expectedSourceQuantity, data)))) {
+      throw new Error("Количество исходного предмета изменилось. Повторите перенос.");
+    }
+    return available;
+  }
+
+  async #debitImportedStack(item, quantity, expectedSourceQuantity, expectedIdentity, context) {
+    this.#assertSourceDepletionAuthority();
+    const record = await this.mutationJournal.find(`inventory-ingress:${context.batchMutationId}`);
+    this.#assertSourceDepletionAuthority();
+    if (!inventoryTransferIdentityMatches(item, expectedIdentity)) throw new Error("Исходный предмет изменился. Повторите перенос.");
+    const data = item.toObject();
+    const saved = record?.kind === "ingress-batch" ? record.rows.find(row => row.sourceKey === context.sourceKey) : null;
+    let receipt = saved?.sourceDebitReceipt;
+    if (!receipt) {
+      const before = this.#assertTransferStock(item, quantity, expectedSourceQuantity);
+      const after = roundStockQuantity(before - quantity);
+      receipt = { before, after, beforeState: captureInventoryItemQuantityState(data),
+        afterState: after > 0 ? captureInventoryItemQuantityState(withInventoryItemQuantity(data, after)) : null };
+      if (saved) {
+        await this.mutationJournal.checkpoint(record.id, "prepared", "prepared", {
+          rows: record.rows.map(row => row.sourceKey === context.sourceKey ? { ...row, sourceDebitReceipt: receipt } : row)
+        });
+        this.#assertSourceDepletionAuthority();
+      }
+    }
+    const { before, after } = receipt;
+    const live = () => item.parent?.items?.get?.(item.id) ?? null;
+    const matches = (value, state) => {
+      try { return value ? Boolean(live()) && inventoryQuantitiesMatch(getRawQuantity(live().toObject()), value, data)
+        && inventoryQuantityStateMatches(live().toObject(), state) : !live(); }
+      catch { return false; }
+    };
+    if (saved?.sourceDebitReceipt && matches(after, receipt.afterState)) return;
+    if (!matches(before, receipt.beforeState)) {
+      const error = this.#simpleTransferError("transfer-manual-review", "Сохранённое количество источника изменилось.");
+      error.inventorySourceDebitUncertain = true;
+      throw error;
+    }
+    try {
+      if (after > 0) await item.update(buildInventoryItemQuantityPatch(data, after));
+      else await item.delete();
+      this.#assertSourceDepletionAuthority();
+      if (!matches(after, receipt.afterState)) throw new Error("Списание исходного предмета не подтверждено.");
+    } catch (error) {
+      if (matches(after, receipt.afterState)) return;
+      if (matches(before, receipt.beforeState)) throw error;
+      const uncertain = this.#simpleTransferError("transfer-manual-review", "Количество источника после переноса требует ручной сверки.");
+      uncertain.inventorySourceDebitUncertain = true;
+      throw uncertain;
+    }
   }
 
   async #debitNativeImportGraph(sourceActor, targetActor, row, { batchMutationId, targetReceipts }) {

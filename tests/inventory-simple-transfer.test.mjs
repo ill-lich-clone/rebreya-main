@@ -342,6 +342,95 @@ function ingressItemData(sourceId, quantity = 1) {
   };
 }
 
+for (const mode of ["partial", "full", "lost-update-ack", "failed-update", "stale", "material", "uncertain-update", "identity-drift", "identity-drift-during-journal"]) {
+  test(`selected character import conserves stock and recovery: ${mode}`, async () => {
+    const source = createItem({ id: "source", quantity: 5, throwAfterUpdateOnce: mode === "lost-update-ack", failUpdate: mode === "failed-update" });
+    if (mode === "material") {
+      const data = withInventoryItemQuantity({ ...source.toObject(), flags: { [MODULE_ID]: { sourceType: "material", sourceId: "adamant", materialId: "adamant" } }, system: { ...source.system, weight: { value: 10, units: "lb" }, price: { value: 500, denomination: "gp" } } }, 0.05);
+      source.system = data.system; source.flags = data.flags;
+    }
+    if (mode === "uncertain-update") source.update = async () => { source.system.quantity = 1; throw new Error("drift after source update"); };
+    const hero = createActor({ id: "hero-import", items: [source] });
+    const group = createActor({ id: "group-import", type: "group", managed: true, members: [{ actor: hero }] });
+    if (mode === "identity-drift") {
+      const create = group.createEmbeddedDocuments.bind(group);
+      group.createEmbeddedDocuments = async (...args) => { const result = await create(...args); source.name = "Another item"; return result; };
+    }
+    const f = installFixture({ group, actors: [group, hero], uuidDocuments: new Map([[source.uuid, source]]) });
+    if (mode === "identity-drift-during-journal") {
+      const find = f.service.mutationJournal.find.bind(f.service.mutationJournal);
+      f.service.mutationJournal.find = async id => { if (group.items.contents.length) source.name = "Changed during journal read"; return find(id); };
+    }
+    const quantity = mode === "material" ? 0.01234 : mode === "full" ? 5 : 2;
+    const request = { groupActorId: group.id, quantity, expectedSourceQuantity: mode === "stale" ? 6 : mode === "material" ? 0.05 : 5 };
+    try {
+      const operation = f.service.importDroppedItem({ uuid: source.uuid, mutationId: `import-${mode}` }, request);
+      if (["failed-update", "stale", "uncertain-update", "identity-drift", "identity-drift-during-journal"].includes(mode)) {
+        await assert.rejects(operation);
+        assert.equal(group.items.contents.length, mode === "uncertain-update" ? 1 : 0);
+        assert.equal(source.system.quantity, mode === "uncertain-update" ? 1 : 5);
+      } else {
+        await operation;
+        assert.equal(group.items.contents.length, 1);
+        assert.equal(readInventoryItemQuantity(group.items.contents[0].toObject()), quantity);
+        if (mode === "full") assert.equal(hero.items.contents.length, 0);
+        else assert.equal(readInventoryItemQuantity(source.toObject()), mode === "material" ? 0.03766 : 3);
+        if (mode === "material") {
+          assert.equal(source.system.quantity * source.system.weight.value + group.items.contents[0].system.quantity * group.items.contents[0].system.weight.value, 0.5);
+        }
+      }
+    } finally { f.restore(); }
+  });
+}
+
+for (const quantity of [2, 5, 0.5]) test(`selected import replays its recorded result before rereading depleted stock: ${quantity}`, async () => {
+  const source = createItem({ id: "source", quantity: 5 });
+  const hero = createActor({ id: "replay-hero", items: [source] });
+  const group = createActor({ id: "replay-group", type: "group", managed: true, members: [{ actor: hero }] });
+  const f = installFixture({ group, actors: [group, hero], uuidDocuments: new Map([[source.uuid, source]]) });
+  const drop = { uuid: source.uuid, mutationId: "replay-import" };
+  const request = { groupActorId: group.id, quantity, expectedSourceQuantity: 5 };
+  try {
+    const first = await f.service.importDroppedItem(drop, request);
+    assert.deepEqual(await f.service.importDroppedItem(drop, request), first);
+    assert.equal(group.items.contents.length, 1); assert.equal(readInventoryItemQuantity(group.items.contents[0]), quantity);
+    assert.equal(hero.items.contents.length ? readInventoryItemQuantity(source) : 0, 5 - quantity);
+    await assert.rejects(f.service.importDroppedItem(drop, { ...request, quantity: 1 }), error => error.code === "mutation-conflict");
+  } finally { f.restore(); }
+});
+
+test("selected legacy import resumes an interruption after debit without issuing or debiting twice", async () => {
+  const source = createItem({ id: "legacy-source", quantity: 5 });
+  const hero = createActor({ id: "legacy-hero", items: [source] });
+  const group = createActor({ id: "legacy-group", type: "group", managed: true, members: [{ actor: hero }] });
+  const f = installFixture({ group, actors: [group, hero], uuidDocuments: new Map([[source.uuid, source]]) });
+  const commit = f.service.commitInventoryIngressBatch.bind(f.service);
+  f.service.commitInventoryIngressBatch = async (request, adapters) => {
+    const id = `inventory-ingress:${request.batchMutationId}`;
+    if (!await f.service.mutationJournal.find(id)) {
+      const rows = await adapters.resolveRows({});
+      const preview = await f.planner.preview({ groupActorId: group.id, requestedFolderId: null, rows, batch: false });
+      await f.service.mutationJournal.start({ id, kind: "ingress-batch", phase: "prepared", groupActorId: group.id, sourceOrigin: "import", fingerprint: JSON.stringify(request), rulesRevision: preview.rulesRevision, requestedFolderId: null,
+        rows: [{ sourceKey: "item", sourceIdentity: preview.rows[0].identity, itemData: rows[0].itemData, quantity: 2, container: null, acquisition: null, matchedRuleId: null, overrideToRoot: false, action: preview.rows[0].action, effectiveType: "legacy", derivedFolderId: null, dismantlePreview: [], phase: "prepared", targetReceipts: [] }] });
+    }
+    return commit(request, adapters);
+  };
+  const checkpoint = f.service.mutationJournal.checkpoint.bind(f.service.mutationJournal); let interrupted = false;
+  f.service.mutationJournal.checkpoint = async (...args) => {
+    if (!interrupted && args[3]?.rows?.some(row => row.phase === "source-debited")) { interrupted = true; throw new Error("checkpoint unavailable after source debit"); }
+    return checkpoint(...args);
+  };
+  const drop = { uuid: source.uuid, mutationId: "legacy-recover" };
+  const request = { groupActorId: group.id, quantity: 2, expectedSourceQuantity: 5 };
+  try {
+    await assert.rejects(f.service.importDroppedItem(drop, request));
+    assert.equal(source.system.quantity, 3); assert.equal(group.items.contents.length, 1);
+    await f.service.importDroppedItem(drop, request);
+    assert.equal(source.system.quantity, 3); assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+  } finally { f.restore(); }
+});
+
 test("fresh document ingress preserves world and compendium source UUIDs before cleanup", async () => {
   for (const [uuid, compendiumSource] of [["Item.world-source", null], ["Compendium.thirdparty.items.Item.source", null], ["Item.world-copy", "Compendium.thirdparty.items.Item.original"]]) {
     const source = createItem({ id: "source", name: "Custom source", quantity: 3 });

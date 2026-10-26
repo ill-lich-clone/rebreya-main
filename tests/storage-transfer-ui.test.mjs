@@ -60,6 +60,12 @@ test("quantity prompt bypasses one item, supports cancellation, and validates bo
   );
 });
 
+test("ordinary fractional stock keeps its two-decimal quantities during selection", async () => {
+  assert.equal(await promptStorageTransferQuantity(1.5, { material: false, prompt: async () => 1.5 }), 1.5);
+  assert.equal(await promptStorageTransferQuantity(1.5, { material: false, prompt: async () => 0.5 }), 0.5);
+  await assert.rejects(promptStorageTransferQuantity(1.5, { material: false, prompt: async () => 0.001 }));
+});
+
 test("ground furniture orientation prompts only for rectangular cardinal placement", async () => {
   const bed = {
     name: "Кровать",

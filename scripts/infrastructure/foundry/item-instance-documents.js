@@ -40,7 +40,8 @@ export class ItemInstanceDocuments {
     const uses = [data.system?.uses, ...Object.values(data.system?.activities ?? {}).map(activity => activity?.uses)];
     const limitedUses = uses.some(value => Number(value?.spent) > 0
       || (String(value?.max ?? "").trim() !== "" && Number(value.max) !== 0));
-    return { ...actors, sourceItem, data, quantity: readInventoryItemQuantity(data), step: material ? 1e-12 : 1,
+    const quantity = readInventoryItemQuantity(data);
+    return { ...actors, sourceItem, data, quantity, step: material ? 1e-12 : Number.isInteger(quantity) ? 1 : 0.01,
       folderId: actors.sourceActor.getFlag(MODULE_ID, "inventoryFolders")?.itemFolderIds?.[sourceItem.id] ?? null,
       hasContents: ["container", "backpack"].includes(data.type) || Boolean(flags.storageContainer)
         || actors.sourceActor.items.contents.some(item => item.system?.container === sourceItem.id),

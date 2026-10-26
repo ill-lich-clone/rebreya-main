@@ -1,4 +1,4 @@
-import { isInventoryMaterialItemData } from "./data/inventory-material-quantity.js?v=1.4.377";
+import { isInventoryMaterialItemData, readInventoryItemQuantity } from "./data/inventory-material-quantity.js?v=1.4.377";
 import { resolveItemSource as resolveNativeItemSource } from "./infrastructure/foundry/item-source-resolver.js?v=1.4.377";
 import "./integrations/craftsman-gadget-bootstrap.js?v=1.4.327";
 import { SceneActivityService } from "./application/scene-activity-service.js?v=1.4.271";
@@ -88,6 +88,7 @@ import {
   INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
   INVENTORY_IMPORT_COMMAND,
   INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
+  INVENTORY_ITEM_QUANTITY_COMMAND,
   INVENTORY_SALE_COMMAND,
   INVENTORY_TAKE_COMMAND,
   GROUP_TRANSPORT_REPLACE_STATE_COMMAND,
@@ -98,7 +99,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.399";
+} from "./data/inventory-service.js?v=1.5.10";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -400,7 +401,7 @@ import {
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.6";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.399";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.10";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -432,7 +433,7 @@ import { registerTransportVehicleSheetHooks } from "./integrations/transport-veh
 import {
   parseStorageDragData,
   promptStorageTransferQuantity
-} from "./ui/storage-transfer-ui.js?v=1.4.377";
+} from "./ui/storage-transfer-ui.js?v=1.5.10";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { openRebreyaQuestLog } from "./integrations/rebreya-quest-log.js";
@@ -968,12 +969,14 @@ function isValidInventoryMutationId(value) {
 
 function isValidInventoryTakePayload(payload) {
   return hasExactKeys(payload, [
-    "inventoryActorId", "itemId", "mutationId", "quantity", "targetActorId"
-  ])
+    "inventoryActorId", "itemId", "mutationId", "quantity", "targetActorId",
+    ...(Object.hasOwn(payload ?? {}, "expectedSourceQuantity") ? ["expectedSourceQuantity"] : [])
+  ].sort())
     && [payload.inventoryActorId, payload.itemId, payload.targetActorId].every(isTrimmedNonEmptyString)
     && isValidInventoryMutationId(payload.mutationId)
     && Number.isFinite(payload.quantity)
-    && payload.quantity > 0;
+    && payload.quantity > 0
+    && (!Object.hasOwn(payload, "expectedSourceQuantity") || (Number.isFinite(payload.expectedSourceQuantity) && payload.expectedSourceQuantity > 0));
 }
 
 function isValidInventorySalePayload(payload) {
@@ -993,7 +996,11 @@ function isValidInventoryDismantlePayload(payload) {
 }
 
 function isValidInventoryImportPayload(payload) {
-  return hasExactKeys(payload, ["folderId", "ingressPlan", "inventoryActorId", "itemUuid", "mutationId"])
+  const selected = Object.hasOwn(payload ?? {}, "quantity");
+  return hasExactKeys(payload, ["folderId", "ingressPlan", "inventoryActorId", "itemUuid", "mutationId",
+    ...(selected ? ["quantity", "expectedSourceQuantity"] : [])].sort())
+    && (!selected || (Number.isFinite(payload.quantity) && payload.quantity > 0
+      && Number.isFinite(payload.expectedSourceQuantity) && payload.quantity <= payload.expectedSourceQuantity))
     && [payload.inventoryActorId, payload.itemUuid].every(isTrimmedNonEmptyString)
     && isValidInventoryMutationId(payload.mutationId)
     && (payload.folderId === null
@@ -1137,6 +1144,14 @@ function isValidInventoryFolderDeletePayload(payload) {
   return hasExactKeys(payload, ["folderId", "groupActorId"])
     && isValidInventoryFolderIdentifier(payload.groupActorId)
     && isValidInventoryFolderIdentifier(payload.folderId);
+}
+
+function isValidInventoryItemQuantityPayload(payload) {
+  return hasExactKeys(payload, ["expectedSourceQuantity", "groupActorId", "itemId", "nextQuantity"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.itemId)
+    && Number.isFinite(payload.nextQuantity) && payload.nextQuantity >= 0
+    && Number.isFinite(payload.expectedSourceQuantity) && payload.expectedSourceQuantity >= 0;
 }
 
 function isValidInventoryItemFolderMovePayload(payload) {
@@ -1653,7 +1668,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.4.399"
+          "./ui/inventory-app.js?v=1.5.10"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -2961,6 +2976,11 @@ export class RebreyaMainModule {
       "deleteInventoryFolder"
     );
     registerInventoryOrganizationMutation(
+      INVENTORY_ITEM_QUANTITY_COMMAND,
+      isValidInventoryItemQuantityPayload,
+      "executeItemQuantityMutation"
+    );
+    registerInventoryOrganizationMutation(
       INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
       isValidInventoryItemFolderMovePayload,
       "moveInventoryItemToFolder"
@@ -3394,8 +3414,19 @@ export class RebreyaMainModule {
     const item = typeof globalThis.fromUuid === "function"
       ? await globalThis.fromUuid(payload.itemUuid)
       : null;
-    const sourceActor = item?.parent ?? null;
+    let sourceActor = item?.parent ?? null;
     const groupActor = resolveActorById(payload.inventoryActorId);
+    if (!item && Object.hasOwn(payload, "quantity")) {
+      const record = await this.inventoryService.mutationJournal.find(`inventory-ingress:${payload.mutationId}`);
+      let saved;
+      try { saved = JSON.parse(record?.fingerprint ?? "null"); } catch { return false; }
+      const expectation = saved?.sourceExpectation;
+      if (record?.terminal !== true || saved?.sourceOrigin !== "import"
+        || saved.groupActorId !== payload.inventoryActorId || expectation?.itemUuid !== payload.itemUuid
+        || expectation.quantity !== payload.quantity || expectation.expectedSourceQuantity !== payload.expectedSourceQuantity
+        || JSON.stringify(saved.serializedPlan) !== JSON.stringify(payload.ingressPlan)) return false;
+      sourceActor = expectation.sourceActorUuid ? await globalThis.fromUuid(expectation.sourceActorUuid) : null;
+    }
     if (!sourceActor) {
       return isCompendiumItemDocument(item);
     }
@@ -6793,10 +6824,14 @@ export class RebreyaMainModule {
     return this.inventoryService.setInventoryFolderPinned(groupActorId, folderId, pinned);
   }
 
-  async updateInventoryItemQuantity(itemId, nextQuantity) {
-    return this.runInventoryMutation(
-      () => this.inventoryService.updateItemQuantity(itemId, nextQuantity)
+  executeItemQuantityMutation(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_ITEM_QUANTITY_COMMAND, payload, isValidInventoryItemQuantityPayload, "executeItemQuantityMutation"
     );
+  }
+
+  async updateInventoryItemQuantity(itemId, nextQuantity, options = {}) {
+    return this.inventoryService.updateItemQuantity(itemId, nextQuantity, options);
   }
 
   async deleteInventoryItem(itemId) {
@@ -6835,10 +6870,11 @@ export class RebreyaMainModule {
     );
   }
 
-  async importInventoryDrop(dropData, { groupActorId = "", folderId = null } = {}) {
+  async importInventoryDrop(dropData, { groupActorId = "", folderId = null, quantity, expectedSourceQuantity } = {}) {
     const target = {
       groupActorId: cleanSocketId(groupActorId),
-      folderId: folderId === null ? null : cleanSocketId(folderId)
+      folderId: folderId === null ? null : cleanSocketId(folderId),
+      ...(quantity !== undefined ? { quantity, expectedSourceQuantity } : {})
     };
     const storageDrop = parseStorageDragData(dropData);
     if (storageDrop) {
@@ -6869,6 +6905,14 @@ export class RebreyaMainModule {
             { actorIdsFromResult: (result) => [result?.actorId] }
           )
         : this.socketCommandBus.request(STORAGE_JOURNAL_RECORD_DROP_COMMAND, payload);
+    }
+    const source = dropData?.uuid ? await fromUuid(dropData.uuid) : null;
+    if (source?.parent?.documentName === "Actor" || source?.parent?.type === "character" || source?.parent?.type === "group") {
+      expectedSourceQuantity ??= readInventoryItemQuantity(source.toObject());
+      quantity ??= await promptStorageTransferQuantity(expectedSourceQuantity, { material: isInventoryMaterialItemData(source.toObject()) });
+      if (quantity === null) return { cancelled: true };
+      target.quantity = quantity;
+      target.expectedSourceQuantity = expectedSourceQuantity;
     }
     return this.runInventoryMutation(
       () => this.inventoryService.importDroppedItem(dropData, target)
@@ -8048,20 +8092,30 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.399");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.10");
 
-      if (!this.inventoryApp) {
-        this.inventoryApp = new InventoryApp(this);
+      const secondary = options?.newWindow === true;
+      const viewKey = "full:secondary";
+      let app = secondary ? this.inventoryFolderApps.get(viewKey) : this.inventoryApp;
+      if (!app) {
+        app = new InventoryApp(this, secondary ? { inventoryViewKey: viewKey } : {});
+        if (secondary) this.inventoryFolderApps.set(viewKey, app);
+        else this.inventoryApp = app;
       }
 
-      if (options?.tab && typeof this.inventoryApp.setActiveTab === "function") {
-        this.inventoryApp.setActiveTab(options.tab, { render: false });
+      if (options?.tab && typeof app.setActiveTab === "function") {
+        app.setActiveTab(options.tab, { render: false });
       }
 
       await this.inventoryService.getInventoryActor({ create: true });
-      await this.inventoryApp.render({ force: true });
-      bringAppToFront(this.inventoryApp);
-      return this.inventoryApp;
+      try {
+        await app.render({ force: true });
+      } catch (error) {
+        if (secondary) this.unregisterInventoryFolderPopout(viewKey, app);
+        throw error;
+      }
+      bringAppToFront(app);
+      return app;
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open inventory app.`, error);
@@ -8095,7 +8149,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.399");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.10");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,
