@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ReactionQueueService } from "../scripts/combat/reaction-queue-service.js";
 
+function reactionText(content) {
+  return /<p class="rm-reaction-chat__text">([^]*?)<\/p>/u.exec(content)?.[1] ?? content;
+}
+
 function harness({uses = 1} = {}) {
   const user = { id: "gm", active: true, isGM: true };
   const users = [user]; users.activeGM = user;
@@ -19,7 +23,7 @@ function harness({uses = 1} = {}) {
     gameProvider: () => game, actorResolver: () => actor, now: () => now,
     setTimeoutFn: (fn, ms) => { timers.set(++sequence, { fn, ms }); return sequence; },
     clearTimeoutFn: id => timers.delete(id),
-    chatMessageClass: { async create(data) { events.push(data.content); const message = { ...data, author: {isGM: true}, async update(patch) { if (patch['flags.rebreya-main.reactionChoice.state']) this.flags['rebreya-main'].reactionChoice.state = patch['flags.rebreya-main.reactionChoice.state']; Object.assign(this, patch); events.push(patch.content ?? "applying"); }, async delete() { events.push("deleted"); } }; game.messages.push(message); return message; } }
+    chatMessageClass: { async create(data) { events.push(reactionText(data.content)); const message = { ...data, author: {isGM: true}, async update(patch) { if (patch['flags.rebreya-main.reactionChoice.state']) this.flags['rebreya-main'].reactionChoice.state = patch['flags.rebreya-main.reactionChoice.state']; Object.assign(this, patch); events.push(reactionText(patch.content) ?? "applying"); }, async delete() { events.push("deleted"); } }; game.messages.push(message); return message; } }
   });
   const request = { kind: "midi-native", triggerId: "attack:1:guard", candidate: { actorUuid: actor.uuid } };
   return { queue, game, actor, events, timers, request, expire() { now += 10001; for (const { fn } of [...timers.values()]) fn(); } };

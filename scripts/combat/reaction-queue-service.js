@@ -58,6 +58,16 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function reactionChatContent(actorName, state) {
+  const declined = state === "declined";
+  const text = `${escapeHtml(actorName)} ${declined ? "не применил реакцию" : "выбирает реакцию"}`;
+  const icon = declined ? "fa-ban" : "fa-hourglass-half";
+  return `<div class="rm-reaction-chat rm-reaction-chat--${declined ? "declined" : "choosing"}">`
+    + `<span class="rm-reaction-chat__icon" aria-hidden="true"><i class="fa-solid ${icon}"></i></span>`
+    + `<div class="rm-reaction-chat__body"><span class="rm-reaction-chat__label">Реакция</span>`
+    + `<p class="rm-reaction-chat__text">${text}</p></div></div>`;
+}
+
 function promptContent(prompt) {
   const fields = collectionValues(prompt?.fields).map((field) => {
     const name = cleanString(field?.name);
@@ -178,7 +188,7 @@ export class ReactionQueueService {
       const actor = resolved?.actor ?? resolved;
       const actorName = cleanString(actor?.name ?? candidate.name) || "Персонаж";
       return await Message.create({
-        content: `${escapeHtml(actorName)} выбирает реакцию`,
+        content: reactionChatContent(actorName, "choosing"),
         flags: { [MODULE_ID]: { reactionChoice: {
           triggerId, candidateActorUuid: candidate.actorUuid ?? actor?.uuid ?? "", kind,
           actorName, state: "choosing", expiresAt: (this._options.now?.() ?? Date.now()) + REACTION_PROMPT_TIMEOUT_MS,
@@ -199,7 +209,7 @@ export class ReactionQueueService {
       else {
         const choice = message.flags?.[MODULE_ID]?.reactionChoice ?? {};
         await message.update({
-          content: `${escapeHtml(choice.actorName || "Персонаж")} не применил реакцию`,
+          content: reactionChatContent(choice.actorName || "Персонаж", "declined"),
           flags: { [MODULE_ID]: { reactionChoice: { ...choice, state: "declined" } } }
         });
       }
@@ -762,7 +772,7 @@ export class ReactionQueueService {
 
       if (provider.consumesReaction !== false && candidate?.consumesReaction !== false) {
         const actor = candidate?.actor
-          ?? await this._options.actorResolver?.(candidate?.actorUuid)
+          ?? await (this._options.actorResolver ?? globalThis.fromUuid)?.(candidate?.actorUuid)
           ?? null;
         const consumeReaction = this.moduleApi?.combatAttackService?.consumeReaction;
         transaction.reaction = typeof consumeReaction === "function"

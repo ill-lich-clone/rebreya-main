@@ -2,15 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ReactionQueueService } from "../scripts/combat/reaction-queue-service.js";
 
+function reactionText(content) {
+  return /<p class="rm-reaction-chat__text">([^]*?)<\/p>/u.exec(content)?.[1] ?? content;
+}
+
 function harness({ choice = { accepted: true }, payment = true, applied = true, consumed = true, throws = false, chatThrows = false } = {}) {
   const events = [];
   const actor = { uuid: "Actor.npc", name: "<Страж>" };
   const messages = [];
   const ChatMessage = {
     async create(data) {
-      events.push(["create", data.content]);
+      events.push(["create", reactionText(data.content)]);
       if (chatThrows) throw Error("chat unavailable");
-      const message = { ...data, async update(patch) { events.push(["update", patch.content]); Object.assign(this, patch); }, async delete() { events.push(["delete"]); } };
+      const message = { ...data, async update(patch) { events.push(["update", reactionText(patch.content)]); Object.assign(this, patch); }, async delete() { events.push(["delete"]); } };
       messages.push(message);
       return message;
     }
@@ -37,6 +41,19 @@ test("chat shows choosing before prompt and deletes only after successful paymen
   const flag = h.messages[0].flags["rebreya-main"].reactionChoice;
   assert.equal(flag.triggerId, "attack:1");
   assert.equal(flag.candidateActorUuid, "Actor.npc");
+});
+
+test("choosing and declined cards have scoped styling and retain the escaped exact sentence", async () => {
+  for (const [applied, state, sentence] of [[true, "choosing", "выбирает реакцию"], [false, "declined", "не применил реакцию"]]) {
+    const h = harness({ applied });
+    await h.run();
+    const content = h.messages[0].content;
+    assert.match(content, new RegExp(`class="rm-reaction-chat rm-reaction-chat--${state}"`, "u"));
+    assert.match(content, /<span class="rm-reaction-chat__label">Реакция<\/span>/u);
+    assert.match(content, /aria-hidden="true"/u);
+    assert.equal(reactionText(content), `&lt;Страж&gt; ${sentence}`);
+    assert.doesNotMatch(content, /<Страж>/u);
+  }
 });
 
 for (const [name, options] of [
@@ -109,4 +126,61 @@ test("no candidate and standalone non-reaction decisions never create chat", asy
   h.queue._options.promptRenderer = () => ({ accepted: false });
   await h.queue.promptDecision({ candidate: {}, prompt: {} });
   assert.equal(h.events.length, 0);
+});
+
+for (const actorUuid of ["Actor.player", "Scene.battle.Token.npc.Actor.base"]) {
+  test(`UUID-only reaction resolves ${actorUuid} before spending and deleting its message`, async t => {
+    const h = harness();
+    const actor = { uuid: actorUuid, name: "Реагирующий" };
+    const original = Object.getOwnPropertyDescriptor(globalThis, "fromUuid");
+    t.after(() => original ? Object.defineProperty(globalThis, "fromUuid", original) : delete globalThis.fromUuid);
+    globalThis.fromUuid = async uuid => uuid === actorUuid ? actor : null;
+    delete h.queue._options.actorResolver;
+    h.queue.registerType("reaction", {
+      listCandidates: () => [{ actorUuid }],
+      pay: () => { h.events.push(["pay"]); return { paid: true }; },
+      apply: () => { h.events.push(["apply"]); return { applied: true }; }
+    });
+    h.queue.moduleApi.combatAttackService.consumeReaction = async resolved => {
+      h.events.push(["consume", resolved?.uuid]);
+      return { consumed: resolved === actor };
+    };
+    const result = await h.run();
+    assert.equal(result.accepted.length, 1);
+    assert.deepEqual(h.events.slice(1), [["prompt"], ["pay"], ["apply"], ["consume", actorUuid], ["delete"]]);
+  });
+}
+
+test("a failed UUID-only reaction spend still rolls back application and keeps the declined message", async t => {
+  const h = harness();
+  const actor = { uuid: "Actor.player", name: "Игрок" };
+  const original = Object.getOwnPropertyDescriptor(globalThis, "fromUuid");
+  t.after(() => original ? Object.defineProperty(globalThis, "fromUuid", original) : delete globalThis.fromUuid);
+  globalThis.fromUuid = async () => actor;
+  delete h.queue._options.actorResolver;
+  h.queue.registerType("reaction", {
+    listCandidates: () => [{ actorUuid: actor.uuid }],
+    apply: () => ({ applied: true }),
+    rollback: () => h.events.push(["rollback"])
+  });
+  let spentActor;
+  h.queue.moduleApi.combatAttackService.consumeReaction = async resolved => {
+    spentActor = resolved;
+    return { consumed: false };
+  };
+  assert.equal((await h.run()).accepted.length, 0);
+  assert.equal(spentActor, actor);
+  assert.equal(h.events.filter(([type]) => type === "rollback").length, 1);
+  assert.equal(h.events.some(([type]) => type === "delete"), false);
+  assert.equal(h.messages[0].flags["rebreya-main"].reactionChoice.state, "declined");
+});
+
+test("a candidate's ready Actor is used before attempting UUID lookup", async () => {
+  const h = harness();
+  h.queue._options.actorResolver = () => { assert.fail("ready Actor must not be resolved again"); };
+  let spentActor;
+  h.queue.moduleApi.combatAttackService.consumeReaction = async actor => { spentActor = actor; return { consumed: true }; };
+  assert.equal((await h.run()).accepted.length, 1);
+  assert.equal(spentActor.uuid, "Actor.npc");
+  assert.equal(h.events.at(-1)[0], "delete");
 });

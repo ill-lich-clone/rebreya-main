@@ -9,8 +9,11 @@ async function harness({ type = "activity", fail = false, force = false } = {}) 
   const actor = { uuid: "Actor.guard", flags: { "midi-qol": { optional: type === "ac" ? { shield: { ac: "@abilities.dex.mod + 1d4", ...(force ? { force: "true" } : {}), count: "reaction" } } : {} } }, name: "Guard" };
   class NativeDialog {
     constructor(data) { this.data = data; }
-    render() { dialogs.push(this); return this; }
-    async submit(button = { key: "Activity.shield" }) { this.data.completed = true; await this.data.callback(this, button); }
+    render() {
+      this.data.buttons = [{ key: "Activity.shield", callback: this.data.callback }];
+      dialogs.push(this); return this;
+    }
+    async submit(button = this.data.buttons[0]) { this.data.completed = true; await button.callback(this, button); }
     async close() { this.closed = true; if (!this.data.completed) this.data.close?.(); }
   }
   class OptionalDialog extends NativeDialog {
