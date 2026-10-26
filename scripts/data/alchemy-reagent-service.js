@@ -47,14 +47,20 @@ function validDuration(product, seconds) {
   return false;
 }
 
-export function calculateActiveReagentTotal(actor, worldTime = globalThis.game?.time?.worldTime ?? 0) {
+export function getActiveAlchemyReagentEffects(actor, worldTime = globalThis.game?.time?.worldTime ?? 0) {
   const now = Number(worldTime);
-  return collectionValues(actor?.effects).reduce((total, effect) => {
+  return collectionValues(actor?.effects).filter((effect) => {
     const data = effect?.flags?.[MODULE_ID]?.[EFFECT_FLAG];
     if (effect?.disabled || effect?.isSuppressed || !validLevel(data?.level)
-      || !Number.isFinite(data?.expiresAt) || !Number.isFinite(now) || now >= data.expiresAt) return total;
-    return total + data.level;
-  }, 0);
+      || !Number.isFinite(data?.expiresAt) || !Number.isFinite(now) || now >= data.expiresAt) return false;
+    return true;
+  });
+}
+
+export function calculateActiveReagentTotal(actor, worldTime = globalThis.game?.time?.worldTime ?? 0) {
+  return getActiveAlchemyReagentEffects(actor, worldTime).reduce(
+    (total, effect) => total + effect.flags[MODULE_ID][EFFECT_FLAG].level, 0
+  );
 }
 
 async function defaultChooseDuration() {

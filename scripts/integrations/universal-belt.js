@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
-import { calculateAlchemyInventoryTotals } from "../data/alchemy-tracker.js?v=1.5.11";
-import { calculateActiveReagentTotal } from "../data/alchemy-reagent-service.js?v=1.5.11";
+import { calculateAlchemyInventoryTotals } from "../data/alchemy-tracker.js?v=1.5.14";
+import { calculateActiveReagentTotal } from "../data/alchemy-reagent-service.js?v=1.5.14";
+import { bindPotionTrackerPopover } from "./potion-tracker-popover.js?v=1.5.14";
 
 export const UNIVERSAL_BELT_FLAG = "universalBelt";
 export const UNIVERSAL_BELT_ITEM_SLOT_FLAG = "universalBelt.slot";
@@ -399,12 +400,13 @@ function createPotionTrackerElement(kind, actor) {
   li.dataset.fillPercent = formattedFillPercent;
   if (state.value > state.max) li.classList.add("is-over-limit");
   li.setAttribute("aria-label", title);
-  li.setAttribute("title", title);
 
   const button = document.createElement("button");
   button.type = "button";
   button.classList.add("rm-potion-tracker__button");
   button.dataset.action = "rebreya-potion-tracker-edit";
+  button.setAttribute("aria-label", `${title}. Нажмите для настройки, стрелка вниз — состав`);
+  button.setAttribute("aria-keyshortcuts", "ArrowDown");
 
   const counter = document.createElement("span");
   counter.classList.add("rm-potion-tracker__counter");
@@ -487,6 +489,7 @@ async function confirmBeltPurchase(slot) {
 export function bindUniversalBeltSheet(root, { actor, app, moduleApi, rerenderActorSheet }) {
   if (!renderUniversalBeltSlots(root, actor) || boundRoots.has(root)) return false;
   boundRoots.add(root);
+  bindPotionTrackerPopover(root, { actor, moduleApi, getState: getPotionTrackerState });
 
   root.addEventListener("dragover", (event) => {
     const slot = event.target?.closest?.("[data-rebreya-universal-belt-slot='true']");

@@ -821,6 +821,28 @@ test("clicking a potion bottle saves the manual rank and rerenders the actor she
   }
 });
 
+test("sheet rebinding keeps a single potion hover handler after the trackers are recreated", async () => {
+  const restore = installFoundryStubs();
+  const previousDocument = globalThis.document;
+  try {
+    const { bindUniversalBeltSheet } = await import(`../scripts/integrations/universal-belt.js?hover-bind=${Date.now()}`);
+    globalThis.document = { createElement: (tag) => new FakeElement(tag) };
+    const root = new FakeElement("section");
+    root.ownerDocument = { defaultView: { AbortController } };
+    const containers = new FakeElement("ul");
+    containers.classList.add("containers");
+    root.append(containers);
+    const options = { actor: new FakeActor(), app: {}, moduleApi: {}, rerenderActorSheet: async () => {} };
+    assert.equal(bindUniversalBeltSheet(root, options), true);
+    assert.equal(bindUniversalBeltSheet(root, options), false);
+    assert.equal(root.listeners.pointerover?.length, 1);
+  }
+  finally {
+    globalThis.document = previousDocument;
+    restore();
+  }
+});
+
 test("renderUniversalBeltSlots removes the locked marker from unlocked empty slots", async () => {
   const restore = installFoundryStubs();
   const previousDocument = globalThis.document;

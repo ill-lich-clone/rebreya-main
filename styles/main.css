@@ -508,7 +508,40 @@
 .dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__button:hover .rm-potion-tracker__art,
 .dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__button:focus-visible .rm-potion-tracker__art {
   filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.72));
-  transform: scale(1.06);
+  transform: scale(1.35);
+}
+
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker:hover,
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker:focus-within {
+  z-index: 5;
+}
+
+.rm-potion-popover {
+  box-sizing: border-box;
+  width: min(350px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 1px solid var(--rm-border-strong);
+  border-radius: 8px;
+  color: var(--rm-text);
+  background: var(--rm-surface-1);
+  box-shadow: var(--rm-shadow-panel);
+  font: 13px/1.4 var(--font-body, sans-serif);
+  overflow-wrap: anywhere;
+}
+
+.rm-potion-popover__heading,
+.rm-potion-popover__name,
+.rm-potion-popover__detail {
+  display: block;
+}
+
+.rm-potion-popover__heading { color: var(--rm-accent-strong); }
+.rm-potion-popover__row { padding: 7px 0; border-top: 1px solid var(--rm-border-subtle); }
+.rm-potion-popover__detail, .rm-potion-popover__note { color: var(--rm-text-secondary); }
+.rm-potion-popover__note, .rm-potion-popover__description, .rm-potion-popover__empty { margin: 5px 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__art { transition: none; }
 }
 
 .rm-potion-tracker-dialog__fields {

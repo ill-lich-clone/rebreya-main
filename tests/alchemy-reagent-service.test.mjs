@@ -6,6 +6,7 @@ import { WorldSettingMutationRepository } from "../scripts/infrastructure/foundr
 import {
   AlchemyReagentService, calculateActiveReagentTotal, registerAlchemyReagentSettings, resolveAlchemyPotionUse
 } from "../scripts/data/alchemy-reagent-service.js";
+import * as reagentService from "../scripts/data/alchemy-reagent-service.js";
 
 const MODULE = "rebreya-main";
 const catalog = JSON.parse(await readFile(new URL("../data/alchemy-products.json", import.meta.url), "utf8"));
@@ -24,6 +25,18 @@ test("the GM receipt journal is a hidden world setting", () => {
 function effect(level, expiresAt, extra = {}) {
   return { disabled: false, flags: { [MODULE]: { alchemyReagent: { level, expiresAt } } }, ...extra };
 }
+
+test("reagent breakdown keeps only the same active contributions as the total", () => {
+  assert.equal(typeof reagentService.getActiveAlchemyReagentEffects, "function");
+  const active = effect(3, 160, { name: "Первое" });
+  const zero = effect(0, 120, { name: "Второе" });
+  const actor = { effects: { contents: [active, zero, effect(7, 100),
+    effect(5, 200, { disabled: true }), effect(9, 200, { isSuppressed: true }),
+    effect(-1, 200), effect(1, NaN), { flags: {} }] } };
+  assert.deepEqual(reagentService.getActiveAlchemyReagentEffects(actor, 100), [active, zero]);
+  assert.equal(calculateActiveReagentTotal(actor, 100), 3);
+  assert.deepEqual(reagentService.getActiveAlchemyReagentEffects(actor, 160), []);
+});
 
 test("active reagent total sums only enabled, unexpired managed effects", () => {
   const actor = { effects: { contents: [effect(3, 160), effect(1, 160), effect(7, 100),

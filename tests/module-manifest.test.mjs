@@ -21,10 +21,10 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.13");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.13.js"]);
+  assert.equal(manifest.version, "1.5.14");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.14.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.13.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.14.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -144,8 +144,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.13");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.13.js"]);
+  assert.equal(manifest.version, "1.5.14");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.14.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -267,7 +267,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.11/u
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.14/u
   );
   assert.match(
     entrypointSource,
@@ -356,9 +356,9 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.11/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.14/u
   );
-  assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.5\.11/u);
+  assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.5\.14/u);
 
   for (const importPath of [
     "data/trader-service.js?v=1.4.327",
@@ -450,7 +450,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.13.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.14.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -762,7 +762,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.11/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.14/u,
   );
   assert.match(
     entrypointSource,

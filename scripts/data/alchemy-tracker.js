@@ -5,8 +5,8 @@ const ALCHEMY_TYPES = new Set([
   "Яд (Вдыхаемый)", "Яд (Контактный)", "Яд (Оружейный)", "Яд (Поглощаемый)"
 ]);
 
-export function calculateAlchemyInventoryTotals(items = []) {
-  const totals = { healing: 0, utility: 0 };
+export function getAlchemyInventoryEntries(items = []) {
+  const entries = [];
   for (const item of items) {
     const flags = item?.flags?.[MODULE_ID] ?? {};
     const number = Number(flags.sourceNumber);
@@ -18,7 +18,14 @@ export function calculateAlchemyInventoryTotals(items = []) {
       || !Number.isInteger(rank) || rank < 1 || rank > 9
       || !Number.isInteger(quantity) || quantity <= 0) continue;
     const kind = flags.productType === "Зелье" && number >= 77 && number <= 85 ? "healing" : "utility";
-    totals[kind] += rank * quantity;
+    entries.push({ kind, productId: flags.alchemyProductId, name: String(item?.name ?? flags.alchemyProductId), rank, quantity });
   }
-  return totals;
+  return entries;
+}
+
+export function calculateAlchemyInventoryTotals(items = []) {
+  return getAlchemyInventoryEntries(items).reduce((totals, entry) => {
+    totals[entry.kind] += entry.rank * entry.quantity;
+    return totals;
+  }, { healing: 0, utility: 0 });
 }

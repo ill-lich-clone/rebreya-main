@@ -22,7 +22,7 @@ import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.1";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
-import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.11";
+import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.14";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.330";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.330";
@@ -390,7 +390,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.11";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.14";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.396";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
