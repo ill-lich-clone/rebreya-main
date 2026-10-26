@@ -2297,6 +2297,113 @@ test("firearm item repair removes stale jam maintenance activities from item she
   });
 });
 
+test("saving firearm sheet proficiency and properties preserves authored attack damage without adding the prepared base", async () => {
+  const base = { number: 2, denomination: 8, bonus: "", types: ["piercing"] };
+  const extra = { ...base, bonus: "+1", types: ["fire"] };
+  const service = new CombatAttackService({});
+
+  for (const authoredParts of [[], [base], [extra]]) {
+    const weapon = makeFirearmItem({
+      name: "Мушкет",
+      properties: { lchFirearmMisfire: true, lchFirearmReload: true },
+      values: { misfire: 2, reload: "Перезарядка 1", ammunition: "Мушкетные" }
+    });
+    weapon.system.proficient = 1;
+    let source = { _id: "shot", type: "attack", name: "Выстрел", damage: { includeBase: true, parts: authoredParts } };
+
+    for (let save = 0; save < 2; save++) {
+      weapon.system.activities = {
+        shot: {
+          ...source,
+          toObject(useSource = true) {
+            const data = structuredClone(source);
+            if (!useSource) data.damage.parts.unshift(structuredClone(base));
+            return data;
+          }
+        }
+      };
+      const result = await service.synchronizeFirearmPropertyState(weapon, {
+        system: { proficient: 1, properties: ["lchFirearmMisfire", "lchFirearmReload"] }
+      });
+      assert.equal(result.updated, true);
+      source = weapon.updateCalls.at(-1)["system.activities"].shot;
+      assert.equal(source.damage.includeBase, true);
+      assert.deepEqual(source.damage.parts, authoredParts);
+      assert.equal(weapon.system.proficient, 1);
+    }
+  }
+});
+
+test("firearm activity repair preserves source damage when removing stale maintenance", async () => {
+  const base = { number: 2, denomination: 8, bonus: "", types: ["piercing"] };
+  const source = { _id: "shot", type: "attack", name: "Выстрел", damage: { includeBase: true, parts: [base] } };
+  const weapon = makeFirearmItem({ properties: {}, values: {} });
+  weapon.system.activities = {
+    shot: {
+      ...source,
+      toObject(useSource = true) {
+        const data = structuredClone(source);
+        if (!useSource) data.damage.parts.unshift(structuredClone(base));
+        return data;
+      }
+    },
+    lchClearBreech01: { _id: "lchClearBreech01", type: "utility" }
+  };
+
+  const result = await new CombatAttackService({}).repairFirearmActivities(weapon);
+
+  assert.equal(result.updated, 1);
+  assert.equal(result.removed, 1);
+  assert.deepEqual(weapon.updateCalls.at(-1)["system.activities"].shot, source);
+});
+
+test("changing only firearm proficiency does not rewrite activities", async () => {
+  const weapon = makeFirearmItem();
+  weapon.system.activities = { shot: { _id: "shot", type: "attack", damage: { includeBase: true, parts: [] } } };
+  const result = await new CombatAttackService({}).synchronizeFirearmPropertyState(weapon, { system: { proficient: 1 } });
+  assert.deepEqual(result, { updated: false });
+  assert.equal(weapon.updateCalls.length, 0);
+});
+
+test("reordering unchanged firearm properties while setting proficiency preserves magazine, misfire, and jam", async () => {
+  const original = ["lchFirearmWaterVulnerability", "two", "lchFirearmMisfire", "lchFirearmReload"];
+  const weapon = makeFirearmItem({
+    name: "Мушкет (1/1) (клин)",
+    properties: new Set(original),
+    values: { misfire: 2, reload: "Перезарядка 1", ammunition: "Мушкетные" },
+    ammoState: { current: 1, capacity: 1, ammunition: "Мушкетные" },
+    jammed: { value: true }
+  });
+  weapon._source = { system: { properties: original } };
+  weapon.flags[MODULE_ID].firearmBaseMisfire = 2;
+  weapon.flags[MODULE_ID].firearmMisfire = 5;
+  const flags = structuredClone(weapon.flags);
+  const changed = { system: { proficient: 1, properties: ["two", "lchFirearmMisfire", "lchFirearmReload", "lchFirearmWaterVulnerability"] } };
+  const service = new CombatAttackService({});
+
+  service.omitUnchangedFirearmPropertyOrder(weapon, changed);
+  assert.deepEqual(changed, { system: { proficient: 1 } });
+  assert.deepEqual(await service.synchronizeFirearmPropertyState(weapon, changed), { updated: false });
+  assert.equal(weapon.name, "Мушкет (1/1) (клин)");
+  assert.deepEqual(weapon.flags, flags);
+  assert.equal(weapon.updateCalls.length, 0);
+});
+
+test("firearm property order normalization leaves actual changes and unsupported data intact", () => {
+  const service = new CombatAttackService({});
+  const weapon = makeFirearmItem();
+  weapon._source = { system: { properties: ["two", "lchFirearmMisfire", "lchFirearmReload"] } };
+  for (const properties of [["two", "lchFirearmMisfire"], ["two", "lchFirearmMisfire", "lchFirearmReload", "lgt"], ["two", "two", "lchFirearmMisfire"], { lchFirearmReload: false }]) {
+    const changed = { system: { properties: structuredClone(properties) } };
+    service.omitUnchangedFirearmPropertyOrder(weapon, changed);
+    assert.deepEqual(changed.system.properties, properties);
+  }
+  const unknownSource = makeFirearmItem();
+  const changed = { system: { properties: ["lchFirearmMisfire"] } };
+  service.omitUnchangedFirearmPropertyOrder(unknownSource, changed);
+  assert.deepEqual(changed.system.properties, ["lchFirearmMisfire"]);
+});
+
 test("removing Misfire clears its values, runtime state, suffix, and maintenance activities", async () => {
   const weapon = makeFirearmItem({
     name: "Аркебуза (1/1) (клин)",

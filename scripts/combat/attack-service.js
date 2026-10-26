@@ -470,15 +470,10 @@ function sourceData(document) {
 
   if (typeof document.toObject === "function") {
     try {
-      return clonePlainData(document.toObject(false));
+      return clonePlainData(document.toObject());
     }
     catch (_error) {
-      try {
-        return clonePlainData(document.toObject());
-      }
-      catch (_innerError) {
-        // Fall back to enumerable data below.
-      }
+      // Fall back to enumerable data below.
     }
   }
 
@@ -2770,6 +2765,19 @@ export class CombatAttackService {
       },
       uses: { spent: 0, max: "", recovery: [] }
     };
+  }
+
+  omitUnchangedFirearmPropertyOrder(item, changed = {}) {
+    const before = item?._source?.system?.properties;
+    const after = changed?.system?.properties;
+    if (!isFirearmItem(item) || !Array.isArray(before) || !Array.isArray(after)
+      || !before.every(value => typeof value === "string") || !after.every(value => typeof value === "string")) return;
+    const original = new Set(before);
+    const updated = new Set(after);
+    if (original.size === before.length && updated.size === after.length
+      && original.size === updated.size && after.every(value => original.has(value))) {
+      delete changed.system.properties;
+    }
   }
 
   async synchronizeFirearmPropertyState(item, changed = {}) {

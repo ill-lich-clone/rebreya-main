@@ -327,6 +327,32 @@ test("firearm item sheet repair hook does not rerender item sheets", async () =>
   }
 });
 
+test("firearm pre-update hook normalizes each item without cancelling its update", () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const listeners = [];
+  const calls = [];
+  globalThis.Hooks = { on(hookName, listener) { listeners.push({ hookName, listener }); } };
+  globalThis.game = {};
+  try {
+    registerCombatHooks({ combatAttackService: {
+      omitUnchangedFirearmPropertyOrder(item, changed) { calls.push({ item, changed }); }
+    } });
+    const preUpdate = listeners.find(entry => entry.hookName === "preUpdateItem")?.listener;
+    assert.equal(typeof preUpdate, "function");
+    const first = { id: "first" }, second = { id: "second" };
+    const firstChange = { system: { proficient: 1 } }, secondChange = { system: { properties: ["two"] } };
+    const sharedOptions = {};
+    assert.equal(preUpdate(first, firstChange, sharedOptions), undefined);
+    assert.equal(preUpdate(second, secondChange, sharedOptions), undefined);
+    assert.deepEqual(calls, [{ item: first, changed: firstChange }, { item: second, changed: secondChange }]);
+    assert.deepEqual(sharedOptions, {});
+  } finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
 test("firearm property update hook synchronizes Misfire and Reload without recursing", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;

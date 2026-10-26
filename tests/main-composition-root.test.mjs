@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.11");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.11.js"]);
+  assert.equal(manifest.version, "1.5.13");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.13.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.10/u);

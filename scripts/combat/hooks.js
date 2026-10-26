@@ -614,6 +614,9 @@ export function registerCombatHooks(moduleApi) {
         globalThis.ui?.notifications?.warn?.(error.message);
       });
     });
+    Hooks.on("preUpdateItem", (item, changed) => {
+      moduleApi.combatAttackService.omitUnchangedFirearmPropertyOrder?.(item, changed);
+    });
     Hooks.on("updateItem", (item, changed, options = {}) => {
       if (!options?.[MODULE_ID]?.whirlwindSync) {
         moduleApi.combatAttackService.repairWhirlwindActivities?.(item)?.catch(error => {
