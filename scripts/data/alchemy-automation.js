@@ -112,6 +112,10 @@ export function getAlchemyAutomationDefinition(product) {
     });
   }
 
+  if (index >= 0 && String(product?.productType ?? "").trim() === "Зелье") {
+    return Object.freeze({ kind: "potion" });
+  }
+
   const family = index >= 0 ? bombFamily(product) : null;
   if (!family || number !== family.first + index) return null;
   const denomination = family.denomination;
@@ -159,6 +163,38 @@ function buildHealingActivity(product, definition) {
     },
     description: { chatFlavor: "" },
     flags: activityFlags("healing", product)
+  }];
+}
+
+function buildPotionActivity(product) {
+  const id = activityId(product, "drink-potion");
+  const activationType = product?.activation === "Бонусное действие"
+    ? "bonus"
+    : product?.activation === "1 минута" ? "minute" : "action";
+  const duration = String(product?.duration ?? "").trim();
+  const fixedDuration = /^(\d+)\s+(минут\S*|час\S*)$/u.exec(duration);
+  return [id, {
+    _id: id,
+    type: "utility",
+    name: "Выпить зелье",
+    activation: { type: activationType, value: 1, condition: "", override: false },
+    consumption: consumption(),
+    duration: fixedDuration
+      ? { units: fixedDuration[2].startsWith("час") ? "hour" : "minute", value: fixedDuration[1], concentration: false, override: false }
+      : duration === "Мгновенно"
+        ? { units: "inst", concentration: false, override: false }
+        : { units: "spec", special: duration, concentration: false, override: false },
+    range: { units: "", special: "", override: false },
+    target: {
+      prompt: true,
+      affects: { count: "1", type: "creature", choice: true, special: "" },
+      template: emptyTemplate()
+    },
+    roll: { formula: "", name: "", prompt: false, visible: false },
+    description: { chatFlavor: "" },
+    flags: activityFlags("potion", product, {
+      alchemyReagent: { reagentLevel: product?.reagentLevel ?? null, duration }
+    })
   }];
 }
 
@@ -220,7 +256,9 @@ export function buildAlchemyActivities(product) {
   if (!definition) return {};
   const [id, activity] = definition.kind === "healing"
     ? buildHealingActivity(product, definition)
-    : buildBombActivity(product, definition);
+    : definition.kind === "potion"
+      ? buildPotionActivity(product)
+      : buildBombActivity(product, definition);
   return { [id]: activity };
 }
 

@@ -228,8 +228,8 @@ test("alchemy Item projection uses maximum price, rank weight, selective automat
     assert.deepEqual(data.system.weight, { value: 1, units: "lb" });
     assert.equal(data.system.rarity, "common");
     assert.deepEqual(data.system.type, { value: "potion", subtype: "" });
-    assert.deepEqual(data.system.activities, {});
-    assert.equal(data.system.uses, undefined);
+    assert.equal(Object.values(data.system.activities)[0]?.type, "utility");
+    assert.deepEqual(data.system.uses, { spent: 0, max: "1", recovery: [], autoDestroy: true });
     assert.deepEqual(data.effects, []);
     assert.deepEqual(flags, {
       managed: true,
@@ -303,6 +303,26 @@ test("the nine basic healing potions expose native selected-target healing activ
   });
 });
 
+test("ordinary potions expose stable drink actions with authored activation and reagent metadata", () => {
+  for (const [number, activation] of [[1, "action"], [37, "bonus"], [73, "minute"]]) {
+    const entry = productionCatalog.find((product) => product.sourceNumber === number);
+    const definition = getAlchemyAutomationDefinition(entry);
+    const first = buildAlchemyActivities(entry);
+    const [activity] = Object.values(first);
+    assert.equal(definition.kind, "potion", entry.id);
+    assert.deepEqual(first, buildAlchemyActivities(structuredClone(entry)));
+    assert.equal(activity.type, "utility");
+    assert.equal(activity.name, "Выпить зелье");
+    assert.equal(activity.activation.type, activation);
+    assert.equal(activity.activation.value, 1);
+    assert.equal(activity.target.affects.count, "1");
+    assert.equal(activity.consumption.targets[0].type, "itemUses");
+    assert.deepEqual(activity.flags[MODULE_ID].alchemyReagent, {
+      reagentLevel: entry.reagentLevel, duration: entry.duration
+    });
+  }
+});
+
 test("all 63 bombs expose stable fixed-DC save activities and normalized runtime definitions", () => {
   const bombs = productionCatalog.filter((entry) => entry.productType === "Бомба");
   assert.equal(bombs.length, 63);
@@ -348,7 +368,7 @@ test("all 63 bombs expose stable fixed-DC save activities and normalized runtime
   }
 });
 
-test("all 230 catalog products project stable consumables and automate only healing potions and bombs", async () => {
+test("all 230 catalog products project stable consumables with potion and bomb activities", async () => {
   const previousConst = globalThis.CONST;
   const previousConfig = globalThis.CONFIG;
   globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
@@ -365,8 +385,8 @@ test("all 230 catalog products project stable consumables and automate only heal
     assert.ok(items.every((entry) => entry.type === "consumable"));
     const automated = items.filter((entry) => Object.keys(entry.system.activities).length === 1);
     const manual = items.filter((entry) => Object.keys(entry.system.activities).length === 0);
-    assert.equal(automated.length, 72);
-    assert.equal(manual.length, 158);
+    assert.equal(automated.length, 172);
+    assert.equal(manual.length, 58);
     assert.ok(automated.every((entry) => entry.system.uses?.max === "1" && entry.system.uses.autoDestroy === true));
     assert.ok(manual.every((entry) => entry.system.uses === undefined));
     assert.ok(items.every((entry) => entry.effects.length === 0));
@@ -510,7 +530,7 @@ test("alchemy compendium validates all assets before mutation and synchronizes o
     assert.equal(documents.some((entry) => entry.id === "stale-managed"), false);
     assert.equal(documents.find((entry) => flagOf(entry, "alchemyProductId") === first.id)?.name, first.name);
     assert.equal(documents.find((entry) => flagOf(entry, "alchemyProductId") === second.id)?.name, second.name);
-    assert.deepEqual(currentFirst.system.activities, {});
+    assert.deepEqual(currentFirst.system.activities, buildAlchemyActivities(first));
     assert.deepEqual(currentFirst.effects, []);
     assert.deepEqual(deletedEffects, [["ActiveEffect", ["legacy-effect"]]]);
     assert.ok(mutations.some((entry) => entry === "create:229"));

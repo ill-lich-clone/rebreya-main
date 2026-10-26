@@ -37,7 +37,7 @@ import {
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
-} from "./universal-belt.js?v=1.4.335-reagent-tracker";
+} from "./universal-belt.js?v=1.5.11";
 import {
   bindItemUpgradeInventoryRows,
   bindItemUpgradeSheet,

@@ -62,7 +62,8 @@ export function registerCombatHooks(moduleApi) {
   const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
   const hasMagicItemsCompendium = Boolean(moduleApi?.magicItemsCompendium);
   const hasAlchemyBombService = Boolean(moduleApi?.alchemyBombRuntimeService);
-  if (!moduleApi?.reactionQueueService && !moduleApi?.midiReactionAdapter && !hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !hasAlchemyBombService && !curseUpgrades && !simpleUpgrades) {
+  const hasAlchemyReagentService = Boolean(moduleApi?.alchemyReagentService);
+  if (!moduleApi?.reactionQueueService && !moduleApi?.midiReactionAdapter && !hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !hasAlchemyBombService && !hasAlchemyReagentService && !curseUpgrades && !simpleUpgrades) {
     return;
   }
 
@@ -70,6 +71,41 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasAlchemyReagentService) {
+    const service = moduleApi.alchemyReagentService;
+    const report = (error) => {
+      console.error(`${MODULE_ID} | Failed to track potion reagents.`, error);
+      globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось учесть реагенты зелья.");
+    };
+    Hooks.on("dnd5e.preUseActivity", (activity, usage, dialog, message) => {
+      try { return service.handlePreUse(activity, usage, dialog, message); }
+      catch (error) { report(error); return false; }
+    });
+    Hooks.on("dnd5e.preActivityConsumption", (activity) => {
+      try { return service.handlePreConsumption(activity); }
+      catch (error) { report(error); return false; }
+    });
+    Hooks.on("dnd5e.postUseActivity", (activity, usage, results) => {
+      service.handleUse(activity, usage, results).catch(report);
+      return true;
+    });
+    Hooks.on("updateItem", (item, changed, _options, userId) => {
+      Promise.resolve(service.observeItemConsumption(item, changed, userId)).catch(report);
+    });
+    Hooks.on("deleteItem", (item, _options, userId) => {
+      Promise.resolve(service.observeItemConsumption(item, {}, userId, { deleted: true })).catch(report);
+    });
+    Hooks.on("midi-qol.RollComplete", (workflow) => {
+      service.handleMidiComplete(workflow).catch(report);
+      return true;
+    });
+    Hooks.on("midi-qol.preAbort", (workflow) => {
+      service.handleMidiAbort(workflow).catch(report);
+      return true;
+    });
+    Hooks.on("updateWorldTime", () => service.refreshOpenSheets());
+  }
 
   if (hasAttackService) {
     Hooks.on("midi-qol.hitsChecked", async workflow => {

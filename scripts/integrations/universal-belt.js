@@ -1,4 +1,6 @@
 import { MODULE_ID } from "../constants.js";
+import { calculateAlchemyInventoryTotals } from "../data/alchemy-tracker.js?v=1.5.11";
+import { calculateActiveReagentTotal } from "../data/alchemy-reagent-service.js?v=1.5.11";
 
 export const UNIVERSAL_BELT_FLAG = "universalBelt";
 export const UNIVERSAL_BELT_ITEM_SLOT_FLAG = "universalBelt.slot";
@@ -11,17 +13,17 @@ export const POTION_TRACKER_DEFAULT_MAX = 9;
 const POTION_TRACKER_DEFINITIONS = Object.freeze({
   healing: Object.freeze({
     label: "Лечебные зелья",
-    valueLabel: "Текущий ранг",
+    valueLabel: "Ручной итог",
     icon: `modules/${MODULE_ID}/assets/ui/trackers/healing-potion.webp`
   }),
   utility: Object.freeze({
-    label: "Обычные зелья",
-    valueLabel: "Текущий ранг",
+    label: "Алхимические расходники",
+    valueLabel: "Ручной итог",
     icon: `modules/${MODULE_ID}/assets/ui/trackers/utility-potion.webp`
   }),
   reagents: Object.freeze({
     label: "Уровень реагентов",
-    valueLabel: "Текущий уровень",
+    valueLabel: "Текущий уровень (ручная часть)",
     icon: `modules/${MODULE_ID}/assets/ui/trackers/reagent-flask.webp`
   })
 });
@@ -59,7 +61,15 @@ export function getPotionTrackerState(actor, kind) {
   const trackers = actor?.getFlag?.(MODULE_ID, POTION_TRACKERS_FLAG)
     ?? foundry.utils.getProperty(actor, `flags.${MODULE_ID}.${POTION_TRACKERS_FLAG}`)
     ?? {};
-  return normalizePotionTrackerState(trackers[safeKind]);
+  const saved = trackers[safeKind] ?? {};
+  const state = normalizePotionTrackerState(saved);
+  if (safeKind === "reagents") return { ...state, value: state.value + calculateActiveReagentTotal(actor) };
+  if (saved.mode === "manual") return state;
+  const totals = calculateAlchemyInventoryTotals(getActorItems(actor));
+  return {
+    value: Math.max(0, totals[safeKind] + Math.trunc(toNumber(saved.adjustment, 0))),
+    max: state.max
+  };
 }
 
 export async function editPotionTracker(actor, kind, {
@@ -70,13 +80,24 @@ export async function editPotionTracker(actor, kind, {
 
   const safeKind = normalizePotionTrackerKind(kind);
   const definition = POTION_TRACKER_DEFINITIONS[safeKind];
-  const current = getPotionTrackerState(actor, safeKind);
+  const trackers = actor.getFlag?.(MODULE_ID, POTION_TRACKERS_FLAG)
+    ?? foundry.utils.getProperty(actor, `flags.${MODULE_ID}.${POTION_TRACKERS_FLAG}`)
+    ?? {};
+  const saved = trackers[safeKind] ?? {};
+  const current = normalizePotionTrackerState(saved);
+  const mode = saved.mode === "manual" ? "manual" : "auto";
+  const adjustment = Math.trunc(toNumber(saved.adjustment, 0));
   const result = await DialogV2.wait({
     window: { title: definition.label },
     classes: ["rm-potion-tracker-dialog"],
     content: `
       <div class="rm-potion-tracker-dialog__fields">
+        ${safeKind === "reagents" ? "" : `<label>Режим<select name="mode">
+          <option value="auto" ${mode === "auto" ? "selected" : ""}>Авто</option>
+          <option value="manual" ${mode === "manual" ? "selected" : ""}>Вручную</option>
+        </select></label>`}
         <label>${definition.valueLabel}<input name="value" type="number" min="0" step="1" value="${current.value}"></label>
+        ${safeKind === "reagents" ? "" : `<label>Корректировка<input name="adjustment" type="number" step="1" value="${adjustment}"></label>`}
         <label>Максимум<input name="max" type="number" min="1" step="1" value="${current.max}"></label>
       </div>`,
     buttons: [{
@@ -85,7 +106,9 @@ export async function editPotionTracker(actor, kind, {
       default: true,
       callback: (_event, button) => ({
         value: button?.form?.elements?.namedItem?.("value")?.value,
-        max: button?.form?.elements?.namedItem?.("max")?.value
+        max: button?.form?.elements?.namedItem?.("max")?.value,
+        mode: button?.form?.elements?.namedItem?.("mode")?.value,
+        adjustment: button?.form?.elements?.namedItem?.("adjustment")?.value
       })
     }, {
       action: "cancel",
@@ -93,17 +116,21 @@ export async function editPotionTracker(actor, kind, {
       callback: () => null
     }]
   });
-  if (result == null) return null;
+  if (result == null || result === "cancel") return null;
 
   const next = normalizePotionTrackerState(result);
-  const trackers = actor.getFlag?.(MODULE_ID, POTION_TRACKERS_FLAG)
-    ?? foundry.utils.getProperty(actor, `flags.${MODULE_ID}.${POTION_TRACKERS_FLAG}`)
-    ?? {};
   await actor.setFlag(MODULE_ID, POTION_TRACKERS_FLAG, {
     ...trackers,
-    [safeKind]: next
+    [safeKind]: {
+      ...saved,
+      ...next,
+      ...(safeKind === "reagents" ? {} : {
+        mode: result.mode === "manual" ? "manual" : "auto",
+        adjustment: Math.trunc(toNumber(result.adjustment, 0))
+      })
+    }
   });
-  return next;
+  return getPotionTrackerState(actor, safeKind);
 }
 
 export function getUniversalBeltUnlockedSlotCount(actor) {
@@ -182,6 +209,7 @@ function buildMergeKey(item) {
     type: itemData.type ?? "",
     name: itemData.name ?? "",
     sourceType: flags.sourceType ?? "",
+    alchemyProductId: flags.alchemyProductId ?? "",
     gearId: flags.gearId ?? "",
     magicItemId: flags.magicItemId ?? "",
     materialId: flags.materialId ?? "",

@@ -9,15 +9,16 @@ import {
 } from "./compendium-utils.js?v=1.4.327";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildAlchemyActivities,
   buildAlchemyConsumableUses
-} from "./alchemy-automation.js?v=1.4.355";
+} from "./alchemy-automation.js?v=1.5.11";
 
 const PACK_ID = `world.${ALCHEMY_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = Object.freeze(["Ребрея"]);
-const TEMPLATE_VERSION = 3;
+const TEMPLATE_VERSION = 4;
 const MODULE_ASSET_PREFIX = `modules/${MODULE_ID}/`;
 const APPROVED_PRODUCT_COUNT = 230;
 const OMITTED_DUPLICATE_SOURCE_NUMBERS = new Set([36, 52, 67, 76]);
@@ -436,18 +437,62 @@ async function applyTextOnlyAlchemyUpdate(document, data) {
     }
     await document.deleteEmbeddedDocuments("ActiveEffect", effectIds);
   }
+  const desiredActivityIds = new Set(Object.keys(data?.system?.activities ?? {}));
   for (const activityId of embeddedDocumentIds(document?.system?.activities)) {
+    if (desiredActivityIds.has(activityId)) continue;
     data[`system.activities.-=${activityId}`] = null;
   }
   await document.update(data);
 }
 
 export class AlchemyCompendiumService {
-  constructor({ validateAssetPaths = validateAlchemyAssetPaths } = {}) {
+  constructor({ validateAssetPaths = validateAlchemyAssetPaths, logger = console } = {}) {
     if (typeof validateAssetPaths !== "function") {
       throw new TypeError("validateAssetPaths must be a function");
     }
     this.validateAssetPaths = validateAssetPaths;
+    this.logger = logger;
+  }
+
+  async syncOwnedPotionActivities(products = [], { actors = globalThis.game?.actors?.contents ?? [] } = {}) {
+    if (globalThis.game?.system?.id !== DND5E_SYSTEM_ID || !isActiveGmClient(globalThis.game)) return;
+    const byId = new Map(products.filter((product) => product?.productType === "Зелье")
+      .map((product) => [product.id, product]));
+    for (const actor of actors) {
+      if (actor?.type !== "character") continue;
+      const items = Array.isArray(actor.items?.contents) ? actor.items.contents : Array.from(actor.items?.values?.() ?? []);
+      for (const item of items) {
+        const flags = item?.flags?.[MODULE_ID] ?? {};
+        const product = byId.get(flags.alchemyProductId);
+        if (item?.type !== "consumable" || flags.managed !== true || flags.sourceType !== "alchemyProduct"
+          || !product || flags.sourceNumber !== product.sourceNumber || flags.productType !== "Зелье") continue;
+        const [id, original] = Object.entries(buildAlchemyActivities(product))[0] ?? [];
+        if (!id) continue;
+        const activities = item.system?.activities;
+        if (typeof activities?.get === "function" ? activities.get(id) : activities?.[id]) continue;
+        const uses = item.system?.uses;
+        const unconfigured = !uses || ((!uses.max || Number(uses.max) === 0)
+          && Number(uses.spent ?? 0) === 0 && !(uses.recovery?.length));
+        const standardUses = unconfigured || (Number(uses?.max) === 1 && uses?.autoDestroy === true);
+        const activity = structuredClone(original);
+        if (activity.flags?.[MODULE_ID]?.alchemyReagent && Object.hasOwn(flags, "reagentLevel")) {
+          activity.flags[MODULE_ID].alchemyReagent.reagentLevel = flags.reagentLevel;
+        }
+        if (!standardUses) {
+          activity.consumption.targets[0].type = "material";
+          activity.consumption.targets[0].target = String(item.id ?? item._id);
+          activity.flags[MODULE_ID].alchemyConsumeOwnQuantity = true;
+        }
+        const update = { [`system.activities.${id}`]: activity };
+        if (unconfigured) update["system.uses"] = buildAlchemyConsumableUses(product);
+        try {
+          await item.update(update);
+        }
+        catch (error) {
+          this.logger?.error?.(`${MODULE_ID} | Failed to update owned alchemy item ${item.id ?? item._id}.`, error);
+        }
+      }
+    }
   }
 
   async sync(products = []) {

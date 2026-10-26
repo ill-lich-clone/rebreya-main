@@ -21,7 +21,8 @@ import {
 import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.1";
-import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.4.355";
+import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
+import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.11";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.330";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.330";
@@ -318,7 +319,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.396";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.8";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.11";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -389,7 +390,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.393";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.11";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.396";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
@@ -423,6 +424,8 @@ import {
   ALCHEMY_BOMB_MUTATION_COMMAND,
   registerAlchemyBombSocketCommand
 } from "./integrations/alchemy-bomb-socket.js?v=1.4.356";
+import { ALCHEMY_REAGENT_COMMAND, ALCHEMY_REAGENT_RESERVE_COMMAND, ALCHEMY_REAGENT_CANCEL_COMMAND,
+  registerAlchemyReagentSocketCommand } from "./integrations/alchemy-reagent-socket.js?v=1.5.11";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js?v=1.4.377";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.396";
 import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.396";
@@ -2021,6 +2024,19 @@ export class RebreyaMainModule {
       durabilityService: this.durabilityService,
       mapObjectTokenService: this.mapObjectTokenService
     });
+    this.alchemyReagentService = new AlchemyReagentService({
+      reservationRepository: this.worldSettingMutationRepository,
+      getProduct: async (id) => (await this.getModel()).alchemyProductById?.get(id) ?? null,
+      mutationRequester: (payload) => this.privilegedMutationGateway.mutate(
+        ALCHEMY_REAGENT_COMMAND, payload, { operationId: `alchemy-reagent:${payload.messageUuid}` }
+      ),
+      reservationRequester: (payload) => this.privilegedMutationGateway.mutate(
+        ALCHEMY_REAGENT_RESERVE_COMMAND, payload, { operationId: `alchemy-reserve:${payload.operationId}` }
+      ),
+      cancellationRequester: (operationId) => this.privilegedMutationGateway.mutate(
+        ALCHEMY_REAGENT_CANCEL_COMMAND, { operationId }, { operationId: `alchemy-cancel:${operationId}` }
+      )
+    });
     this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.sizeAutomationService = new SizeAutomationService(this);
@@ -2464,6 +2480,7 @@ export class RebreyaMainModule {
     registerSpellInstanceSocketCommand(this);
     registerSummonLifecycleSocketCommand(this);
     registerAlchemyBombSocketCommand(this);
+    registerAlchemyReagentSocketCommand(this.privilegedMutationGateway, this.alchemyReagentService);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
     const authorizeGlobalEvents = (_payload, { sender }) => sender?.isGM === true;
@@ -4664,6 +4681,7 @@ export class RebreyaMainModule {
       try {
         if (model.source?.alchemyProductsAvailable !== false) {
           await this.alchemyCompendium.sync(model.alchemyProducts);
+          await this.alchemyCompendium.syncOwnedPotionActivities(model.alchemyProducts);
         }
       }
       catch (error) {
@@ -8356,6 +8374,7 @@ Hooks.once("init", () => {
 
   try {
     registerSettings();
+    registerAlchemyReagentSettings();
     registerDurabilitySettings();
     registerIconBadgeSettings();
   }

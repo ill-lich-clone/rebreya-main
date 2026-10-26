@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.10");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.10.js"]);
+  assert.equal(manifest.version, "1.5.11");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.11.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.10/u);
@@ -106,9 +106,10 @@ test("managed compendia sync actions and glossary before feats", async () => {
 
 test("composition root syncs one alchemy compendium on the active GM between gear and unrelated packs", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
-  assert.equal(source.match(/import \{ AlchemyCompendiumService \} from "\.\/data\/alchemy-compendium\.js\?v=1\.4\.355";/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/import \{ AlchemyCompendiumService \} from "\.\/data\/alchemy-compendium\.js\?v=1\.5\.11";/gu)?.length ?? 0, 1);
   assert.equal(source.match(/this\.alchemyCompendium = new AlchemyCompendiumService\(\);/gu)?.length ?? 0, 1);
   assert.equal(source.match(/await this\.alchemyCompendium\.sync\(model\.alchemyProducts\);/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/await this\.alchemyCompendium\.syncOwnedPotionActivities\(model\.alchemyProducts\);/gu)?.length ?? 0, 1);
 
   const gear = source.indexOf("await this.gearCompendium.sync(model.gear)");
   const activeGmGuard = source.indexOf("if (isActiveGmClient(globalThis.game))", gear);
@@ -131,6 +132,13 @@ test("composition root wires one alchemy bomb runtime and its typed command", as
   assert.match(source, /statusService: this\.combatStatusService/u);
   assert.match(source, /durabilityService: this\.durabilityService/u);
   assert.match(source, /mapObjectTokenService: this\.mapObjectTokenService/u);
+});
+
+test("composition root wires the potion receipt repository and registers its setting", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.match(source, /reservationRepository:\s*this\.worldSettingMutationRepository/u);
+  assert.equal(source.match(/registerAlchemyReagentSettings\(\);/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/registerAlchemyReagentSocketCommand\(this\.privilegedMutationGateway, this\.alchemyReagentService\);/gu)?.length ?? 0, 1);
 });
 
 function createHooks() {

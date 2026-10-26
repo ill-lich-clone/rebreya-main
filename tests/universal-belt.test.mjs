@@ -86,8 +86,8 @@ test("potion trackers default to 0/9 and preserve two-digit manual values", asyn
       flags: {
         "rebreya-main": {
           potionTrackers: {
-            healing: { value: 11, max: 13 },
-            utility: { value: 4, max: 9 }
+            healing: { value: 11, max: 13, mode: "manual" },
+            utility: { value: 4, max: 9, mode: "manual" }
           }
         }
       }
@@ -96,6 +96,31 @@ test("potion trackers default to 0/9 and preserve two-digit manual values", asyn
     assert.deepEqual(getPotionTrackerState(makeActor(), "healing"), { value: 0, max: 9 });
     assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 11, max: 13 });
     assert.deepEqual(getPotionTrackerState(actor, "utility"), { value: 4, max: 9 });
+  }
+  finally {
+    restore();
+  }
+});
+
+test("automatic storage counts items without double-counting the legacy manual value", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { getPotionTrackerState } = await import(`../scripts/integrations/universal-belt.js?auto-count=${Date.now()}`);
+    const actor = makeActor({ flags: { "rebreya-main": { potionTrackers: {
+      healing: { value: 11, max: 13 }, utility: { value: 4, max: 9 }
+    } } } });
+    actor.items = { contents: [{
+      type: "consumable", system: { quantity: 2 }, flags: { "rebreya-main": {
+        managed: true, sourceType: "alchemyProduct", alchemyProductId: "alchemy-80",
+        sourceNumber: 80, productType: "Зелье", rank: 4
+      } }
+    }] };
+    assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 8, max: 13 });
+    assert.equal(actor.flags["rebreya-main"].potionTrackers.healing.value, 11);
+    actor.flags["rebreya-main"].potionTrackers.healing.mode = "manual";
+    assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 11, max: 13 });
+    actor.flags["rebreya-main"].potionTrackers.healing = { value: 11, max: 13, mode: "auto", adjustment: 2 };
+    assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 10, max: 13 });
   }
   finally {
     restore();
@@ -126,6 +151,27 @@ test("reagent tracker defaults to 0/9 and preserves an over-limit manual value",
   }
 });
 
+test("reagent tracker adds active managed contributions to its preserved manual baseline", async () => {
+  const restore = installFoundryStubs();
+  const previousGame = globalThis.game;
+  globalThis.game = { time: { worldTime: 100 } };
+  try {
+    const { getPotionTrackerState } = await import(`../scripts/integrations/universal-belt.js?auto-reagents=${Date.now()}`);
+    const actor = makeActor({ flags: { "rebreya-main": { potionTrackers: { reagents: { value: 2, max: 9 } } } } });
+    actor.effects = { contents: [3, 1].map((level) => ({ flags: { "rebreya-main": {
+      alchemyReagent: { level, expiresAt: 160 }
+    } } })) };
+    assert.deepEqual(getPotionTrackerState(actor, "reagents"), { value: 6, max: 9 });
+    actor.effects.contents[0].disabled = true;
+    assert.deepEqual(getPotionTrackerState(actor, "reagents"), { value: 3, max: 9 });
+    assert.equal(actor.flags["rebreya-main"].potionTrackers.reagents.value, 2);
+  }
+  finally {
+    globalThis.game = previousGame;
+    restore();
+  }
+});
+
 test("potion tracker dialog saves normalized manual value and maximum on the actor", async () => {
   const restore = installFoundryStubs();
   try {
@@ -143,7 +189,7 @@ test("potion tracker dialog saves normalized manual value and maximum on the act
           form: {
             elements: {
               namedItem(name) {
-                return { value: name === "value" ? "11" : "13" };
+                return { value: name === "mode" ? "manual" : name === "value" ? "11" : "13" };
               }
             }
           }
@@ -153,6 +199,7 @@ test("potion tracker dialog saves normalized manual value and maximum on the act
 
     assert.deepEqual(await editPotionTracker(actor, "healing", { DialogV2 }), { value: 11, max: 13 });
     assert.equal(shown.window.title, "Лечебные зелья");
+    assert.match(shown.content, /Ручной итог/u);
     assert.match(shown.content, /value="0"/u);
     assert.match(shown.content, /value="9"/u);
     assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 11, max: 13 });
@@ -190,7 +237,21 @@ test("reagent tracker dialog saves the shared manual level and maximum", async (
     assert.deepEqual(await editPotionTracker(actor, "reagents", { DialogV2 }), { value: 10, max: 9 });
     assert.equal(shown.window.title, "Уровень реагентов");
     assert.match(shown.content, /Текущий уровень/u);
+    assert.match(shown.content, /ручная часть/u);
     assert.deepEqual(getPotionTrackerState(actor, "reagents"), { value: 10, max: 9 });
+  }
+  finally {
+    restore();
+  }
+});
+
+test("native DialogV2 cancel action does not overwrite saved tracker values", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { editPotionTracker } = await import(`../scripts/integrations/universal-belt.js?dialog-cancel=${Date.now()}`);
+    const actor = new FakeActor({ flags: { "rebreya-main": { potionTrackers: { healing: { value: 7, max: 12 } } } } });
+    assert.equal(await editPotionTracker(actor, "healing", { DialogV2: { wait: async () => "cancel" } }), null);
+    assert.deepEqual(actor.flags["rebreya-main"].potionTrackers.healing, { value: 7, max: 12 });
   }
   finally {
     restore();
@@ -384,6 +445,25 @@ test("assigning a quantity-one item moves that item into the belt without creati
     assert.equal(belted, source);
     assert.equal(actor.created.length, 0);
     assert.equal(getUniversalBeltItemSlot(source), 1);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("removing a belted potion never merges different alchemy identities with the same name", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { removeItemFromUniversalBelt } = await import(`../scripts/integrations/universal-belt.js?alchemy-merge=${Date.now()}`);
+    const actor = new FakeActor();
+    const normal = actor.addItem({ _id: "normal", name: "Зелье", type: "consumable", system: { quantity: 2 },
+      flags: { "rebreya-main": { sourceType: "alchemyProduct", alchemyProductId: "alchemy-10" } } });
+    const belted = actor.addItem({ _id: "belted", name: "Зелье", type: "consumable", system: { quantity: 1 },
+      flags: { "rebreya-main": { sourceType: "alchemyProduct", alchemyProductId: "alchemy-35", universalBelt: { slot: 1 } } } });
+    await removeItemFromUniversalBelt(actor, belted);
+    assert.equal(normal.system.quantity, 2);
+    assert.equal(belted.deleted, false);
+    assert.equal(actor.items.contents.length, 2);
   }
   finally {
     restore();
@@ -653,8 +733,8 @@ test("renderUniversalBeltSlots adds two potion artworks and an over-limit reagen
       flags: {
         "rebreya-main": {
           potionTrackers: {
-            healing: { value: 4, max: 9 },
-            utility: { value: 11, max: 13 },
+            healing: { value: 4, max: 9, mode: "manual" },
+            utility: { value: 11, max: 13, mode: "manual" },
             reagents: { value: 10, max: 9 }
           }
         }
@@ -704,7 +784,7 @@ test("clicking a potion bottle saves the manual rank and rerenders the actor she
           form: {
             elements: {
               namedItem(name) {
-                return { value: name === "value" ? "7" : "12" };
+                return { value: name === "mode" ? "manual" : name === "value" ? "7" : "12" };
               }
             }
           }
