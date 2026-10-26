@@ -98,6 +98,16 @@
 
 ## Результаты исполнения
 
+### Обязательное исправление назначения карточки
+
+Прямое уточнение пользователя утверждает включение карточки в существующий компендиум; исполнение продолжается Native без повторного выбора дизайна.
+
+- [x] RED: `tests/spells-compendium.test.mjs` проверяет Shield в реальном JSON-каталоге, разрешение его CPR pack, сохранение native данных и маркера, SRD fallback, effects-aware signature и два sync без дубликатов/изменения остальных spell routes.
+- [x] GREEN: добавить точную Shield source definition в `data/rebreya-spells-v01.json`; расширить `normalizedSourceDefinition`, `buildManagedSpellEntry(definition,source,options)` и `SpellsCompendiumService.sync()` для per-entry CPR source + source description fallback, переиспользовать `buildShieldSpellItem`. Не создавать второй компендиум, новый сервис либо новый способ расхода.
+- [x] Выпуск 1.5.9: новая версия/forwarder, scoped spells-compendium import, профильная документация и release expectations. Focused tests → полный прогон Node tests, tracked syntax/JSON/diff; scoped commit/push в `lich_branch`.
+
+Подтверждение уточнения: три новые регрессии сначала упали; после реализации focused **66/66**, полный `node --test tests/*.test.mjs` — **5058 tests / 5057 passed / 0 failed / 1 skipped**. Синтаксис **1074 JS/MJS / 0 failed**, JSON **65 / 0 failed**. В авторизованном active-GM сеансе CODEX (Foundry 13.351 / dnd5e 5.2.5 / MIDI 13.0.61 / CPR 1.5.44) перезагружен клиент и выполнен штатный sync. Карточка **Compendium.world.rebreya-spells.Item.DXprZvUhDCRqHdzg**, имя «Щит», description length 223, source effect +5, `turnStartSource`, CPR identifier `shield`, module marker version 1, native `spellSlot:true`. Повторный sync: **unchanged 3, created 0, updated 0, deleted 0**, Shield count 1 и прежний ID; Counterspell/Melf сохранены. Компендиум и карточка открыты для пользователя. Это подтверждение поставки карточки; полная live combat/expiry/player матрица остаётся отдельным непроверенным пунктом предыдущего этапа.
+
 - Tasks 1–3 реализованы с RED→GREEN: source-preserving GM import; фильтр native reactions; CPR selector/native-use handoff. Общая очередь/ledger и vendor files сохранены.
 - Независимый Codex-review (GPT-6 Astra high) нашёл два дефекта: ID ambiguity synthetic Actors и Active Defence. Оба воспроизведены тестами до исправления и устранены: original CPR UUID mode и готовый exact-target defence roll. Повторный review не запускался; fixed regressions + полный прогон проверяют исправления.
 - Полный `node --test tests/*.test.mjs`: **5055 tests, 5054 passed, 0 failed, 1 skipped**. Первый прогон выявил два старых release/cache ожидания; они обновлены без ослабления поведенческих проверок, полный повтор зелёный.

@@ -5,6 +5,7 @@ import {
 } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildCounterspellActivity } from "./counterspell-activity.js";
+import { buildShieldSpellItem } from "./shield-spell-item.js?v=1.5.8";
 import { ensurePackSidebarFolder } from "./compendium-utils.js?v=1.4.327";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {
@@ -19,6 +20,7 @@ const PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
 const REBREYA_SOURCE_LABEL = "Rebreya";
 const SPELLS_DATA_PATH = `modules/${MODULE_ID}/data/rebreya-spells-v01.json`;
 const COUNTERSPELL_ID = "counterspell-rebreya";
+const SHIELD_ID = "shield-rebreya";
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -110,6 +112,10 @@ function normalizedSourceDefinition(entry) {
   const sourceIdentifier = cleanString(entry?.sourceIdentifier);
   if (id === COUNTERSPELL_ID && sourceIdentifier && !cleanString(entry?.builder) && entry?.version == null) {
     return { id, sourceIdentifier };
+  }
+  if (id === SHIELD_ID && sourceIdentifier === "shield" && entry?.sourcePack === "chris-premades.CPRSpells"
+    && !cleanString(entry?.builder) && entry?.version == null) {
+    return { id, sourceIdentifier, sourcePack: entry.sourcePack };
   }
   return null;
 }
@@ -214,10 +220,10 @@ export function buildRebreyaSpellItem(source) {
   };
 }
 
-export function buildManagedSpellEntry(definition, source = null) {
+export function buildManagedSpellEntry(definition, source = null, options = {}) {
   const data = definition?.builder === MELFS_MINUTE_METEORS_RECIPE
     ? buildMelfsMinuteMeteorsItem()
-    : buildRebreyaSpellItem(source);
+    : definition?.id === SHIELD_ID ? buildShieldSpellItem(source, options) : buildRebreyaSpellItem(source);
   data.flags ??= {};
   data.flags[MODULE_ID] = {
     ...(data.flags[MODULE_ID] ?? {}),
@@ -229,7 +235,8 @@ export function buildManagedSpellEntry(definition, source = null) {
     name: data.name,
     version: definition.version ?? null,
     system: data.system,
-    flags: data.flags
+    flags: data.flags,
+    ...(definition.id === SHIELD_ID ? { effects: data.effects, img: data.img } : {})
   });
   data.flags[MODULE_ID].signature = signature;
   return {
@@ -263,11 +270,16 @@ export class SpellsCompendiumService {
     const entries = [];
     for (const definition of spells) {
       if (definition.sourceIdentifier) {
-        const sourceDocument = await resolveSourceSpell(sourcePack, definition.sourceIdentifier);
+        const sourceDocument = await resolveSourceSpell(definition.sourcePack ?? sourcePack, definition.sourceIdentifier);
         if (!sourceDocument) {
           throw new Error(`Unable to load dnd5e spell '${definition.sourceIdentifier}'.`);
         }
-        entries.push(buildManagedSpellEntry(definition, getSpellSource(sourceDocument)));
+        const sourceData = getSpellSource(sourceDocument);
+        let description = "";
+        if (definition.id === SHIELD_ID && !sourceData.system?.description?.value) {
+          description = getSpellSource(await resolveSourceSpell(sourcePack, "shield"))?.system?.description?.value ?? "";
+        }
+        entries.push(buildManagedSpellEntry(definition, sourceData, { description }));
       }
       else {
         entries.push(buildManagedSpellEntry(definition));

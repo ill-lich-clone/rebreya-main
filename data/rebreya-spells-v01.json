@@ -7,6 +7,11 @@
       "sourceIdentifier": "counterspell"
     },
     {
+      "id": "shield-rebreya",
+      "sourceIdentifier": "shield",
+      "sourcePack": "chris-premades.CPRSpells"
+    },
+    {
       "id": "melfs-minute-meteors-rebreya",
       "builder": "melfs-minute-meteors",
       "version": 1

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const {
   buildManagedSpellEntry,
@@ -62,6 +63,76 @@ function counterspellSource() {
     }
   };
 }
+
+function shieldSource() {
+  return { _id: "sourceShield0001", name: "Shield", type: "spell", img: "shield.webp", folder: "cpr-folder",
+    system: { identifier: "shield", level: 1, description: { value: "" }, source: { rules: "2014" },
+      activities: { cast: { _id: "cast", type: "utility", consumption: { spellSlot: true, targets: [{ value: "@prof" }] },
+        effects: [{ _id: "barrier" }] } } },
+    effects: [{ _id: "barrier", changes: [{ key: "system.attributes.ac.bonus", mode: 2, value: "5" }],
+      flags: { dae: { specialDuration: ["turnStartSource"] }, "chris-premades": { info: { identifier: "shield" } } } }],
+    flags: { "chris-premades": { info: { identifier: "shield" } } } };
+}
+
+test("shipped Rebreya spell catalog includes Shield from CPR alongside Counterspell and Melf", async () => {
+  const catalog = JSON.parse(await readFile(new URL("../data/rebreya-spells-v01.json", import.meta.url), "utf8"));
+  assert.deepEqual(catalog.spells.find(entry => entry.id === "shield-rebreya"), {
+    id: "shield-rebreya", sourceIdentifier: "shield", sourcePack: "chris-premades.CPRSpells"
+  });
+  assert.equal(catalog.spells.some(entry => entry.id === "counterspell-rebreya"), true);
+  assert.equal(catalog.spells.some(entry => entry.id === "melfs-minute-meteors-rebreya"), true);
+});
+
+test("managed Shield compendium entry preserves native casting and signs source effects", () => {
+  const definition = { id: "shield-rebreya", sourceIdentifier: "shield", sourcePack: "chris-premades.CPRSpells" };
+  const source = shieldSource(); const before = structuredClone(source);
+  const entry = buildManagedSpellEntry(definition, source, { description: "SRD Shield description" });
+  assert.equal(entry.data.name, "Щит"); assert.equal(entry.data.system.identifier, "shield");
+  assert.equal(entry.data.system.description.value, "SRD Shield description");
+  assert.deepEqual(entry.data.system.activities, source.system.activities);
+  assert.deepEqual(entry.data.effects, source.effects);
+  assert.equal(entry.data.flags["rebreya-main"].shieldReaction.version, 1);
+  assert.equal(entry.data.flags["rebreya-main"].spellId, "shield-rebreya");
+  assert.equal(entry.data.folder, undefined);
+  assert.deepEqual(source, before);
+  source.effects[0].flags.dae.specialDuration = ["turnStart"];
+  assert.notEqual(buildManagedSpellEntry(definition, source, { description: "SRD Shield description" }).signature, entry.signature);
+});
+
+test("normal Rebreya compendium sync creates Shield with SRD text and retains all spells on repeat sync", async () => {
+  const old = { game: globalThis.game, foundry: globalThis.foundry, fetch: globalThis.fetch };
+  const catalog = JSON.parse(await readFile(new URL("../data/rebreya-spells-v01.json", import.meta.url), "utf8"));
+  const documents = []; const created = []; const deleted = [];
+  const pack = { collection: "world.rebreya-spells", documentName: "Item", metadata: { system: "dnd5e" },
+    getDocuments: async () => documents,
+    documentClass: { createDocuments: async entries => {
+      for (const entry of entries) { created.push(entry); documents.push({ id: entry._id || `new${documents.length}`,
+        getFlag: (scope, key) => entry.flags?.[scope]?.[key], toObject: () => structuredClone(entry),
+        update: async () => { throw new Error("identical spell sync must not update"); } }); }
+    }, deleteDocuments: async ids => deleted.push(...ids) } };
+  const shield = shieldSource();
+  const description = { ...shieldSource(), system: { ...shield.system, description: { value: "Official SRD Shield" } } };
+  const sourcePack = (entries) => ({
+    getIndex: async () => entries.map(data => ({ _id: data._id, system: { identifier: data.system.identifier } })),
+    getDocument: async id => ({ toObject: () => structuredClone(entries.find(data => data._id === id)) })
+  });
+  const gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm }, system: { id: "dnd5e" },
+    packs: new Map([["world.rebreya-spells", pack], ["dnd5e.spells", sourcePack([counterspellSource(), description])],
+      ["chris-premades.CPRSpells", sourcePack([shield])]]) };
+  globalThis.foundry = {};
+  globalThis.fetch = async () => ({ ok: true, json: async () => structuredClone(catalog) });
+  try {
+    const service = new SpellsCompendiumService();
+    assert.deepEqual((await service.sync()).sync, { unchanged: 0, created: 3, updated: 0, deleted: 0 });
+    assert.deepEqual((await service.sync()).sync, { unchanged: 3, created: 0, updated: 0, deleted: 0 });
+    const copied = created.find(data => data.flags["rebreya-main"].spellId === "shield-rebreya");
+    assert.equal(copied.name, "Щит"); assert.equal(copied.system.description.value, "Official SRD Shield");
+    assert.deepEqual(copied.effects, shield.effects);
+    assert.equal(copied.flags["rebreya-main"].shieldReaction.version, 1);
+    assert.deepEqual(deleted, []);
+  } finally { Object.assign(globalThis, old); }
+});
 
 test("Rebreya Counterspell is a third-level reaction spell", () => {
   const item = buildRebreyaSpellItem(counterspellSource());

@@ -41,7 +41,7 @@ import {
   registerTransportInstanceCommands
 } from "./data/transport-instance-service.js?v=1.4.377";
 import { TransportFuelService } from "./data/transport-fuel-service.js?v=1.4.377";
-import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.330";
+import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.5.9";
 import { ensureWorldShieldSpell } from "./data/shield-spell-item.js?v=1.5.8";
 import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";

@@ -1,5 +1,13 @@
 # «Щит»: world Item и очередь реакций
 
+## Основной источник: компендиум Ребреи
+
+`data/rebreya-spells-v01.json` включает `{id:"shield-rebreya",sourceIdentifier:"shield",sourcePack:"chris-premades.CPRSpells"}`. Стандартный `SpellsCompendiumService.sync()` создаёт карточку в **«Заклинания Rebreya (D&D 5e 2014)»**, `world.rebreya-spells`, вместе с Counterspell и Melf; отдельный ручной world import для получения карточки не нужен.
+
+В `scripts/data/spells-compendium.js` private `normalizedSourceDefinition(entry)` валидирует точный Shield route с per-entry CPR pack, сохраняя прежний Counterspell route. `buildManagedSpellEntry(definition,source=null,options={})` для Shield делегирует `buildShieldSpellItem(source,options)`, добавляет managed `spellId`/signature; signature Shield включает effects/img, а прежние signatures других spells не меняются. `sync()` разрешает `definition.sourcePack ?? sourcePack`, при пустом Shield description берёт текст одноимённого official SRD source и передаёт существующему builder. Валидация source и список entries готовятся до записи managed документов. Канонический sync сохраняет idempotence и существующие маршруты/документы.
+
+Data flow: shipped spell catalog → source pack/document → source-preserving Shield builder + SRD text → managed entry/signature → existing `syncFlaggedManagedDocuments` → Rebreya spell compendium → actor copy с маркером очереди. Focused tests: `tests/spells-compendium.test.mjs`, `tests/shield-spell-item.test.mjs`.
+
 ## Владельцы и контракты
 
 `scripts/data/shield-spell-item.js` владеет исходной мировой копией:
