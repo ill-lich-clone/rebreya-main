@@ -461,6 +461,8 @@ Definition of Done: код, тесты, `README.md` при изменении п
 
 ### 16. Боевые статусы, реакции, атаки и космология
 
+- **Мировой «Щит» и CPR Magic Missile:** [профильный паспорт](shield-reaction-function-passport.md) описывает source-preserving GM import, exact-token фильтр полезности до окна native очереди и owner-side CPR handoff без повторного каста.
+
 - **Общие ходы и начало сражения:** [профильный паспорт](grouped-combat-function-passport.md) описывает `startCombatFromSelection`, native group display, phase coordinator/receipts, DAE/Times Up/MIDI/Effect Macro adapters, typed commands, camera и active-member automation.
 
 - **R5 — репутация на странице «Группа» инвентаря:** [профильный паспорт](reputation-function-passport.md) описывает public `getReputation`/`updateReputation`, exact GM command, atomic Actor receipt, pure rules, InventoryApp/ReputationPanel и scoped refresh. Космология не менялась.

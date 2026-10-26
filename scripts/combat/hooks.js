@@ -90,6 +90,7 @@ export function registerCombatHooks(moduleApi) {
 
   if (moduleApi.midiReactionAdapter) {
     Hooks.on("midi-qol.midiReady", () => moduleApi.midiReactionAdapter.initialize());
+    Hooks.on("midi-qol.ReactionFilter", (...args) => moduleApi.midiReactionAdapter.filterReactions(...args));
   }
   if (moduleApi.reactionQueueService) {
     Hooks.on("userConnected", () => moduleApi.reactionQueueService.recoverExpiredReactionMessages());

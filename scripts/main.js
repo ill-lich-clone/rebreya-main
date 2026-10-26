@@ -42,6 +42,7 @@ import {
 } from "./data/transport-instance-service.js?v=1.4.377";
 import { TransportFuelService } from "./data/transport-fuel-service.js?v=1.4.377";
 import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.330";
+import { ensureWorldShieldSpell } from "./data/shield-spell-item.js?v=1.5.8";
 import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
@@ -316,7 +317,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.396";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.2";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.8";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -333,7 +334,7 @@ import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/e
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.7";
-import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js";
+import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.8";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.1";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.4.392";
@@ -4893,6 +4894,13 @@ export class RebreyaMainModule {
 
   resolveReactionTrigger(request = {}) {
     return this.reactionQueueService.resolve(request);
+  }
+
+  importShieldSpell() {
+    return ensureWorldShieldSpell({
+      game, coordinator: this.worldMutationCoordinator,
+      resolveUuid: globalThis.fromUuid, itemClass: globalThis.Item
+    });
   }
 
   registerReactionType(kind, provider) {

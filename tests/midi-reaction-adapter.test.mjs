@@ -170,3 +170,111 @@ test("two activity clicks during the same pending permission apply only once", a
   await Promise.all([first, second, pending]);
   assert.equal(h.events.filter(Array.isArray).length, 1);
 });
+
+function shieldCase({ total = 12, ac = 10, critical = false, resourceErrors = false } = {}) {
+  const actor = { uuid: "Actor.defender", system: { attributes: { ac: { value: ac, cover: 0 } } }, effects: [],
+    flags: {}, statuses: new Set() };
+  const item = { uuid: "Actor.defender.Item.shield", actor, type: "spell", system: { level: 1, method: "spell", prepared: 1 },
+    flags: { "rebreya-main": { shieldReaction: { version: 1 } } } };
+  const activity = { uuid: `${item.uuid}.Activity.cast`, id: "cast", actor, item, reactionCondition: "",
+    _prepareUsageConfig: () => ({}), _prepareUsageUpdates: async () => resourceErrors ? [new Error("No resource")] : ({}) };
+  const target = { actor, document: { uuid: "Scene.room.Token.guard" }, cover: 0 };
+  const attacker = { uuid: "Actor.attacker", flags: {} };
+  const workflow = { id: "attack-1", actor: attacker, token: { actor: attacker }, attackTotal: total,
+    attackRoll: { total }, isCritical: critical, isFumble: false, activity: { actionType: "mwak", item: { type: "weapon" }, attack: {} },
+    targets: new Set([target]), targetACModifiers: new Map(), targetDescriptors: [] };
+  const midi = { configSettings: () => ({ ignoreSpellReactionRestriction: true, optionalRules: {} }),
+    computeCoverBonus: (_attacker, token) => token.cover, createConditionData: x => x, evalCondition: x => x === "allowed" };
+  return { actor, item, activity, target, workflow, midi };
+}
+
+test("managed Shield filter offers only ordinary hits that +5 actually cancels and preserves other reactions", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  for (const [total, want] of [[9, false], [10, true], [14, true], [15, false], [20, false]]) {
+    for (const trigger of ["reaction", "reactionattacked", "reactionmissed", "reactionpreattack"]) {
+      const h = shieldCase({ total });
+      const adapter = new MidiReactionAdapter({}, { midiProvider: () => h.midi });
+      const other = { uuid: "other", item: { type: "spell" } };
+      const reactions = [h.activity, other]; const ids = reactions.map(x => x.uuid);
+      await adapter.filterReactions(reactions, { workflow: h.workflow }, trigger, ids);
+      assert.deepEqual(ids, want && trigger === "reaction" ? [h.activity.uuid, "other"] : ["other"], `${total}/${trigger}`);
+      assert.equal(reactions.at(-1), other);
+    }
+  }
+});
+
+test("Shield filter respects critical, fumble, existing effects, preparation, resources and authored conditions", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  for (const change of [h => { h.workflow.isCritical = true; }, h => { h.workflow.isFumble = true; },
+    h => { h.actor.effects.push({ flags: { "chris-premades": { info: { identifier: "shield" } } } }); },
+    h => { h.item.system.prepared = 0; }, h => { h.activity._prepareUsageUpdates = async () => ["No slot"]; },
+    h => { h.activity.reactionCondition = "forbidden"; }]) {
+    const h = shieldCase(); change(h);
+    const adapter = new MidiReactionAdapter({}, { midiProvider: () => h.midi });
+    const ids = [h.activity.uuid];
+    await adapter.filterReactions([h.activity], { workflow: h.workflow }, "reaction", ids);
+    assert.deepEqual(ids, []);
+  }
+  for (const method of ["pact", "atwill", "innate"]) {
+    const h = shieldCase(); h.item.system.method = method; h.item.system.prepared = 0;
+    const adapter = new MidiReactionAdapter({}, { midiProvider: () => h.midi }); const ids = [h.activity.uuid];
+    await adapter.filterReactions([h.activity], { workflow: h.workflow }, "reaction", ids);
+    assert.deepEqual(ids, [h.activity.uuid]);
+  }
+});
+
+test("Shield uses actual cover, descriptor AC, flanking and already evaluated bonuses without rerolling", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  const h = shieldCase({ total: 18, ac: 12 }); h.target.cover = 5;
+  h.workflow.targetACModifiers.set(h.actor.uuid, 2);
+  h.workflow.targetDescriptors = [{ uuid: h.actor.uuid, flankingBonus: 1 }];
+  h.midi.configSettings = () => ({ optionalRules: { flankingBonus: "+1" } });
+  h.workflow.actor.flags = { midi: { evaluated: { grants: { attack: { bonus: { all: { value: 2 } } } } } } };
+  h.actor.flags["midi-qol"] = { grants: { attack: { bonus: { all: "1d4" } } } };
+  const adapter = new MidiReactionAdapter({}, { midiProvider: () => h.midi });
+  let context = await adapter.getShieldAttackContext(h.workflow, h.target);
+  assert.equal(context.effectiveAC, 18); assert.equal(context.attackTotal, 20);
+  h.workflow.actor.flags.midi.evaluated.ignoreCover = { value: true };
+  context = await adapter.getShieldAttackContext(h.workflow, h.target);
+  assert.equal(context.effectiveAC, 13);
+  h.target.cover = Infinity;
+  assert.equal(await adapter.getShieldAttackContext(h.workflow, h.target), null);
+  h.target.cover = 0; h.actor.system.attributes.ac.cover = 2;
+  context = await adapter.getShieldAttackContext(h.workflow, h.target);
+  assert.equal(context.effectiveAC, 11); // native ignoreCover removes the status bonus already baked into value
+});
+
+test("exact target snapshot prevents linked-token cover substitution before entering the queue", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  const h = shieldCase({ total: 16 });
+  const covered = { actor: h.actor, document: { uuid: "Scene.room.Token.covered" }, cover: 5 };
+  h.workflow.targets.add(covered);
+  let begins = 0;
+  const adapter = new MidiReactionAdapter({ reactionQueueService: { resolveManagedReaction: () => { begins++; return { name: "queued" }; } } }, {
+    midiProvider: () => h.midi,
+    resolver: uuid => uuid === h.activity.uuid ? h.activity : uuid === covered.document.uuid ? covered : h.target
+  });
+  const options = { workflow: h.workflow }; const ids = [h.activity.uuid];
+  await adapter.filterReactions([h.activity], options, "reaction", ids);
+  const copied = JSON.parse(JSON.stringify({ ...options, workflow: undefined }));
+  const data = { triggerType: "reaction", reactionActivityList: ids, options: copied };
+  assert.deepEqual(await adapter.choose({ ...data, tokenUuid: h.target.document.uuid }), { name: "None" });
+  assert.equal(begins, 0);
+  assert.deepEqual(await adapter.choose({ ...data, tokenUuid: covered.document.uuid }), { name: "queued" });
+  assert.equal(begins, 1);
+  covered.actor.system.attributes.ac.value = 20;
+  assert.deepEqual(await adapter.choose({ ...data, tokenUuid: covered.document.uuid }), { name: "None" });
+  assert.equal(begins, 1);
+});
+
+test("Active Defence offers Shield using the exact evaluated defence result rather than attack d20 total", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  for (const [attackTotal, defenceTotal, want] of [[14, 9, false], [20, 12, true], [14, 10, true], [20, 15, false]]) {
+    const h = shieldCase({ total: attackTotal });
+    h.workflow.activeDefenceDC = 15;
+    h.workflow.rollResults = [{ total: defenceTotal, dice: [{ total: defenceTotal }] }];
+    const adapter = new MidiReactionAdapter({}, { midiProvider: () => h.midi }); const ids = [h.activity.uuid];
+    await adapter.filterReactions([h.activity], { workflow: h.workflow }, "reaction", ids);
+    assert.deepEqual(ids, want ? [h.activity.uuid] : [], `${attackTotal}/${defenceTotal}`);
+  }
+});
