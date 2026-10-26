@@ -18,7 +18,7 @@
 - «Открытие ссылок не пишет документы, settings, stock или mutation journal»; получение inventory actor использует `create: false`.
 - «Общий постоянный кэш и новые hooks для кэша не вводятся»; поиск выполняется по клику и использует индекс Foundry.
 - Сохранить `openTradeEntry`, JournalRecord viewer, quantity/formulas/budgets, manual/custom economics, merge/transfer/recovery и `nativeImportSource` authority.
-- Работать в чистой `lich_branch`; перед product edits повторить Git preflight. Выполнение — самостоятельно и последовательно в этом чате, Gemini используется для ограниченных черновиков и проверок.
+- Работать в чистой `lich_branch`; перед product edits повторить Git preflight. Выполнение — самостоятельно и последовательно в этом чате, Codex выполняет ограниченные черновики и проверки.
 - Один итоговый product commit после полной проверки: промежуточные компоненты не публикуются с прежней версией. План коммитится отдельно. Выпуск `1.4.377`, если перед исполнением версия остаётся `1.4.376`; при другом baseline определить следующий свободный patch и согласованно закрепить его в release-тестах.
 
 ## Review Focus
@@ -92,11 +92,11 @@
 - [x] **2. Повысить `module.json` и создать forwarder из одной строки `import "./main.js";`.** Обновить incoming imports изменённых owners и согласованный clock/inventory runtime graph до нового cache key. Для новых helpers использовать один canonical URL во всех импортерах. Не переписывать старые forwarders и не обновлять не связанное с изменением содержимое каталогов/автоматизаций.
 - [x] **3. Обновить паспорт и README.** Записать сигнатуры helpers/resolver/UI owner, порядок выбора источника, права, отсутствие mutation authority, сохранение source metadata и focused tests. Описать public `resolveItemSource` и кликабельность любого inventory Item. Паспорт описывает финальный код.
 - [x] **4. Запустить release/focused checks.** `node --test tests/module-manifest.test.mjs tests/inventory-transfer-imports.test.mjs` плюс affected suites после новых изменений; ожидается 0 failed и один fresh URL каждого stateful owner.
-- [x] **5. Выполнить независимую проверку финального diff.** Проверяющий сверяет source priority, permissions, ambiguity, source preservation, manual economics и legacy/recovery contracts со спецификацией. Gemini используется для ограниченных проверок; заключительный независимый reviewer проверяет весь product diff. Проверить важные замечания по оригинальному коду; исправления закреплять regression test до product edit.
+- [x] **5. Выполнить независимую проверку финального diff.** Проверяющий сверяет source priority, permissions, ambiguity, source preservation, manual economics и legacy/recovery contracts со спецификацией. Codex выполняет ограниченные проверки; заключительный независимый reviewer проверяет весь product diff. Проверить важные замечания по оригинальному коду; исправления закреплять regression test до product edit.
 - [x] **6. Проверить живой Foundry, если доступен.** Алхимия; unique world custom; произвольный pack Item; duplicate name; отсутствующий источник; JournalRecord; доступ игрока. Если активного тестового мира/доступа нет, зафиксировать ограничение без заявления о live QA.
 - [x] **7. Выполнить один полный прогон перед product commit.** `node --test tests/*.test.mjs`, `git diff --check`; tracked JS/MJS через `node --check`, tracked JSON через `ConvertFrom-Json`. Новые JS/MJS включить отдельным syntax check либо explicit staging перед tracked enumeration. Сохранить passed/failed/skipped counts и реальные ошибки; повторять только affected checks после исправлений.
 - [x] **8. Проверить содержательный `git diff`, `git diff --stat`, stage только файлы этой задачи и `git diff --cached --check`.** Повторить Git preflight при изменившемся remote/working tree; чужие изменения или remote lich ahead останавливают публикацию. Commit: `fix: resolve source links for all inventory items`; `git push -u origin lich_branch`, без force push. Проверить чистое состояние и совпадение с remote.
-- [x] **9. Дополнить этот план отчётом.** Spec/plan paths, product commit, версия, команды и counts, вклад Gemini/reviewer, пределы live QA; объяснить пользователю именно итоговое поведение.
+- [x] **9. Дополнить этот план отчётом.** Spec/plan paths, product commit, версия, команды и counts, результаты reviewer, пределы live QA; объяснить пользователю именно итоговое поведение.
 
 ## Pre-implementation Evidence
 

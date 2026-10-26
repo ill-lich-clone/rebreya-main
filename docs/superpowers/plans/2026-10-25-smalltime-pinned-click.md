@@ -53,7 +53,7 @@
 ## Execution decisions
 
 - Existing `lich_branch` is required by project instructions. Sibling runtime is outside Git; isolate with exact backup and disposable patch-validation copy. A new Git worktree would not isolate that sibling.
-- Use native PowerShell bookkeeping in ignored `tmp/smalltime-pinned-click/progress.md` instead of Bash helpers. Fresh Gemini review follows the user's default reviewer/delegation preference.
+- Use native PowerShell bookkeeping in ignored `tmp/smalltime-pinned-click/progress.md` instead of Bash helpers. Fresh independent review uses Codex.
 - Self-review: every spec requirement maps to Task 1; no shared interfaces between independent tasks because there is one task. Threshold and floating-click redesign deliberately excluded.
 
 ## Результат выполнения

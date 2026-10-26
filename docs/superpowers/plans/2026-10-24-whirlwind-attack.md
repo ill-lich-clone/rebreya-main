@@ -95,7 +95,7 @@
 - [x] Поднять версию и esmodules вместе; проверить runtime-конфигурацию на старый entrypoint.
 - [ ] В доступном Foundry world подтвердить точные runtime версии; проверить предмет с `lchWhirl`, существующее оружие, один бросок против нескольких КД, половину damage, выбор единственной bonus target, повторное использование в одном ходу, игрока/GM, reload без дубликатов и обычную атаку. Тестовые документы убрать; сохранить компактные результаты. Недоступную live-проверку явно отметить.
 - [x] Выполнить один полный проход `node --test tests/*.test.mjs`, `git diff --check`, `node --check` всех tracked JS/MJS и `ConvertFrom-Json` всех tracked JSON. Для нового forwarder отдельно выполнить `node --check` до staging. Отчёт: passed/failed и реальные ошибки.
-- [x] Независимый review соответствия spec/plan, адресности extraDamage, сохранения авторских данных и hook timing; исправления проверять затронутыми focused-тестами. Gemini использовать только если headless command permission стал доступен, иначе доступного reviewer.
+- [x] Независимый review соответствия spec/plan, адресности extraDamage, сохранения авторских данных и hook timing; исправления проверять затронутыми focused-тестами. Независимый review выполнять средствами Codex.
 - [x] Проверить `git diff --stat`, содержательный diff и отсутствие чужих изменений. Stage только файлы задачи, включая spec/plan; commit `feat: add whirlwind weapon attack activity`; `git push -u origin lich_branch`.
 
 ## Self-review

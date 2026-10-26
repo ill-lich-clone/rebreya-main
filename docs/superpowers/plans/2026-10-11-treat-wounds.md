@@ -93,7 +93,7 @@
 - [ ] Update README macro/API and passport signatures, owners, lifecycle, four outcomes, group source, time accounting, continuation, tests and recovery constraints.
 - [ ] Run full `node --test tests/*.test.mjs` once; report passed/failed counts and actual failures. Run `node --check` for tracked JS/MJS, parse tracked JSON, `git diff --check`; rerun affected checks only after corrective edits.
 - [ ] Live-check exact Foundry/system build through an existing authenticated world binding: GM/player, self/other patient, full/zero HP, all four outcome cards, group kit debit, continuation once, custom DC permission, reload, expired effect. Use fixture Actors/Items and preserve original world state; never infer compatibility from unit tests. Report unavailable live coverage explicitly.
-- [ ] Review scoped diff against spec, including preserved quantity rules and formulas; `git diff --stat` and substantive diff. Fresh independent review via Gemini if its read-only command permission is available; otherwise locally review and report that limitation.
+- [ ] Review scoped diff against spec, including preserved quantity rules and formulas; `git diff --stat` and substantive diff. Fresh independent review uses Codex.
 - [ ] Stage only task files, commit meaningful feature change, `git push -u origin lich_branch` without force; report commit, version, tests, limitations, spec and plan paths.
 
 ## Execution handoff
