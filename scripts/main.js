@@ -319,7 +319,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.396";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.13";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.15";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -351,8 +351,10 @@ import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.353-statuscounter-setup-retry";
-import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service.js?v=1.4.359";
+import { CombatStatusService, DECAYING_DAMAGE_OVERTIME_LABEL, registerCombatStatusConfig } from "./combat/status-service.js?v=1.5.15";
+import { DecayingRecoveryService } from "./combat/decaying-recovery-service.js";
+import { bindDecayingRecoveryChat, publishDecayingRecoveryPrompt, requestRecoveryOnce, runDecayingRecoveryMacro } from "./integrations/decaying-recovery-ui.js";
+import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service.js?v=1.5.15";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
@@ -372,7 +374,7 @@ import {
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.1";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.6";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.15";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
 import { getActorHandReservations } from "./integrations/held-items.js?v=1.4.383";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
@@ -2014,6 +2016,22 @@ export class RebreyaMainModule {
     });
     this.curseUpgradeAutomationService = new CurseUpgradeAutomationService(this);
     this.combatStatusService = new CombatStatusService(this);
+    this.decayingRecoveryService = new DecayingRecoveryService({
+      journal: this.inventoryService.mutationJournal,
+      resolve: uuid => globalThis.fromUuid?.(uuid),
+      sourceActor: async (id, effect, uuid) => {
+        if (uuid) return (await globalThis.fromUuid?.(uuid)) ?? null;
+        if (id) return game.actors?.get?.(id) ?? null;
+        const origin = effect.origin ? await globalThis.fromUuid?.(effect.origin) : null;
+        return origin?.documentName === "Actor" ? origin : origin?.actor ?? null;
+      },
+      sceneId: () => globalThis.canvas?.scene?.id,
+      user: id => game.users?.get?.(id),
+      roll: async (actor, dc) => (await actor.rollSkill({ skill: "med", ability: "wis", target: dc }, { configure: false }, { create: false }))?.[0],
+      reduce: (actor, id, amount, snapshot) => this.combatStatusService.reduceDecayingDamage(actor, id, amount, snapshot),
+      publish: async record => ChatMessage.create({ content: `<p>Медицина: ${record.total} против Сл ${record.dc}. ${record.success ? "Успех" : "Провал"}.</p>`,
+        rolls: [Roll.fromData(record.roll)] })
+    });
     this.alchemyBombRuntimeService = new AlchemyBombRuntimeService({
       mutationRequester: (payload) => this.privilegedMutationGateway.mutate(
         ALCHEMY_BOMB_MUTATION_COMMAND,
@@ -2158,6 +2176,30 @@ export class RebreyaMainModule {
     }
     if (["completed", "cancelled"].includes(result?.phase) && this.pendingTreatWoundsIntent?.operationId === result.intent?.operationId) this.pendingTreatWoundsIntent = null;
     return result;
+  }
+
+  async recoverDecayingDamage(options = {}) {
+    this.decayingRecoveryRequestState ??= {};
+    const request = payload => requestRecoveryOnce(this.decayingRecoveryRequestState, payload,
+      intent => this.privilegedMutationGateway.mutate("decaying-recovery.start", intent, { operationId: intent.operationId }));
+    try {
+      if (this.decayingRecoveryRequestState.pending) return await request(this.decayingRecoveryRequestState.pending);
+      return await runDecayingRecoveryMacro({ ...options, request });
+    } catch (error) {
+      globalThis.ui?.notifications?.warn?.(error.message);
+      throw error;
+    }
+  }
+
+  async publishDecayingRecoveryForWorkflow(workflow) {
+    const name = String(workflow?.item?.name ?? "");
+    const prefix = `${DECAYING_DAMAGE_OVERTIME_LABEL} [`;
+    if (!name.startsWith(prefix) || !name.endsWith("]")) return;
+    const effectId = name.slice(prefix.length, -1);
+    for (const target of workflow.targets ?? []) {
+      const effect = target?.actor?.effects?.contents?.find(e => e.id === effectId);
+      if (effect) await publishDecayingRecoveryPrompt(effect, { active: () => isActiveGmClient(globalThis.game), create: data => ChatMessage.create(data) });
+    }
   }
 
   async resizeCreature(options = {}) {
@@ -2434,6 +2476,16 @@ export class RebreyaMainModule {
       authorize: (payload, context) => authorizeTreatWoundsSender(action, payload, context),
       scheduling: action === "preview" ? QUERY_SCHEDULING : EXCLUSIVE_MUTATION_SCHEDULING,
       execute: (payload, context) => this.treatWoundsService[action](payload, { sender: context.sender, assertAuthority: context.assertActiveGm })
+    });
+    this.privilegedMutationGateway.registerCommand("decaying-recovery.start", {
+      validate: p => hasExactKeys(p, ["operationId", "sourceTokenUuid", "targetTokenUuid", "effectId", "action", "amount", "dc"])
+        && /^[\w:-]{1,128}$/u.test(p.operationId) && /^Scene\.[A-Za-z0-9]{16}\.Token\.[A-Za-z0-9]{16}$/u.test(p.sourceTokenUuid)
+        && /^Scene\.[A-Za-z0-9]{16}\.Token\.[A-Za-z0-9]{16}$/u.test(p.targetTokenUuid)
+        && /^[A-Za-z0-9]{16}$/u.test(p.effectId) && ["manual", "bonus", "action"].includes(p.action)
+        && Number.isSafeInteger(p.amount) && Number.isSafeInteger(p.dc),
+      authorize: (_payload, { sender }) => Boolean(sender?.id && game.users?.get?.(sender.id) === sender),
+      scheduling: EXCLUSIVE_MUTATION_SCHEDULING,
+      execute: (payload, context) => this.decayingRecoveryService.start(payload, { sender: context.sender, assertAuthority: context.assertActiveGm })
     });
     for (const action of DISARM_ACTIONS) this.privilegedMutationGateway.registerCommand(`disarm.${action}`, {
       validate: payload => isValidDisarmPayload(action, payload),
@@ -3467,6 +3519,11 @@ export class RebreyaMainModule {
       this.disarmChatHookRegistered = true;
       Hooks.on("renderChatMessageHTML", (message, html) => bindDisarmChat(message, html, this));
       Hooks.on("renderChatMessageHTML", (message, html) => bindTreatWoundsChat(message, html, this));
+      Hooks.on("renderChatMessageHTML", (message, html) => bindDecayingRecoveryChat(message, html, this));
+      Hooks.on("createActiveEffect", effect => {
+        publishDecayingRecoveryPrompt(effect, { active: () => isActiveGmClient(globalThis.game), create: data => ChatMessage.create(data) })
+          .catch(error => console.error(`${MODULE_ID} | Failed to publish decaying damage prompt.`, error));
+      });
       Hooks.on("updateWorldTime", worldTime => this.treatWoundsService.cleanupExpiredEffects(worldTime)
         .catch(error => console.error(`${MODULE_ID} | Failed to expire treat wounds immunity.`, error)));
       await this.treatWoundsService.cleanupExpiredEffects();

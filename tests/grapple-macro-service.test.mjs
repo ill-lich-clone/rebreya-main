@@ -131,10 +131,10 @@ test("service reuses the oldest exact user Macro folder and preserves unmanaged 
   assert.equal(result.skipped, false);
   assert.equal(result.folder.id, "old-folder");
   assert.equal(env.folderCreates.length, 0);
-  assert.equal(env.macroCreates.length, 7);
+  assert.equal(env.macroCreates.length, 8);
   assert.strictEqual(env.game.macros.contents[0], userCollision);
   assert.equal(userCollision.command, undefined);
-  assert.deepEqual(result.macros.map((macro) => macro.folder), Array(7).fill("old-folder"));
+  assert.deepEqual(result.macros.map((macro) => macro.folder), Array(8).fill("old-folder"));
 });
 
 test("service creates a managed folder, repairs managed macros, and becomes write-free", async () => {
@@ -156,16 +156,16 @@ test("service creates a managed folder, repairs managed macros, and becomes writ
 
   const first = await env.service.syncManagedDocuments();
   assert.equal(first.folder.name, "Ребрея");
-  assert.equal(first.macros.length, 7);
+  assert.equal(first.macros.length, 8);
   assert.equal(folderUpdates.length, 1);
   assert.equal(macroUpdates.length, 1);
-  assert.equal(env.macroCreates.length, 6);
+  assert.equal(env.macroCreates.length, 7);
   assert.equal(grapple.folder, "managed-folder");
 
   await env.service.syncManagedDocuments();
   assert.equal(folderUpdates.length, 1);
   assert.equal(macroUpdates.length, 1);
-  assert.equal(env.macroCreates.length, 6);
+  assert.equal(env.macroCreates.length, 7);
 });
 
 test("service creates the managed folder when no exact reusable folder exists", async () => {
@@ -177,5 +177,15 @@ test("service creates the managed folder when no exact reusable folder exists", 
 
   assert.equal(env.folderCreates.length, 1);
   assert.equal(result.folder.getFlag("rebreya-main", "sourceId"), GRAPPLE_FOLDER_SOURCE_ID);
-  assert.equal(env.macroCreates.length, 7);
+  assert.equal(env.macroCreates.length, 8);
+});
+
+test("managed recovery macro invokes the public recovery operation", async () => {
+  const env = environment(); await env.service.syncManagedDocuments();
+  const macro = env.game.macros.contents.find(item => item.name === "Уменьшить затихающий урон");
+  assert.ok(macro);
+  let calls = 0;
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  await new AsyncFunction("game", macro.command)({ rebreyaMain: { recoverDecayingDamage: async () => calls++ } });
+  assert.equal(calls, 1);
 });

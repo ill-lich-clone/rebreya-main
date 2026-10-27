@@ -10,6 +10,7 @@ export const TWISTED_MACRO_SOURCE_ID = "twisted-macro";
 export const TREAT_WOUNDS_MACRO_SOURCE_ID = "treat-wounds-macro";
 export const CREATURE_SIZE_MACRO_SOURCE_ID = "resize-creature-macro";
 export const START_COMBAT_MACRO_SOURCE_ID = "start-combat-macro";
+export const DECAYING_RECOVERY_MACRO_SOURCE_ID = "decaying-recovery-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -131,6 +132,11 @@ export function buildStartCombatMacroData(folderId, options = {}) {
     sourceId: START_COMBAT_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
 }
 
+export function buildDecayingRecoveryMacroData(folderId, options = {}) {
+  return macroData({ name: "Уменьшить затихающий урон", command: "await game.rebreyaMain?.recoverDecayingDamage?.();",
+    sourceId: DECAYING_RECOVERY_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function macroSnapshot(macro) {
   return {
     name: macro?.name,
@@ -182,6 +188,9 @@ export class GrappleMacroService {
     const folderId = documentId(folder);
     if (!folderId) throw new Error("Grapple macro folder has no id");
     const macros = [
+      await this.#syncMacro(game, DECAYING_RECOVERY_MACRO_SOURCE_ID, buildDecayingRecoveryMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
       await this.#syncMacro(game, GRAPPLE_MACRO_SOURCE_ID, buildGrappleMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),

@@ -482,7 +482,10 @@ export function registerCombatHooks(moduleApi) {
 
   if (hasStatusService) {
     Hooks.on("midi-qol.RollComplete", (workflow) => {
-      return moduleApi.combatStatusService.handleMidiRollComplete(workflow).catch((error) => {
+      return moduleApi.combatStatusService.handleMidiRollComplete(workflow).then(async changed => {
+        if (changed) await moduleApi.publishDecayingRecoveryForWorkflow?.(workflow);
+        return changed;
+      }).catch((error) => {
         console.error(`${MODULE_ID} | Failed to advance decaying damage after Midi-QOL workflow.`, error);
         return false;
       });

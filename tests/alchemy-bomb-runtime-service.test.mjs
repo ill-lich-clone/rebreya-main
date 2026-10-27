@@ -500,6 +500,7 @@ test("family results use canonical status, durability and DAE owners", async () 
   await run({ family: "alchemical-fire", effect: { amount: 4, step: 1 } });
   assert.deepEqual(statusCalls[0].slice(0, 3), ["decay", targetActor, 4]);
   assert.equal(statusCalls[0][3].damageType, "fire");
+  assert.equal(statusCalls[0][3].sourceActorUuid, "Actor.actor-1");
 
   await run({ family: "acid", effect: { breakage: 1 } });
   await run({ family: "acid", effect: { breakage: 2 } });

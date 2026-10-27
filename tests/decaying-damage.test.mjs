@@ -515,3 +515,66 @@ test("combat hook returns the decaying-damage Promise so Midi waits for the effe
     globalThis.game = previousGame;
   }
 });
+
+test("manual recovery updates only the selected decaying effect and its next damage roll", async () => {
+  const globals = installFoundryGlobals();
+  try {
+    const actor = new globals.TestActor();
+    actor.effects = { contents: [] };
+    const first = makeEffect(globals.TestActiveEffect, actor, { id: "first", value: 20, step: 5 });
+    const second = makeEffect(globals.TestActiveEffect, actor, { id: "second", value: 8, step: 2 });
+    actor.effects.contents = [first, second];
+    const service = new CombatStatusService({});
+    await service.reduceDecayingDamage(actor, "first", 10);
+    assert.equal(first.flags[MODULE_ID].statusValue, 10);
+    assert.match(first.changes[0].value, /damageRoll=10,/u);
+    assert.equal(second.flags[MODULE_ID].statusValue, 8);
+    await service.reduceDecayingDamage(actor, "first", 10);
+    assert.deepEqual(actor.effects.contents, [second]);
+  } finally { globals.restore(); }
+});
+
+test("a recovery and a completed overtime tick serialize on the same effect", async () => {
+  const globals = installFoundryGlobals();
+  try {
+    const actor = new globals.TestActor(); actor.id = "actor-1"; actor.effects = { contents: [] };
+    const effect = makeEffect(globals.TestActiveEffect, actor, { value: 20, step: 5 }); actor.effects.contents = [effect];
+    let release, started; const blocked = new Promise(resolve => { release = resolve; });
+    const entered = new Promise(resolve => { started = resolve; });
+    const update = effect.update; let count = 0;
+    effect.update = async patch => { if (!count++) { started(); await blocked; } return update.call(effect, patch); };
+    const service = new CombatStatusService({});
+    const recovery = service.reduceDecayingDamage(actor, effect.id, 10); await entered;
+    const tick = service.handleMidiRollComplete({ workflowOptions: { isOverTime: true }, item: { name: `${DECAYING_DAMAGE_OVERTIME_LABEL} [${effect.id}]` }, targets: new Set([{ actor }]) });
+    release(); await Promise.all([recovery, tick]);
+    assert.equal(effect.flags[MODULE_ID].statusValue, 5);
+    assert.match(effect.changes[0].value, /damageRoll=5,/u);
+  } finally { globals.restore(); }
+});
+
+test("a check cannot change an effect that was refreshed while the dice were rolling", async () => {
+  const globals = installFoundryGlobals();
+  try {
+    const actor = new globals.TestActor(); actor.effects = { contents: [] };
+    const effect = makeEffect(globals.TestActiveEffect, actor, { value: 20, step: 5 }); actor.effects.contents = [effect];
+    const snapshot = JSON.stringify([20, effect.flags[MODULE_ID].statusMeta, 1]);
+    effect._stats = { modifiedTime: 1 };
+    const service = new CombatStatusService({});
+    await service.reduceDecayingDamage(actor, effect.id, 5, snapshot);
+    effect.flags[MODULE_ID].statusValue = 20; effect._stats.modifiedTime = 2;
+    await assert.rejects(service.reduceDecayingDamage(actor, effect.id, 5, snapshot), /изменил/u);
+    assert.equal(effect.flags[MODULE_ID].statusValue, 20);
+  } finally { globals.restore(); }
+});
+
+test("a completed damage tick publishes a fresh recovery button after the update", async () => {
+  const oldHooks = globalThis.Hooks, oldGame = globalThis.game; const callbacks = new Map();
+  globalThis.Hooks = { on: (name, callback) => callbacks.set(name, callback) }; globalThis.game = {};
+  try {
+    const seen = []; const workflow = {};
+    registerCombatHooks({ combatStatusService: { handleMidiRollComplete: async () => { seen.push("updated"); return true; } },
+      publishDecayingRecoveryForWorkflow: async value => { assert.equal(value, workflow); seen.push("published"); } });
+    await callbacks.get("midi-qol.RollComplete")(workflow);
+    assert.deepEqual(seen, ["updated", "published"]);
+  } finally { globalThis.Hooks = oldHooks; globalThis.game = oldGame; }
+});

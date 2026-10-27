@@ -1244,6 +1244,7 @@ export class CombatStatusService {
     this._managedEffectCanonicalizationIds = new Set();
     this._pendingManagedStatusCreates = new Set();
     this._processedDecayingDamageWorkflows = new WeakSet();
+    this._decayingDamageQueues = new WeakMap();
   }
 
   async initialize() {
@@ -2445,6 +2446,27 @@ export class CombatStatusService {
     return false;
   }
 
+  async reduceDecayingDamage(actor, effectId, amount, expectedMeta = null) {
+    let queues = this._decayingDamageQueues.get(actor);
+    if (!queues) this._decayingDamageQueues.set(actor, queues = new Map());
+    const previous = queues.get(effectId) ?? Promise.resolve();
+    const task = previous.catch(() => {}).then(() => this.#reduceDecayingDamageNow(actor, effectId, amount, expectedMeta));
+    queues.set(effectId, task);
+    try { return await task; }
+    finally { if (queues.get(effectId) === task) queues.delete(effectId); }
+  }
+
+  async #reduceDecayingDamageNow(actor, effectId, amount, expectedMeta) {
+    const effect = actor?.effects?.contents?.find(candidate => getEffectDocumentId(candidate) === effectId
+      && resolveManagedStatusIdFromEffect(candidate, "") === DECAYING_DAMAGE_STATUS_ID);
+    if (!effect || !Number.isSafeInteger(amount) || amount <= 0) throw new Error("Эффект затихающего урона недоступен или неверная величина уменьшения.");
+    if (expectedMeta && JSON.stringify([getEffectStatusValue(effect, MODULE_ID, STATUS_VALUE_FLAG), getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG) ?? {}, effect._stats?.modifiedTime ?? null]) !== expectedMeta) throw new Error("Эффект затихающего урона изменился; требуется новая проверка.");
+    const value = Math.max(0, Math.floor(toNumber(getEffectStatusValue(effect, MODULE_ID, STATUS_VALUE_FLAG), 0)) - amount);
+    if (!value) await effect.delete();
+    else await this.#storeStatusMetadata(effect, DECAYING_DAMAGE_STATUS_ID, { value, actor });
+    return value;
+  }
+
   async applyDecayingDamage(actorOrId, amount, options = {}) {
     const safeAmount = Math.max(0, Math.floor(toNumber(amount, 0)));
     if (safeAmount <= 0) {
@@ -2454,7 +2476,8 @@ export class CombatStatusService {
     const meta = normalizeDecayingDamageMeta({
       step: options.step,
       damageType: options.damageType,
-      sourceActorId: String(options.sourceActorId ?? "").trim()
+      sourceActorId: String(options.sourceActorId ?? "").trim(),
+      sourceActorUuid: String(options.sourceActorUuid ?? "").trim()
     });
     return this.setStatus(actorOrId, "decayingDamage", {
       active: true,
@@ -2575,31 +2598,10 @@ export class CombatStatusService {
         && resolveManagedStatusIdFromEffect(candidate, "") === DECAYING_DAMAGE_STATUS_ID
       )) ?? null;
       if (!effect) continue;
-      const currentValue = Math.max(0, Math.floor(toNumber(
-        getEffectStatusValue(effect, MODULE_ID, STATUS_VALUE_FLAG),
-        0
-      )));
       const meta = getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG) ?? {};
       const step = Math.max(1, Math.floor(toNumber(meta.step, 1)));
-      const remaining = Math.max(0, currentValue - step);
-      if (remaining <= 0) {
-        try {
-          await effect.delete();
-        }
-        catch (error) {
-          if (!isMissingActiveEffectError(error)) throw error;
-        }
-      }
-      else {
-        await this.#storeStatusMetadata(effect, DECAYING_DAMAGE_STATUS_ID, {
-          value: remaining,
-          meta: {
-            ...meta,
-            step
-          },
-          actor
-        });
-      }
+      try { await this.reduceDecayingDamage(actor, effectId, step); }
+      catch (error) { if (!isMissingActiveEffectError(error) && actor.effects?.contents?.includes(effect)) throw error; }
       changed = true;
     }
     return changed;

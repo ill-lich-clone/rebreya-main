@@ -659,7 +659,8 @@ export class AlchemyBombRuntimeService {
       for (const actor of failedActors) await this.#statusService?.applyDecayingDamage?.(actor, definition.effect.amount, {
         step: definition.effect.step,
         damageType: "fire",
-        sourceActorId: clean(sourceActor?.id)
+        sourceActorId: clean(sourceActor?.id),
+        sourceActorUuid: sourceOrigin
       });
       return;
     }
