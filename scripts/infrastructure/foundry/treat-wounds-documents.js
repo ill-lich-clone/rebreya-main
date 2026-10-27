@@ -37,7 +37,8 @@ export class TreatWoundsDocuments {
     const tier = getTreatWoundsTiers(this.adapter.level(source.actor)).find(t => t.dc === intent.tierDc);
     if (!tier || (intent.customDc !== null && !sender.isGM)) reject("invalid-tier", "Эта Сл недоступна лекарю.");
     const preview = await this.preview(intent, sender);
-    if (!preview.kits.some(k => k.uuid === intent.kitItemUuid && k.groupActorId === intent.groupActorId)) reject("invalid-kit", "Выберите доступный целый комплект целителя.");
-    return { source, target, tier, dc: intent.customDc ?? tier.dc };
+    const withoutKit = intent.ignoreMissingKit === true && intent.kitItemUuid === "" && intent.groupActorId === "" && preview.kits.length === 0;
+    if (!withoutKit && !preview.kits.some(k => k.uuid === intent.kitItemUuid && k.groupActorId === intent.groupActorId)) reject("invalid-kit", "Выберите доступный целый комплект целителя.");
+    return { source, target, tier, dc: intent.customDc ?? tier.dc, withoutKit };
   }
 }

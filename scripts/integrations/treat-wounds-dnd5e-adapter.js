@@ -16,7 +16,7 @@ export class TreatWoundsDnd5eAdapter {
     const creatureType = actor?.system?.details?.type?.value ?? actor?.system?.details?.type;
     return ["character", "npc"].includes(actor?.type) && Number.isFinite(Number(hp?.value))
       && Number.isFinite(Number(hp?.max)) && Number(hp?.max) > 0
-      && !["undead", "construct"].includes(creatureType) && !actor?.statuses?.has?.("dead")
+      && creatureType !== "undead" && (Number(hp?.value) <= 0 || !actor?.statuses?.has?.("dead"))
       && Number(actor?.system?.attributes?.death?.failure ?? 0) < 3;
   }
   kitState(item) {

@@ -14,7 +14,7 @@ BG3 HUD 3.4.7: player reconnect/teleport recovery, scene+token identity, тек�
 
 Обезоруживание, его typed workflow, native Actor/Token speaker и пояснения baseline, managed macro, стены и физический снимок предмета при падении/подборе: [паспорт R6](disarm-function-passport.md). Дополняет application/storage/combat/UI sections и профиль R3.
 
-Перевязка ран: личный/групповой целый комплект, Medicine, уровень/ПО, ActiveEffect иммунитета, all-outcome chat и продолжение без новых костей: [профильный паспорт](treat-wounds-function-passport.md).
+Перевязка ран: личный/групповой целый комплект или явный обход его отсутствия, конструкты и 0 HP, Medicine, уровень/ПО, ActiveEffect иммунитета, all-outcome chat и продолжение без новых костей: [профильный паспорт](treat-wounds-function-passport.md).
 
 `docs/function-passport.md` — обязательная часть реализации, а не историческая заметка. Любое изменение поведения должно в том же commit обновлять соответствующий паспорт ниже.
 

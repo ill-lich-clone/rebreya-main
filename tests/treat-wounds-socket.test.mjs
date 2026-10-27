@@ -9,6 +9,13 @@ test("typed contract rejects extra result data, invalid tiers and foreign UUIDs"
   assert.equal(isValidTreatWoundsPayload("continue",{operationId:"op"}),true);
   assert.equal(isValidTreatWoundsPayload("preview",tokens),true);
 });
+test("typed contract permits an explicit kitless request and rejects forged combinations",()=>{
+  const start={...tokens,operationId:"op",kitItemUuid:"",groupActorId:"",tierDc:15,customDc:null,ignoreMissingKit:true};
+  assert.equal(isValidTreatWoundsPayload("start",start),true);
+  assert.equal(isValidTreatWoundsPayload("start",{...start,ignoreMissingKit:false}),false);
+  assert.equal(isValidTreatWoundsPayload("start",{...start,groupActorId:"aaaaaaaaaaaaaaaa"}),false);
+  assert.equal(isValidTreatWoundsPayload("start",{...start,ignoreMissingKit:"true"}),false);
+});
 test("custom DC is GM-only and sender must be live authenticated user",()=>{
   const player={id:"p"},gm={id:"g",isGM:true};const game={users:{get:id=>id==="p"?player:gm}};
   assert.equal(authorizeTreatWoundsSender("start",{customDc:12},{sender:player,game}),false);

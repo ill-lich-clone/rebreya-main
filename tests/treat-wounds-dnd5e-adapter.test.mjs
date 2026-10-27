@@ -10,9 +10,16 @@ test("level uses character level and unconverted NPC CR",()=>{
 test("living accepts full or zero HP; Medicine requires full proficiency",()=>{
   const a=actor(); assert.equal(adapter.isLiving(a),true);
   a.system.attributes.hp.value=0; assert.equal(adapter.isLiving(a),true);
-  a.statuses.add("dead"); assert.equal(adapter.isLiving(a),false); a.statuses.clear();
-  for(const type of ["undead","construct"]) {a.system.details.type.value=type; assert.equal(adapter.isLiving(a),false);}
+  a.statuses.add("dead"); assert.equal(adapter.isLiving(a),true); a.statuses.clear();
+  a.system.details.type.value="undead"; assert.equal(adapter.isLiving(a),false);
   for(const [value,want] of [[0,false],[0.5,false],[1,true],[2,true]]) {a.system.skills.med.value=value; assert.equal(adapter.hasMedicineProficiency(a),want);}
+});
+
+test("constructs and zero-HP patients with the automatic dead marker can be treated",()=>{
+  const a=actor(); a.system.details.type.value="construct"; assert.equal(adapter.isLiving(a),true);
+  a.system.attributes.hp.value=0; a.statuses.add("dead"); assert.equal(adapter.isLiving(a),true);
+  a.system.attributes.death.failure=3; assert.equal(adapter.isLiving(a),false);
+  a.system.attributes.death.failure=2; a.system.attributes.hp.value=5; assert.equal(adapter.isLiving(a),false);
 });
 test("whole-kit rules reject spent, empty, unknown and unrelated inventory",()=>{
   assert.equal(adapter.kitState(kit()).eligible,true); assert.equal(adapter.kitState(kit(1)).eligible,false);

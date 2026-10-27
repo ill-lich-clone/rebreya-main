@@ -16,9 +16,22 @@ test("native dialog supports group kit and GM custom DC, escapes labels and canc
   assert.equal(await promptTreatWounds(preview,{DialogV2}),false);
   assert.match(config.content,/&lt;img&gt;/);assert.equal(config.content.includes('name="customDc"'),false);assert.match(config.content,/Группа/);
   const form={elements:{namedItem:name=>({value:name==="kit"?"0":name==="tierDc"?"15":"12"})}};
-  assert.deepEqual(config.buttons[0].callback(null,{form}),{kitItemUuid:"kit",groupActorId:"group",tierDc:15,customDc:null});
+  assert.deepEqual(config.buttons[0].callback(null,{form}),{kitItemUuid:"kit",groupActorId:"group",tierDc:15,customDc:null,ignoreMissingKit:false});
+  const checkedForm={elements:{namedItem:name=>name==="ignoreMissingKit"?{checked:true}:{value:name==="kit"?"0":"15"}}};
+  assert.deepEqual(config.buttons[0].callback(null,{form:checkedForm}),{kitItemUuid:"kit",groupActorId:"group",tierDc:15,customDc:null,ignoreMissingKit:true});
   await promptTreatWounds({...preview,canSetDc:true},{DialogV2});assert.equal(config.buttons[0].callback(null,{form}).customDc,12);
   assert.equal(config.rejectClose,false);
+});
+test("empty kits open the dialog and require the explicit checkbox",async()=>{
+  let config; const DialogV2={async wait(c){config=c;return false;}};
+  await promptTreatWounds({sourceName:"Лекарь",targetName:"Пациент",kits:[],tiers:[{dc:10}],canSetDc:false},{DialogV2});
+  assert.match(config.content,/Игнорировать отсутствие комплекта целителя/);
+  let checked=false; const form={elements:{namedItem:name=>name==="ignoreMissingKit"?{checked}:{value:name==="tierDc"?"10":""}}};
+  let change; const checkbox={checked:false,addEventListener:(_type,handler)=>{change=handler;}};const confirm={disabled:false};
+  config.render(null,{element:{querySelector:selector=>selector.includes('ignoreMissingKit')?checkbox:confirm}});
+  assert.equal(confirm.disabled,true);checkbox.checked=true;change();assert.equal(confirm.disabled,false);
+  assert.equal(config.buttons[0].callback(null,{form}),false);
+  checked=true; assert.deepEqual(config.buttons[0].callback(null,{form}),{kitItemUuid:"",groupActorId:"",tierDc:10,customDc:null,ignoreMissingKit:true});
 });
 test("all four outcomes show roll total and DC, failures have no continuation",()=>{
   for(const kind of ["critical-success","success","failure","critical-failure"]){

@@ -9,19 +9,28 @@ export function resolveTreatWoundsSelection(options = {}, controlled = globalThi
   return { sourceTokenUuid, targetTokenUuid: options.targetTokenUuid ?? (targets.length ? uuid(targets[0]) : sourceTokenUuid) };
 }
 export async function promptTreatWounds(preview, { DialogV2 = globalThis.foundry?.applications?.api?.DialogV2 } = {}) {
-  if (!preview.kits.length) throw new Error("У лекаря и в доступных группах нет целого неиспользованного комплекта целителя.");
   return DialogV2.wait({ window: { title: "Перевязка ран" }, content: `<div>
     <p><strong>${escape(preview.sourceName)}</strong> лечит <strong>${escape(preview.targetName)}</strong>.</p>
-    <p>Лечение занимает 10 минут и полностью расходует один комплект. Цель иммунна к перевязке 1 час от начала лечения. Мировое время продвигает Мастер.</p>
-    <label>Комплект<select name="kit">${preview.kits.map((k,i) => `<option value="${i}">${escape(k.sourceName)} — ${escape(k.name)} (${escape(k.quantity)} шт.)</option>`).join("")}</select></label>
+    <p>Лечение занимает 10 минут и при наличии полностью расходует один комплект. Цель иммунна к перевязке 1 час от начала лечения. Мировое время продвигает Мастер.</p>
+    <label>Комплект<select name="kit">${preview.kits.map((k,i) => `<option value="${i}">${escape(k.sourceName)} — ${escape(k.name)} (${escape(k.quantity)} шт.)</option>`).join("") || '<option value="">Нет доступного комплекта</option>'}</select></label>
+    <label><input type="checkbox" name="ignoreMissingKit"> Игнорировать отсутствие комплекта целителя</label>
     <label>Ступень лечения<select name="tierDc">${preview.tiers.map(t => `<option value="${t.dc}">Сл ${t.dc}${t.bonus ? `, +${t.bonus} хитов` : ""}</option>`).join("")}</select></label>
     ${preview.canSetDc ? '<label>Сл по обстоятельствам (необязательно)<input name="customDc" type="number" min="1" max="99" step="1" placeholder="Сл выбранной ступени"></label>' : ""}</div>`,
-    buttons: [{ action: "confirm", label: "Перевязать", callback: (_event, button) => {
+    render: (_event, dialog) => {
+      if (preview.kits.length) return;
+      const checkbox = dialog.element.querySelector('[name="ignoreMissingKit"]');
+      const confirm = dialog.element.querySelector('button[data-action="confirm"]');
+      const update = () => { confirm.disabled = !checkbox.checked; };
+      checkbox.addEventListener("change", update);
+      update();
+    },
+    buttons: [{ action: "confirm", label: "Перевязать", disabled: preview.kits.length === 0, callback: (_event, button) => {
       const field = name => button.form.elements.namedItem(name)?.value;
       const kit = preview.kits[Number(field("kit"))];
-      if (!kit) throw new Error("Комплект не выбран.");
+      const ignoreMissingKit = button.form.elements.namedItem("ignoreMissingKit")?.checked === true;
+      if (!kit && !ignoreMissingKit) { globalThis.ui?.notifications?.warn?.("Комплект не выбран."); return false; }
       const custom = preview.canSetDc ? field("customDc") : "";
-      return { kitItemUuid: kit.uuid, groupActorId: kit.groupActorId, tierDc: Number(field("tierDc")), customDc: custom ? Number(custom) : null };
+      return { kitItemUuid: kit?.uuid ?? "", groupActorId: kit?.groupActorId ?? "", tierDc: Number(field("tierDc")), customDc: custom ? Number(custom) : null, ignoreMissingKit };
     } }, { action: "cancel", label: "Отмена", callback: () => false }], rejectClose: false });
 }
 export async function promptTreatWoundsContinuation(record, { DialogV2 = globalThis.foundry?.applications?.api?.DialogV2 } = {}) {

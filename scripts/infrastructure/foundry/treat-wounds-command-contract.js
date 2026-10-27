@@ -8,8 +8,12 @@ export function isValidTreatWoundsPayload(action, p) {
   if (action === "preview") return exact(p, ["sourceTokenUuid", "targetTokenUuid"]) && token(p.sourceTokenUuid) && token(p.targetTokenUuid);
   if (!id(p?.operationId)) return false;
   if (["continue", "resume"].includes(action)) return exact(p, ["operationId"]);
-  return action === "start" && exact(p, ["operationId", "sourceTokenUuid", "targetTokenUuid", "kitItemUuid", "groupActorId", "tierDc", "customDc"])
-    && token(p.sourceTokenUuid) && token(p.targetTokenUuid) && item(p.kitItemUuid)
+  const keys = ["operationId", "sourceTokenUuid", "targetTokenUuid", "kitItemUuid", "groupActorId", "tierDc", "customDc"];
+  const hasFlag = Object.hasOwn(p, "ignoreMissingKit");
+  return action === "start" && exact(p, hasFlag ? [...keys, "ignoreMissingKit"] : keys)
+    && (!hasFlag || typeof p.ignoreMissingKit === "boolean")
+    && token(p.sourceTokenUuid) && token(p.targetTokenUuid)
+    && (item(p.kitItemUuid) || (p.ignoreMissingKit === true && p.kitItemUuid === "" && p.groupActorId === ""))
     && (p.groupActorId === "" || /^[A-Za-z0-9]{16}$/u.test(p.groupActorId))
     && [10, 15, 20, 25].includes(p.tierDc) && (p.customDc === null || (Number.isInteger(p.customDc) && p.customDc >= 1 && p.customDc <= 99));
 }

@@ -20,3 +20,10 @@ test("live revalidation rejects unavailable tier, foreign sender and missing Med
  const f=fixture();await assert.rejects(f.docs.prepare({...f.intent,tierDc:20},f.sender));await assert.rejects(f.docs.prepare(f.intent,{id:"p"}));
  f.character.system.skills.med.value=0.5;await assert.rejects(f.docs.prepare(f.intent,f.sender));
 });
+test("bypassing a missing kit requires explicit flag and no accessible kit",async()=>{
+ const f=fixture();const noKit={...f.intent,kitItemUuid:"",groupActorId:"",ignoreMissingKit:true};
+ await assert.rejects(f.docs.prepare(noKit,f.sender));
+ f.deny();const prepared=await f.docs.prepare(noKit,f.sender);assert.equal(prepared.dc,15);assert.equal(prepared.withoutKit,true);
+ await assert.rejects(f.docs.prepare({...noKit,ignoreMissingKit:false},f.sender));
+ await assert.rejects(f.docs.prepare({...f.intent,ignoreMissingKit:true},f.sender));
+});

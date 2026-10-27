@@ -93,7 +93,8 @@ export class TreatWoundsService {
       if (pending) reject("operation-pending", "Предыдущая перевязка ещё не завершена. Восстановите её из карточки чата.");
       record = await this.#write(context, () => this.journal.start({ id, kind: "treat-wounds", fingerprint, intent, senderId: sender.id,
         phase: "prepared", sourceActorUuid: prepared.source.actor.uuid, targetActorUuid: target.uuid,
-        sourceName: prepared.source.name, targetName: prepared.target.name, startTime: now, dc: prepared.dc, bonus: prepared.tier.bonus }));
+        sourceName: prepared.source.name, targetName: prepared.target.name, startTime: now, dc: prepared.dc, bonus: prepared.tier.bonus,
+        withoutKit: prepared.withoutKit === true }));
       try {
         record = await this.#phase(record, "medicine-rolling", {}, context);
         const medicine = await this.adapter.rollMedicine(prepared.source.actor, { dc: record.dc });
@@ -144,8 +145,10 @@ export class TreatWoundsService {
       if (!target) reject("target-not-found", "Пациент больше не существует.");
       if (flag(target, "treatWoundsHealthReceipt") !== record.intent.operationId && !this.adapter.isLiving(target)) reject("invalid-target", "Пациент больше не жив; перевязка не может его воскресить.");
       if (record.phase === "rolled") {
-        await this.inventoryService.consumeTreatWoundsKitOnce({ operationId: record.intent.operationId, sourceActorUuid: record.sourceActorUuid,
-          kitItemUuid: record.intent.kitItemUuid, groupActorId: record.intent.groupActorId }, { ...context, operationSenderId: record.senderId });
+        if (record.withoutKit !== true) {
+          await this.inventoryService.consumeTreatWoundsKitOnce({ operationId: record.intent.operationId, sourceActorUuid: record.sourceActorUuid,
+            kitItemUuid: record.intent.kitItemUuid, groupActorId: record.intent.groupActorId }, { ...context, operationSenderId: record.senderId });
+        }
         record = await this.#phase(record, "kit-debited", {}, context);
       }
       if (record.phase === "kit-debited") {

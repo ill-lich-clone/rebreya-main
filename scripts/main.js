@@ -124,11 +124,11 @@ import { registerWeaponModCommands } from "./application/weapon-mod-mutation-com
 import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.397";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
-import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.6";
-import { TreatWoundsDnd5eAdapter } from "./integrations/treat-wounds-dnd5e-adapter.js?v=1.4.372";
-import { TreatWoundsDocuments } from "./infrastructure/foundry/treat-wounds-documents.js?v=1.4.372";
-import { TREAT_WOUNDS_ACTIONS, isValidTreatWoundsPayload, authorizeTreatWoundsSender } from "./infrastructure/foundry/treat-wounds-command-contract.js?v=1.4.372";
-import { resolveTreatWoundsSelection, promptTreatWounds, buildTreatWoundsChatContent, bindTreatWoundsChat } from "./ui/treat-wounds-dialog.js?v=1.5.6";
+import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.16";
+import { TreatWoundsDnd5eAdapter } from "./integrations/treat-wounds-dnd5e-adapter.js?v=1.5.16";
+import { TreatWoundsDocuments } from "./infrastructure/foundry/treat-wounds-documents.js?v=1.5.16";
+import { TREAT_WOUNDS_ACTIONS, isValidTreatWoundsPayload, authorizeTreatWoundsSender } from "./infrastructure/foundry/treat-wounds-command-contract.js?v=1.5.16";
+import { resolveTreatWoundsSelection, promptTreatWounds, buildTreatWoundsChatContent, bindTreatWoundsChat } from "./ui/treat-wounds-dialog.js?v=1.5.16";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.384";
 import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.384";
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";

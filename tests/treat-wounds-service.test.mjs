@@ -16,7 +16,7 @@ function fixture(total=15) {
   game.actors.contents.push(actor);
   actor.deleteEmbeddedDocuments=async(_type,ids)=>{actor.effects=actor.effects.filter(e=>!ids.includes(e.id));};
   const cards=[];
-  const documents={async prepare(){return{source,target,tier:{dc:15,bonus:10},dc:15};},async resolve(uuid){return uuid===actor.uuid?actor:source.actor;},async tokens(){return{source,target};},async preview(){return{};}};
+  const documents={async prepare(intent){return{source,target,tier:{dc:15,bonus:10},dc:15,withoutKit:intent.ignoreMissingKit===true && intent.kitItemUuid===""};},async resolve(uuid){return uuid===actor.uuid?actor:source.actor;},async tokens(){return{source,target};},async preview(){return{};}};
   const journal=new DurableMutationJournal({readState:()=>state,writeState:s=>{state=s;}});
   const inventoryService={async consumeTreatWoundsKitOnce(){debits++;}};
   const service=new TreatWoundsService({journal,coordinator:new WorldMutationCoordinator(),adapter,documents,inventoryService,gameProvider:()=>game,isActiveGm:()=>true,publish:async r=>{cards.push(structuredClone(r));}});
@@ -32,6 +32,11 @@ test("success heals19, resets only failures, one-hour effect starts at beginning
   await f.service.continue({operationId:"op"},f.context);await f.service.continue({operationId:"op"},f.context);
   assert.equal(f.actor.system.attributes.hp.value,42);assert.deepEqual(f.counts(),{rolls:1,debits:1});
   assert.equal(f.cards.at(-1).continued,true);
+});
+test("treating a zero-HP construct with the automatic dead status restores HP and clears failures",async()=>{
+  const f=fixture(); f.actor.system.details.type.value="construct"; f.actor.system.attributes.hp.value=0; f.actor.statuses=new Set(["dead"]);
+  await f.service.start(f.intent,f.context);
+  assert.equal(f.actor.system.attributes.hp.value,19);assert.equal(f.actor.system.attributes.death.failure,0);assert.equal(f.actor.system.attributes.death.success,1);
 });
 for(const [total,kind,hp]of [[20,"critical-success",23],[14,"failure",4],[10,"critical-failure",0]])test(`chat records ${kind} and attempt spends kit`,async()=>{
   const f=fixture(total);await f.service.start(f.intent,f.context);
@@ -114,4 +119,27 @@ test("patient becoming dead while application is pending cannot be revived on re
   await assert.rejects(f.service.start(f.intent,f.context));
   f.actor.system.attributes.hp.value=0;f.actor.system.attributes.death.failure=3;f.inventoryService.consumeTreatWoundsKitOnce=async()=>{};
   await assert.rejects(f.service.resume({operationId:"op"},f.context));assert.equal(f.actor.system.attributes.hp.value,0);assert.equal(f.actor.system.attributes.death.failure,3);
+});
+
+test("confirmed kitless treatment and recovery never debit a kit",async()=>{
+  const f=fixture(); f.intent={...f.intent,kitItemUuid:"",groupActorId:"",ignoreMissingKit:true};
+  let fail=true; const apply=f.service.adapter.applyResult.bind(f.service.adapter);
+  f.service.adapter.applyResult=async(...args)=>{if(fail){fail=false;throw Error("health unavailable");}return apply(...args);};
+  await assert.rejects(f.service.start(f.intent,f.context),/health unavailable/);
+  await f.service.resume({operationId:"op"},f.context); await f.service.resume({operationId:"op"},f.context);
+  assert.deepEqual(f.counts(),{rolls:1,debits:0});assert.equal(f.actor.system.attributes.hp.value,23);
+});
+
+test("a checked bypass with an actual kit still debits it exactly once",async()=>{
+ const f=fixture(); f.intent.ignoreMissingKit=true; await f.service.start(f.intent,f.context); await f.service.start(f.intent,f.context);
+ assert.deepEqual(f.counts(),{rolls:1,debits:1});
+});
+
+for(const [total,kind] of [[20,"critical-success"],[15,"success"],[14,"failure"],[10,"critical-failure"]]) test(`kitless ${kind} preserves its outcome and never debits`,async()=>{
+ const f=fixture(total);Object.assign(f.intent,{kitItemUuid:"",groupActorId:"",ignoreMissingKit:true});
+ const result=await f.service.start(f.intent,f.context);assert.equal(result.outcome.kind,kind);assert.equal(f.counts().debits,0);
+ assert.equal(f.actor.effects.length,1);assert.ok(f.cards.some(card=>card.medicineRoll?.total===total));
+ if(result.outcome.canContinue) await f.service.continue({operationId:"op"},f.context);
+ assert.equal(f.counts().debits,0);
+ await assert.rejects(f.service.start({...f.intent,ignoreMissingKit:false},f.context));
 });
