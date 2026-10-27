@@ -1,7 +1,7 @@
 import { getEquipmentSize, getCreatureTokenFootprint, isEquipmentSize } from "../data/equipment-size-rules.js?v=1.4.393";
 import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
 import { sha256Hex } from "../shared/sha256.js";
-import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";
+import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.5.17";
 import { isValidCreatureResizePayload } from "./equipment-size-commands.js?v=1.4.393";
 
 const clone = value => value === undefined ? undefined : structuredClone(value);

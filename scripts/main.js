@@ -65,7 +65,7 @@ import {
   normalizeGroupState,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./data/group-context-service.js?v=1.4.377";
+} from "./data/group-context-service.js?v=1.5.17";
 import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js?v=1.4.377";
 import {
@@ -100,7 +100,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.5.10";
+} from "./data/inventory-service.js?v=1.5.17";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -404,7 +404,7 @@ import {
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.6";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.10";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.17";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -445,7 +445,7 @@ import { openRebreyaQuestLog } from "./integrations/rebreya-quest-log.js";
 import {
   pruneMissingRegisteredGroups,
   registerGroupRegistryLifecycleHooks
-} from "./integrations/group-registry-lifecycle.js";
+} from "./integrations/group-registry-lifecycle.js?v=1.5.17";
 import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
@@ -1673,7 +1673,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.5.10"
+          "./ui/inventory-app.js?v=1.5.17"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -4412,7 +4412,9 @@ export class RebreyaMainModule {
       await this.inventoryService.addCurrencyToInventoryOnce(
         coins,
         `${payload.batchMutationId}:coins`,
-        { groupActorId: payload.groupActorId }
+        { groupActorId: payload.groupActorId,
+          ...(["public-model", "manual-entry"].includes(payload.sourceOrigin)
+            && this.inventoryService.canUseNativeInventory?.(game.actors?.get?.(payload.groupActorId)) === true ? { native: true } : {}) }
       );
     }
     return {
@@ -4433,7 +4435,9 @@ export class RebreyaMainModule {
     if (!groupActorId) {
       throw new TypeError("Inventory ingress command requires a group Actor target.");
     }
-    if (isActiveGmClient(globalThis.game)) {
+    if ((command === INVENTORY_INGRESS_DIRECT_COMMAND && ["public-model", "manual-entry"].includes(exactPayload.sourceOrigin)
+      && this.inventoryService.canUseNativeInventory?.(game.actors?.get?.(groupActorId)))
+      || isActiveGmClient(globalThis.game)) {
       return this.runInventoryMutation(
         () => execute(exactPayload),
         {
@@ -6779,7 +6783,7 @@ export class RebreyaMainModule {
       throw new TypeError("Inventory organization command payload is invalid.");
     }
     const exactPayload = cloneSocketPayload(payload);
-    if (!isActiveGmClient(globalThis.game)) {
+    if (!this.inventoryService.canUseNativeInventory?.(game.actors?.get?.(exactPayload.groupActorId)) && !isActiveGmClient(globalThis.game)) {
       const result = await this.socketCommandBus.request(command, exactPayload);
       this.#deferInventoryRefresh([exactPayload.groupActorId]);
       return result;
@@ -8167,7 +8171,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.10");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.17");
 
       const secondary = options?.newWindow === true;
       const viewKey = "full:secondary";
@@ -8224,7 +8228,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.10");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.17");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,
@@ -8728,6 +8732,7 @@ Hooks.once("ready", async () => {
     });
     await pruneMissingRegisteredGroups(moduleApi.groupContextService, { isActiveGmClient });
     if (isActiveGmClient(globalThis.game)) {
+      await moduleApi.groupContextService.syncInventoryOwnership();
       await moduleApi.groupContextService.initializeSupplyCoverage(
         game.settings.get(MODULE_ID, SETTINGS_KEYS.PARTY_STATE) ?? {}
       );

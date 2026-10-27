@@ -3,7 +3,7 @@ import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
 import { MODULE_ID } from "../constants.js";
 import { canViewItem } from "../infrastructure/foundry/item-source-resolver.js?v=1.4.377";
 import { REBREYA_TOOLS } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.4.377";
+import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.5.17";
 import {
   buildInventoryFolderSearchIndex,
   buildInventoryFolderTree,
@@ -16,7 +16,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.10";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.17";
 import { promptStorageTransferQuantity } from "./storage-transfer-ui.js?v=1.5.10";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,

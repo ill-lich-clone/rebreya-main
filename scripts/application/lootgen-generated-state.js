@@ -5,7 +5,7 @@ import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4
 import { evaluateItemValue } from "../data/item-value.js?v=1.4.393";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { pickLootgenNarrativeFields } from "../data/lootgen-narrative-catalog.js?v=1.4.396";
-import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";
+import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.5.17";
 
 const MODULE_ID="rebreya-main";
 const values=rows=>Array.isArray(rows)?rows:Array.from(rows?.values?.()??[]);

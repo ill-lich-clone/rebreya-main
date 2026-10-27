@@ -1,6 +1,6 @@
 import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.396";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
-import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.4.377";
+import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.5.17";
 import { WorldMutationCoordinator } from "./world-mutation-coordinator.js";
 
 export const LOOTGEN_PREPARE_RESULT_COMMAND = "lootgen.prepare-result";

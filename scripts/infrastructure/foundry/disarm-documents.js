@@ -3,7 +3,7 @@ import { buildDisarmRollPlan } from "../../integrations/disarm-roll-adapter.js?v
 import { getItemHeldHands, isItemEquipped, canUseHeldItemForHandRequirement } from "../../integrations/held-items.js?v=1.4.383";
 import { getNaturalReachFeet } from "../../combat/natural-reach.js";
 import { measureStorageTokenDistance } from "../../data/storage-access.js";
-import { itemInstanceFingerprint } from "../../application/item-instance-workflow.js?v=1.4.377";
+import { itemInstanceFingerprint } from "../../application/item-instance-workflow.js?v=1.5.17";
 
 const values = collection => Array.from(collection?.contents ?? collection?.values?.() ?? collection ?? []);
 const signature = item => itemInstanceFingerprint({ id: item.uuid, hands: getItemHeldHands(item), equipped: isItemEquipped(item), quantity: item.system?.quantity });

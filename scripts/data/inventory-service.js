@@ -6,7 +6,8 @@ import {
   readInventoryItemUnitPrice, withInventoryItemQuantity, buildInventoryItemQuantityPatch,
   inventoryMaterialQuantitiesMatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch
 } from "./inventory-material-quantity.js?v=1.4.377";
-import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.377";
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
+import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.385";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.385";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.396";
@@ -30,7 +31,7 @@ import {
   normalizeGroupSupplyCoverage,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./group-context-service.js?v=1.4.377";
+} from "./group-context-service.js?v=1.5.17";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
@@ -4604,6 +4605,13 @@ export class InventoryService {
     const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan,
       ...(request.sourceExpectation ? { sourceExpectation: request.sourceExpectation } : {}) });
     const operationId = `inventory-ingress:${batchMutationId}`;
+    const nativeActor = await this.getInventoryActor({ create: false, groupActorId });
+    if (this.canUseNativeInventory(nativeActor) && ["import", "public-model", "manual-entry"].includes(sourceOrigin)) {
+      const sourceRows = await resolveRows({ groupActorId, batchMutationId, sourceOrigin, recovering: false, serializedPlan });
+      if (sourceRows.every(row => !row.container && !row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG])) {
+        return this.#runNativeIntent(operationId, request, () => this.#commitNativeInventoryIngress(nativeActor, request, sourceRows, debitRow, acquisitionContext));
+      }
+    }
     const existing = await this.mutationJournal.find(operationId);
     if (existing?.kind === "inventory-simple-v1") {
       this.#assertSimpleMutationRecord(existing, fingerprint);
@@ -5604,9 +5612,176 @@ export class InventoryService {
     return actor.setFlag(MODULE_ID, "==inventoryIngressRules", nextState);
   }
 
-  #runInventoryOrganizationMutation(groupActorId, operation) {
+  canUseNativeInventory(actor) {
+    return isManagedPartyGroup(actor) && actor.canUserModify?.(globalThis.game?.user, "update") === true;
+  }
+
+  #nativeIntents = new Map();
+
+  async #commitNativeInventoryIngress(actor, request, sourceRows, debitRow, acquisitionContext) {
+    const { groupActorId, batchMutationId, sourceOrigin, serializedPlan } = request;
+    const planner = this.moduleApi.inventoryIngressPlanner;
+    const preview = await planner.preview({ groupActorId, requestedFolderId: serializedPlan.requestedFolderId ?? null,
+      rows: sourceRows, batch: sourceRows.length > 1 });
+    planner.assertParity(serializedPlan, preview);
+    const sourceByKey = new Map(sourceRows.map(row => [row.sourceKey, row]));
+    const overrides = new Set(serializedPlan.rootOverrideSourceKeys ?? []);
+    const rows = preview.rows.map(row => this.#inventoryIngressDerivedRow(row, sourceByKey.get(row.sourceKey),
+      overrides.has(row.sourceKey), sourceOrigin, acquisitionContext));
+    const model = rows.some(row => row.effectiveType === "dismantle") ? await this.moduleApi.getModel() : null;
+    const record = { id: `inventory-ingress:${batchMutationId}`, rows };
+    const resultRows = [];
+    for (const row of rows) {
+      if (row.effectiveType === "skip") { resultRows.push(this.#inventoryIngressResultRow(row)); continue; }
+      let folderState = this.#readInventoryFolderState(actor);
+      const folder = folderState.folders.find(entry => entry.id === row.derivedFolderId);
+      if (row.derivedFolderId && !folder) throw new Error("Папка назначения больше не существует.");
+      row.derivedFolderName = cleanId(folder?.name);
+      row.targetReceipts = await this.#prepareInventoryIngressTargetReceipts(actor, folderState, record, row, model);
+      try {
+        for (const receipt of row.targetReceipts) {
+          receipt.itemId = await this.#applyInventoryIngressTargetReceipt(actor, record, row, receipt);
+          if (receipt.created) folderState = moveInventoryItemToFolderState(folderState, { itemId: receipt.itemId, folderId: receipt.folderId });
+        }
+        // Placement belongs to the target phase; a failed write leaves the source untouched.
+        if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(folderState)) await this.#writeInventoryFolderState(actor, folderState);
+        await debitRow(sourceByKey.get(row.sourceKey), { groupActorId, batchMutationId, sourceOrigin, sourceKey: row.sourceKey,
+          targetReceipts: foundry.utils.deepClone(row.targetReceipts) });
+      } catch (error) {
+        if (!error.inventorySourceDebitUncertain) {
+          for (const receipt of [...row.targetReceipts].reverse()) await this.#rollbackSimpleInventoryIngressTarget(actor, record, row, receipt);
+        }
+        throw error;
+      }
+      resultRows.push(this.#inventoryIngressResultRow(row));
+    }
+    return { actorId: actor.id, batchMutationId, changed: resultRows.some(row => row.changed), rows: resultRows,
+      completedSourceKeys: resultRows.filter(row => row.changed).map(row => row.sourceKey),
+      skippedSourceKeys: resultRows.filter(row => !row.changed).map(row => row.sourceKey), inventoryTransferMode: "simple" };
+  }
+
+  #runNativeIntent(key, request, operation) {
+    if (key.endsWith(":")) return operation();
+    const fingerprint = itemInstanceFingerprint(request);
+    const previous = this.#nativeIntents.get(key);
+    if (previous) {
+      if (previous.fingerprint !== fingerprint) throw new Error("Этот ID уже использован для другой операции.");
+      return previous.promise;
+    }
+    const promise = Promise.resolve().then(operation);
+    this.#nativeIntents.set(key, { fingerprint, promise });
+    if (this.#nativeIntents.size > 128) this.#nativeIntents.delete(this.#nativeIntents.keys().next().value);
+    return promise;
+  }
+
+  #nativeSourceReceipt(item, quantity, expectedSourceQuantity = null) {
+    const data = item.toObject(), beforeQuantity = getRawQuantity(data);
+    if (expectedSourceQuantity !== null && !inventoryQuantitiesMatch(beforeQuantity, expectedSourceQuantity, data)) {
+      throw new Error("Количество предмета изменилось. Повторите перенос.");
+    }
+    if (!Number.isFinite(Number(quantity)) || Number(quantity) <= 0 || beforeQuantity <= 0) throw new Error("Количество должно быть положительным.");
+    const delta = Math.min(beforeQuantity, isInventoryMaterialItemData(data) ? roundStockQuantity(Number(quantity)) : roundNumber(Number(quantity), 2));
+    if (delta <= 0) throw new Error("Количество должно быть положительным.");
+    const afterQuantity = roundStockQuantity(beforeQuantity - delta);
+    return { itemId: item.id, beforeQuantity, afterQuantity, delta,
+      beforeQuantityState: captureInventoryItemQuantityState(data),
+      afterQuantityState: captureInventoryItemQuantityState(withInventoryItemQuantity(data, afterQuantity)) };
+  }
+
+  async #validateNativeSplit(item, quantity) {
+    const actor = item.parent;
+    const source = await new ItemInstanceDocuments().readSource({ sourceItemId: item.id }, { sourceActor: actor, targetActor: actor });
+    if (source.step !== 1e-12) source.step = 0.01;
+    planItemInstanceMutation({ source, quantity, sameActor: false, sameFolder: false, forHeroSlot: false });
+  }
+
+  async #takeNativeInventoryItem(actor, itemId, target, quantity, expectedSourceQuantity) {
+    const item = this.#getInventoryItem(actor, itemId);
+    if (item.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId) throw new Error("Сначала снимите усовершенствование с предмета.");
+    const receipt = this.#nativeSourceReceipt(item, quantity, expectedSourceQuantity);
+    await this.#validateNativeSplit(item, receipt.delta);
+    const itemData = withInventoryItemQuantity(sanitizeEmbeddedItemData(item.toObject()), receipt.delta);
+    const operationId = createInventoryMutationId("native-take");
+    foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, { id: operationId, kind: "take" });
+    let created;
+    try {
+      [created] = await target.createEmbeddedDocuments("Item", [itemData]);
+      created = this.#findMutationItem(target, operationId);
+      if (!created || !inventoryQuantitiesMatch(getRawQuantity(created.toObject()), receipt.delta, itemData)
+        || !inventoryQuantityStateMatches(created.toObject(), captureInventoryItemQuantityState(itemData))) {
+        throw new Error("Создание предмета у получателя не подтверждено.");
+      }
+      await this.#applySourceReceipt(actor, receipt);
+    } catch (error) {
+      if (!this.#sourceReceiptState(actor, receipt).applied) {
+        await this.#compensateCreatedMutationItem(target, operationId, receipt.delta, captureInventoryItemQuantityState(itemData));
+      }
+      throw error;
+    }
+    return { itemName: item.name, quantity: receipt.delta, actorId: target.id, sourceActorId: actor.id,
+      createdItemId: created.id, inventoryTransferMode: "simple" };
+  }
+
+  async #sellNativeInventoryItem(actor, itemId, quantity) {
+    const item = this.#getInventoryItem(actor, itemId), quote = resolveInventorySaleQuote(item.toObject(), quantity);
+    if (!quote.eligible) throw Object.assign(new Error(quote.message), { code: quote.code });
+    const receipt = this.#nativeSourceReceipt(item, quote.quantity);
+    const before = buildCurrencySnapshot(actor), afterCopper = actorCurrencyToCopper(actor) + quote.gainedCopper;
+    try {
+      await actor.update(buildCurrencyUpdatePatch(copperToCurrency(afterCopper)));
+      if (actorCurrencyToCopper(actor) !== afterCopper) throw new Error("Зачисление монет за продажу не подтверждено.");
+      await this.#applySourceReceipt(actor, receipt);
+    } catch (error) {
+      if (!this.#sourceReceiptState(actor, receipt).applied && actorCurrencyToCopper(actor) === afterCopper) {
+        await actor.update(buildCurrencyUpdatePatch(before));
+      }
+      throw error;
+    }
+    return { itemName: item.name, quantity: receipt.delta, gainedCopper: quote.gainedCopper, currency: buildCurrencySnapshot(actor) };
+  }
+
+  async #dismantleNativeInventoryItem(actor, itemId, quantity) {
+    const item = this.#getInventoryItem(actor, itemId), data = item.toObject(), model = await this.moduleApi.getModel();
+    const blockReason = getInventoryDismantleBlockReason(data);
+    if (blockReason) throw new Error(blockReason);
+    const minimum = resolveInventoryDismantleMinimumQuantity(data, { model });
+    const receipt = this.#nativeSourceReceipt(item, Math.max(1, Math.floor(toNumber(quantity, 1))));
+    if (minimum === null || receipt.delta < minimum) throw new Error(`Нужно разобрать минимум ${minimum ?? 1} шт.`);
+    const [output] = resolveInventoryDismantleOutputs(data, receipt.delta, { model });
+    const material = model.materialById.get(output?.sourceId);
+    if (!material) throw new Error("Для предмета не найден подходящий материал.");
+    const itemData = this.#buildMaterialItemData(material, output.quantity);
+    const routing = await this.#prepareDismantleRouting(actor, item, itemData, output.quantity);
+    if (routing.outcome === "skip") return { itemName: item.name, breakQuantity: 0, materialName: material.name,
+      materialWeight: 0, skipped: true, code: "ingress-skip" };
+    const row = { sourceKey: "material", itemData, quantity: output.quantity, effectiveType: "folder",
+      derivedFolderId: routing.destinationFolderId, acquisition: this.#buildDismantleAcquisitionEntry(data, item.id, item.name, output.quantity) };
+    const record = { id: createInventoryMutationId("native-dismantle") };
+    let folderState = this.#readInventoryFolderState(actor);
+    row.targetReceipts = await this.#prepareInventoryIngressTargetReceipts(actor, folderState, record, row, model);
+    try {
+      for (const target of row.targetReceipts) {
+        target.itemId = await this.#applyInventoryIngressTargetReceipt(actor, record, row, target);
+        if (target.created) folderState = moveInventoryItemToFolderState(folderState, { itemId: target.itemId, folderId: target.folderId });
+      }
+      if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(folderState)) await this.#writeInventoryFolderState(actor, folderState);
+      await this.#applySourceReceipt(actor, receipt);
+    } catch (error) {
+      if (this.#sourceReceiptState(actor, receipt).before) {
+        for (const target of [...row.targetReceipts].reverse()) await this.#rollbackSimpleInventoryIngressTarget(actor, record, row, target);
+      }
+      throw error;
+    }
+    return { itemName: item.name, breakQuantity: receipt.delta, materialName: material.name,
+      materialWeight: readInventoryItemUnitWeight(data) * receipt.delta * 0.5 };
+  }
+
+  async #runInventoryOrganizationMutation(groupActorId, operation) {
     const actorId = cleanId(groupActorId);
     if (!actorId) throw new Error("Не указан групповой инвентарь.");
+    if (this.canUseNativeInventory(game.actors?.get?.(actorId))) {
+      return operation(await this.getInventoryActor({ create: false, groupActorId: actorId }));
+    }
     return this.mutationCoordinator.run(
       `inventory-organization:${actorId}`,
       async () => {
@@ -5716,13 +5891,19 @@ export class InventoryService {
       resolveActor: uuid => this.getInventoryActor({ create: false, groupActorId: uuid.slice(6) })
     });
     const workflow = new ItemInstanceWorkflow({ journal: this.mutationJournal, coordinator: this.mutationCoordinator, documents });
-    const result = await workflow.run({ operationId, sourceActorUuid: actorUuid, sourceItemId: itemId,
+    const actor = await this.getInventoryActor({ create: false, groupActorId });
+    const native = this.canUseNativeInventory(actor);
+    const intent = { operationId, sourceActorUuid: actorUuid, sourceItemId: itemId,
       destinationActorUuid: actorUuid, quantity, targetFolderId: folderId, heroSlotId: null,
-      expectedSourceQuantity: expectedSourceQuantity ?? null }, {
+      expectedSourceQuantity: expectedSourceQuantity ?? null };
+    const context = {
       sender,
-      assertAuthority: () => this.#assertSourceDepletionAuthority(),
+      assertAuthority: () => {
+        if (native) { if (!this.canUseNativeInventory(actor)) throw new Error("Недостаточно прав на склад."); }
+        else this.#assertSourceDepletionAuthority();
+      },
       authorize: ({ sourceActor }) => {
-        const context = this.moduleApi.groupContextService.resolveForGroup(sourceActor.id);
+        const context = native ? {} : this.moduleApi.groupContextService.resolveForGroup(sourceActor.id);
         const owner = actor => actor?.testUserPermission?.(sender, "OWNER") || actor?.ownership?.[sender?.id] >= 3;
         if (!sender?.isGM && !owner(sourceActor) && !(context.members ?? []).some(owner)) {
           throw new Error("Недостаточно прав для организации инвентаря группы.");
@@ -5735,7 +5916,9 @@ export class InventoryService {
         const before = sourceActor.getFlag(MODULE_ID, "inventoryFolders")?.itemFolderIds?.[targetId] ?? null;
         return [{ actor: "source", before: { [path]: before }, after: { [path]: folderId } }];
       }
-    });
+    };
+    const run = () => workflow[native ? "runNative" : "run"](intent, context);
+    const result = await (native ? this.#runNativeIntent(`folder:${operationId ?? ""}`, intent, run) : run());
     return { ...result, actorId: groupActorId, folderId };
   }
 
@@ -5865,6 +6048,14 @@ export class InventoryService {
     const fingerprint = JSON.stringify({ kind, ...canonicalRequest });
     const recordId = `inventory-rule:${groupActorId}:${operationId}`;
     return this.#runInventoryOrganizationMutation(groupActorId, async (actor) => {
+      if (this.canUseNativeInventory(actor)) {
+        return this.#runNativeIntent(recordId, { kind, ...canonicalRequest }, async () => {
+          const { nextState, outcome } = this.#buildInventoryIngressRuleMutation(kind,
+            this.#readInventoryIngressRuleState(actor), canonicalRequest, this.#readInventoryFolderState(actor));
+          if (outcome.changed) await this.#writeInventoryIngressRuleState(actor, nextState);
+          return outcome;
+        });
+      }
       let record = await this.mutationJournal.find(recordId);
       if (record) {
         this.#assertInventoryIngressRuleRecord(record, fingerprint);
@@ -7066,7 +7257,7 @@ export class InventoryService {
     }
 
     if (!Number.isFinite(nextQuantity) || nextQuantity < 0) throw new Error("Некорректное количество предмета.");
-    if (isManagedPartyGroup(actor)) {
+    if (isManagedPartyGroup(actor) && !this.canUseNativeInventory(actor)) {
       const payload = {
         groupActorId: actor.id, itemId: cleanId(itemId), nextQuantity,
         expectedSourceQuantity: expectedSourceQuantity ?? getRawQuantity(item.toObject())
@@ -7074,10 +7265,18 @@ export class InventoryService {
       await this.moduleApi.executeItemQuantityMutation(payload);
       return nextQuantity <= 0 ? null : actor.items.get(itemId) ?? null;
     }
+    if (expectedSourceQuantity !== null && !inventoryQuantitiesMatch(getRawQuantity(item.toObject()), expectedSourceQuantity, item.toObject())) {
+      throw new Error("Количество предмета изменилось. Откройте редактирование заново.");
+    }
     return this.#writeItemQuantity(item, nextQuantity);
   }
 
   async executeItemQuantityMutation({ groupActorId, itemId, nextQuantity, expectedSourceQuantity }) {
+    const actor = await this.getInventoryActor({ create: false, groupActorId });
+    if (this.canUseNativeInventory(actor)) {
+      await this.updateItemQuantity(itemId, nextQuantity, { groupActorId, expectedSourceQuantity });
+      return { actorId: actor.id, itemId, quantity: nextQuantity };
+    }
     this.#assertSourceDepletionAuthority();
     return this.#runInventoryOrganizationMutation(groupActorId, async actor => {
       this.#assertSourceDepletionAuthority();
@@ -7134,6 +7333,11 @@ export class InventoryService {
     }
 
     const targetActor = this.#resolveRecipientCharacter(actorId, actor);
+    if (this.canUseNativeInventory(actor) && targetActor.canUserModify?.(game.user, "update") === true
+      && !isInventoryGraphItem(actor, actor.items.get(itemId))) {
+      return this.#runNativeIntent(`take:${mutationId}`, { itemId, quantity, actorId: actor.id, targetActorId: targetActor.id, expectedSourceQuantity },
+        () => this.#takeNativeInventoryItem(actor, itemId, targetActor, quantity, expectedSourceQuantity));
+    }
     let operationId = createInventoryMutationId("inventory-take", mutationId);
     if (!mutationId) {
       const pending = (await this.mutationJournal.listPending()).find(record => record.kind === INVENTORY_GRAPH_TRANSFER_KIND
@@ -7183,6 +7387,8 @@ export class InventoryService {
     }
 
     const operationId = createInventoryMutationId("inventory-sale", mutationId);
+    if (this.canUseNativeInventory(actor)) return this.#runNativeIntent(`sale:${mutationId}`,
+      { actorId: actor.id, itemId, quantity }, () => this.#sellNativeInventoryItem(actor, itemId, quantity));
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
       return this.moduleApi.socketCommandBus.request(INVENTORY_SALE_COMMAND, {
         inventoryActorId: actor.id,
@@ -7236,7 +7442,7 @@ export class InventoryService {
 
     const currentCurrency = buildCurrencySnapshot(actor);
     const nextCurrency = buildNextCurrency(values, currentCurrency);
-    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+    if (!this.canUseNativeInventory(actor) && !game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
       return this.moduleApi.socketCommandBus.request(INVENTORY_CURRENCY_UPDATE_COMMAND, {
         inventoryActorId: actor.id,
         values: nextCurrency
@@ -7254,7 +7460,7 @@ export class InventoryService {
     }
 
     const safeMode = normalizeCurrencyMode(mode);
-    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+    if (!this.canUseNativeInventory(actor) && !game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
       return this.moduleApi.socketCommandBus.request(INVENTORY_CURRENCY_CONVERT_COMMAND, {
         inventoryActorId: actor.id,
         mode: safeMode
@@ -7620,7 +7826,16 @@ export class InventoryService {
     return foundry.utils.deepClone(result);
   }
 
-  addCurrencyToInventoryOnce(coins = {}, mutationId = "", { groupActorId = "" } = {}) {
+  async addCurrencyToInventoryOnce(coins = {}, mutationId = "", { groupActorId = "", native = false } = {}) {
+    if (native) {
+      const actor = await this.getInventoryActor({ create: false, groupActorId });
+      if (!this.canUseNativeInventory(actor)) throw new Error("Недостаточно прав на склад.");
+      return this.#runNativeIntent(`currency:${mutationId}`, { groupActorId: actor.id, coins }, async () => {
+        const before = buildCurrencySnapshot(actor), after = { ...before };
+        for (const key of ["pp", "gp", "ep", "sp", "cp"]) after[key] += Math.max(0, Math.floor(toNumber(coins[key], 0)));
+        return this.#updateCurrencyOnActor(actor, after);
+      });
+    }
     const frozenCoins = foundry.utils.deepClone(coins ?? {});
     const requestedGroupActorId = cleanId(groupActorId);
     return this.mutationCoordinator.run(
@@ -8093,6 +8308,8 @@ export class InventoryService {
 
   async breakItemToMaterial(itemId, quantity = 1, { mutationId = "" } = {}) {
     const actor = await this.getInventoryActor({ create: true });
+    if (this.canUseNativeInventory(actor)) return this.#runNativeIntent(`dismantle:${mutationId}`,
+      { actorId: actor.id, itemId, quantity }, () => this.#dismantleNativeInventoryItem(actor, itemId, quantity));
     const operationId = createInventoryMutationId("inventory-dismantle", mutationId);
     const safeQuantity = Math.max(1, Math.floor(toNumber(quantity, 1)));
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
@@ -8722,6 +8939,35 @@ export class InventoryService {
       return this.moduleApi.claimLootgenChatRowToInventory(lootgenClaim.lootId, lootgenClaim.rowId);
     }
 
+    if (this.canUseNativeInventory(actor) && dropData?.uuid) {
+      const nativeRequest = { groupActorId: actor.id, uuid: dropData.uuid,
+        quantity, expectedSourceQuantity, folderId: normalizedFolderId, ingressPlan };
+      const nativeKey = `import:${dropData.mutationId ?? ""}`;
+      if (dropData.mutationId && this.#nativeIntents.has(nativeKey)) return this.#runNativeIntent(nativeKey, nativeRequest, () => {});
+      const item = await resolveUuid(dropData.uuid);
+      const source = isActorDocument(item?.parent) ? item.parent : null;
+      if (isItemDocument(item) && (!source || source.canUserModify?.(game.user, "update") === true)
+        && (!source || !isInventoryGraphItem(source, item))) {
+        assertPhysicalInventoryItem(item);
+        if (source?.id === actor.id) return this.moveInventoryItemToFolder({ groupActorId: actor.id,
+          itemId: item.id, folderId: normalizedFolderId, ...(quantity !== undefined ? { quantity, expectedSourceQuantity,
+            operationId: createInventoryMutationId("inventory-folder-drop", dropData.mutationId) } : {}) });
+        return this.#runNativeIntent(nativeKey, nativeRequest, async () => {
+          const receipt = source ? this.#nativeSourceReceipt(item, quantity ?? getRawQuantity(item.toObject()), expectedSourceQuantity) : null;
+          if (receipt) await this.#validateNativeSplit(item, receipt.delta);
+          const operationId = createInventoryMutationId("inventory-import", dropData.mutationId);
+          const prepared = await this.#prepareImportedItemIngress(actor, item, { folderId: normalizedFolderId,
+            serializedPlan: ingressPlan, operationId, quantity, expectedSourceQuantity, native: true });
+          if (prepared.cancelled) return prepared.result;
+          return this.commitInventoryIngressBatch({ groupActorId: actor.id, batchMutationId: operationId, sourceOrigin: "import",
+            serializedPlan: prepared.serializedPlan }, { resolveRows: async () => [prepared.row], debitRow: async () => {
+              if (!source) return;
+              try { await this.#applySourceReceipt(source, receipt); }
+              catch (error) { if (!this.#sourceReceiptState(source, receipt).before) error.inventorySourceDebitUncertain = true; throw error; }
+            }, acquisitionContext: { sourceType: "actor", sourceId: source?.id ?? "", sourceName: source?.name ?? "" } });
+        });
+      }
+    }
     const previousImport = await this.#readSelectedImportRecord({
       groupActorId: actor.id, itemUuid: dropData?.uuid, mutationId: dropData?.mutationId,
       quantity, expectedSourceQuantity, folderId: normalizedFolderId
@@ -8838,10 +9084,11 @@ export class InventoryService {
     serializedPlan = null,
     operationId = "",
     quantity: selectedQuantity = undefined,
-    expectedSourceQuantity = null
+    expectedSourceQuantity = null,
+    native = false
   } = {}) {
     const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
-    const existing = operationId ? await this.mutationJournal.find(`inventory-ingress:${operationId}`) : null;
+    const existing = operationId && !native ? await this.mutationJournal.find(`inventory-ingress:${operationId}`) : null;
     if (selectedQuantity !== undefined && existing) {
       await this.#readSelectedImportRecord({ groupActorId: actor.id, itemUuid: itemDocument.uuid, mutationId: operationId,
         folderId, quantity: selectedQuantity, expectedSourceQuantity }, serializedPlan);
@@ -8869,7 +9116,7 @@ export class InventoryService {
         nativeImportSource = { actorUuid: sourceActor.uuid, itemUuid: itemDocument.uuid };
       }
     }
-    if (sourceActor) {
+    if (sourceActor && !native) {
       const sourceIds = new Set(itemData.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]?.nodes?.map(node => node._id) ?? [itemDocument.id]);
       const conflict = (await this.mutationJournal.listPending()).some(record => record.id !== `inventory-ingress:${operationId}`
         && record.rows?.some(row => row.nativeImportSource?.actorUuid === sourceActor.uuid
@@ -9035,7 +9282,10 @@ export class InventoryService {
 
       const mutationId = this.#inventoryFolderBatchChildMutationId(operationId, action, itemId);
       try {
-        const result = action === "sell"
+        const result = this.canUseNativeInventory(actor)
+          ? await this.#runNativeIntent(`folder-${action}:${mutationId}`, { groupActorId, itemId, quantity },
+              () => action === "sell" ? this.#sellNativeInventoryItem(actor, itemId, quantity) : this.#dismantleNativeInventoryItem(actor, itemId, quantity))
+          : action === "sell"
           ? await this.executeSaleMutation({
               inventoryActorId: groupActorId,
               itemId,

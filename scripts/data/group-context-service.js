@@ -422,6 +422,41 @@ export class GroupContextService {
     return this.#groupStateRepository.read();
   }
 
+  async syncInventoryOwnership(groupActorId = null, { guard = null } = {}) {
+    const game = globalThis.game;
+    if (!game?.user?.isGM || game.users?.activeGM?.id !== game.user.id) return [];
+    const users = Array.from(game.users?.values?.() ?? game.users?.contents ?? []);
+    const registry = this.getRegistry();
+    const changed = [];
+    for (const id of groupActorId ? [groupActorId] : Object.keys(registry.groupsById)) {
+      const actor = game.actors?.get?.(id);
+      if (!registry.groupsById[id] || !isManagedPartyGroup(actor)) continue;
+      const previous = actor.getFlag(MODULE_ID, "inventoryOwnerGrants") ?? {};
+      const grants = { ...previous }, ownership = { ...actor.ownership };
+      const participants = new Set(users.filter(user => !user.isGM && getGroupMemberActors(actor).some(member =>
+        member.type === "character" && (typeof member.testUserPermission === "function"
+          ? member.testUserPermission(user, "OWNER")
+          : Number(member.ownership?.[user.id] ?? member.ownership?.default ?? 0) >= 3))) .map(user => user.id));
+      for (const [userId, oldLevel] of Object.entries(grants)) {
+        if (participants.has(userId)) continue;
+        if (ownership[userId] === 3) {
+          if (oldLevel === null) delete ownership[userId]; else ownership[userId] = oldLevel;
+        }
+        delete grants[userId];
+      }
+      for (const userId of participants) {
+        if (Number(ownership[userId] ?? ownership.default ?? 0) >= 3) continue;
+        if (!Object.hasOwn(grants, userId)) grants[userId] = ownership[userId] ?? null;
+        ownership[userId] = 3;
+      }
+      if (JSON.stringify(ownership) === JSON.stringify(actor.ownership) && JSON.stringify(grants) === JSON.stringify(previous)) continue;
+      guard?.();
+      await actor.update({ "==ownership": ownership, [`flags.${MODULE_ID}.==inventoryOwnerGrants`]: grants });
+      changed.push(id);
+    }
+    return changed;
+  }
+
   mutateGroupState(groupActorId, mutator, options) {
     return this.#groupStateRepository.mutateGroupState(groupActorId, mutator, options);
   }
@@ -469,6 +504,7 @@ export class GroupContextService {
         registry.activeGroupActorId = groupActor.id;
       }
     });
+    await this.syncInventoryOwnership(groupActor.id, { guard });
     return this.resolveForGroup(groupActor.id);
   }
 
@@ -490,6 +526,7 @@ export class GroupContextService {
         ? normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id])
         : buildDefaultGroupState(groupActor.id);
     });
+    await this.syncInventoryOwnership(groupActor.id, { guard });
     return this.resolveForGroup(groupActor.id);
   }
 

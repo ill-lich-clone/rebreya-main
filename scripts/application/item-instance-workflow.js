@@ -27,6 +27,40 @@ export class ItemInstanceWorkflow {
     return lock(0);
   }
 
+  async runNative(intent, context) {
+    if (!context?.sender?.id || !intent?.operationId || !intent.sourceActorUuid || !intent.destinationActorUuid
+      || !intent.sourceItemId || (intent.targetFolderId !== null && intent.heroSlotId !== null)) {
+      throw new ItemInstanceError("invalid-intent", "Неполные данные операции экземпляра.");
+    }
+    await context.assertAuthority();
+    const actors = await this.documents.readActors(intent);
+    await context.authorize(actors, intent);
+    const source = await this.documents.readSource(intent, actors);
+    await context.authorize({ ...actors, ...source }, intent);
+    if (intent.expectedSourceQuantity != null && intent.expectedSourceQuantity !== source.quantity) {
+      throw new ItemInstanceError("stale-quantity", "Количество изменилось. Обновите инвентарь и повторите перенос.");
+    }
+    const plan = planItemInstanceMutation({ source, quantity: intent.quantity,
+      sameActor: intent.sourceActorUuid === intent.destinationActorUuid,
+      sameFolder: source.folderId === intent.targetFolderId, forHeroSlot: intent.heroSlotId !== null,
+      ...context.planSource?.(source, intent) });
+    const id = `item-instance:${JSON.stringify([context.sender.id, intent.operationId])}`;
+    const prepared = await this.documents.prepare(intent, plan, source, context, { id, fingerprint: itemInstanceFingerprint(intent) });
+    const record = { ...prepared, id, intent, plan, phase: "prepared" };
+    try {
+      for (const method of ["createTarget", "debitSource", "writePlacement"]) {
+        const receipt = await this.#guarded(context, () => this.documents[method](record, context));
+        if (receipt?.itemId) record.itemId = receipt.itemId;
+      }
+      await this.documents.verifyCommitted(record, context);
+    } catch (error) {
+      await this.#guarded(context, () => this.documents.compensate(record, context));
+      throw error;
+    }
+    return { operationId: intent.operationId, itemId: record.itemId, sourceRemaining: plan.sourceRemaining,
+      changed: plan.kind !== "noop", replayed: false };
+  }
+
   runBatch(intent, context) {
     if (!context?.sender?.id || !intent?.operationId || !intent.sourceActorUuid
       || intent.sourceActorUuid !== intent.destinationActorUuid || !intent.mode) {

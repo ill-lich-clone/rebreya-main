@@ -1,12 +1,12 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, inventoryMaterialQuantitiesMatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch, buildInventoryItemQuantityPatch, readInventoryItemUnitWeight, readInventoryItemUnitPrice } from "../data/inventory-material-quantity.js?v=1.4.377";
 import { MODULE_ID } from "../constants.js";
-import { isManagedPartyGroup } from "../data/group-context-service.js?v=1.4.377";
+import { isManagedPartyGroup } from "../data/group-context-service.js?v=1.5.17";
 import { promptStorageTransferQuantity } from "../ui/storage-transfer-ui.js?v=1.5.10";
 import {
   captureInventoryTransferIdentity,
   inventoryTransferIdentityMatches,
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT
-} from "../data/inventory-service.js?v=1.5.10";
+} from "../data/inventory-service.js?v=1.5.17";
 
 const PARTY_INVENTORY_TRANSFER_FLAG = "partyInventoryTransfer";
 const DEFAULT_REFRESH_DEBOUNCE_MS = 0;
