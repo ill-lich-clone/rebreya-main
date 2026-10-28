@@ -1,0 +1,13 @@
+# Native owned inventory graphs
+
+The user selected and authorized the described native transfer: when the current user can update both Actors, move a complete item tree directly with Foundry Document APIs, without a custom GM command, journal access or coordinator. Implementation and delivery continue inline through tests, version, commit and push in lich_branch. No product choice remains open.
+
+Extend InventoryService's existing native take/import and runtime-item-graph/application helpers. Group→owned member and owned character→group transfers retain containers (including nested currency), contents, upgrades, weapon attachments, provenance, root acquisition history, exact destination folder and stable remapped Item/Actor links. Reuse captureRuntimeItemGraph/buildRuntimeGraphDocuments/materializeRuntimeItemGraph. No second graph owner, settings or dependencies.
+
+Preserve whole-singleton, equipped/held, installed-child, invalid-graph and partial-split restrictions; import skip/folder/root-override and dismantle prohibition still apply. Raw transport flags do not make an untrusted Item a trusted native graph. Existing APIs/results and explicit privileged graph recovery remain compatible; missing capability on either Actor follows the existing validated route.
+
+Deliberate change: owned graph transfers now execute without an active GM, durable journal or shared queue, under ordinary Foundry concurrency. Native Document APIs still use Foundry's own server transport. Create and observe the complete target before deleting source nodes in one native batch. Rejected/cancelled creation never debits source. Remove only this operation's unchanged target after a failure with the complete source intact. A partially deleted/changed source must not cause destruction of the complete target; report the failure for manual inspection. No distributed transaction or new recovery framework.
+
+Verification: production native service tests with throwing socket/journal/coordinator cover both directions, nested links/upgrades/mods/currency/history/folder, skip, partial/equipped rejection, cancellation and partial failures, replay and capability fallback. Run affected legacy graph tests, then the complete repository checks and one independent final review. Bump 1.5.17→1.5.18 and keep previous published forwarders. Live compatibility is only claimed if an authenticated test world is available.
+
+Small-design builder check (self-review): source/target rights, ingress trust, phase ordering, compensation scope and unchanged public results are specified; native concurrency and partial failure limits are explicit. No blocking design question remains.

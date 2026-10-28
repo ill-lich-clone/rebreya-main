@@ -6,6 +6,7 @@ const MODULE_ID = "rebreya-main";
 export const RUNTIME_ITEM_GRAPH_FLAG = "runtimeItemGraph";
 const conflict = () => { const error = new Error("Состав предмета изменился или перенесён частично; нужна сверка экземпляров."); error.code = "graph-manual-review"; throw error; };
 const clone = value => structuredClone(value);
+const snapshotKey = data => { const copy = clone(data); delete copy._stats; return itemInstanceFingerprint(copy); };
 const matchesPreparedValue = (actual, expected) => {
   if (Array.isArray(expected)) return Array.isArray(actual) && actual.length === expected.length && expected.every((value,i) => matchesPreparedValue(actual[i],value));
   if (expected && typeof expected === "object") return actual && typeof actual === "object"
@@ -145,4 +146,37 @@ export async function materializeRuntimeItemGraph(actor, graph, operationId, roo
   try { await actor.createEmbeddedDocuments("Item", missing, { keepId: true, renderSheet: false }); }
   catch (error) { if (!plan.documents.some(data => actor.items.get(data._id))) throw error; }
   return verify();
+}
+
+/** Native transfers keep their snapshots in memory and use one source batch. */
+export function runtimeItemGraphMatchesSource(actor, graph) {
+  try {
+    const live = captureRuntimeItemGraph(actor, actor.items.get(graph.rootId));
+    return live.nodes.length === graph.nodes.length && live.nodes.every((node, index) => snapshotKey(node) === snapshotKey(graph.nodes[index]));
+  } catch { return false; }
+}
+
+export async function deleteRuntimeItemGraph(actor, graph, { assertAuthority = () => {} } = {}) {
+  assertAuthority();
+  if (!runtimeItemGraphMatchesSource(actor, graph)) conflict();
+  const ids = graph.nodes.map(node => node._id).reverse();
+  try { await actor.deleteEmbeddedDocuments("Item", ids); }
+  catch (error) { if (ids.some(id => actor.items.get(id))) throw error; }
+  if (ids.some(id => actor.items.get(id))) conflict();
+}
+
+export async function rollbackRuntimeItemGraph(actor, graph, operationId, rootData, snapshot = null) {
+  const plan = buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId: actor.id });
+  const present = plan.documents.filter(data => actor.items.get(data._id));
+  if (!present.length) return;
+  if (present.some(data => !matchesPreparedValue(actor.items.get(data._id).toObject(), data))) conflict();
+  if (snapshot && present.some(data => snapshotKey(actor.items.get(data._id).toObject()) !== snapshotKey(snapshot.find(node => node._id === data._id)))) conflict();
+  const expectedIds = new Set(plan.documents.map(data => data._id));
+  if (Array.from(actor.items.contents ?? actor.items.values()).some(item => !expectedIds.has(item.id)
+    && (expectedIds.has(item.system?.container) || expectedIds.has(item.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId)
+      || expectedIds.has(item.flags?.[MODULE_ID]?.installedWeaponMod?.hostItemId)))) conflict();
+  const ids = present.map(data => data._id).reverse();
+  try { await actor.deleteEmbeddedDocuments("Item", ids); }
+  catch (error) { if (ids.some(id => actor.items.get(id))) throw error; }
+  if (ids.some(id => actor.items.get(id))) conflict();
 }

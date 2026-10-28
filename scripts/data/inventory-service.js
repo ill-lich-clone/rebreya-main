@@ -8,8 +8,8 @@ import {
 } from "./inventory-material-quantity.js?v=1.4.377";
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
-import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.385";
-import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.385";
+import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph, runtimeItemGraphMatchesSource, deleteRuntimeItemGraph, rollbackRuntimeItemGraph } from "./runtime-item-graph.js?v=1.5.18";
+import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph, transferInventoryGraphNative } from "../application/inventory-graph-transfer.js?v=1.5.18";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.396";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.5.10";
 import {
@@ -4458,6 +4458,7 @@ export class InventoryService {
         && Boolean(readLootgenPreparedComposition(receipt.itemData)))
         || (record.sourceOrigin === "import" && Boolean(row.nativeImportSource));
       const root = await materializeRuntimeItemGraph(actor, runtimeGraph, graphOperationId, receipt.itemData, { recoverMissing });
+      if (record.native === true) receipt.nativeGraphSnapshot = captureRuntimeItemGraph(actor, root).nodes;
       return root.id;
     }
     if (receipt.container) {
@@ -4608,7 +4609,9 @@ export class InventoryService {
     const nativeActor = await this.getInventoryActor({ create: false, groupActorId });
     if (this.canUseNativeInventory(nativeActor) && ["import", "public-model", "manual-entry"].includes(sourceOrigin)) {
       const sourceRows = await resolveRows({ groupActorId, batchMutationId, sourceOrigin, recovering: false, serializedPlan });
-      if (sourceRows.every(row => !row.container && !row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG])) {
+      this.#assertInventoryIngressGraphSource(sourceRows, sourceOrigin, false);
+      if (sourceRows.every(row => !row.container && (!row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]
+        || (sourceOrigin === "import" && this.#nativeImportRows.has(row))))) {
         return this.#runNativeIntent(operationId, request, () => this.#commitNativeInventoryIngress(nativeActor, request, sourceRows, debitRow, acquisitionContext));
       }
     }
@@ -4747,6 +4750,10 @@ export class InventoryService {
   }
 
   async #rollbackSimpleInventoryIngressTarget(actor, record, row, receipt) {
+    const graph = receipt.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+    if (graph && receipt.created) {
+      return rollbackRuntimeItemGraph(actor, graph, `${record.id}:${row.sourceKey}:${receipt.outputIndex}`, receipt.itemData, receipt.nativeGraphSnapshot);
+    }
     const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
       && receipt.afterAcquisitionHistory?.version === 1;
     if (receipt.created) {
@@ -5629,7 +5636,7 @@ export class InventoryService {
     const rows = preview.rows.map(row => this.#inventoryIngressDerivedRow(row, sourceByKey.get(row.sourceKey),
       overrides.has(row.sourceKey), sourceOrigin, acquisitionContext));
     const model = rows.some(row => row.effectiveType === "dismantle") ? await this.moduleApi.getModel() : null;
-    const record = { id: `inventory-ingress:${batchMutationId}`, rows };
+    const record = { id: `inventory-ingress:${batchMutationId}`, sourceOrigin, rows, native: true };
     const resultRows = [];
     for (const row of rows) {
       if (row.effectiveType === "skip") { resultRows.push(this.#inventoryIngressResultRow(row)); continue; }
@@ -5645,6 +5652,7 @@ export class InventoryService {
         }
         // Placement belongs to the target phase; a failed write leaves the source untouched.
         if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(folderState)) await this.#writeInventoryFolderState(actor, folderState);
+        if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(folderState)) throw new Error("Папка назначения не подтверждена. Перенос отменён.");
         await debitRow(sourceByKey.get(row.sourceKey), { groupActorId, batchMutationId, sourceOrigin, sourceKey: row.sourceKey,
           targetReceipts: foundry.utils.deepClone(row.targetReceipts) });
       } catch (error) {
@@ -7333,10 +7341,14 @@ export class InventoryService {
     }
 
     const targetActor = this.#resolveRecipientCharacter(actorId, actor);
-    if (this.canUseNativeInventory(actor) && targetActor.canUserModify?.(game.user, "update") === true
-      && !isInventoryGraphItem(actor, actor.items.get(itemId))) {
+    if (this.canUseNativeInventory(actor) && targetActor.canUserModify?.(game.user, "update") === true) {
       return this.#runNativeIntent(`take:${mutationId}`, { itemId, quantity, actorId: actor.id, targetActorId: targetActor.id, expectedSourceQuantity },
-        () => this.#takeNativeInventoryItem(actor, itemId, targetActor, quantity, expectedSourceQuantity));
+        () => isInventoryGraphItem(actor, actor.items.get(itemId))
+          ? transferInventoryGraphNative({ source: actor, target: targetActor, itemId, quantity, expectedSourceQuantity,
+              operationId: createInventoryMutationId("native-tree-take", mutationId), assertAuthority: () => {
+                if (!this.canUseNativeInventory(actor) || targetActor.canUserModify?.(game.user, "update") !== true) throw new Error("Недостаточно прав на перенос предметов.");
+              } })
+          : this.#takeNativeInventoryItem(actor, itemId, targetActor, quantity, expectedSourceQuantity));
     }
     let operationId = createInventoryMutationId("inventory-take", mutationId);
     if (!mutationId) {
@@ -8946,8 +8958,7 @@ export class InventoryService {
       if (dropData.mutationId && this.#nativeIntents.has(nativeKey)) return this.#runNativeIntent(nativeKey, nativeRequest, () => {});
       const item = await resolveUuid(dropData.uuid);
       const source = isActorDocument(item?.parent) ? item.parent : null;
-      if (isItemDocument(item) && (!source || source.canUserModify?.(game.user, "update") === true)
-        && (!source || !isInventoryGraphItem(source, item))) {
+      if (isItemDocument(item) && (!source || source.canUserModify?.(game.user, "update") === true)) {
         assertPhysicalInventoryItem(item);
         if (source?.id === actor.id) return this.moveInventoryItemToFolder({ groupActorId: actor.id,
           itemId: item.id, folderId: normalizedFolderId, ...(quantity !== undefined ? { quantity, expectedSourceQuantity,
@@ -8960,8 +8971,22 @@ export class InventoryService {
             serializedPlan: ingressPlan, operationId, quantity, expectedSourceQuantity, native: true });
           if (prepared.cancelled) return prepared.result;
           return this.commitInventoryIngressBatch({ groupActorId: actor.id, batchMutationId: operationId, sourceOrigin: "import",
-            serializedPlan: prepared.serializedPlan }, { resolveRows: async () => [prepared.row], debitRow: async () => {
+            serializedPlan: prepared.serializedPlan }, { resolveRows: async () => [prepared.row], debitRow: async (_row, context) => {
               if (!source) return;
+              const graph = prepared.row.itemData.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+              if (graph) {
+                try {
+                  for (const target of context.targetReceipts) {
+                    if (!target.graphItemIds?.length || target.graphItemIds.some(id => !actor.items.get(id))) throw new Error("Создание полного дерева у получателя не подтверждено.");
+                    await materializeRuntimeItemGraph(actor, graph, `inventory-ingress:${operationId}:${context.sourceKey}:${target.outputIndex}`, target.itemData, { recoverMissing: true });
+                  }
+                  await deleteRuntimeItemGraph(source, graph, { assertAuthority: () => {
+                    if (!this.canUseNativeInventory(actor) || source.canUserModify?.(game.user, "update") !== true) throw new Error("Недостаточно прав на перенос предметов.");
+                  } });
+                }
+                catch (error) { if (!runtimeItemGraphMatchesSource(source, graph)) error.inventorySourceDebitUncertain = true; throw error; }
+                return;
+              }
               try { await this.#applySourceReceipt(source, receipt); }
               catch (error) { if (!this.#sourceReceiptState(source, receipt).before) error.inventorySourceDebitUncertain = true; throw error; }
             }, acquisitionContext: { sourceType: "actor", sourceId: source?.id ?? "", sourceName: source?.name ?? "" } });

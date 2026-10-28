@@ -1,4 +1,4 @@
-import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.4.385";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph, runtimeItemGraphMatchesSource, deleteRuntimeItemGraph, rollbackRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.5.18";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.5.17";
 
 export const INVENTORY_GRAPH_TRANSFER_KIND = "inventory-graph-transfer-v1";
@@ -13,6 +13,31 @@ const snapshotKey = data => {
   const copy = structuredClone(data); delete copy._stats;
   return itemInstanceFingerprint(copy);
 };
+
+export async function transferInventoryGraphNative({ source, target, itemId, quantity, operationId, assertAuthority, expectedSourceQuantity = null }) {
+  assertAuthority();
+  const root = source.items.get(itemId);
+  if (!root || root.system.quantity !== 1 || quantity !== 1 || (expectedSourceQuantity !== null && expectedSourceQuantity !== 1)) {
+    fail("Предмет с содержимым или усовершенствованиями переносится целиком, по одному экземпляру.");
+  }
+  const flags = root.flags?.["rebreya-main"] ?? {};
+  if (flags.installedUpgrade?.hostItemId || flags.installedWeaponMod?.hostItemId) fail("Сначала снимите установленный предмет с основы.");
+  if (root.system.equipped || flags.heldHands?.length) fail("Сначала освободите руки и снимите переносимый предмет.");
+  const graph = captureRuntimeItemGraph(source, root);
+  const targetData = structuredClone(graph.nodes[0]); targetData.flags ??= {}; targetData.flags["rebreya-main"] ??= {};
+  targetData.flags["rebreya-main"].inventoryMutation = { id: operationId, kind: "take" };
+  let created, targetSnapshot;
+  try {
+    created = await materializeRuntimeItemGraph(target, graph, operationId, targetData, { recoverMissing: true });
+    targetSnapshot = captureRuntimeItemGraph(target, created).nodes;
+    await deleteRuntimeItemGraph(source, graph, { assertAuthority });
+  } catch (error) {
+    if (runtimeItemGraphMatchesSource(source, graph)) await rollbackRuntimeItemGraph(target, graph, operationId, targetData, targetSnapshot);
+    throw error;
+  }
+  return { itemName: root.name, quantity: 1, actorId: target.id, sourceActorId: source.id,
+    createdItemId: created.id, inventoryTransferMode: "simple" };
+}
 
 /** Called only inside InventoryService's existing inventory queue and authorization boundary. */
 export async function transferInventoryGraph({ source, target, itemId, quantity, operationId, fingerprint, journal, assertAuthority, record = null }) {

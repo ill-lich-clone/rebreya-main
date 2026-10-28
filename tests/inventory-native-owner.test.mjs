@@ -5,6 +5,7 @@ import { InventoryIngressPlanner } from "../scripts/application/inventory-ingres
 import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
 import { buildInventoryIngressDescriptor, resolveInventoryDismantleOutputs } from "../scripts/data/inventory-ingress-descriptor.js";
 import { readInventoryItemQuantity, withInventoryItemQuantity } from "../scripts/data/inventory-material-quantity.js";
+import { captureRuntimeItemGraph } from "../scripts/data/runtime-item-graph.js";
 
 const previousHooks = globalThis.Hooks;
 globalThis.Hooks = { once() {}, on() {} };
@@ -36,6 +37,194 @@ function nativeFixture({ quantity = 10 } = {}) {
   });
   return f;
 }
+
+async function nativeTree(f, source = f.group) {
+  if (source !== f.group) { f.group.items.contents = []; f.source.parent = source; source.items.contents.push(f.source); }
+  Object.assign(f.source.data.flags["rebreya-main"], {
+    itemUpgrades: { installed: [{ itemId: "up", slotIndex: 0 }] },
+    itemSourceUuid: "Item.original-root"
+  });
+  await source.createEmbeddedDocuments("Item", [
+    { _id: "up", name: "Upgrade", type: "loot", system: { quantity: 1 }, flags: { "rebreya-main": { installedUpgrade: { hostItemId: "rope", hostActorId: source.id, slotIndex: 0 } } } },
+    { _id: "nested", name: "Nested bag", type: "container", system: { quantity: 1, container: "rope", currency: { gp: 7 } }, flags: {} },
+    { _id: "child", name: "Contents", type: "loot", system: { quantity: 3, container: "nested" }, flags: { custom: { note: "preserved" } } }
+  ]);
+  const deletes = [];
+  for (const actor of [f.group, f.hero]) actor.deleteEmbeddedDocuments = async (type, ids) => {
+    deletes.push({ actorId: actor.id, ids: [...ids] });
+    for (const id of ids) await actor.items.get(id)?.delete();
+  };
+  return deletes;
+}
+
+function assertNativeTree(actor, rootId) {
+  const root = actor.items.get(rootId), upgrade = actor.items.contents.find(item => item.name === "Upgrade");
+  const bag = actor.items.contents.find(item => item.name === "Nested bag"), child = actor.items.contents.find(item => item.name === "Contents");
+  assert.equal(root.flags["rebreya-main"].itemUpgrades.installed[0].itemId, upgrade.id);
+  assert.equal(upgrade.flags["rebreya-main"].installedUpgrade.hostItemId, root.id);
+  assert.equal(upgrade.flags["rebreya-main"].installedUpgrade.hostActorId, actor.id);
+  assert.equal(bag.system.container, root.id); assert.equal(bag.system.currency.gp, 7);
+  assert.equal(child.system.container, bag.id); assert.equal(child.system.quantity, 3);
+  assert.equal(child.flags.custom.note, "preserved");
+  assert.equal(root.flags["rebreya-main"].itemSourceUuid, "Item.original-root");
+}
+
+test("native owned tree take remaps nested contents and upgrades with one source batch", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    const deletes = await nativeTree(f);
+    const request = { actorId: "hero", groupActorId: "g", quantity: 1, expectedSourceQuantity: 1, mutationId: "native-tree" };
+    const result = await f.api.inventoryService.takeInventoryItemToCharacter("rope", request);
+    assert.equal(f.group.items.contents.length, 0); assert.equal(f.hero.items.contents.length, 4);
+    assert.equal(deletes.length, 1); assert.equal(deletes[0].ids.length, 4);
+    assertNativeTree(f.hero, result.createdItemId);
+    assert.deepEqual(await f.api.inventoryService.takeInventoryItemToCharacter("rope", request), result);
+    assert.equal(f.hero.items.contents.length, 4);
+  } finally { f.restore(); }
+});
+
+test("native owned tree import preserves ingress folder and history without journals", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f, f.hero);
+    const request = { uuid: f.source.uuid, mutationId: "native-tree-import" };
+    const options = { groupActorId: "g", folderId: "bag", quantity: 1, expectedSourceQuantity: 1 };
+    const result = await f.api.inventoryService.importDroppedItem(request, options);
+    assert.equal(f.hero.items.contents.length, 0); assert.equal(f.group.items.contents.length, 4);
+    const rootId = result.rows[0].targetItemIds[0]; assertNativeTree(f.group, rootId);
+    assert.equal(f.group.flags["rebreya-main"].inventoryFolders.itemFolderIds[rootId], "bag");
+    assert.equal(f.group.items.get(rootId).getFlag("rebreya-main", "inventoryAcquisitionHistory").entries.length, 1);
+    assert.deepEqual(await f.api.inventoryService.importDroppedItem(request, options), result);
+  } finally { f.restore(); }
+});
+
+for (const phase of ["create", "delete"]) test(`native tree ${phase} rejection preserves source and cleans target`, async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f); f.failAt(phase, "before");
+    await assert.rejects(f.api.inventoryService.takeInventoryItemToCharacter("rope", { actorId: "hero", quantity: 1, groupActorId: "g" }), /fault/);
+    assert.equal(f.group.items.contents.length, 4); assert.equal(f.hero.items.contents.length, 0);
+  } finally { f.restore(); }
+});
+
+test("native tree partial source deletion keeps complete target and reports failure", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f); f.failAt("delete", "after");
+    await assert.rejects(f.api.inventoryService.takeInventoryItemToCharacter("rope", { actorId: "hero", quantity: 1, groupActorId: "g" }));
+    assert.equal(f.group.items.contents.length, 3); assert.equal(f.hero.items.contents.length, 4);
+  } finally { f.restore(); }
+});
+
+test("native tree take remaps installed weapon attachments", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f);
+    f.source.flags["rebreya-main"].weaponMods = { version: 1, attachments: [{ itemId: "mod", sourceId: "scope", mountIds: ["top"] }], modernizedParts: [] };
+    await f.group.createEmbeddedDocuments("Item", [{ _id: "mod", name: "Scope", type: "loot", system: { quantity: 1, container: "rope" }, flags: { "rebreya-main": {
+      gearId: "scope", installedWeaponMod: { version: 1, kind: "weaponAttachment", hostItemId: "rope", hostActorId: "g", mountIds: ["top"] }
+    } } }]);
+    const result = await f.api.inventoryService.takeInventoryItemToCharacter("rope", { actorId: "hero", quantity: 1, groupActorId: "g" });
+    assertNativeTree(f.hero, result.createdItemId);
+    const root = f.hero.items.get(result.createdItemId), mod = f.hero.items.contents.find(item => item.name === "Scope");
+    assert.equal(root.flags["rebreya-main"].weaponMods.attachments[0].itemId, mod.id);
+    assert.equal(mod.flags["rebreya-main"].installedWeaponMod.hostItemId, root.id);
+    assert.equal(mod.flags["rebreya-main"].installedWeaponMod.hostActorId, "hero");
+  } finally { f.restore(); }
+});
+
+test("native tree import respects skip rule without touching either Actor", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f, f.hero);
+    await f.api.inventoryService.createInventoryIngressRule({ groupActorId: "g", operationId: "tree-skip", expectedRevision: 0,
+      rule: { id: "skip", name: "Skip", conditions: [{ field: "documentType", operator: "is", value: "equipment" }], action: { type: "skip" } } });
+    const result = await f.api.inventoryService.importDroppedItem({ uuid: f.source.uuid }, { groupActorId: "g", quantity: 1 });
+    assert.equal(result.changed, false); assert.equal(f.group.items.contents.length, 0); assert.equal(f.hero.items.contents.length, 4);
+  } finally { f.restore(); }
+});
+
+for (const direction of ["take", "import"]) {
+  for (const failure of ["cancel-create", "partial-create", "cancel-delete", "partial-delete"]) {
+    test(`native tree ${direction} handles ${failure} without silent item loss`, async () => {
+      const f = nativeFixture({ quantity: 1 }); try {
+        const source = direction === "take" ? f.group : f.hero, target = direction === "take" ? f.hero : f.group;
+        await nativeTree(f, source);
+        if (failure === "cancel-create") target.createEmbeddedDocuments = async () => [];
+        if (failure === "partial-create") {
+          const create = target.createEmbeddedDocuments.bind(target);
+          target.createEmbeddedDocuments = async (type, rows) => { await create(type, rows.slice(0, 2)); throw new Error("partial create"); };
+        }
+        if (failure === "cancel-delete") source.deleteEmbeddedDocuments = async () => [];
+        if (failure === "partial-delete") f.failAt("delete", "after");
+        const operation = direction === "take"
+          ? f.api.inventoryService.takeInventoryItemToCharacter("rope", { actorId: "hero", quantity: 1, groupActorId: "g" })
+          : f.api.inventoryService.importDroppedItem({ uuid: f.source.uuid }, { groupActorId: "g", quantity: 1 });
+        await assert.rejects(operation);
+        if (failure === "partial-delete") { assert.equal(source.items.contents.length, 3); assert.equal(target.items.contents.length, 4); }
+        else { assert.equal(source.items.contents.length, 4); assert.equal(target.items.contents.length, 0); }
+      } finally { f.restore(); }
+    });
+  }
+  test(`native tree ${direction} rejects a partial or equipped root`, async () => {
+    const f = nativeFixture({ quantity: 1 }); try {
+      const source = direction === "take" ? f.group : f.hero;
+      await nativeTree(f, source);
+      const run = quantity => direction === "take"
+        ? f.api.inventoryService.takeInventoryItemToCharacter("rope", { actorId: "hero", quantity, groupActorId: "g" })
+        : f.api.inventoryService.importDroppedItem({ uuid: f.source.uuid }, { groupActorId: "g", quantity });
+      await assert.rejects(run(0.5));
+      f.source.data.system.equipped = true; await assert.rejects(run(1));
+      assert.equal(source.items.contents.length, 4);
+    } finally { f.restore(); }
+  });
+}
+
+test("native graph capability fallback retains existing GM request", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f); f.hero.canUserModify = () => false;
+    const calls = []; f.api.socketCommandBus.request = async (command, payload) => { calls.push({ command, payload }); return { requested: true }; };
+    assert.deepEqual(await f.api.inventoryService.takeInventoryItemToCharacter("rope", { actorId: "hero", quantity: 1, groupActorId: "g", mutationId: "fallback-tree" }), { requested: true });
+    assert.equal(calls.length, 1); assert.equal(calls[0].payload.targetActorId, "hero"); assert.equal(f.group.items.contents.length, 4);
+  } finally { f.restore(); }
+});
+
+test("native import never trusts a raw runtime graph flag on a loose Item", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    f.source.flags["rebreya-main"].runtimeItemGraph = captureRuntimeItemGraph(f.group, f.source);
+    f.group.items.contents = []; f.source.parent = f.hero; f.hero.items.contents.push(f.source);
+    await assert.rejects(f.api.inventoryService.importDroppedItem({ uuid: f.source.uuid }, { groupActorId: "g", quantity: 1 }), error => error.code === "invalid-runtime-graph");
+    assert.equal(f.hero.items.contents.length, 1); assert.equal(f.group.items.contents.length, 0);
+  } finally { f.restore(); }
+});
+
+test("native graph import rechecks complete target after folder placement before source debit", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f, f.hero);
+    const setFlag = f.group.setFlag.bind(f.group);
+    f.group.setFlag = async (...args) => {
+      const result = await setFlag(...args);
+      const child = f.group.items.contents.find(item => item.name === "Contents"); if (child) await child.delete();
+      return result;
+    };
+    await assert.rejects(f.api.inventoryService.importDroppedItem({ uuid: f.source.uuid }, { groupActorId: "g", folderId: "bag", quantity: 1 }));
+    assert.equal(f.hero.items.contents.length, 4); assert.equal(f.group.items.contents.length, 0);
+  } finally { f.restore(); }
+});
+
+test("native graph rollback preserves a target changed by a subsequent action", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f);
+    f.group.deleteEmbeddedDocuments = async () => {
+      f.hero.items.contents[0].data.flags.custom = { laterEdit: "keep" }; return [];
+    };
+    await assert.rejects(f.api.inventoryService.takeInventoryItemToCharacter("rope", { actorId: "hero", quantity: 1, groupActorId: "g" }));
+    assert.equal(f.group.items.contents.length, 4); assert.equal(f.hero.items.contents.length, 4);
+    assert.equal(f.hero.items.contents[0].data.flags.custom.laterEdit, "keep");
+  } finally { f.restore(); }
+});
+
+test("native graph canceled folder placement leaves source intact and removes target tree", async () => {
+  const f = nativeFixture({ quantity: 1 }); try {
+    await nativeTree(f, f.hero); f.group.setFlag = async () => undefined;
+    await assert.rejects(f.api.inventoryService.importDroppedItem({ uuid: f.source.uuid }, { groupActorId: "g", folderId: "bag", quantity: 1 }));
+    assert.equal(f.hero.items.contents.length, 4); assert.equal(f.group.items.contents.length, 0);
+  } finally { f.restore(); }
+});
 
 test("native owner edits quantity and removes Item without GM, journal or coordinator", async () => {
   const f = nativeFixture(); try {
