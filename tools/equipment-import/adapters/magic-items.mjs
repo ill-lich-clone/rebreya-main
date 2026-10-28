@@ -52,6 +52,7 @@ const ITEM_SLOTS = enumMap([
   "Наручи",
   "Ноги",
   "Пояс",
+  "Одежда",
   "Любой"
 ]);
 const MATERIALS = enumMap([

@@ -302,6 +302,7 @@ test("compendium projection detaches only managed automation documents", () => {
   assert.deepEqual(projection, {
     magicItemId: "печатка-гильдии-ракдоса",
     signature: "signature-1",
+    catalogAttunement: "",
     automationDefinition: { version: 1, kind: "activities" },
     effects: [managedEffect()],
     activities: { "managed-activity": managedActivity() },
@@ -1176,4 +1177,20 @@ test("owned sync explicitly deletes stale managed ids while preserving unmanaged
   assert.equal(update.system.activities["current-activity"].uses.spent, 2);
   assert.equal(update.system.activities["custom-activity"].name, "Custom action");
   assert.equal(update.effects.some(({ _id }) => _id === "custom-effect"), true);
+});
+
+test("owned sync projects and refreshes catalog attunement without overwriting the owner description or flags", () => {
+  const source = { flags: moduleFlags({ magicItemId: "лира-строительства", signature: "v1", attunement: "волшебником <мастером>" }), effects: [], system: {} };
+  const projection = embeddedSync.buildMagicItemAutomationProjection(source);
+  assert.equal(projection.catalogAttunement, "волшебником <мастером>");
+  const item = { _id: "owned", type: "equipment", system: { description: { value: "<p>Личные заметки</p>" }, activities: {} }, effects: [], flags: moduleFlags({ attunement: "своё значение", magicItemId: "лира-строительства" }) };
+  const resolution = { status: "resolved", magicItemId: "лира-строительства", identityPatch: {} };
+  const patch = embeddedSync.buildEmbeddedMagicItemPatch(item, projection, resolution);
+  assert.equal(patch.update.flags[MODULE_ID].catalogAttunement, "волшебником <мастером>");
+  assert.equal(patch.update.flags[MODULE_ID].attunement, "своё значение");
+  assert.equal(Object.hasOwn(patch.update.system, "description"), false);
+  const applied = { ...item, system: { ...item.system, ...patch.update.system }, flags: patch.update.flags, effects: patch.update.effects };
+  assert.equal(embeddedSync.buildEmbeddedMagicItemPatch(applied, projection, resolution).status, "unchanged");
+  const cleared = embeddedSync.buildEmbeddedMagicItemPatch(applied, { ...projection, catalogAttunement: "" }, resolution);
+  assert.equal(cleared.update.flags[MODULE_ID].catalogAttunement, "");
 });

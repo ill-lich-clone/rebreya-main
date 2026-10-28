@@ -150,3 +150,12 @@ test("transport adapter accepts the live Russian singular travel-speed unit", ()
   });
   assert.equal(transport.travelSpeed, "4 мили/час");
 });
+
+test("materials adapter retains application text under the current alchemy header", () => {
+  const snapshot = structuredClone({ ...raw.material, rows: [raw.material.row] });
+  const cells = snapshot.rows[0].cells;
+  cells["Алхимия\n// КРАСНОЕ НЕ ОК ЗЕЛЁНОЕ ОК"] = "Требование для зелья";
+  delete cells.Алхимия;
+  const [material] = adaptMaterialsCatalog({ snapshot, overrides: overrides(), diagnostics: [] });
+  assert.equal(material.applications.alchemy, "Требование для зелья");
+});

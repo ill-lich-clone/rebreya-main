@@ -1,3 +1,5 @@
+import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
+
 const PATCH_STATE = Symbol.for("rebreya-main.dnd5eTooltipRaceGuard");
 const RESIZE_PATCH_STATE = Symbol.for("rebreya-main.dnd5eInventoryResizeGuard");
 
@@ -20,7 +22,26 @@ export function patchDnd5eTooltipRaceGuard({
   const guardedHoverContentLink = async function (...args) {
     if (args[0] == null) return undefined;
     try {
-      return await original.apply(this, args);
+      const target = gameProvider?.()?.tooltip?.element;
+      const result = await original.apply(this, args);
+      const item = args[0];
+      const rank = item?.flags?.["rebreya-main"]?.rank ?? item?.flags?.["rebreya-main"]?.itemRank;
+      const visible = item?.system?.identified !== false || gameProvider?.()?.user?.isGM;
+      const subtitle = this.tooltip?.querySelector?.(".header .subtitle");
+      if (item?.documentName === "Item" && visible && target === gameProvider?.()?.tooltip?.element
+        && subtitle && /^(?:0|[1-9]\d*)$/u.test(String(rank ?? ""))) {
+        subtitle.insertAdjacentText("beforeend", `${subtitle.textContent ? " • " : ""}Ранг ${rank}`);
+      }
+      const detail = formatMagicAttunement(item?.flags?.["rebreya-main"]?.catalogAttunement);
+      const description = this.tooltip?.querySelector?.(".content > .description");
+      if (item?.documentName === "Item" && item?.parent?.documentName === "Actor" && visible && detail
+        && target === gameProvider?.()?.tooltip?.element && description
+        && !description.textContent?.includes(`Настройка: ${detail}`)) {
+        const line = this.tooltip.ownerDocument.createElement("p");
+        line.textContent = `Настройка: ${detail}`;
+        description.append(line);
+      }
+      return result;
     }
     catch (error) {
       if (isStaleTooltipDatasetRace(error, gameProvider?.())) return undefined;

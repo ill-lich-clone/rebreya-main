@@ -5961,3 +5961,29 @@ test("character downtime roll buttons use native dnd5e death saves", async () =>
     stubs.restore();
   }
 });
+
+test("owned magic item sheet shows catalog attunement outside the editor and removes stale display", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { upsertOwnedMagicAttunement } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?attunement-test=${Date.now()}`);
+    const section = new stubs.HTMLElement();
+    section.querySelectorAll = () => section.children.filter(child => child.dataset.rebreyaCatalogAttunement === "true");
+    const root = new stubs.HTMLElement({ selectors: { ".tab[data-tab='description']": section } });
+    const item = { parent: { documentName: "Actor" }, flags: { "rebreya-main": { catalogAttunement: "магом <мастером>" } }, system: { identified: true } };
+    upsertOwnedMagicAttunement(root, item);
+    assert.equal(section.children[0].textContent, "Настройка: магом <мастером>");
+    upsertOwnedMagicAttunement(root, item);
+    assert.equal(section.children.length, 1);
+    item.system.identified = false;
+    upsertOwnedMagicAttunement(root, item);
+    assert.equal(section.children.length, 0);
+    item.system.identified = true;
+    section.textContent = "Настройка: магом <мастером>";
+    upsertOwnedMagicAttunement(root, item);
+    assert.equal(section.children.length, 0);
+    section.textContent = "";
+    item.flags["rebreya-main"].catalogAttunement = "";
+    upsertOwnedMagicAttunement(root, item);
+    assert.equal(section.children.length, 0);
+  } finally { stubs.restore(); }
+});

@@ -114,7 +114,57 @@ test("main registers the dnd5e tooltip guard during ready", async () => {
 
   assert.match(
     source,
-    /from "\.\/integrations\/dnd5e-tooltip-compat\.js\?v=1\.5\.6"/u
+    /from "\.\/integrations\/dnd5e-tooltip-compat\.js\?v=1\.5\.21"/u
   );
   assert.match(source, /patchDnd5eTooltipRaceGuard\(\);/u);
+});
+
+test("rich item tooltip adds explicit rank once and leaves missing or invalid rank alone", async () => {
+  const subtitle = { text: "Оружие", markup: "<em>Оружие</em>", get textContent() { return this.text; }, set textContent(value) { this.text = value; this.markup = ""; }, insertAdjacentText(_position, text) { this.text += text; } };
+  const tooltip = { querySelector: selector => selector === ".header .subtitle" ? subtitle : null };
+  const game = createGame(async () => { subtitle.text = "Оружие"; subtitle.markup = "<em>Оружие</em>"; }, { element: { dataset: {} } });
+  game.dnd5e.tooltips.tooltip = tooltip;
+  patchDnd5eTooltipRaceGuard({ gameProvider: () => game });
+  for (const [rank, expected] of [[0, "Оружие • Ранг 0"], [7, "Оружие • Ранг 7"], [undefined, "Оружие"], ["oops", "Оружие"]]) {
+    const doc = { documentName: "Item", flags: { "rebreya-main": { rank } }, system: { identified: true } };
+    await game.dnd5e.tooltips._onHoverContentLink(doc);
+    assert.equal(subtitle.textContent, expected);
+    assert.equal(subtitle.markup, "<em>Оружие</em>");
+    await game.dnd5e.tooltips._onHoverContentLink(doc);
+    assert.equal(subtitle.textContent, expected);
+  }
+});
+
+test("unidentified item rank stays hidden from players and is visible to the GM", async () => {
+  const subtitle = { textContent: "Unknown", insertAdjacentText(_position, text) { this.textContent += text; } };
+  const game = createGame(async () => { subtitle.textContent = "Unknown"; }, { element: { dataset: {} } });
+  game.user = { isGM: false };
+  game.dnd5e.tooltips.tooltip = { querySelector: () => subtitle };
+  patchDnd5eTooltipRaceGuard({ gameProvider: () => game });
+  const doc = { documentName: "Item", flags: { "rebreya-main": { rank: 7 } }, system: { identified: false } };
+  await game.dnd5e.tooltips._onHoverContentLink(doc);
+  assert.equal(subtitle.textContent, "Unknown");
+  game.user.isGM = true;
+  await game.dnd5e.tooltips._onHoverContentLink(doc);
+  assert.equal(subtitle.textContent, "Unknown • Ранг 7");
+});
+
+test("owned magic tooltip presents catalog attunement without changing existing description", async () => {
+  const description = { children: [], append(node) { this.children.push(node); } };
+  const game = createGame(async () => { description.children = []; }, { element: { dataset: {} } });
+  game.user = { isGM: false };
+  game.dnd5e.tooltips.tooltip = { querySelector: selector => selector === ".content > .description" ? description : null, ownerDocument: { createElement: () => ({ textContent: "" }) } };
+  patchDnd5eTooltipRaceGuard({ gameProvider: () => game });
+  const item = { documentName: "Item", parent: { documentName: "Actor" }, system: { identified: true }, flags: { "rebreya-main": { catalogAttunement: "магом <мастером>" } } };
+  await game.dnd5e.tooltips._onHoverContentLink(item);
+  assert.equal(description.children[0].textContent, "Настройка: магом <мастером>");
+  await game.dnd5e.tooltips._onHoverContentLink(item);
+  assert.equal(description.children.length, 1);
+  item.system.identified = false;
+  await game.dnd5e.tooltips._onHoverContentLink(item);
+  assert.equal(description.children.length, 0);
+  item.system.identified = true;
+  description.textContent = "Описание. Настройка: магом <мастером>";
+  await game.dnd5e.tooltips._onHoverContentLink(item);
+  assert.equal(description.children.length, 0);
 });

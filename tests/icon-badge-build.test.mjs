@@ -208,3 +208,15 @@ test("finished image paths join the manifest by exact pack and document ID", () 
     path: "storage/rebreya-main/gear2.webp", baselineImg: "old-gear2.webp"
   });
 });
+
+test("magic writing quill badge builds from its current named artwork", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { createHash } = await import("node:crypto");
+  const manifest = JSON.parse(await readFile(new URL("../data/icon-badge-targets.json", import.meta.url), "utf8"));
+  const target = manifest.targets.find(entry => entry.packId === "world.rebreya-magic-items" && entry.documentId === "ABqVxHDGOYsbcO4z");
+  const expectedPath = `modules/rebreya-main/templates/icons/Magic Items/${encodeURIComponent("Писчее перо")}.webp`;
+  assert.equal(target.sourcePath, expectedPath);
+  assert.equal(target.baselineImg, expectedPath);
+  const bytes = await readFile(new URL("../templates/icons/Magic Items/Писчее перо.webp", import.meta.url));
+  assert.equal(target.sourceHash, createHash("sha256").update(bytes).digest("hex"));
+});

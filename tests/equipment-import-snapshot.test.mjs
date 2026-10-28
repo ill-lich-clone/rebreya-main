@@ -266,3 +266,13 @@ test("production magic-item registry tolerates the source-only charges column be
   assert.equal(snapshot.sheets.magicItems.rows[0].cells["Заряды"], "3");
   assert.equal(snapshot.sheets.magicItems.rows[0].cells.Value, "6000");
 });
+
+test("materials source preserves the renamed alchemy application column", () => {
+  const decl = SHEET_REGISTRY.materials;
+  const snapshot = buildRawSheetSnapshot({ sheetKey: "materials", range: "'Энциклопедия материалов'!A1:M1065", declaration: decl, values: [
+    ["Название", "Тип", "Подтип / добыча", "Цена (зм)", "Вес (фнт)", "Ранг", "Описание", "Применение", "", "", "", "", "Аспекты (алхимия)"],
+    ["", "", "", "", "", "", "", "Усовершенствование", "Имплант", "Создание и Снаряжение", "Алхимия\n// КРАСНОЕ НЕ ОК ЗЕЛЁНОЕ ОК", "Знания"],
+    ["Тест", "Существо", "Общее", "1", "2", "1", "Описание", "", "", "", "Требование для зелья", "", ""]
+  ] });
+  assert.equal(snapshot.rows[0].cells["Алхимия\n// КРАСНОЕ НЕ ОК ЗЕЛЁНОЕ ОК"], "Требование для зелья");
+});

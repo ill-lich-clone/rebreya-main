@@ -52,7 +52,7 @@ test("magic item automation manifest audits every stable catalog row", () => {
 
   const manifest = magicItemsCompendium.buildMagicItemAutomationManifest();
   assert.equal(manifest.length, MAGIC_ITEMS.length);
-  assert.equal(manifest.length, 666);
+  assert.equal(manifest.length, 672);
   assert.equal(new Set(manifest.map((row) => row.id)).size, MAGIC_ITEMS.length);
   assert.deepEqual(
     manifest.map(({ id, name }) => ({ id, name })),
@@ -353,7 +353,7 @@ test("magic item automation gap report groups every rarity and flags manual pros
 
 test("catalog gap report locks current coverage totals by rarity", () => {
   const report = magicItemsCompendium.buildMagicItemAutomationGapReport();
-  assert.equal(report.total, 666);
+  assert.equal(report.total, 672);
   assert.deepEqual(
     report.rarities.map(({ rarity, total, full, partial, manual, manualCandidates }) => ({
       rarity,
@@ -365,9 +365,9 @@ test("catalog gap report locks current coverage totals by rarity", () => {
     })),
     [
       { rarity: "Обычный", total: 102, full: 34, partial: 16, manual: 52, candidates: 21 },
-      { rarity: "Необычный", total: 168, full: 70, partial: 50, manual: 48, candidates: 33 },
-      { rarity: "Редкий", total: 190, full: 66, partial: 61, manual: 63, candidates: 51 },
-      { rarity: "Очень редкий", total: 122, full: 37, partial: 41, manual: 44, candidates: 33 },
+      { rarity: "Необычный", total: 170, full: 70, partial: 50, manual: 50, candidates: 35 },
+      { rarity: "Редкий", total: 192, full: 66, partial: 61, manual: 65, candidates: 53 },
+      { rarity: "Очень редкий", total: 124, full: 37, partial: 41, manual: 46, candidates: 35 },
       { rarity: "Легендарный", total: 82, full: 26, partial: 28, manual: 28, candidates: 27 },
       { rarity: "Артефакт", total: 1, full: 0, partial: 0, manual: 1, candidates: 1 },
       { rarity: "Без редкости", total: 1, full: 0, partial: 0, manual: 1, candidates: 0 }
@@ -718,13 +718,15 @@ test("magic item compendium renders paragraphs and canonical markdown tables", (
   assert.match(html, /<p>Второй абзац\.<\/p>/u);
 });
 
-test("new ability belts resolve their named artwork into managed pack documents", async () => {
+test("new magic items and ability belts resolve their named artwork into managed pack documents", async () => {
   const names = [
     "Пояс дракона-вирма", "Пояс ловкости молодой феи", "Пояс ловкости взрослой феи",
     "Пояс ловкости древней феи", "Пояс ловкости матриарха фей",
     "Пояс мудрости молодого дракона", "Пояс мудрости взрослого дракона",
     "Пояс мудрости древнего дракона", "Пояс харизмы беса",
     "Пояс харизмы чёрного абишая", "Пояс харизмы исчадия преисподней",
+    "Писчее перо", "Флакон с кровью +1", "Флакон с кровью +2", "Флакон с кровью +3",
+    "Магический гримуар +1", "Магический гримуар +2", "Магический гримуар +3",
     "Пояс харизмы тиамат"
   ];
   const root = "modules/rebreya-main/templates/icons/Magic Items";
@@ -2191,4 +2193,24 @@ test("magic item pack sync removes stale managed embedded ids and preserves unma
   assert.equal(updates[0]["system.activities.-=stale-managed-activity"], null);
   assert.equal(Object.hasOwn(updates[0], "system.activities.-=custom-activity"), false);
   assert.equal(updates[0].effects.some(({ _id }) => _id === "custom-effect"), true);
+});
+
+test("magic item description includes escaped attunement details, omitting empty and zero values", () => {
+  for (const [detail, expected] of [["только <маг>", /Настройка:<\/strong> только &lt;маг&gt;/u], ["0", null], ["", null]]) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([makeMagicItem({ attunement: detail })]);
+    const html = magicItemsCompendium.createMagicItemData(item, new Map()).system.description.value;
+    if (expected) assert.match(html, expected); else assert.doesNotMatch(html, /<strong>Настройка:<\/strong>/u);
+  }
+});
+
+test("magic item with a clothing slot uses the clothing hero doll slot", () => {
+  const [item] = magicItemsCompendium.normalizeMagicItems([makeMagicItem({ itemSlot: "Одежда" })]);
+  const data = magicItemsCompendium.createMagicItemData(item, new Map());
+  assert.equal(data.flags["rebreya-main"].itemSlot, "");
+  assert.deepEqual(data.flags["rebreya-main"].heroDollSlots, ["clothing"]);
+});
+
+test("numeric attunement requirement is rendered as meaningful text", () => {
+  const [item] = magicItemsCompendium.normalizeMagicItems([makeMagicItem({ attunement: "1" })]);
+  assert.match(magicItemsCompendium.createMagicItemData(item, new Map()).system.description.value, /Настройка:<\/strong> Требуется/u);
 });

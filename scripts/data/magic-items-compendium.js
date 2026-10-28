@@ -12,7 +12,8 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.4.291-stale-automation-cleanup";
+} from "./magic-item-embedded-sync.js?v=1.5.21";
+import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildSlug,
@@ -21,7 +22,7 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
 } from "./item-classification.js";
-import { MAGIC_ITEMS } from "../../magicItem.js?v=1.4.302";
+import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.21";
 import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toNumber
@@ -35,7 +36,7 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 9;
+const MAGIC_TEMPLATE_VERSION = 10;
 const MAGIC_ITEM_AUTOMATION_VERSION = 4;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
@@ -3344,6 +3345,7 @@ function restoresBardicInspiration(item) {
 }
 
 function resolveItemSlotGroup(item, classification) {
+  if (normalizeMatchText(item.itemSlot) === "одежда") return "";
   const explicitSlot = normalizeHeroDollSlotGroup(item.itemSlot ?? "", "");
   if (explicitSlot) {
     return explicitSlot;
@@ -3563,7 +3565,8 @@ function buildFolderPath(classification) {
 function buildMagicSignature(item, activityOptions = {}) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
-  const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
+  const heroDollSlots = normalizeMatchText(item.itemSlot) === "одежда"
+    ? ["clothing"] : mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
   const magicItemActivities = buildMagicItemActivities(item, activityOptions);
   const nativeInstrumentSpellActivities = resolveNativeInstrumentSpellDefinition(item)
     ? magicItemActivities
@@ -3619,6 +3622,7 @@ function getMagicItemIcon(item, _classification, iconLookup = null) {
 
 function buildMetadataRows(item, classification) {
   return [
+    ["Настройка", formatMagicAttunement(item.attunement) || null],
     ["Материалы", item.materials || null],
     ["Торг", item.bargaining || null],
     ["Цена", item.costText || null],
@@ -3711,7 +3715,8 @@ export function buildSystemData(item, classification, descriptionHtml) {
 export function createMagicItemData(item, folderIdByPath, iconLookup = null, activityOptions = {}) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
-  const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
+  const heroDollSlots = normalizeMatchText(item.itemSlot) === "одежда"
+    ? ["clothing"] : mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
   const rank = clampRank(item.rank);
   const folderPath = buildFolderPath(classification).join("/");
   const descriptionHtml = buildDescriptionHtml(item, classification);

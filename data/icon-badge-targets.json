@@ -17746,9 +17746,9 @@
     {
       "packId": "world.rebreya-magic-items",
       "documentId": "ABqVxHDGOYsbcO4z",
-      "baselineImg": "modules/rebreya-main/templates/icons/Goods/%D0%9F%D0%B8%D1%81%D1%87%D0%B5%D0%B5%20%D0%BF%D0%B5%D1%80%D0%BE.webp",
-      "sourcePath": "modules/rebreya-main/templates/icon-bases/rebreya-magic-items/ABqVxHDGOYsbcO4z.webp",
-      "sourceHash": "ec0e34ba19a05cf65dbb9c75c919fce242057c0282234efe6808b965448f99b8",
+      "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%9F%D0%B8%D1%81%D1%87%D0%B5%D0%B5%20%D0%BF%D0%B5%D1%80%D0%BE.webp",
+      "sourcePath": "modules/rebreya-main/templates/icons/Magic Items/%D0%9F%D0%B8%D1%81%D1%87%D0%B5%D0%B5%20%D0%BF%D0%B5%D1%80%D0%BE.webp",
+      "sourceHash": "152d11b3da0f79441a6e3c7bd246c9b33ff05f5d8c52247e9856fcc49b264af9",
       "badgeId": "magic-items"
     },
     {

@@ -1,3 +1,4 @@
+import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
 import {
   DOWNTIME_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
@@ -6385,6 +6386,19 @@ function upsertFirearmWeaponPropertiesField(root, app) {
   }
 }
 
+export function upsertOwnedMagicAttunement(root, item) {
+  const section = root.querySelector(".tab[data-tab='description']");
+  if (!section) return;
+  section.querySelectorAll("[data-rebreya-catalog-attunement='true']").forEach((node) => node.remove());
+  const detail = formatMagicAttunement(item?.flags?.[MODULE_ID]?.catalogAttunement);
+  if (item?.parent?.documentName !== "Actor" || !detail || (item?.system?.identified === false && !game.user?.isGM)
+    || section.textContent?.includes(`Настройка: ${detail}`)) return;
+  const line = document.createElement("p");
+  line.dataset.rebreyaCatalogAttunement = "true";
+  line.textContent = `Настройка: ${detail}`;
+  section.prepend(line);
+}
+
 function bindItemSheetEnhancements(root, app, moduleApi = null) {
   const item = getItemFromSheetApp(app);
   if (!item) {
@@ -6395,6 +6409,7 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
   ensureEquipmentTypeOptions(root, item);
   upsertToolBaseItemOptions(root, app);
   upsertItemRankBadge(root, item);
+  upsertOwnedMagicAttunement(root, item);
   upsertItemRankField(root, app);
   upsertEquipmentSizeField(root, app, moduleApi);
   upsertItemSlotField(root, app);

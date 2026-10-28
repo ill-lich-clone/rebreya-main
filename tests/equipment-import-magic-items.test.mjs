@@ -195,3 +195,11 @@ test("magic item renderer is deterministic and emits importable ESM", async () =
   const imported = await import(`data:text/javascript;base64,${Buffer.from(first).toString("base64")}`);
   assert.deepEqual(imported.MAGIC_ITEMS, expected);
 });
+
+test("magic item adapter preserves the clothing slot from the source", () => {
+  const snapshot = structuredClone(raw);
+  snapshot.rows = [snapshot.rows[0]];
+  snapshot.rows[0].cells.Слот = "Одежда";
+  const [item] = adaptMagicItemsCatalog({ snapshots: { magicItems: snapshot }, overrides: overrides(), referenceIndex: referenceIndex(), diagnostics: [] });
+  assert.equal(item.itemSlot, "Одежда");
+});

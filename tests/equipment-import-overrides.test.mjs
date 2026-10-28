@@ -263,3 +263,12 @@ test("initial migration rejects duplicate names or stable IDs instead of overwri
     /duplicate stable id/i
   );
 });
+
+test("reviewed treasure reclassification and material renames retain existing stable IDs", () => {
+  const data = JSON.parse(readFileSync(new URL("../data/equipment-import-overrides.json", import.meta.url), "utf8"));
+  for (const [catalog, sourceKey, sourceName, id] of [
+    ["gear", "сокровища|акварельный пейзаж", "Акварельный пейзаж", "akvarelnyy-peyzazh"],
+    ["materials", "Коготь чудовища 2-й ранг", "Коготь чудовища 2-й ранг", "material-18"],
+    ["materials", "Эссенция смерти 5-й ранг", "Эссенция смерти 5-й ранг", "material-61"]
+  ]) assert.equal(resolveStableIdentity({ catalog, sourceKey, sourceName, overrides: data }), id);
+});

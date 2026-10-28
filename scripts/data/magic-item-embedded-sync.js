@@ -473,6 +473,7 @@ export function buildMagicItemAutomationProjection(packItem) {
   return {
     magicItemId: cleanText(flags.magicItemId),
     signature: cleanText(flags.signature),
+    catalogAttunement: cleanText(flags.attunement),
     automationDefinition: cloneValue(flags.magicItemAutomation ?? null),
     effects,
     activities,
@@ -578,6 +579,9 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     signature: cleanText(projection?.signature),
     magicItemAutomation: cloneValue(projection?.automationDefinition ?? null)
   };
+  if (resolution.reason !== "managed-pack" && Object.hasOwn(projection ?? {}, "catalogAttunement")) {
+    flags[MODULE_ID].catalogAttunement = cleanText(projection.catalogAttunement);
+  }
 
   const effectsChanged = !sameValue(effects, existingEffects);
   const activitiesChanged = supportsActivities
