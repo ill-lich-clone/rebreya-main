@@ -7,11 +7,11 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.5.19`.
+- Версия: `1.5.20`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.5.19` загружает только тонкий `scripts/main-1.5.19.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
+- Manifest версии `1.5.20` загружает только тонкий `scripts/main-1.5.20.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
 - `scripts/main.js` — единственный composition root. Ранее опубликованные versioned entrypoint-файлы, включая `scripts/main-1.4.*.js`, сохранены как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Узкий API регистрации panel tools публикуется в `game.modules.get("rebreya-main")?.api` уже на `init`, до первой сборки Scene Controls. Полный runtime API на `ready` публикуется как `game.rebreyaMain` и заменяет module API.
 

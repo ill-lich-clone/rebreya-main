@@ -7878,6 +7878,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const currentQuantity = event.currentTarget.dataset.quantity ?? "0";
         const groupActorId = this.inventoryActorId;
         const itemName = event.currentTarget.dataset.itemName ?? "Предмет";
+        const sourceType = event.currentTarget.dataset.sourceType;
 
         try {
           const nextQuantity = await promptNumericValue({
@@ -7885,7 +7886,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             label: "Новое количество",
             value: currentQuantity,
             min: 0,
-            step: event.currentTarget.dataset.sourceType === "material" ? "any" : "0.01",
+            step: sourceType === "material" ? "any" : "0.01",
             confirmLabel: "Сохранить",
             allowRelative: true
           });
@@ -7896,7 +7897,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
           const parsedQuantity = parseQuantityInputValue(nextQuantity, currentQuantity, {
             relative: true,
-            precision: event.currentTarget.dataset.sourceType === "material" ? 12 : 2,
+            precision: sourceType === "material" ? 12 : 2,
             min: 0
           });
           await this.moduleApi.updateInventoryItemQuantity(itemId, parsedQuantity, {

@@ -571,6 +571,54 @@ test("material quantity UI preserves tiny relative edits and sends no mutation o
   finally { globalThis.Dialog = previousDialog; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
 });
 
+test("quantity edit saves after native click dispatch clears currentTarget", async () => {
+  const restoreFoundry = installFoundryApplicationStub(), dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog, previousUi = globalThis.ui;
+  const writes = [], errors = [];
+  let dialog;
+  globalThis.ui = { notifications: { info() {}, error: message => errors.push(message) } };
+  globalThis.Dialog = class { constructor(config) { dialog = config; } render() {} };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?quantity-native-event=${Date.now()}`);
+  const button = createFakeControl();
+  const root = createFakeElement();
+  root.querySelectorAll = selector => selector === "[data-action='edit-item-quantity']" ? [button] : [];
+  root.querySelector = () => null;
+  const api = createModuleApi({ inventorySnapshot: createFolderInventorySnapshot(), calls: [] });
+  api.updateInventoryItemQuantity = async (...args) => writes.push(args);
+  const app = new InventoryApp(api, { groupActorId: "group-a" }); app.element = root;
+  try {
+    await app._onRender({}, {});
+    for (const { sourceType, current, answer, expected } of [
+      { sourceType: "gear", current: "10", answer: "7", expected: 7 },
+      { sourceType: "gear", current: "10", answer: "-2", expected: 8 },
+      { sourceType: "gear", current: "10", answer: "0", expected: 0 },
+      { sourceType: "material", current: "0.000793650794", answer: "+0.000000000001", expected: 0.000793650795 },
+      { sourceType: "gear", current: "10", answer: null }
+    ]) {
+      const target = new EventTarget();
+      target.dataset = { itemId: "stock", itemName: "Stock", quantity: current, sourceType };
+      let completion;
+      target.addEventListener("click", event => { completion = button.listeners.click[0](event); });
+      const event = new Event("click");
+      const before = writes.length;
+      target.dispatchEvent(event);
+      assert.equal(event.currentTarget, null);
+      assert.equal(writes.length, before, "dialog must defer mutation");
+      if (answer === null) dialog.buttons.cancel.callback();
+      else {
+        const form = createFakeElement(); form.querySelector = () => ({ value: answer });
+        dialog.buttons.confirm.callback(form);
+      }
+      await completion;
+      assert.deepEqual(errors, [], `saving ${sourceType} ${answer} must not read an expired Event`);
+      assert.equal(writes.length, before + (answer === null ? 0 : 1));
+      if (answer !== null) assert.deepEqual(writes.at(-1), ["stock", expected, {
+        groupActorId: "group-a", expectedSourceQuantity: Number(current)
+      }]);
+    }
+  } finally { globalThis.Dialog = previousDialog; globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+
 test("quantity edit retains displayed group when the group changes during the dialog", async () => {
   const restoreFoundry = installFoundryApplicationStub(), dom = installMinimalDom();
   const previousDialog = globalThis.Dialog, previousUi = globalThis.ui;
