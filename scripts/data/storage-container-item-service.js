@@ -6,8 +6,8 @@ import { buildRuntimeGraphDocuments, captureRuntimeItemGraph, materializeRuntime
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.396";
-import { readStorageState } from "./storage-service.js?v=1.4.396";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.5.19";
+import { readStorageState } from "./storage-service.js?v=1.5.19";
 import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,

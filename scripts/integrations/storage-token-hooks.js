@@ -4,11 +4,11 @@ import {
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
 } from "../data/storage-access.js?v=1.4.197-door-trigger-target";
-import { isStorageActor } from "../data/storage-service.js?v=1.4.396";
-import { isCorpseStorageTarget } from "../data/storage-corpse-target.js?v=1.4.360";
-import { storageObjectKind } from "../data/storage-object-kind.js?v=1.4.360";
+import { isStorageActor } from "../data/storage-service.js?v=1.5.19";
+import { isCorpseStorageTarget } from "../data/storage-corpse-target.js?v=1.5.19";
+import { storageObjectKind } from "../data/storage-object-kind.js?v=1.5.19";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.197-door-trigger-target";
-import { GroundPileFrameController } from "./storage-ground-pile-frame.js?v=1.4.360";
+import { GroundPileFrameController } from "./storage-ground-pile-frame.js?v=1.5.19";
 
 function excludeStorageMovementObstacles(_gridSpace, _movingToken, _options, found) {
   for (const token of found) {

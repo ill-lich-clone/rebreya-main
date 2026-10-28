@@ -5,7 +5,7 @@ import {
   CORPSE_MATERIALIZATION_VERSION,
   isCorpseStorageTarget,
   isDeadNpcStorageTarget
-} from "./storage-corpse-target.js?v=1.4.360";
+} from "./storage-corpse-target.js?v=1.5.19";
 
 export {
   CORPSE_MATERIALIZATION_VERSION,

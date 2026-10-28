@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { isMaterializedCorpseStorageState } from "./storage-corpse-target.js?v=1.4.360";
+import { isMaterializedCorpseStorageState, isDeadNpcStorageTarget } from "./storage-corpse-target.js?v=1.5.19";
 
 export { isMaterializedCorpseStorageState };
 
@@ -35,6 +35,8 @@ export function storageObjectKind(target) {
       return "groundPile";
     }
   }
+  const creature = candidates(target).find(candidate => candidate?.type === "npc");
+  if (creature && objectFlags(creature)?.storage?.enabled !== true && isDeadNpcStorageTarget(target)) return null;
   for (const candidate of candidates(target)) {
     const storage = objectFlags(candidate)?.storage;
     if (isMaterializedCorpseStorageState(storage)) continue;

@@ -918,6 +918,20 @@ test("recording a Journal row creates one exact Item on the authoritative reader
   assert.equal(harness.hero.items.contents.length, 1);
 });
 
+test("player records a storage note into an owned group and reads that exact group record", async () => {
+  const harness = createHarness({ journalReader: { read: async () => ({ name: "Group notes", pages: [{ text: "shared" }] }) } });
+  harness.groupActor.testUserPermission = (user, permission) => user.id === harness.player.id && permission === "OWNER";
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [{ rowKind: "journal", rowId: "notes", sourceId: "JournalEntry.notes", sourceType: "journal", sourceDocumentName: "JournalEntry", name: "Group notes", quantity: 1 }] });
+  const result = await harness.service.recordJournal({ tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid,
+    groupActorId: harness.groupActor.id, rowId: "notes", mutationId: "group-note" }, { sender: harness.player });
+  assert.equal(result.actorId, harness.groupActor.id); assert.equal(harness.hero.items.contents.length, 0);
+  const item = harness.groupActor.items.contents[0];
+  assert.deepEqual(await harness.service.readJournalRecord({ itemUuid: item.uuid }, { sender: harness.player }), { name: "Group notes", pages: [{ text: "shared" }] });
+  harness.groupActor.testUserPermission = () => false;
+  await assert.rejects(harness.service.recordJournal({ tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid,
+    groupActorId: harness.groupActor.id, rowId: "notes", mutationId: "denied-group-note" }, { sender: harness.player }), /прав|владельц/iu);
+});
+
 test("Journal record creation repeats storage access and sends GM records to the active group", async () => {
   const harness = createHarness({ distance: 11 });
   await harness.storageService.configure(harness.storageToken, {
@@ -1008,8 +1022,22 @@ test("direct Journal page drop creates one linked record in the exact group and 
   assert.equal(harness.folderAssignments.at(-1).folderId, "folder-a");
   await assert.rejects(
     harness.service.recordJournalDrop({ ...request, mutationId: "record-drop-player" }, { sender: harness.player }),
-    /мастер/iu
+    /прав|владельц/iu
   );
+});
+
+test("player can drop a readable note into an owned group but cannot expose a protected source", async () => {
+  const harness = createHarness();
+  harness.groupActor.testUserPermission = (user, permission) => user.id === harness.player.id && permission === "OWNER";
+  const page = { uuid: "JournalEntry.notes.JournalEntryPage.page-a", documentName: "JournalEntryPage", name: "Read me",
+    testUserPermission: (_user, permission) => permission === "OBSERVER" };
+  harness.documents.set(page.uuid, page);
+  const request = { sourceUuid: page.uuid, documentName: page.documentName, groupActorId: harness.groupActor.id, folderId: "folder-a", mutationId: "player-readable-note" };
+  const created = await harness.service.recordJournalDrop(request, { sender: harness.player });
+  assert.equal(created.actorId, harness.groupActor.id); assert.equal(harness.groupActor.items.contents.length, 1);
+  page.testUserPermission = () => false;
+  await assert.rejects(harness.service.recordJournalDrop({ ...request, mutationId: "secret-source" }, { sender: harness.player }), /чтени|прав/iu);
+  assert.equal(harness.groupActor.items.contents.length, 1);
 });
 
 test("reading a Journal record authorizes its parent Actor and returns the exact buttonless snapshot source", async () => {

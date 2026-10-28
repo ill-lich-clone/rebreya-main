@@ -143,26 +143,26 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\{/u);
   assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.4.396",
+    "data/storage-service.js?v=1.5.19",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
-    "data/builtin-storage-actor-service.js?v=1.4.396",
-    "data/storage-ground-pile-service.js?v=1.4.396",
-    "data/storage-container-item-service.js?v=1.4.396",
-    "data/storage-deposit-source.js?v=1.4.396",
-    "data/storage-command-service.js?v=1.4.396",
+    "data/builtin-storage-actor-service.js?v=1.5.19",
+    "data/storage-ground-pile-service.js?v=1.5.19",
+    "data/storage-container-item-service.js?v=1.5.19",
+    "data/storage-deposit-source.js?v=1.5.19",
+    "data/storage-command-service.js?v=1.5.19",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
-    "integrations/storage-token-hooks.js?v=1.4.396",
+    "integrations/storage-token-hooks.js?v=1.5.19",
     "combat/hooks.js?v=1.5.15",
     "integrations/storage-transfer-drop.js?v=1.4.396",
-    "integrations/storage-token-drop.js?v=1.4.396",
+    "integrations/storage-token-drop.js?v=1.5.19",
     "integrations/storage-container-hierarchy.js?v=1.4.396"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
   for (const importPath of [
-    "storage-service.js?v=1.4.396",
-    "storage-deposit-source.js?v=1.4.396",
+    "storage-service.js?v=1.5.19",
+    "storage-deposit-source.js?v=1.5.19",
     "storage-access.js?v=1.4.197-door-trigger-target"
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);
@@ -174,7 +174,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   for (const importPath of [
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "ui/storage-token-overlay.js?v=1.4.197-door-trigger-target",
-    "storage-ground-pile-frame.js?v=1.4.360"
+    "storage-ground-pile-frame.js?v=1.5.19"
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
@@ -680,7 +680,7 @@ test("public Journal record APIs use active-GM execution and exact player socket
     assert.deepEqual(recordOutbound.payload, {
       tokenUuid: "Scene.scene.Token.chest",
       characterTokenUuid: "Scene.scene.Token.hero",
-      groupActorId: "",
+      groupActorId: "group-a",
       rowId: "journal-row",
       mutationId: "record-2"
     });

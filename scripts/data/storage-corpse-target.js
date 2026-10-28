@@ -33,6 +33,7 @@ export function isDeadNpcStorageTarget(token) {
   const hp = actor?.system?.attributes?.hp?.value;
   const statuses = actor?.statuses;
   const hasStatus = id => statuses?.has?.(id) === true || (Array.isArray(statuses) && statuses.includes(id));
+  if (hasStatus("dead")) return true;
   if (!hasStatus("dead") && (hasStatus("unconscious") || hasStatus("stable"))) return false;
   return typeof hp === "number" && Number.isFinite(hp) && hp <= 0;
 }

@@ -1,5 +1,5 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.396";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.5.19";
 import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { buildNarrativeItemRepairPatch, loadLootgenNarrativeCatalog } from "../data/lootgen-narrative-catalog.js?v=1.4.396";

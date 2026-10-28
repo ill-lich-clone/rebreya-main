@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
+import { isDeadNpcStorageTarget } from "../scripts/data/storage-corpse-target.js";
 import {
   isNativeStorageObject,
   storageObjectKind
@@ -40,6 +41,18 @@ test("unrelated module flags do not identify a native storage object", () => {
     flags: { "foreign-module": { data: { enabled: true } } }
   }), null);
   assert.equal(isNativeStorageObject(null), false);
+});
+
+test("unmarked dead NPC loot state does not identify a chest before materialization", () => {
+  const token = { actor: { type: "npc", flags: {}, statuses: new Set(["dead"]), system: { attributes: { hp: { value: 0 } } } },
+    flags: { [MODULE_ID]: { storage: { version: 1, state: "unopened" } } } };
+  assert.equal(storageObjectKind(token), null); assert.equal(isDeadNpcStorageTarget(token), true);
+  token.actor.system.attributes.hp.value = 18;
+  assert.equal(isDeadNpcStorageTarget(token), true, "explicitly dead NPC stays openable after legacy18HP projection");
+  token.actor.statuses.clear(); token.flags[MODULE_ID].objectDurability = { hp: { value: 18, max: 18 } };
+  assert.equal(isDeadNpcStorageTarget(token), false, "object durability alone does not prove that a token is a corpse");
+  token.actor.flags[MODULE_ID] = { storage: { enabled: true } };
+  assert.equal(storageObjectKind(token), "chest", "authored storage Actor remains an object");
 });
 
 test("materialized corpse storage remains a creature instead of a native object", () => {

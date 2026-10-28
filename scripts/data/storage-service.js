@@ -9,7 +9,7 @@ import {
 import {
   CORPSE_MATERIALIZATION_VERSION,
   isDeadNpcStorageTarget
-} from "./storage-corpse-target.js?v=1.4.360";
+} from "./storage-corpse-target.js?v=1.5.19";
 import {
   buildStorageContainerSnapshot,
   collectStorageContainerIds,

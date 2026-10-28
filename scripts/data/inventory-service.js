@@ -662,6 +662,7 @@ export function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
 function inventoryStackIdentity(item) {
   const itemData = item?.toObject?.() ?? item;
   const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  if (isInventoryMaterialItemData(itemData)) return `material:${cleanId(flags.materialId ?? flags.sourceId)}`;
   const identities = [
     ["gear", flags.gearId],
     ["material", flags.materialId],
@@ -676,6 +677,10 @@ function itemsCanMergeInInventory(sourceItem, acceptedItem) {
   if (hasLootgenNarrative(sourceItem) || hasLootgenNarrative(acceptedItem)) return false;
   const sourceIdentity = inventoryStackIdentity(sourceItem);
   const acceptedIdentity = inventoryStackIdentity(acceptedItem);
+  const materialPrice = item => {
+    const price = readInventoryItemUnitPrice(item?.toObject?.() ?? item);
+    return Number((price.value * (CURRENCY_MULTIPLIERS[price.denomination] ?? 100)).toFixed(12));
+  };
   const sameStack = sourceIdentity || acceptedIdentity
     ? Boolean(sourceIdentity && acceptedIdentity && sourceIdentity === acceptedIdentity)
     : itemsCanRepresentSameTransfer(sourceItem, acceptedItem);
@@ -685,7 +690,7 @@ function itemsCanMergeInInventory(sourceItem, acceptedItem) {
     && (!isInventoryMaterialItemData(sourceItem?.toObject?.() ?? sourceItem)
       || (isInventoryMaterialItemData(acceptedItem?.toObject?.() ?? acceptedItem)
         && readInventoryItemUnitWeight(sourceItem?.toObject?.() ?? sourceItem) === readInventoryItemUnitWeight(acceptedItem?.toObject?.() ?? acceptedItem)
-        && JSON.stringify(readInventoryItemUnitPrice(sourceItem?.toObject?.() ?? sourceItem)) === JSON.stringify(readInventoryItemUnitPrice(acceptedItem?.toObject?.() ?? acceptedItem))));
+        && materialPrice(sourceItem) === materialPrice(acceptedItem)));
 }
 
 export function captureInventoryTransferIdentity(item) {
@@ -4047,7 +4052,7 @@ export class InventoryService {
         rulesRevision: routing.rulesRevision,
         matchedRuleId: routing.matchedRuleId,
         routingOutcome: routing.outcome,
-        destinationFolderId: routing.destinationFolderId,
+        destinationFolderId: target ? normalizeInventoryFolderTarget(folderState.itemFolderIds[target.id]) : routing.destinationFolderId,
         materialItemData,
         sourceReceipt: {
           itemId: item.id,
@@ -4065,7 +4070,7 @@ export class InventoryService {
           afterQuantityState: captureInventoryItemQuantityState(
             withInventoryItemQuantity(target?.toObject?.() ?? materialItemData, targetBeforeQuantity + output.quantity)
           ),
-          folderId: routing.destinationFolderId,
+          folderId: target ? normalizeInventoryFolderTarget(folderState.itemFolderIds[target.id]) : routing.destinationFolderId,
           beforeAcquisitionHistory,
           afterAcquisitionHistory
         }
@@ -4217,7 +4222,7 @@ export class InventoryService {
     const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
     return actor?.items?.contents?.find((candidate) => {
       if (!itemsCanMergeInInventory(candidate, itemData)) return false;
-      if (!scoped) return true;
+      if (!scoped || isInventoryMaterialItemData(itemData)) return true;
       const candidateFolderId = cleanId(folderState?.itemFolderIds?.[cleanId(candidate?.id)]) || null;
       return candidateFolderId === normalizedFolderId;
     }) ?? null;
@@ -4440,7 +4445,8 @@ export class InventoryService {
         delta: target.quantity,
         beforeAcquisitionHistory,
         afterAcquisitionHistory,
-        folderId: target.folderId,
+        folderId: candidate && isInventoryMaterialItemData(itemData)
+          ? normalizeInventoryFolderTarget(folderState.itemFolderIds[candidate.id]) : target.folderId,
         scoped: target.scoped
       };
     });

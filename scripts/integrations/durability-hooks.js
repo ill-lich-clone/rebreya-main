@@ -3,13 +3,14 @@ import {
   CHEST_OBJECT_DURABILITY,
   ensureStorageObjectDurability,
   readStorageObjectDurability
-} from "../data/native-object-durability-service.js?v=1.4.396";
+} from "../data/native-object-durability-service.js?v=1.5.19";
 import { isDurabilityEligible } from "../data/durability-rules.js";
 import {
   isMaterializedCorpseStorageState,
   storageObjectKind
-} from "../data/storage-object-kind.js?v=1.4.360";
-import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js?v=1.4.396";
+} from "../data/storage-object-kind.js?v=1.5.19";
+import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js?v=1.5.19";
+import { isDeadNpcStorageTarget } from "../data/storage-corpse-target.js?v=1.5.19";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isNaturalWeapon } from "./held-items.js?v=1.4.383";
 
@@ -241,7 +242,8 @@ async function restoreCorpseCreatureProjection(token) {
   const document = token?.document ?? token;
   if (!document || typeof document.update !== "function"
     || document?.actor?.type !== "npc"
-    || !isMaterializedCorpseStorageState(readStorageState(document))
+    || storageObjectKind(document) !== null
+    || (!isMaterializedCorpseStorageState(readStorageState(document)) && !isDeadNpcStorageTarget(document))
     || !readStorageObjectDurability(document)) {
     return false;
   }
@@ -404,11 +406,11 @@ export function registerDurabilityHooks(moduleApi, {
   });
 
   const refreshProjection = (token) => {
-    if (!storageObjectKind(token)) return;
-    reportTask(queueTargetTask(token, () => projectNativeToken(token, {
-      isActiveGm,
-      ensureDurability
-    })), "Native durability projection failed.");
+    if (!storageObjectKind(token) && !readStorageObjectDurability(token)) return;
+    reportTask(queueTargetTask(token, async () => {
+      if (!isActiveGm() || await restoreCorpseCreatureProjection(token)) return;
+      return projectNativeToken(token, { isActiveGm, ensureDurability });
+    }), "Native durability projection failed.");
   };
   Hooks.on(STORAGE_UPDATED_HOOK, refreshProjection);
   Hooks.on("updateToken", (token, changed = {}) => {

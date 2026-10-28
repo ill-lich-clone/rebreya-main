@@ -300,6 +300,7 @@ test("new dismantle material uses its exact compendium icon without rewriting an
   const model = dismantleModel(steel);
   const source = dismantleSource({ id: "icon-dismantle-source", materialId: steel.id });
   const existing = materialStack({ id: "legacy-steel-stack", material: steel, quantity: 8 });
+  existing.system.weight.value = 2; // Different authored unit must remain a separate stack.
   existing.img = "icons/commodities/materials/slime-thick-blue.webp";
   const group = createActor({
     id: "icon-dismantle-group",
@@ -409,7 +410,7 @@ test("dismantle routes material by folder rule, skip rule, then source-folder fa
   }
 });
 
-test("dismantle rejects recursive material routing and merges only in destination folder", async () => {
+test("dismantle rejects recursive material routing and merges globally into existing material", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = dismantleModel(iron);
   const recursiveSource = dismantleSource({ id: "recursive-source", materialId: iron.id });
@@ -465,8 +466,9 @@ test("dismantle rejects recursive material routing and merges only in destinatio
     await fixture.service.executeDismantleMutation({
       inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId: "scoped-route"
     });
-    assert.equal(sourceStack.system.quantity, 4);
-    assert.equal(destinationStack.system.quantity, 8);
+    assert.equal(sourceStack.system.quantity, 6);
+    assert.equal(destinationStack.system.quantity, 6);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[sourceStack.id], "source");
     assert.equal(group.createEmbeddedDocumentsCalls, 0);
   }
   finally { fixture.restore(); }
@@ -3492,7 +3494,7 @@ test("Lootgen template Items are rejected by ordinary inventory ingress", async 
   }
 });
 
-test("filtered dismantle creates only canonical root material output", async () => {
+test("filtered dismantle reuses canonical material across folders without creating source gear", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = {
     gear: [],
@@ -3575,8 +3577,8 @@ test("filtered dismantle creates only canonical root material output", async () 
 
     assert.equal(result.rows[0].action.type, "dismantle");
     assert.equal(result.rows[0].derivedFolderId, null);
-    assert.equal(rootMaterial.system.quantity, 5);
-    assert.equal(folderMaterial.system.quantity, 7);
+    assert.equal(rootMaterial.system.quantity, 1);
+    assert.equal(folderMaterial.system.quantity, 11);
     assert.equal(group.items.contents.length, 2);
     assert.equal(group.items.contents.some((item) => item.name === itemData.name), false);
     assert.equal(debitCalls, 1);

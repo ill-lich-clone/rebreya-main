@@ -264,6 +264,29 @@ test("native composition catalog addition uses the real ingress dispatcher witho
   } finally { f.restore(); }
 });
 
+test("player storage-note API captures the current group rather than only character", async () => {
+  const f = nativeFixture(); try {
+    const api = new RebreyaMainModule();
+    api.groupContextService = { resolveForCurrentUser: () => ({ groupActor: f.group }) };
+    const requests = []; api.socketCommandBus.request = async (command, payload) => { requests.push(payload); return {}; };
+    await api.recordStorageJournal("Scene.scene.Token.chest", "notes", "group-note", { characterTokenUuid: "Scene.scene.Token.hero" });
+    assert.equal(requests[0].groupActorId, "g");
+  } finally { f.restore(); }
+});
+
+test("owned group Journal drop dispatches locally without a custom GM socket", async () => {
+  const f = nativeFixture(); try {
+    const api = new RebreyaMainModule(); api.inventoryService = f.api.inventoryService;
+    api.socketCommandBus = f.api.socketCommandBus; api.refreshInventoryViews = async () => {};
+    const calls = []; api.storageCommandService.recordJournalDrop = async (payload, context) => {
+      calls.push({ payload, senderId: context.sender.id }); return { actorId: payload.groupActorId, itemId: "record" };
+    };
+    await api.importInventoryDrop({ type: "JournalEntryPage", uuid: "JournalEntry.notes.JournalEntryPage.page-a" }, { groupActorId: "g", folderId: "bag" });
+    assert.equal(calls.length, 1); assert.equal(calls[0].payload.groupActorId, "g");
+    assert.equal(calls[0].payload.folderId, "bag"); assert.equal(calls[0].senderId, "player");
+  } finally { f.restore(); }
+});
+
 test("native compendium copy works without a source Actor", async () => {
   const f = nativeFixture(); try {
     f.source.parent = null; Object.defineProperty(f.source, "uuid", { value: "Compendium.test.Item.rope" });
@@ -351,7 +374,7 @@ test("native canceled sale currency credit leaves source stock untouched", async
   } finally { f.restore(); }
 });
 
-test("native manual dismantle preserves canonical output and source-folder routing", async () => {
+test("native manual dismantle merges identical material globally and retains its existing folder", async () => {
   const f = nativeFixture(); try {
     f.model.materialById.get("iron").weight = 2;
     const added = await f.api.inventoryService.addModelItemToInventory("material", "iron", 1, { groupActorId: "g", batchMutationId: "root-iron" });
@@ -363,11 +386,24 @@ test("native manual dismantle preserves canonical output and source-folder routi
     const result = await f.api.inventoryService.breakItemToMaterial("rope", 2, { mutationId: "manual-dismantle" });
     assert.equal(f.source.system.quantity, 8); assert.equal(result.breakQuantity, 2);
     const target = f.group.items.contents.find(item => item !== f.source && item !== rootIron);
-    assert.equal(readInventoryItemQuantity(rootIron.toObject()), 1);
-    assert.ok(target, "dismantle output must remain in the source folder");
-    assert.equal(readInventoryItemQuantity(target.toObject()), expected.quantity);
-    assert.equal(f.group.flags["rebreya-main"].inventoryFolders.itemFolderIds[target.id], "bag");
+    assert.equal(target, undefined);
+    assert.equal(readInventoryItemQuantity(rootIron.toObject()), 1 + expected.quantity);
+    assert.equal(f.group.flags["rebreya-main"].inventoryFolders.itemFolderIds[rootIron.id] ?? null, null);
     assert.equal(result.materialWeight, 3, "result reports physical pounds, not material units");
+  } finally { f.restore(); }
+});
+
+for (const [denomination, value] of [["sp", 0.5], ["cp", 5]]) test(`dismantled material merges with equivalent ${denomination}-priced stock across folders`, async () => {
+  const f = nativeFixture(); try {
+    f.model.materialById.get("iron").priceGold = 0.05;
+    const [stock] = await f.group.createEmbeddedDocuments("Item", [{ _id: "iron-stock", name: "Iron", type: "loot",
+      system: { quantity: 1, weight: { value: 1, units: "lb" }, price: { value, denomination } },
+      flags: { "rebreya-main": { materialId: "iron" } } }]);
+    f.source.data.flags["rebreya-main"].predominantMaterialId = "iron"; f.source.data.system.weight = { value: 3, units: "lb" };
+    f.group.flags["rebreya-main"].inventoryFolders.itemFolderIds.rope = "bag";
+    await f.api.inventoryService.breakItemToMaterial("rope", 2);
+    assert.equal(f.group.items.contents.length, 2); assert.equal(readInventoryItemQuantity(stock.toObject()), 4);
+    assert.deepEqual(stock.system.price, { value, denomination });
   } finally { f.restore(); }
 });
 

@@ -1,20 +1,20 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.396";
+import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.5.19";
 import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.392";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.396";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.396";
+} from "./storage-service.js?v=1.5.19";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.5.19";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
 import {
   isCorpseStorageTarget,
   isMaterializedCorpseStorageState
-} from "./storage-corpse-target.js?v=1.4.360";
+} from "./storage-corpse-target.js?v=1.5.19";
 import {
   MAX_STORAGE_DISTANCE_FEET,
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
@@ -26,7 +26,7 @@ import {
   TriggerTargetCoordinator,
   createTriggerTargetRef
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
-import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.396";
+import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.5.19";
 import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 import {
   buildJournalRecordItemData,
@@ -1198,13 +1198,16 @@ export class StorageCommandService {
     return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
       const access = await this.#resolveAccess(payload, sender);
       let targetActor = access.character;
-      if (sender?.isGM === true) {
+      if (sender?.isGM === true || clean(payload.groupActorId)) {
         const groupActorId = clean(payload.groupActorId);
         targetActor = groupActorId
           ? await this.inventoryService.getInventoryActor({ create: false, groupActorId })
           : null;
         if (targetActor?.type !== "group" || clean(targetActor.id) !== groupActorId) {
           throw new Error("Не удалось определить активную группу.");
+        }
+        if (sender?.isGM !== true && targetActor.testUserPermission?.(sender, "OWNER") !== true) {
+          throw Object.assign(new Error("Недостаточно прав владельца на инвентарь группы."), { code: "unauthorized" });
         }
       }
       else if (targetActor?.type !== "character") {
@@ -1234,7 +1237,6 @@ export class StorageCommandService {
 
   async recordJournalDrop(payload = {}, { sender } = {}) {
     requireMutationId(payload.mutationId);
-    if (sender?.isGM !== true) throw new Error("Переносить запись в группу может только мастер.");
     const sourceUuid = clean(payload.sourceUuid);
     const documentName = clean(payload.documentName);
     const groupActorId = clean(payload.groupActorId);
@@ -1244,10 +1246,17 @@ export class StorageCommandService {
       if (targetActor?.type !== "group" || clean(targetActor.id) !== groupActorId) {
         throw new Error("Не удалось определить группу назначения.");
       }
+      if (sender?.isGM !== true && targetActor.testUserPermission?.(sender, "OWNER") !== true) {
+        throw Object.assign(new Error("Недостаточно прав владельца на инвентарь группы."), { code: "unauthorized" });
+      }
       const journal = await this.resolveDocument(sourceUuid);
       if (journal?.documentName !== documentName
         || !["JournalEntry", "JournalEntryPage"].includes(documentName)) {
         throw new Error("Запись журнала недоступна.");
+      }
+      if (sender?.isGM !== true && (journal.testUserPermission?.(sender, "OBSERVER")
+        ?? journal.parent?.testUserPermission?.(sender, "OBSERVER")) !== true) {
+        throw Object.assign(new Error("Нет прав на чтение исходной записи журнала."), { code: "unauthorized" });
       }
       return this.#storeJournalRecord(targetActor, {
         rowKind: "journal",

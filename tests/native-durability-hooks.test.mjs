@@ -217,6 +217,37 @@ test("native reconciliation removes the legacy object projection from a material
   assert.equal(token.flags[MODULE_ID].storage.corpseMaterialization.status, "complete");
 });
 
+test("native startup and live update repair an unmaterialized dead NPC instead of assigning18HP", async () => {
+  const { reconcileNativeObjectDurability, registerDurabilityHooks } = await import(`../scripts/integrations/durability-hooks.js?dead-before-open=${Date.now()}`);
+  const hooks = createHooks(); const { token, actor } = createChest({ id: "dead-before-open" });
+  actor.type = "npc"; actor.statuses = new Set(["dead"]); actor.flags = {};
+  actor.prototypeToken = { bar1: { attribute: "attributes.hp" } };
+  token.delta = { system: { attributes: { hp: { value: 18, max: 18 }, ac: { calc: "flat", flat: 15 } } } };
+  const game = { scenes: { contents: [{ tokens: { contents: [token] } }] } };
+  let projections = 0; const ensureDurability = async () => { projections++; };
+  await reconcileNativeObjectDurability({ game, canvas: {}, isActiveGm: () => true, ensureDurability });
+  assert.equal(projections, 0); assert.equal(token.flags[MODULE_ID].objectDurability, undefined);
+  assert.equal(token.delta.system.attributes.hp.value, 0); assert.equal(token.delta.system.attributes.hp.max, undefined);
+  token.flags[MODULE_ID].objectDurability = structuredClone(CHEST_OBJECT_DURABILITY);
+  token.delta.system.attributes.hp = { value: 18, max: 18 };
+  registerDurabilityHooks({}, { Hooks: hooks, isActiveGm: () => true, ensureDurability, CONFIG: {} });
+  hooks.callbacks.get(STORAGE_UPDATED_HOOK)(token); await flush(); await flush();
+  assert.equal(token.flags[MODULE_ID].objectDurability, undefined); assert.equal(token.delta.system.attributes.hp.value, 0);
+});
+
+test("two native reconciliations preserve a living token-only legacy chest", async () => {
+  const { reconcileNativeObjectDurability } = await import(`../scripts/integrations/durability-hooks.js?legacy-chest-repeat=${Date.now()}`);
+  const { token, actor } = createChest({ id: "legacy-chest-repeat" });
+  actor.type = "npc"; actor.flags = {}; actor.statuses = new Set();
+  const game = { scenes: { contents: [{ tokens: { contents: [token] } }] } };
+  for (let i = 0; i < 2; i++) {
+    await reconcileNativeObjectDurability({ game, canvas: {}, isActiveGm: () => true });
+    assert.equal(token.flags[MODULE_ID].objectDurability.hp.max, 18);
+    assert.equal(token.delta.system.attributes.hp.value, 18);
+    assert.equal(token.delta.system.attributes.hp.max, 18);
+  }
+});
+
 test("storage updates refresh only their matching native projection", async () => {
   const { registerDurabilityHooks } = await import(`../scripts/integrations/durability-hooks.js?native-refresh=${Date.now()}`);
   const Hooks = createHooks();
