@@ -3,6 +3,11 @@ import {optionalModule,required,makeCatalog,makeItem,getHost,makeWeaponModMutati
 import {getWeaponModEffectiveHost} from "../scripts/data/weapon-mod-rules.js";
 import {createOverlayDom} from "./helpers/overlay-dom.mjs";
 const module=await optionalModule(new URL("../scripts/integrations/weapon-mod-panel.js",import.meta.url)),view=required(module,"buildWeaponModCatalogView");
+test("extra mounts fill their row with at most three equal tiles",async()=>{
+ const css=await readFile(new URL("../styles/main.css",import.meta.url),"utf8");
+ assert.match(css,/\.rm-wm__extra-grid\{[^}]*display:flex;flex-wrap:wrap;[^}]*width:100%/u);
+ assert.match(css,/\.rm-wm \.rm-wm__extra-grid \.rm-wm__mount\{[^}]*flex:1 1 calc\(\(100% - 16px\)\/3\)/u);
+});
 test("extra mounts appear below the diagram without blueprint anchors",()=>{
  const item=makeItem("vintovka"),catalog=makeCatalog();
  item.actor={system:{attributes:{prof:6}},items:{contents:[{type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}}]}};
