@@ -1,6 +1,6 @@
 import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.396";
 import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.396";
-import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.396";
+import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.5.22";
 import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.396";
 import { evaluateItemValue } from "../data/item-value.js?v=1.4.393";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";

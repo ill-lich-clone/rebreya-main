@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import {optionalModule,required,makeHost,makeCandidate,makeInstalled} from "./helpers/weapon-mod-fixture.mjs";
 const rules=await optionalModule(new URL("../scripts/data/weapon-rebuild-rules.js",import.meta.url)),quote=required(rules,"buildWeaponRebuildQuote");
 const input=()=>({host:makeHost("vintovka"),component:makeCandidate("oblegchyonnyy-korpus"),parts:[],currency:{gp:500}});
+test("rebuild preserves previously authorized alternate attachment mounts",()=>{
+ const attachment={...makeInstalled("soshki","bipod",["top","side-1"]),freeMounts:true};
+ assert.equal(quote({...input(),attachments:[attachment]}).costCp,50000);
+});
 test("one modernization costs exactly 500gp without calendar or project state",()=>{
   const q=quote(input());assert.equal(q.costCp,50000);assert.equal(q.beforeCp-q.afterCp,50000);assert.equal(q.afterCp,0);
   assert.equal(q.days,undefined);assert.equal(q.calendar,undefined);assert.equal(q.project,undefined);

@@ -15,6 +15,7 @@ import {
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildSlug } from "./item-classification.js";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
 import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.4.317";
@@ -317,6 +318,19 @@ export function createPerformerActivePerformanceActivity() {
 }
 
 function applyFeatAutomationOverrides(feat) {
+  if (feat.featId === "master-ognestrelnogo-oruzhiya") {
+    const activityId="2dde62360d721684",legacyEffectId="f7ea1e0efb14c7e8",effectId="rmFirearmTune001",old=feat.system.activities?.[activityId] ?? {};
+    if(old.type!=="utility" || old.flags?.[MODULE_ID]?.automation!==true || !old.effects?.some(effect=>effect._id===legacyEffectId))return feat;
+    const effects=feat.effects.filter(effect=>!(effect._id===legacyEffectId && effect.flags?.[MODULE_ID]?.automation===true
+      && effect.changes?.length===1 && effect.changes[0].key==="system.bonuses.rwak.attack" && effect.changes[0].value==="1" && effect.changes[0].mode===2));
+    if(effects.some(effect=>effect._id===effectId || effect._id===legacyEffectId))return feat;
+    return {...feat,system:{...feat.system,activities:{...feat.system.activities,[activityId]:{...old,_id:activityId,type:"enchant",
+      activation:{...old.activation,type:"minute",value:10},enchant:{self:false},restrictions:{allowMagical:true,type:"weapon",categories:[],properties:[]},
+      effects:[{_id:effectId}],flags:{...old.flags,[MODULE_ID]:{...old.flags?.[MODULE_ID],firearmTuning:true}},
+      description:{chatFlavor:"Настройка огнестрельного оружия на +1 к атаке."}}}},
+      effects:[...effects,{_id:effectId,name:"Настройка огнестрельного оружия",type:"enchantment",transfer:false,changes:[],disabled:false,
+        duration:{startTime:null,seconds:null},flags:{[MODULE_ID]:{firearmTuning:{startedAt:null}}}}]};
+  }
   if (feat.featId === CURSE_EATER_FEAT_ID) {
     const moduleFlags = isPlainObject(feat.flags?.[MODULE_ID]) ? foundry.utils.deepClone(feat.flags[MODULE_ID]) : {};
     return {
@@ -377,6 +391,33 @@ export function normalizeFeatItems(rawItems = []) {
   return (Array.isArray(rawItems) ? rawItems : [])
     .map((item, index) => normalizeFeatItem(item, index, usedIds))
     .filter((item) => item.name);
+}
+
+/** Build a narrow migration only for the old generated firearm-master automation. */
+export function buildLegacyFirearmMasteryPatch(item) {
+  const source=typeof item?.toObject==="function"?item.toObject():item;
+  if(source?.type!=="feat" || source.system?.identifier!=="master-ognestrelnogo-oruzhiya")return null;
+  const activity=source.system?.activities?.["2dde62360d721684"],effect=(source.effects??[]).find(entry=>entry._id==="f7ea1e0efb14c7e8");
+  if(activity?.type!=="utility" || activity.flags?.[MODULE_ID]?.automation!==true || !activity.effects?.some(entry=>entry._id==="f7ea1e0efb14c7e8"))return null;
+  if(effect && (effect.flags?.[MODULE_ID]?.automation!==true || effect.changes?.length!==1
+    || effect.changes[0].key!=="system.bonuses.rwak.attack" || effect.changes[0].value!=="1" || effect.changes[0].mode!==2))return null;
+  const projected=normalizeFeatItems([source])[0];
+  if(projected?.system?.activities?.["2dde62360d721684"]?.type!=="enchant")return null;
+  return {_id:source._id,system:{activities:projected.system.activities},effects:projected.effects};
+}
+
+export async function syncLegacyFirearmMastery(gameState) {
+  if(!isActiveGmClient(gameState))return;
+  for(const actor of gameState.actors?.contents ?? [])for(const item of actor.items?.contents ?? []){
+    const patch=buildLegacyFirearmMasteryPatch(item);if(!patch)continue;
+    try{
+      if(!isActiveGmClient(gameState))return;
+      if(item.effects?.get?.("f7ea1e0efb14c7e8") || item.toObject?.().effects?.some(effect=>effect._id==="f7ea1e0efb14c7e8"))
+        await item.deleteEmbeddedDocuments("ActiveEffect",["f7ea1e0efb14c7e8"]);
+      if(!isActiveGmClient(gameState))return;
+      delete patch._id;await item.update(patch);
+    }catch(error){console.error(`${MODULE_ID} | Failed to migrate firearm mastery on ${actor.name ?? actor.id}.`,error);}
+  }
 }
 
 function buildFeatFolderPath(feat) {
@@ -755,6 +796,7 @@ export class FeatsCompendiumService {
         return data;
       }
     });
+    await syncLegacyFirearmMastery(game);
     return game.packs.get(PACK_ID) ?? pack;
   }
 

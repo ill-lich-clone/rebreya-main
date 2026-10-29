@@ -1,8 +1,9 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
+import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.22";
 import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
-import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.389";
-import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.4.389";
+import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.5.22";
+import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.5.22";
 import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
@@ -1881,7 +1882,7 @@ export class CombatAttackService {
     const currentFlavor = cleanText(messageConfig.data.flavor ?? messageConfig.flavor);
     messageConfig.data.flavor = [currentFlavor, safeContent].filter(Boolean).join("<br>");
     const notes = this.#appendFirearmChatCardNote(messageConfig, safeContent);
-    this.#syncFirearmChatCardNotes(options, notes);
+    if(!options.deferFirearmChatSync)this.#syncFirearmChatCardNotes(options, notes);
     return true;
   }
 
@@ -1935,6 +1936,14 @@ export class CombatAttackService {
 
     Promise.resolve(message.update(update)).catch((error) => {
       console.error(`${MODULE_ID} | Failed to update firearm attack chat card notes.`, error);
+      if(typeof ChatMessage?.create!=="function")return;
+      Promise.resolve(ChatMessage.create({
+        ...(game.user?.id?{user:game.user.id}:{}),
+        ...(message.speaker?{speaker:message.speaker}:{}),
+        ...(message.whisper?{whisper:message.whisper}:{}),
+        ...(message.blind?{blind:true}:{}),
+        content:this.#buildFirearmChatCardNotesHtml(safeNotes)
+      })).catch(fallbackError=>console.error(`${MODULE_ID} | Failed to publish firearm chat notes.`,fallbackError));
     });
     return true;
   }
@@ -4628,6 +4637,7 @@ export class CombatAttackService {
       }
 
       const isFirearm = isFirearmItem(item);
+      if (isFirearm && activity.attack?.type?.value!=="melee") applyFirearmTuning(item,config,Number(game.time?.worldTime));
       const repeatingShot = !isFirearm && hasActiveRepeatingShot(item);
       if (!isFirearm && !repeatingShot) {
         this.#clearInvalidNativeAmmunitionSelection(activity, config, dialog);
@@ -4701,7 +4711,7 @@ export class CombatAttackService {
         const actor = activity.actor ?? item.actor ?? null;
         const firearmMessageOptions = {
           message: firstRoll.parent ?? null,
-          messageConfig: {}
+          ...(typeof firstRoll.parent?.update === "function" && firstRoll.parent.content ? { messageConfig: {},deferFirearmChatSync:true } : {})
         };
         const ammo = this.#consumeLoadedFirearmAmmo(
           actor,
@@ -4710,8 +4720,11 @@ export class CombatAttackService {
           firearmMessageOptions
         );
         if (ammo.success) {
+          if(activity.attack?.type?.value!=="melee")startFirearmTuning(item,Number(game.time?.worldTime)).catch(error=>console.error(`${MODULE_ID} | Failed to start firearm tuning.`,error));
           this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
         }
+        if(firearmMessageOptions.deferFirearmChatSync)this.#syncFirearmChatCardNotes(firearmMessageOptions,
+          foundry.utils.getProperty(firearmMessageOptions.messageConfig.data,`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`));
       }
 
       const automation = this.#getLichAutomationState(item);
@@ -5878,6 +5891,8 @@ export class CombatAttackService {
     const attackBonus = abilityMod + proficiencyBonus + toNumber(options.bonus, 0);
     const saveDC = 8 + attackBonus;
 
+    await startFirearmTuning(weapon,Number(game.time?.worldTime));
+
     this.#createFirearmChatMessage(
       actor,
       weapon,
@@ -6010,7 +6025,7 @@ export class CombatAttackService {
         };
       }
     }
-    const situationalBonus = toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0);
+    const situationalBonus = toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0) + getFirearmTuningBonus(weapon,Number(game.time?.worldTime));
     const attackBonus = abilityMod + proficiencyBonus + situationalBonus;
     let rollMode = resolveRollMode(options);
     if(upgradeModifiers?.weaponMods?.range?.disadvantage){
@@ -6030,6 +6045,7 @@ export class CombatAttackService {
       proficiencyBonus,
       situationalBonus
     })).evaluate({ async: true });
+    if(isFirearmItem(weapon))await startFirearmTuning(weapon,Number(game.time?.worldTime));
 
     const targetAc = this.#resolveTargetAc(options);
     const naturalRoll = extractNaturalD20Result(roll);

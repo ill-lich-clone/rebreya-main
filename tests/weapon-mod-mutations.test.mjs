@@ -2,6 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {makeWeaponModMutationFixture, makeItem, gear} from "./helpers/weapon-mod-fixture.mjs";
 const NS="rebreya-main";
+test("attachment request checks mastery on the actor under the lock and persists both chosen mounts",async()=>{
+  const fx=await makeWeaponModMutationFixture({quantity:1});
+  try{
+    await assert.rejects(()=>fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"no-feat",mountIds:["top","side-1"]}));
+    fx.group.items.contents.push({id:"feat",type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}});
+    const result=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"master",mountIds:["top","side-1"]});
+    const link=fx.host.getFlag(NS,"weaponMods").attachments[0],child=fx.group.items.get(result.itemId);
+    assert.deepEqual(link.mountIds,["top","side-1"]);assert.equal(link.freeMounts,true);
+    assert.equal(child.getFlag(NS,"installedWeaponMod").freeMounts,true);
+  }finally{fx.restore();}
+});
 test("native required nullable container is cleared with null, without dropping the entire attachment removal update",async()=>{
  const fx=await makeWeaponModMutationFixture({quantity:1});try{
   const result=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"native-install",mountId:"bottom-1"}),child=fx.group.items.get(result.itemId),update=child.update.bind(child),quantity=child.system.quantity;
@@ -15,6 +26,8 @@ test("install splits one owned component, keeps upgrades and replays durably aft
   const fx=await makeWeaponModMutationFixture();try{
     const upgradeBefore=structuredClone(fx.host.getFlag(NS,"itemUpgrades"));
     const first=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"install",mountId:"bottom-2"});
+    const journal=await fx.api.inventoryService.mutationJournal.find(`item-instance:${JSON.stringify(["gm","weapon-mod-install","install"])}`);
+    assert.equal(Object.hasOwn(journal.intent,"mountIds"),false);
     assert.equal(fx.component.system.quantity,2);const child=fx.group.items.get(first.itemId);
     assert.notEqual(child.id,fx.component.id);assert.equal(child.system.quantity,1);assert.equal(child.system.container,fx.host.id);
     assert.deepEqual(child.getFlag(NS,"installedWeaponMod").mountIds,["bottom-2","barrel"]);

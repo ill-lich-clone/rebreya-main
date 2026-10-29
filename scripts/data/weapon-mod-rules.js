@@ -19,6 +19,10 @@ export class WeaponModRuleError extends Error {
 }
 const fail = (code, details) => { throw new WeaponModRuleError(code, details); };
 export const weaponModFlag = (item,key) => item?.getFlag?.(MODULE_ID,key) ?? item?.flags?.[MODULE_ID]?.[key];
+export function hasFirearmMastery(actor) {
+  return Array.from(actor?.items?.contents ?? actor?.items?.values?.() ?? []).some(item=>item.type==="feat"
+    && (item.system?.identifier==="master-ognestrelnogo-oruzhiya" || weaponModFlag(item,"featId")==="master-ognestrelnogo-oruzhiya"));
+}
 export function weaponModProfileSignature(profile) {
   return JSON.stringify(profile, (_key,value) => value && typeof value === "object" && !Array.isArray(value)
     ? Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])) : value);
@@ -35,7 +39,8 @@ export function getWeaponModHostDescriptor(item,catalog) {
   if(entry?.form)modelTags.push(`${entry.form}-firearm`);
   return {id:item.id ?? item._id,gearId,family,form:entry?.form ?? null,baseForm:entry?.form ?? null,
     modelTags:[...new Set(modelTags)],mountIds:[...WEAPON_MOD_MOUNTS[family]],quantity:Number(item.system?.quantity ?? 1),
-    requiresGmApproval:Boolean(entry?.requiresGmApproval || properties.has("spc") || !entry)};
+    requiresGmApproval:Boolean(entry?.requiresGmApproval || properties.has("spc") || !entry),
+    freeMounts:hasFirearmMastery(item.actor??item.parent)};
 }
 export function isInstalledWeaponMod(item) {
   const link=weaponModFlag(item,INSTALLED_WEAPON_MOD_FLAG);
@@ -82,7 +87,7 @@ function validateInstalledMounts(host,installed) {
   return occupied;
 }
 const category = mount => mount.replace(/-\d+$/u,"");
-export function validateWeaponAttachmentInstallation(host,installed,candidate,{mountId=null}={}) {
+export function validateWeaponAttachmentInstallation(host,installed,candidate,{mountId=null,mountIds=null,freeMounts=false}={}) {
   basic(host,candidate,"weaponAttachment");
   const occupied=validateInstalledMounts(host,installed);
   if(installed.some(part=>part.sourceId===candidate.sourceId))fail("duplicate-mod");
@@ -90,6 +95,21 @@ export function validateWeaponAttachmentInstallation(host,installed,candidate,{m
   const slots=candidate.profile.slots;
   if(!slots || !["oneOf","all"].includes(slots.mode) || !Array.isArray(slots.values) || !slots.values.length
     || new Set(slots.values).size!==slots.values.length || slots.values.some(value=>!["top","bottom","side","barrel"].includes(value)))fail("incompatible");
+  const count=slots.mode==="oneOf"?1:slots.values.length;
+  if(mountIds!==null){
+    if(!Array.isArray(mountIds) || mountIds.length!==count)fail("incompatible");
+    if(new Set(mountIds).size!==count || mountIds.some(mount=>!host.mountIds.includes(mount) || occupied.has(mount)))fail("slot-conflict");
+    if(mountId!==null && !mountIds.includes(mountId))fail("incompatible");
+    if(!freeMounts && (slots.mode==="oneOf" ? !slots.values.includes(category(mountIds[0])) : slots.values.some(value=>!mountIds.some(mount=>category(mount)===value))))fail("incompatible");
+    return {mountIds:[...mountIds]};
+  }
+  if(freeMounts){
+    if(mountId!==null && !host.mountIds.includes(mountId))fail("incompatible");
+    if(mountId!==null && occupied.has(mountId))fail("slot-conflict");
+    const selected=[...(mountId?[mountId]:[]),...host.mountIds.filter(mount=>mount!==mountId && !occupied.has(mount))].slice(0,count);
+    if(selected.length!==count)fail("slot-conflict");
+    return {mountIds:selected};
+  }
   if(mountId!==null && (!host.mountIds.includes(mountId) || !slots.values.includes(category(mountId))))fail("incompatible");
   if(mountId!==null && occupied.has(mountId))fail("slot-conflict");
   if(slots.mode==="oneOf") {
@@ -141,6 +161,7 @@ export function readWeaponMods(host,resolveItem,catalog) {
       && reverse.hostItemId===(host.id ?? host._id) && reverse.hostActorId===(host.actor?.id ?? host.parent?.id)
       && (child.actor?.id ?? child.parent?.id)===(host.actor?.id ?? host.parent?.id)
       && Array.isArray(selected) && Array.isArray(reverseMounts) && selected.length===reverseMounts.length && selected.every(mount=>reverseMounts.includes(mount))
+      && (entry.freeMounts===true)===(reverse?.freeMounts===true)
       && selected.every(mount=>descriptor.mountIds.includes(mount) && !mounts.has(mount)) && new Set(selected).size===selected.length
       && (field!=="attachments" || selected.length>0)
       && (!weaponModFlag(child,"attachment") || weaponModProfileSignature(weaponModFlag(child,"attachment"))===row.profileSignature);
@@ -154,7 +175,7 @@ export function readWeaponMods(host,resolveItem,catalog) {
       const candidate={...entry,quantity:1,available:true};
       try {
         if(field==="attachments") {
-          const checked=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(descriptor,result.modernizedParts),entries.filter(other=>other!==entry),candidate,{mountId:entry.mountIds[0]});
+          const checked=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(descriptor,result.modernizedParts),entries.filter(other=>other!==entry),candidate,{mountIds:entry.mountIds,freeMounts:entry.freeMounts===true});
           if(checked.mountIds.length!==entry.mountIds.length || checked.mountIds.some(mount=>!entry.mountIds.includes(mount)))fail("slot-conflict");
         } else validateModernizedPartInstallation(descriptor,entries.filter(other=>other!==entry),candidate,{gmApproval:true});
         return true;

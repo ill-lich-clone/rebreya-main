@@ -1,6 +1,6 @@
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { createDnd5eItemData } from "./gear-compendium.js?v=1.5.1";
-import { weaponModProfileSignature, weaponModFlag } from "./weapon-mod-rules.js?v=1.4.389";
+import { weaponModProfileSignature, weaponModFlag } from "./weapon-mod-rules.js?v=1.5.22";
 const NS="rebreya-main";
 export const WEAPON_MOD_LAUNCHER_CAPACITY=6;
 export function getWeaponModGrenadeCandidate(item,{sources,allowedSourceIds}){

@@ -2644,6 +2644,21 @@ test("completed firearm attack spends ammunition and resolves its misfire after 
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
 });
 
+test("confirmed firearm attacks start weapon tuning while aborted rolls leave it waiting",async()=>{
+  const priorTime=game.time;game.time={worldTime:100};
+  try{
+    const weapon=makeFirearmItem({name:"Musket"}),actor=makeActor([weapon]);
+    const effect={flags:{[MODULE_ID]:{firearmTuning:{startedAt:null}}},update:async patch=>{effect.flags[MODULE_ID].firearmTuning=patch[`flags.${MODULE_ID}.firearmTuning`];}};
+    weapon.effects={contents:[effect]};
+    const activity={id:"attack",type:"attack",item:weapon,actor},config={subject:activity,rolls:[{parts:[],options:{}}]},service=new CombatAttackService({});
+    service.applyDnd5eAttackRollConfig(config,{},{});
+    assert.ok(config.rolls[0].parts.includes("1"));assert.equal(effect.flags[MODULE_ID].firearmTuning.startedAt,null);
+    service.applyDnd5ePostAttackRoll([], {subject:activity});assert.equal(effect.flags[MODULE_ID].firearmTuning.startedAt,null);
+    service.applyDnd5ePostAttackRoll([{total:15}], {subject:activity});
+    await Promise.resolve();assert.equal(effect.flags[MODULE_ID].firearmTuning.startedAt,100);
+  }finally{game.time=priorTime;}
+});
+
 test("firearm jams persist the base threshold, jam state and name through one Item write", () => {
   TestRoll.queuedTotals = [2];
   const weapon = makeFirearmItem({ name: "Пистолет" });
@@ -2972,9 +2987,39 @@ test("firearm attack roll notes ammo and misfire in the originating attack card"
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
   assert.equal(globalThis.ChatMessage.messages.length, 0);
   assert.equal(TestRoll.messages.length, 0);
+  assert.equal(cardMessage.updateCalls.length, 1);
   assert.match(cardMessage.content, /data-rebreya-firearm-chat-notes/u);
   assert.match(cardMessage.content, /Musket \(0\/1\)/u);
   assert.match(cardMessage.content, /d20 = 13/u);
+});
+
+test("successful misfire check remains visible when the attack roll has no parent message", () => {
+  TestRoll.queuedTotals = [13];
+  TestRoll.messages = [];
+  const weapon = makeFirearmItem({ name: "Musket", properties: { lchFirearmMisfire: true }, values: { misfire: 3 } });
+  const actor = makeActor([weapon]);
+  const activity = { id: "attack", type: "attack", actor, item: weapon };
+  new CombatAttackService({}).applyDnd5ePostAttackRoll([{ total: 15 }], { subject: activity });
+  assert.equal(TestRoll.messages.length, 1);
+  assert.match(TestRoll.messages[0].messageData.flavor, /осечки 3/iu);
+});
+
+test("successful misfire check remains visible when the roll parent cannot be updated", () => {
+  TestRoll.queuedTotals = [13];
+  TestRoll.messages = [];
+  const weapon = makeFirearmItem({ name: "Musket", properties: { lchFirearmMisfire: true }, values: { misfire: 3 } });
+  const actor = makeActor([weapon]);
+  new CombatAttackService({}).applyDnd5ePostAttackRoll([{ total: 15, parent: {} }], { subject: { type: "attack", actor, item: weapon } });
+  assert.equal(TestRoll.messages.length, 1);
+});
+test("a rejected attack-card update publishes the misfire result as a private fallback",async()=>{
+  TestRoll.queuedTotals=[13];globalThis.ChatMessage.messages=[];
+  const weapon=makeFirearmItem({name:"Musket",properties:{lchFirearmMisfire:true},values:{misfire:3}}),actor=makeActor([weapon]);
+  const card={content:"<div>attack</div>",speaker:{actor:actor.id},whisper:["gm"],blind:true,update:async()=>{throw Error("no access");}};
+  new CombatAttackService({}).applyDnd5ePostAttackRoll([{total:15,parent:card}],{subject:{type:"attack",actor,item:weapon}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.match(globalThis.ChatMessage.messages.at(-1).content,/d20 = 13/u);
+  assert.deepEqual(globalThis.ChatMessage.messages.at(-1).whisper,["gm"]);assert.equal(globalThis.ChatMessage.messages.at(-1).blind,true);
 });
 
 test("already jammed firearms cannot be used for attack activities", async () => {
@@ -3152,6 +3197,16 @@ test("firearm attacks spend loaded ammunition and mark an empty magazine in the 
   assert.match(weapon.name, /0\/1/u);
   assert.doesNotMatch(weapon.name, /пуст|боезапас/iu);
   assert.equal(TestRoll.queuedTotals.length, 0);
+});
+test("legacy firearm attack applies tuning to the shot and starts its minute",async()=>{
+ const previous=game.time;game.time={worldTime:200};
+ try{
+  TestRoll.queuedTotals=[15];const weapon=makeFirearmItem({properties:{},values:{}}),actor=makeActor([weapon]);
+  const effect={flags:{[MODULE_ID]:{firearmTuning:{startedAt:null}}},update:async patch=>{effect.flags[MODULE_ID].firearmTuning=patch[`flags.${MODULE_ID}.firearmTuning`];}};
+  weapon.effects={contents:[effect]};
+  const result=await new CombatAttackService({}).rollFirearmAttack(actor,weapon,{createMessage:false});
+  assert.equal(result.breakdown.situationalBonus,1);assert.equal(effect.flags[MODULE_ID].firearmTuning.startedAt,200);
+ }finally{game.time=previous;}
 });
 
 for(const reason of ["cancel","range"])test(`legacy firearm ${reason} rejection preserves ammo and never rolls misfire before conditions`,async()=>{
@@ -3683,6 +3738,15 @@ test("automatic fire area action empties the magazine and reports save data", as
   assert.equal(result.saveDC, 13);
   assert.equal(result.ammoSpent, 7);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+});
+test("successful automatic fire starts tuning without increasing its saving throw DC",async()=>{
+ const previous=game.time;game.time={worldTime:500};
+ try{
+  const weapon=makeFirearmItem({typeValue:"firearmAdvanced",properties:{lchFirearmAutomatic:true,lchFirearmReload:true},values:{fireMode:"Автоматический",reload:"Смена магазина 4"},ammoState:{current:4,capacity:4}}),actor=makeActor([weapon]);
+  const effect={flags:{[MODULE_ID]:{firearmTuning:{startedAt:null}}},update:async patch=>{effect.flags[MODULE_ID].firearmTuning=patch[`flags.${MODULE_ID}.firearmTuning`];}};weapon.effects={contents:[effect]};
+  const result=await new CombatAttackService({}).resolveFirearmAreaFire(actor,weapon,{mode:"automatic",createMessage:false});
+  assert.equal(result.success,true);assert.equal(result.attackBonus,5);assert.equal(effect.flags[MODULE_ID].firearmTuning.startedAt,500);
+ }finally{game.time=previous;}
 });
 
 test("attack reactions register with the global reaction queue", async () => {

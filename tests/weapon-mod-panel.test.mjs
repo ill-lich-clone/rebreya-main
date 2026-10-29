@@ -3,6 +3,19 @@ import {optionalModule,required,makeCatalog,makeItem,getHost,makeWeaponModMutati
 import {getWeaponModEffectiveHost} from "../scripts/data/weapon-mod-rules.js";
 import {createOverlayDom} from "./helpers/overlay-dom.mjs";
 const module=await optionalModule(new URL("../scripts/integrations/weapon-mod-panel.js",import.meta.url)),view=required(module,"buildWeaponModCatalogView");
+test("master sees compatible bipod at any free mount while ordinary users retain slot restrictions",()=>{
+ const catalog=makeCatalog(),item=makeItem("vintovka"),bipod=makeItem("soshki");
+ item.actor={items:{contents:[{type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}}]}};
+ const host=getHost(item,catalog),installed={attachments:[],modernizedParts:[]};
+ const rows=view({catalog,host,installed,inventory:[bipod],kind:"weaponAttachment",mountId:"top",isOwner:true});
+ assert.equal(rows.find(row=>row.sourceId==="soshki")?.available,true);
+ host.freeMounts=false;
+ assert.equal(view({catalog,host,installed,inventory:[bipod],kind:"weaponAttachment",mountId:"top",isOwner:true}).some(row=>row.sourceId==="soshki"),false);
+});
+test("alternate two-mount installations retain a visible connector",()=>{
+ const points=required(module,"getWeaponModConnectorPoints")(getHost(makeItem("vintovka"),makeCatalog()),["top","side-1"]);
+ assert.equal(points.length,4);
+});
 test("catalogue shows compatible rows, available owned first, blocked owned next, missing grey and never installable",()=>{
  const catalog=makeCatalog(),host=getHost(makeItem("vintovka"),catalog),inventory=[makeItem("lazernyy-tseleukazatel"),makeItem("glushitel"),makeItem("glushitel",{id:"second",system:{quantity:2}}),makeItem("razgonshchik-snaryadov",{flags:{"rebreya-main":{gearId:"razgonshchik-snaryadov",attachment:{kind:"custom"}}}})],
   installed={attachments:[{itemId:"installed",sourceId:"lazernyy-tseleukazatel",mountIds:["bottom-1"]}],modernizedParts:[]},
@@ -181,6 +194,15 @@ test("panel install uses the canonical owned-instance mutation and splits one un
   const install=required(module,"installWeaponModWithChoices"),result=await install(fx.host,fx.component,fx.api,{mountId:"bottom-1"});
   assert.equal(calls,1);assert.equal(result.sourceRemaining,2);assert.equal(fx.component.system.quantity,2);assert.equal(fx.host.getFlag("rebreya-main","weaponMods").attachments.length,1);
   const absent=makeItem("glushitel");await assert.rejects(install(fx.host,absent,fx.api,{mountId:"barrel"}),/инвентаре/u);assert.equal(calls,1);
+ }finally{fx.restore();}
+});
+test("master chooses both locations before an installation request",async()=>{
+ const fx=await makeWeaponModMutationFixture({quantity:1});
+ try{
+  fx.group.items.contents.push({id:"feat",type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}});
+  let payload;fx.api.installWeaponAttachment=async value=>{payload=value;return {changed:true};};
+  const chosen=["side-1"],result=await required(module,"installWeaponModWithChoices")(fx.host,fx.component,fx.api,{mountId:"top",chooseMount:async()=>chosen.shift()});
+  assert.equal(result.changed,true);assert.deepEqual(payload.mountIds,["top","side-1"]);
  }finally{fx.restore();}
 });
 test("cancelled rebuild does not debit currency or invoke installation, and old upgrade routing still accepts mods",async()=>{

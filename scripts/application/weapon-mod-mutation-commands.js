@@ -1,11 +1,12 @@
 import { aggregateKey, keyedMutationScheduling } from "./socket-command-scheduling.js?v=1.5.3";
-import { weaponModFlag, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.4.389";
+import { weaponModFlag, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.5.22";
 import { isValidWeaponModAttackDecision, isValidWeaponModTargetDecision, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
 const object=value=>value && typeof value==="object" && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
 const text=value=>typeof value==="string" && value.length>0 && value.length<=256 && value.trim()===value && !/[\u0000-\u001f\u007f]/u.test(value);
 const exact=(value,keys,optional=[])=>Boolean(object(value) && keys.every(key=>Object.hasOwn(value,key)) && Object.keys(value).every(key=>keys.includes(key)||optional.includes(key)));
 const base=["actorUuid","hostItemId","componentItemId","operationId"],mounts=["top","bottom-1","bottom-2","side-1","side-2","barrel"];
-export function isValidWeaponAttachmentInstallPayload(p){return exact(p,base,["mountId"]) && base.every(key=>text(p[key])) && (p.mountId===undefined || p.mountId===null || mounts.includes(p.mountId));}
+export function isValidWeaponAttachmentInstallPayload(p){return exact(p,base,["mountId","mountIds"]) && base.every(key=>text(p[key])) && (p.mountId===undefined || p.mountId===null || mounts.includes(p.mountId))
+  && (p.mountIds===undefined || p.mountIds===null || Array.isArray(p.mountIds) && p.mountIds.length>0 && p.mountIds.length<=mounts.length && new Set(p.mountIds).size===p.mountIds.length && p.mountIds.every(id=>mounts.includes(id)));}
 export function isValidWeaponAttachmentRemovePayload(p){return exact(p,base) && base.every(key=>text(p[key]));}
 export function isValidWeaponModernizationInstallPayload(p){return exact(p,base,["removeItemId","approvalReceiptId"]) && base.every(key=>text(p[key]))
   && ["removeItemId","approvalReceiptId"].every(key=>p[key]===undefined || p[key]===null || text(p[key]));}
@@ -30,7 +31,7 @@ export function registerWeaponModCommands(moduleApi,bus){
         if(!host)throw new Error("Оружие больше не существует.");
         // Removal and terminal retries resolve the stable ID even after the component is gone.
         return moduleApi.itemUpgradeService[action==="install"?"installWeaponAttachment":"removeWeaponAttachment"](host,component??p.componentItemId,
-          {operationId:p.operationId,...(action==="install"?{mountId:p.mountId??null}:{}),sender,assertAuthority:assertActiveGm});
+          {operationId:p.operationId,...(action==="install"?{mountId:p.mountId??null,mountIds:p.mountIds??null}:{}),sender,assertAuthority:assertActiveGm});
       }});
   }
   bus.register("item-mod.modernization.install",{validate:isValidWeaponModernizationInstallPayload,authorize,

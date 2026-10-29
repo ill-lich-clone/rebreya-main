@@ -4,16 +4,16 @@ import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.4.292";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js?v=1.4.383";
-import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.4.389";
-import { getWeaponModHostDescriptor, getWeaponModEffectiveHost, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.4.389";
+import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.5.22";
+import { getWeaponModHostDescriptor, getWeaponModEffectiveHost, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.5.22";
 import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.5.18";
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.5.17";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.4.389";
-import { resolveWeaponModActivity, getWeaponModGrenadeCandidate, buildWeaponModGrenadeActivity, reconcileWeaponModActivities } from "./weapon-mod-activities.js?v=1.4.389";
+import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.5.22";
+import { resolveWeaponModActivity, getWeaponModGrenadeCandidate, buildWeaponModGrenadeActivity, reconcileWeaponModActivities } from "./weapon-mod-activities.js?v=1.5.22";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";
@@ -443,7 +443,7 @@ export class ItemUpgradeService {
       }});
   }
 
-  async #mutateWeaponMod(mode,host,componentOrId,{operationId,mountId=null,removeItemId=null,approvalReceiptId=null,sender=globalThis.game?.user,assertAuthority=null}={}) {
+  async #mutateWeaponMod(mode,host,componentOrId,{operationId,mountId=null,mountIds=null,removeItemId=null,approvalReceiptId=null,sender=globalThis.game?.user,assertAuthority=null}={}) {
     const actor=getItemActor(host),componentId=typeof componentOrId==="string"?componentOrId:getItemId(componentOrId),authorityId=globalThis.game?.user?.id;
     const guard=()=>{
       if(!isActiveGmClient(globalThis.game) || globalThis.game.user.id!==authorityId)throw new Error("Активный мастер изменился. Повторите операцию.");
@@ -455,7 +455,7 @@ export class ItemUpgradeService {
     const documents=new ItemInstanceDocuments(),workflow=new ItemInstanceWorkflow({documents,
       journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.inventoryService.mutationCoordinator});
     const intent={operationId,mode:`weapon-mod-${mode}`,sourceActorUuid:actor.uuid,destinationActorUuid:actor.uuid,
-      sourceItemId:componentId,hostItemId:getItemId(host),mountId,removeItemId};
+      sourceItemId:componentId,hostItemId:getItemId(host),mountId,...(mountIds===null?{}:{mountIds}),removeItemId};
     const result=await workflow.runBatch(intent,{sender,assertAuthority:guard,suppressItemRenders:true,
       authorize:({sourceActor})=>{
         if(!(sender?.id && (sender.isGM || sourceActor.testUserPermission?.(sender,"OWNER"))))throw new Error("Недостаточно прав для изменения оружия.");
@@ -482,7 +482,7 @@ export class ItemUpgradeService {
           if(weaponModFlag(component,"installedWeaponMod")?.hostItemId || weaponModFlag(component,INSTALLED_UPGRADE_FLAG)?.hostItemId
             || items.some(child=>child.system?.container===component.id))throw new WeaponModRuleError("slot-conflict");
           const candidate=getWeaponModCandidate(component,catalog);let mounts=[];
-          if(mode==="install")mounts=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(modHost,readWeaponMods(current,id=>actor.items.get(id),catalog).modernizedParts),state.attachments,candidate,{mountId}).mountIds;
+          if(mode==="install")mounts=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(modHost,readWeaponMods(current,id=>actor.items.get(id),catalog).modernizedParts),state.attachments,candidate,{mountId,mountIds,freeMounts:modHost.freeMounts}).mountIds;
           else{
             const projection=readWeaponMods(current,id=>actor.items.get(id),catalog);
             if(projection.diagnostics.length)throw new WeaponModRuleError("slot-conflict");
@@ -517,8 +517,8 @@ export class ItemUpgradeService {
           const childIntent={...intent,quantity:1,targetFolderId:null,heroSlotId:null,expectedSourceQuantity:null},source=await documents.readSource(childIntent,actors);
           const plan=planItemInstanceMutation({source,quantity:1,sameActor:true,sameFolder:false,forHeroSlot:false});
           const prepared=await documents.prepare(childIntent,plan,source,{preparePlacement:({itemId:targetId})=>{
-            state[mode==="install"?"attachments":"modernizedParts"].push({itemId:targetId,sourceId:candidate.sourceId,...(mode==="install"?{mountIds:mounts}:{})});
-            const reverse={version:1,kind:candidate.profile.kind,hostActorId:actor.id,hostItemId:current.id,mountIds:mounts};
+            state[mode==="install"?"attachments":"modernizedParts"].push({itemId:targetId,sourceId:candidate.sourceId,...(mode==="install"?{mountIds:mounts,...(modHost.freeMounts?{freeMounts:true}:{})}:{})});
+            const reverse={version:1,kind:candidate.profile.kind,hostActorId:actor.id,hostItemId:current.id,mountIds:mounts,...(mode==="install" && modHost.freeMounts?{freeMounts:true}:{})};
             return [patch({id:targetId},{"system.container":component.system.container??null,[linkPath]:null},{"system.container":current.id,[linkPath]:reverse}),
               patch(current,{[statePath]:before},{[statePath]:state})];
           }},operation);

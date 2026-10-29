@@ -1,7 +1,7 @@
 import {MODULE_ID,GEAR_COMPENDIUM_NAME} from "../constants.js";
-import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.4.389";
-import {weaponModFlag,validateWeaponAttachmentInstallation,validateModernizedPartInstallation} from "../data/weapon-mod-rules.js?v=1.4.389";
-import {loadWeaponBlueprints,getWeaponBlueprint} from "../data/weapon-blueprints.js?v=1.4.389";
+import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.5.22";
+import {weaponModFlag,validateWeaponAttachmentInstallation,validateModernizedPartInstallation} from "../data/weapon-mod-rules.js?v=1.5.22";
+import {loadWeaponBlueprints,getWeaponBlueprint} from "../data/weapon-blueprints.js?v=1.5.22";
 import {getItemHeldHands,isItemEquipped} from "./held-items.js?v=1.4.383";
 import {AnchoredOverlay,bindAnchoredTooltips} from "../ui/anchored-overlay.js?v=1.4.392";
 const states=new WeakMap(),requests=new WeakMap(),viewSelections=new WeakMap(),tabBindings=new WeakMap(),values=collection=>Array.from(collection?.contents??collection?.values?.()??collection??[]);
@@ -22,7 +22,7 @@ function requirementsText(profile,catalog){
   profile.excludes?.length?`Несовместимо: ${profile.excludes.map(name).join(", ")}`:"",profile.countsTowardLimit===false?"Не занимает лимит частей":""].filter(Boolean).join(" · ");
 }
 function validateChoice(host,installed,candidate,kind,mountId){
- if(kind==="weaponAttachment")return {mountIds:validateWeaponAttachmentInstallation(host,installed.attachments??[],candidate,{mountId}).mountIds,replacements:[]};
+ if(kind==="weaponAttachment")return {mountIds:validateWeaponAttachmentInstallation(host,installed.attachments??[],candidate,{mountId,freeMounts:host.freeMounts}).mountIds,replacements:[]};
  const parts=installed.modernizedParts??[];
  try{validateModernizedPartInstallation(host,parts,candidate,{gmApproval:true});return {replacements:[]};}
  catch(error){
@@ -35,7 +35,7 @@ function fitsCatalogSlot(row,host,catalog,mountId,installed){
  const candidate={sourceId:row.sourceId,profile:row.profile,quantity:1,available:true};
  if(row.profile.kind==="modernizedPart")try{validateChoice(host,installed,candidate,"modernizedPart",null);return true;}catch{/* A blocked current installation may still belong to the compatible catalogue. */}
  try{
-  if(row.profile.kind==="weaponAttachment")validateWeaponAttachmentInstallation({...host,quantity:1},[],candidate,{mountId});
+  if(row.profile.kind==="weaponAttachment")validateWeaponAttachmentInstallation({...host,quantity:1},[],candidate,{mountId,freeMounts:host.freeMounts});
   else{
    const dependencies=catalog.rows.filter(part=>row.profile.requiresParts?.includes(part.sourceId)).map(part=>({itemId:`catalog:${part.sourceId}`,sourceId:part.sourceId,profile:part.profile}));
    validateModernizedPartInstallation({...host,quantity:1,baseForm:host.form},dependencies,candidate,{gmApproval:true});
@@ -83,7 +83,12 @@ export function getWeaponModMountPositions(host){
 }
 export function getWeaponModConnectorPoints(host,mountIds){
  const positions=getWeaponModMountPositions(host),bottom=positions[mountIds.find(id=>id.startsWith("bottom-"))],barrel=mountIds.includes("barrel")&&positions.barrel;
- if(mountIds.length!==2 || !bottom || !barrel)return [];
+ if(mountIds.length!==2)return [];
+ if(!bottom || !barrel){
+  const a=positions[mountIds[0]],b=positions[mountIds[1]];if(!a || !b)return [];
+  const from=[a.x*10,a.y*6+(a.y<b.y?mountHalfSize:-mountHalfSize)],to=[b.x*10,b.y*6+(a.y<b.y?-mountHalfSize:mountHalfSize)],middle=(from[1]+to[1])/2;
+  return [from,[from[0],middle],[to[0],middle],to];
+ }
  const from=[bottom.x*10,bottom.y*6-mountHalfSize],to=[barrel.x*10,barrel.y*6+mountHalfSize],middle=(from[1]+to[1])/2;
  return [from,[from[0],middle],[to[0],middle],to];
 }
@@ -165,7 +170,7 @@ export function buildWeaponModContextActions(item,child,projection,api,{run=acti
  for(const activity of values(item.system?.activities).filter(activity=>activity.flags?.[MODULE_ID]?.weaponModActivity?.childItemId===child.id))actions.push({id:`activity-${activity.id??activity._id}`,label:activity.name,icon:"fa-solid fa-bolt",callback:()=>run(()=>activity.use())});
  return actions;
 }
-export async function installWeaponModWithChoices(item,component,api,{mountId=null,catalog=null,projection=null}={}){
+export async function installWeaponModWithChoices(item,component,api,{mountId=null,catalog=null,projection=null,chooseMount=choose}={}){
  if(!owner(item))throw Error("Нет прав владельца оружия.");
  const actor=item.actor??item.parent;if((component.actor??component.parent)!==actor || actor.items.get(component.id)!==component)throw Error("Компонент должен находиться в инвентаре владельца оружия.");
  catalog??=await api.itemUpgradeService.getWeaponModCatalog();projection??=await api.itemUpgradeService.getWeaponModsProjection(item);
@@ -173,7 +178,18 @@ export async function installWeaponModWithChoices(item,component,api,{mountId=nu
  const rows=buildWeaponModCatalogView({catalog,host:projection.host,installed:projection,inventory:values(actor.items),kind,mountId,isOwner:true}),
   row=rows.find(row=>row.sourceId===weaponModFlag(component,"gearId")),instance=row?.instances.find(instance=>instance.itemId===component.id);
  if(!instance?.available)throw Error(instance?.reason??row?.reason??"Экземпляр недоступен.");
- let removeItemId=null;
+ let removeItemId=null,mountIds=null;
+ if(kind==="weaponAttachment" && projection.host.freeMounts){
+  const slots=row.profile?.slots ?? getWeaponModCandidate(component,catalog).profile.slots;
+  const count=slots.mode==="oneOf"?1:slots.values.length,occupied=new Set((projection.attachments??[]).flatMap(entry=>entry.mountIds));
+  mountIds=mountId?[mountId]:[];
+  while(mountIds.length<count){
+   const choices=projection.host.mountIds.filter(id=>!occupied.has(id) && !mountIds.includes(id)).map(id=>({id,name:labels[id]??id}));
+   const selected=await chooseMount("Выберите место обвеса",choices);if(!selected)return null;
+   if(!choices.some(choice=>choice.id===selected))throw Error("Недопустимое место обвеса.");
+   mountIds.push(selected);
+  }
+ }
  if(kind==="modernizedPart"){
   if(instance.replacements?.length){
    removeItemId=await choose("Заменить одну модернизированную часть",instance.replacements.map(id=>({id,name:actor.items.get(id)?.name??id})));if(!removeItemId)return null;
@@ -181,7 +197,7 @@ export async function installWeaponModWithChoices(item,component,api,{mountId=nu
   const accepted=await foundry.applications.api.DialogV2.confirm({window:{title:"Пересборка оружия · 500 зм"},content:`<p>Установить «${escape(component.name)}» на «${escape(item.name)}»${removeItemId?` вместо «${escape(actor.items.get(removeItemId)?.name)}»`:""}? У владельца оружия будет списано 500 зм.</p>`,defaultYes:false});
   if(!accepted)return null;
  }
- const payload={actorUuid:actor.uuid,hostItemId:item.id,componentItemId:component.id,...(kind==="weaponAttachment"?{mountId}:{removeItemId})};
+ const payload={actorUuid:actor.uuid,hostItemId:item.id,componentItemId:component.id,...(kind==="weaponAttachment"?{mountId,...(mountIds?{mountIds}:{})}:{removeItemId})};
  return request(item,kind==="weaponAttachment"?"installWeaponAttachment":"installWeaponModernization",payload,api);
 }
 export function createWeaponModCatalogHtml(rows,kind,mountId){

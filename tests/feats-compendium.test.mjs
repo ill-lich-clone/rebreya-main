@@ -24,6 +24,8 @@ globalThis.foundry ??= {
 const {
   FeatsCompendiumService,
   normalizeFeatItems,
+  buildLegacyFirearmMasteryPatch,
+  syncLegacyFirearmMastery,
   renderFeatDescription
 } = await import("../scripts/data/feats-compendium.js");
 
@@ -31,6 +33,47 @@ function loadBundleItems() {
   const bundleUrl = new URL("../cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json", import.meta.url);
   return JSON.parse(readFileSync(bundleUrl, "utf8")).items;
 }
+
+test("firearm master tuning is an item enchantment, keeps other feat effects, and does not grant a global ranged bonus",()=>{
+  const raw=loadBundleItems().find(item=>item.system?.identifier==="master-ognestrelnogo-oruzhiya");
+  const extra={_id:"manualEffect0001",name:"Другое",changes:[{key:"system.abilities.str.value",mode:2,value:"1"}]};
+  const feat=normalizeFeatItems([{...raw,effects:[...raw.effects,extra]}])[0];
+  const activity=Object.values(feat.system.activities).find(a=>a.name==="Настроить огнестрельное оружие");
+  assert.equal(activity.type,"enchant");assert.equal(activity.activation.type,"minute");assert.equal(activity.activation.value,10);
+  assert.equal(activity.restrictions.type,"weapon");assert.equal(activity.restrictions.allowMagical,true);
+  const effect=feat.effects.find(e=>e._id===activity.effects[0]._id);
+  assert.equal(effect.type,"enchantment");assert.deepEqual(effect.flags["rebreya-main"].firearmTuning,{startedAt:null});
+  assert.ok(feat.effects.some(e=>e._id===extra._id));
+  assert.equal(feat.effects.some(e=>e.changes?.some(c=>c.key==="system.bonuses.rwak.attack")),false);
+});
+test("legacy owned firearm mastery migration targets only the exact generated utility and preserves custom effects",()=>{
+ const source=loadBundleItems().find(item=>item.system?.identifier==="master-ognestrelnogo-oruzhiya");
+ source._id="owned-feat";source.effects.push({_id:"custom0000000001",name:"Custom",changes:[{key:"system.abilities.str.value",value:"1",mode:2}]});
+ const patch=buildLegacyFirearmMasteryPatch(source);
+ assert.equal(patch._id,"owned-feat");assert.equal(patch.system.activities["2dde62360d721684"].type,"enchant");
+ assert.ok(patch.effects.some(e=>e._id==="custom0000000001"));assert.ok(!patch.effects.some(e=>e._id==="f7ea1e0efb14c7e8"));
+ const custom=structuredClone(source);custom.system.activities["2dde62360d721684"].type="enchant";
+ assert.equal(buildLegacyFirearmMasteryPatch(custom),null);
+ const changed=structuredClone(source);changed.effects.find(e=>e._id==="f7ea1e0efb14c7e8").changes[0].mode=5;
+ assert.equal(buildLegacyFirearmMasteryPatch(changed),null);
+ assert.equal(normalizeFeatItems([changed])[0].system.activities["2dde62360d721684"].type,"utility");
+  const recovery=structuredClone(source);recovery.effects=recovery.effects.filter(e=>e._id!=="f7ea1e0efb14c7e8");
+  assert.equal(buildLegacyFirearmMasteryPatch(recovery).system.activities["2dde62360d721684"].type,"enchant");
+});
+test("custom firearm mastery activity is not overwritten by managed normalization",()=>{
+ const source=loadBundleItems().find(item=>item.system?.identifier==="master-ognestrelnogo-oruzhiya");
+ source.system.activities["2dde62360d721684"].type="enchant";delete source.system.activities["2dde62360d721684"].flags["rebreya-main"].automation;
+ const feat=normalizeFeatItems([source])[0];assert.equal(feat.system.activities["2dde62360d721684"].flags["rebreya-main"].firearmTuning,undefined);
+});
+test("owned legacy feat sync runs only on the active GM and retries after a failed write",async()=>{
+ const source=loadBundleItems().find(item=>item.system?.identifier==="master-ognestrelnogo-oruzhiya");source._id="owned-feat";
+ const state=structuredClone(source);let updates=0,fail=true;
+ const item={toObject:()=>structuredClone(state),deleteEmbeddedDocuments:async(_type,ids)=>{state.effects=state.effects.filter(e=>!ids.includes(e._id));},update:async patch=>{updates++;if(fail){fail=false;throw Error("failure");}state.system.activities=patch.system.activities;state.effects=patch.effects;}};
+ const user={id:"gm",isGM:true,active:true},gameStub={user,users:{activeGM:user},actors:{contents:[{items:{contents:[item]}}]}};
+ await syncLegacyFirearmMastery(gameStub);assert.equal(state.effects.some(e=>e._id==="f7ea1e0efb14c7e8"),false);
+ await syncLegacyFirearmMastery(gameStub);assert.equal(state.system.activities["2dde62360d721684"].type,"enchant");assert.equal(updates,2);
+ const before=updates;gameStub.users.activeGM={id:"other",isGM:true,active:true};await syncLegacyFirearmMastery(gameStub);assert.equal(updates,before);
+});
 
 test("feat bundle mirrors the approved Google Docs V0.9 revision", () => {
   const bundleUrl = new URL("../cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json", import.meta.url);

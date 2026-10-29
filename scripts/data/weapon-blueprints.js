@@ -1,4 +1,4 @@
-import {getWeaponModHostDescriptor,WEAPON_MOD_MOUNTS} from "./weapon-mod-rules.js?v=1.4.389";
+import {getWeaponModHostDescriptor,WEAPON_MOD_MOUNTS} from "./weapon-mod-rules.js?v=1.5.22";
 export function buildWeaponBlueprintIndex(manifest,hosts){
   if(manifest?.version!==1 || !Array.isArray(manifest.blueprints) || !manifest.fallbacks)throw new Error("Некорректный каталог чертежей.");
   const byId=new Map(),validate=(entry,family)=>{

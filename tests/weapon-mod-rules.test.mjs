@@ -33,6 +33,35 @@ test("oneOf selects exactly one free mount and refuses an unrelated requested mo
   assert.throws(() => install(makeHost("arbalet-legkiy"), [], makeCandidate("soshki")), {code:"incompatible"});
 });
 
+test("firearm master chooses any two distinct free mounts without bypassing compatibility", () => {
+  const host = makeHost("vintovka"), bipod = makeCandidate("soshki");
+  assert.deepEqual(install(host, [], bipod, {freeMounts:true, mountIds:["top", "side-1"]}), {mountIds:["top", "side-1"]});
+  assert.throws(() => install(host, [], bipod, {mountIds:["top", "side-1"]}), {code:"incompatible"});
+  assert.throws(() => install(host, [], bipod, {freeMounts:true, mountIds:["top", "top"]}), {code:"slot-conflict"});
+  assert.throws(() => install(host, [makeInstalled("fonarik", "light", ["side-1"])], bipod, {freeMounts:true, mountIds:["top", "side-1"]}), {code:"slot-conflict"});
+  assert.throws(() => install(makeHost("pistolet"), [], bipod, {freeMounts:true, mountIds:["top", "barrel"]}), {code:"incompatible"});
+});
+
+test("firearm mastery is derived from the owning actor and not a caller-provided flag", () => {
+  const host=makeItem("vintovka");
+  host.actor={items:{contents:[{type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}}]}};
+  assert.equal(getHost(host,makeCatalog()).freeMounts,true);
+  const crossbow=makeItem("arbalet-legkiy");crossbow.actor=host.actor;
+  assert.equal(getHost(crossbow,makeCatalog()).freeMounts,true);
+  host.actor.items.contents=[];
+  assert.equal(getHost(host,makeCatalog()).freeMounts,false);
+});
+
+test("a master-installed attachment remains valid after transfer when both links preserve its mount policy", () => {
+  const host=makeItem("vintovka"), child=makeItem("soshki");
+  host.actor={id:"actor"};child.actor=host.actor;child.system.container=host.id;
+  host.flags["rebreya-main"].weaponMods={version:1,attachments:[{itemId:child.id,sourceId:"soshki",mountIds:["top","side-1"],freeMounts:true}],modernizedParts:[]};
+  child.flags["rebreya-main"].installedWeaponMod={version:1,kind:"weaponAttachment",hostActorId:"actor",hostItemId:host.id,mountIds:["top","side-1"],freeMounts:true};
+  assert.equal(readMods(host,()=>child,makeCatalog()).attachments.length,1);
+  delete child.flags["rebreya-main"].installedWeaponMod.freeMounts;
+  assert.equal(readMods(host,()=>child,makeCatalog()).attachments.length,0);
+});
+
 test("duplicate attachment kind, malformed installed links and stacked hosts fail before allocation", () => {
   const host = makeHost("vintovka"), candidate = makeCandidate("lazernyy-tseleukazatel");
   assert.throws(() => install(host, [makeInstalled(candidate.sourceId,"laser",["side-1"])], candidate), {code:"duplicate-mod"});

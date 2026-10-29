@@ -2,6 +2,8 @@ import { MODULE_ID } from "../constants.js";
 import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.2";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js";
+import { ignoreProneFireDisadvantage } from "./prone-fire.js?v=1.5.22";
+import { canApplyFirearmTuning, allowMagicalFirearmTuning, startTuningForAreaFire } from "./firearm-tuning.js?v=1.5.22";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.combatHooksRegistered`;
 const CHARACTER_SHEET_RENDER_HOOKS = Object.freeze([
@@ -71,6 +73,13 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasAttackService) {
+    Hooks.on("midi-qol.preAttackRollConfig", workflow => ignoreProneFireDisadvantage(workflow));
+    Hooks.on("dnd5e.preApplyEnchantment", (item, data, {activity}={}) => canApplyFirearmTuning(item,activity,data));
+    Hooks.on("dnd5e.canEnchant", (activity,item,errors) => allowMagicalFirearmTuning(activity,item,errors));
+    Hooks.on("dnd5e.postUseActivity", activity => { startTuningForAreaFire(activity,Number(game.time?.worldTime)).catch(error=>console.error(`${MODULE_ID} | Failed to start firearm tuning.`,error)); });
+  }
 
   if (hasAlchemyReagentService) {
     const service = moduleApi.alchemyReagentService;
