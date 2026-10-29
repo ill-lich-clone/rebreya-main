@@ -6,6 +6,7 @@ export const WEAPON_MOD_MOUNTS = Object.freeze({
   advanced: ["top", "bottom-1", "bottom-2", "side-1", "side-2", "barrel"],
   crossbow: ["top", "bottom-1"]
 });
+export const isExtraWeaponModMount = id => typeof id==="string" && /^extra-[1-9]\d{0,2}$/u.test(id);
 export const WEAPON_MOD_TAGS = new Set(["firearm","all-firearms","long-firearm","short-firearm","magazine-fed-firearm","rifle","carbine","shotgun","musket","flintlock-pistol","arquebus","wheellock","short-firearm-with-pistol-grip"]);
 const messages = {
   incompatible: "Обвес или часть несовместимы с этим оружием.", "invalid-quantity": "Нужен один экземпляр оружия и доступная целая единица компонента.",
@@ -37,10 +38,19 @@ export function getWeaponModHostDescriptor(item,catalog) {
   const modelTags=[...(entry?.modelTags ?? [])].filter(tag=>tag!=="magazine-fed-firearm" || properties.has("lchFirearmReload"));
   if(family!=="crossbow")modelTags.push("firearm","all-firearms");
   if(entry?.form)modelTags.push(`${entry.form}-firearm`);
+  const actor=item.actor??item.parent,freeMounts=hasFirearmMastery(actor),proficiency=Number(actor?.system?.attributes?.prof);
+  const extraCount=freeMounts && Number.isSafeInteger(proficiency) && proficiency>0 && proficiency<=999?proficiency:0;
+  const entries=weaponModFlag(item,WEAPON_MODS_FLAG)?.attachments;
+  const retained=Array.isArray(entries)?entries.filter(entry=>entry?.freeMounts===true && Array.isArray(entry.mountIds)).flatMap(entry=>entry.mountIds.filter(isExtraWeaponModMount)):[];
+  const occupiedExtra=new Set(retained),freeExtra=Math.max(0,extraCount-occupiedExtra.size);
+  let availableExtra=0;
+  const currentExtra=Array.from({length:extraCount},(_,index)=>`extra-${index+1}`).filter(id=>occupiedExtra.has(id) || availableExtra++<freeExtra);
+  const selectableMountIds=[...WEAPON_MOD_MOUNTS[family],...currentExtra];
+  const mountIds=[...new Set([...selectableMountIds,...retained])];
   return {id:item.id ?? item._id,gearId,family,form:entry?.form ?? null,baseForm:entry?.form ?? null,
-    modelTags:[...new Set(modelTags)],mountIds:[...WEAPON_MOD_MOUNTS[family]],quantity:Number(item.system?.quantity ?? 1),
+    modelTags:[...new Set(modelTags)],mountIds,selectableMountIds,quantity:Number(item.system?.quantity ?? 1),
     requiresGmApproval:Boolean(entry?.requiresGmApproval || properties.has("spc") || !entry),
-    freeMounts:hasFirearmMastery(item.actor??item.parent)};
+    freeMounts};
 }
 export function isInstalledWeaponMod(item) {
   const link=weaponModFlag(item,INSTALLED_WEAPON_MOD_FLAG);
@@ -87,7 +97,7 @@ function validateInstalledMounts(host,installed) {
   return occupied;
 }
 const category = mount => mount.replace(/-\d+$/u,"");
-export function validateWeaponAttachmentInstallation(host,installed,candidate,{mountId=null,mountIds=null,freeMounts=false}={}) {
+export function validateWeaponAttachmentInstallation(host,installed,candidate,{mountId=null,mountIds=null,freeMounts=false,allowRetained=false}={}) {
   basic(host,candidate,"weaponAttachment");
   const occupied=validateInstalledMounts(host,installed);
   if(installed.some(part=>part.sourceId===candidate.sourceId))fail("duplicate-mod");
@@ -96,17 +106,19 @@ export function validateWeaponAttachmentInstallation(host,installed,candidate,{m
   if(!slots || !["oneOf","all"].includes(slots.mode) || !Array.isArray(slots.values) || !slots.values.length
     || new Set(slots.values).size!==slots.values.length || slots.values.some(value=>!["top","bottom","side","barrel"].includes(value)))fail("incompatible");
   const count=slots.mode==="oneOf"?1:slots.values.length;
+  const selectable=allowRetained?host.mountIds:(host.selectableMountIds??host.mountIds);
   if(mountIds!==null){
     if(!Array.isArray(mountIds) || mountIds.length!==count)fail("incompatible");
-    if(new Set(mountIds).size!==count || mountIds.some(mount=>!host.mountIds.includes(mount) || occupied.has(mount)))fail("slot-conflict");
+    if(mountIds.some(mount=>!selectable.includes(mount)))fail("incompatible");
+    if(new Set(mountIds).size!==count || mountIds.some(mount=>occupied.has(mount)))fail("slot-conflict");
     if(mountId!==null && !mountIds.includes(mountId))fail("incompatible");
     if(!freeMounts && (slots.mode==="oneOf" ? !slots.values.includes(category(mountIds[0])) : slots.values.some(value=>!mountIds.some(mount=>category(mount)===value))))fail("incompatible");
     return {mountIds:[...mountIds]};
   }
   if(freeMounts){
-    if(mountId!==null && !host.mountIds.includes(mountId))fail("incompatible");
+    if(mountId!==null && !selectable.includes(mountId))fail("incompatible");
     if(mountId!==null && occupied.has(mountId))fail("slot-conflict");
-    const selected=[...(mountId?[mountId]:[]),...host.mountIds.filter(mount=>mount!==mountId && !occupied.has(mount))].slice(0,count);
+    const selected=[...(mountId?[mountId]:[]),...selectable.filter(mount=>mount!==mountId && !occupied.has(mount))].slice(0,count);
     if(selected.length!==count)fail("slot-conflict");
     return {mountIds:selected};
   }
@@ -175,7 +187,7 @@ export function readWeaponMods(host,resolveItem,catalog) {
       const candidate={...entry,quantity:1,available:true};
       try {
         if(field==="attachments") {
-          const checked=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(descriptor,result.modernizedParts),entries.filter(other=>other!==entry),candidate,{mountIds:entry.mountIds,freeMounts:entry.freeMounts===true});
+          const checked=validateWeaponAttachmentInstallation(getWeaponModEffectiveHost(descriptor,result.modernizedParts),entries.filter(other=>other!==entry),candidate,{mountIds:entry.mountIds,freeMounts:entry.freeMounts===true,allowRetained:true});
           if(checked.mountIds.length!==entry.mountIds.length || checked.mountIds.some(mount=>!entry.mountIds.includes(mount)))fail("slot-conflict");
         } else validateModernizedPartInstallation(descriptor,entries.filter(other=>other!==entry),candidate,{gmApproval:true});
         return true;

@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import {optionalModule,required,makeHost,makeCandidate,makeInstalled} from "./helpers/weapon-mod-fixture.mjs";
 const rules=await optionalModule(new URL("../scripts/data/weapon-rebuild-rules.js",import.meta.url)),quote=required(rules,"buildWeaponRebuildQuote");
 const input=()=>({host:makeHost("vintovka"),component:makeCandidate("oblegchyonnyy-korpus"),parts:[],currency:{gp:500}});
+test("rebuild preserves extra mounts retained after mastery is lost",()=>{
+ const source=input(); source.host.selectableMountIds=[...source.host.mountIds]; source.host.mountIds.push("extra-3");
+ const attachment={...makeInstalled("soshki","bipod",["top","extra-3"]),freeMounts:true};
+ assert.equal(quote({...source,attachments:[attachment]}).costCp,50000);
+});
 test("rebuild preserves previously authorized alternate attachment mounts",()=>{
  const attachment={...makeInstalled("soshki","bipod",["top","side-1"]),freeMounts:true};
  assert.equal(quote({...input(),attachments:[attachment]}).costCp,50000);

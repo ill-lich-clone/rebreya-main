@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.22";
+import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.23";
 
 export const CURSE_EATER_RARITY = Object.freeze({
   common: 0,

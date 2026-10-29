@@ -4,6 +4,11 @@ import {optionalModule,required} from "./helpers/weapon-mod-fixture.mjs";
 const commands=await optionalModule(new URL("../scripts/application/weapon-mod-mutation-commands.js",import.meta.url));
 const valid=name=>required(commands,name);
 const base={actorUuid:"Actor.hero",hostItemId:"weapon",componentItemId:"mod",operationId:"request"};
+test("extra mount IDs pass the typed command boundary while malformed IDs do not",()=>{
+ const install=valid("isValidWeaponAttachmentInstallPayload");
+ assert.equal(install({...base,mountId:"extra-3",mountIds:["top","extra-3"]}),true);
+ for(const id of ["extra-0","extra-01","extra-1000","extra-x"])assert.equal(install({...base,mountId:id}),false);
+});
 test("attachment, approval and activity commands accept only exact typed payloads",()=>{
   const install=valid("isValidWeaponAttachmentInstallPayload"),remove=valid("isValidWeaponAttachmentRemovePayload"),approval=valid("isValidWeaponModernizationApprovalPayload"),activity=valid("isValidWeaponModActivityPayload");
   assert.equal(install(base),true);assert.equal(install({...base,mountId:"bottom-2"}),true);assert.equal(remove(base),true);

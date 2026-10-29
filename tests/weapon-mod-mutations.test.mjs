@@ -2,6 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {makeWeaponModMutationFixture, makeItem, gear} from "./helpers/weapon-mod-fixture.mjs";
 const NS="rebreya-main";
+test("extra mounts require current proficiency and remain removable after the feat is lost",async()=>{
+ const fx=await makeWeaponModMutationFixture({quantity:1});try{
+  fx.group.system.attributes={prof:3};
+  const feat={id:"feat",type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}};fx.group.items.contents.push(feat);
+  await assert.rejects(()=>fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"extra-invalid",mountIds:["top","extra-4"]}));
+  const result=await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"extra-valid",mountIds:["top","extra-3"]});
+  const child=fx.group.items.get(result.itemId);assert.deepEqual(child.getFlag(NS,"installedWeaponMod").mountIds,["top","extra-3"]);
+  fx.group.items.contents.splice(fx.group.items.contents.indexOf(feat),1);
+  assert.equal((await fx.service.getWeaponModsProjection(fx.host)).attachments.length,1);
+  await fx.service.removeWeaponAttachment(fx.host,child,{operationId:"extra-remove"});
+  assert.equal(fx.host.getFlag(NS,"weaponMods").attachments.length,0);
+ }finally{fx.restore();}
+});
 test("attachment request checks mastery on the actor under the lock and persists both chosen mounts",async()=>{
   const fx=await makeWeaponModMutationFixture({quantity:1});
   try{

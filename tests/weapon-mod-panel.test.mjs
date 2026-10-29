@@ -3,6 +3,15 @@ import {optionalModule,required,makeCatalog,makeItem,getHost,makeWeaponModMutati
 import {getWeaponModEffectiveHost} from "../scripts/data/weapon-mod-rules.js";
 import {createOverlayDom} from "./helpers/overlay-dom.mjs";
 const module=await optionalModule(new URL("../scripts/integrations/weapon-mod-panel.js",import.meta.url)),view=required(module,"buildWeaponModCatalogView");
+test("extra mounts appear below the diagram without blueprint anchors",()=>{
+ const item=makeItem("vintovka"),catalog=makeCatalog();
+ item.actor={system:{attributes:{prof:6}},items:{contents:[{type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}}]}};
+ const host=getHost(item,catalog),blueprint={img:"weapon.png",width:1000,height:400,anchors:Object.fromEntries(host.mountIds.filter(id=>!id.startsWith("extra-")).map(id=>[id,{x:.5,y:.5}]))};
+ const html=required(module,"createWeaponModPanelHtml")({id:"host"},{host,attachments:[]},blueprint);
+ assert.equal((html.match(/data-wm-mount="extra-\d+"/g)??[]).length,6);
+ assert.ok(html.indexOf("rm-wm__extra-grid")>html.indexOf("</fieldset>"));
+ assert.match(html,/Дополнительное место 6/);
+});
 test("master sees compatible bipod at any free mount while ordinary users retain slot restrictions",()=>{
  const catalog=makeCatalog(),item=makeItem("vintovka"),bipod=makeItem("soshki");
  item.actor={items:{contents:[{type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}}]}};

@@ -1,7 +1,7 @@
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.396";
 import { normalizeLootgenComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
 import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
-import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.5.22";
+import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.5.23";
 import { buildRuntimeGraphDocuments, captureRuntimeItemGraph, materializeRuntimeItemGraph, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.5.18";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";

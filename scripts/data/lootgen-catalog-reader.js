@@ -1,5 +1,5 @@
 import { UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
-import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "./item-upgrade-service.js?v=1.5.22";
+import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "./item-upgrade-service.js?v=1.5.23";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.393";
 import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.393";
 import { resolveLootgenContainerProfile } from "./lootgen-container-rules.js?v=1.4.266";

@@ -7,6 +7,33 @@ const install = required(rules, "validateWeaponAttachmentInstallation");
 const modernize = required(rules, "validateModernizedPartInstallation");
 const readMods = required(rules, "readWeaponMods");
 
+test("firearm mastery grants extra mounts equal to proficiency without changing normal topology",()=>{
+  const item=makeItem("vintovka"),feat={type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}};
+  item.actor={system:{attributes:{prof:3}},items:{contents:[feat]}};
+  let host=getHost(item,makeCatalog());
+  assert.deepEqual(host.mountIds.slice(-3),["extra-1","extra-2","extra-3"]);
+  item.actor.system.attributes.prof=0;assert.equal(getHost(item,makeCatalog()).mountIds.length,6);
+  item.actor.system.attributes.prof=6;assert.equal(getHost(item,makeCatalog()).mountIds.length,12);
+  assert.equal(host.mountIds.length,9);
+  item.actor.system.attributes.prof=7;host=getHost(item,makeCatalog());assert.equal(host.mountIds.at(-1),"extra-7");
+  item.actor.items.contents=[];host=getHost(item,makeCatalog());assert.equal(host.mountIds.length,6);
+});
+
+test("extra slots remain readable after mastery is lost but cannot be newly selected",()=>{
+  const host=makeItem("vintovka"),child=makeItem("soshki"),feat={type:"feat",system:{identifier:"master-ognestrelnogo-oruzhiya"}};
+  host.actor={id:"actor",system:{attributes:{prof:3}},items:{contents:[feat],get:id=>id===child.id?child:null}};child.actor=host.actor;child.system.container=host.id;
+  host.flags["rebreya-main"].weaponMods={version:1,attachments:[{itemId:child.id,sourceId:"soshki",mountIds:["top","extra-3"],freeMounts:true}],modernizedParts:[]};
+  child.flags["rebreya-main"].installedWeaponMod={version:1,kind:"weaponAttachment",hostActorId:"actor",hostItemId:host.id,mountIds:["top","extra-3"],freeMounts:true};
+  host.actor.system.attributes.prof=1;
+  assert.equal(readMods(host,id=>host.actor.items.get(id),makeCatalog()).attachments.length,1);
+  assert.equal(getHost(host,makeCatalog()).selectableMountIds.some(id=>id.startsWith("extra-")),false);
+  assert.throws(()=>install(getHost(host,makeCatalog()),[],makeCandidate("soshki"),{mountId:"extra-3",freeMounts:true}),e=>e.code==="incompatible");
+  host.actor.items.contents=[];host.actor.system.attributes.prof=0;
+  assert.equal(readMods(host,()=>child,makeCatalog()).attachments.length,1);
+  const descriptor=getHost(host,makeCatalog());assert.ok(descriptor.mountIds.includes("extra-3"));
+  assert.throws(()=>install(descriptor,[],makeCandidate("fonarik"),{mountId:"extra-3",freeMounts:true}),{code:"incompatible"});
+});
+
 test("mount topology follows source family and survives renaming", () => {
   assert.deepEqual(makeHost("mushket").mountIds, ["top", "bottom-1", "barrel"]);
   assert.deepEqual(makeHost("vintovka").mountIds, ["top", "bottom-1", "bottom-2", "side-1", "side-2", "barrel"]);

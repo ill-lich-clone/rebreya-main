@@ -32,6 +32,19 @@ function fixture({bag=false}={}) {
 const descriptor=()=>({version:3,instanceKey:"weapon-instance",sourceType:"gear",sourceId:"vintovka",quantity:1,isBroken:false,upgrades:[],container:null,
   weaponMods:{version:1,attachments:[{instanceKey:"bipod-instance",sourceId:"soshki",mountIds:["bottom-2","barrel"]}],modernizedParts:[{instanceKey:"body-instance",sourceId:"oblegchyonnyy-korpus"}]}});
 
+test("runtime transfer retains extra mount links and mastery policy for another owner",()=>{
+ const {actor,root,child}=fixture(),hostData=root.toObject(),childData=child.toObject();
+ Object.assign(hostData.flags[NS].weaponMods.attachments[0],{mountIds:["top","extra-3"],freeMounts:true});
+ Object.assign(childData.flags[NS].installedWeaponMod,{mountIds:["top","extra-3"],freeMounts:true});
+ actor.add(hostData);actor.add(childData);
+ const graph=captureRuntimeItemGraph(actor,actor.items.get(root.id)),plan=buildRuntimeGraphDocuments(graph,"extra-transfer",hostData,{actorId:"destination"});
+ const [newHost,newChild]=plan.documents;
+ assert.deepEqual(newHost.flags[NS].weaponMods.attachments[0].mountIds,["top","extra-3"]);
+ assert.deepEqual(newChild.flags[NS].installedWeaponMod.mountIds,["top","extra-3"]);
+ assert.equal(newChild.flags[NS].installedWeaponMod.freeMounts,true);
+ assert.equal(newChild.flags[NS].installedWeaponMod.hostActorId,"destination");
+});
+
 test("runtime graph remaps every weapon mod link and preserves physical child state",()=>{
   const {actor,root}=fixture(),graph=captureRuntimeItemGraph(actor,root),before=structuredClone(graph);
   const plan=buildRuntimeGraphDocuments(graph,"weapon-mod-transfer",root.toObject(),{actorId:"destination"});

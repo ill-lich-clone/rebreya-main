@@ -1,12 +1,13 @@
 import {MODULE_ID,GEAR_COMPENDIUM_NAME} from "../constants.js";
-import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.5.22";
-import {weaponModFlag,validateWeaponAttachmentInstallation,validateModernizedPartInstallation} from "../data/weapon-mod-rules.js?v=1.5.22";
-import {loadWeaponBlueprints,getWeaponBlueprint} from "../data/weapon-blueprints.js?v=1.5.22";
+import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.5.23";
+import {weaponModFlag,validateWeaponAttachmentInstallation,validateModernizedPartInstallation,isExtraWeaponModMount} from "../data/weapon-mod-rules.js?v=1.5.23";
+import {loadWeaponBlueprints,getWeaponBlueprint} from "../data/weapon-blueprints.js?v=1.5.23";
 import {getItemHeldHands,isItemEquipped} from "./held-items.js?v=1.4.383";
 import {AnchoredOverlay,bindAnchoredTooltips} from "../ui/anchored-overlay.js?v=1.4.392";
 const states=new WeakMap(),requests=new WeakMap(),viewSelections=new WeakMap(),tabBindings=new WeakMap(),values=collection=>Array.from(collection?.contents??collection?.values?.()??collection??[]);
 const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const labels={top:"Верх","bottom-1":"Низ 1","bottom-2":"Низ 2","side-1":"Сторона 1","side-2":"Сторона 2",barrel:"Ствол"};
+const mountLabel=id=>labels[id]??(isExtraWeaponModMount(id)?`Дополнительное место ${id.slice(6)}`:id);
 const mountHalfSize=93.5;
 const owner=item=>Boolean(item?.actor??item?.parent) && (globalThis.game?.user?.isGM || item.isOwner===true || (item.actor??item.parent)?.testUserPermission?.(game.user,"OWNER"));
 const errorText=error=>error?.message??"Компонент недоступен.";
@@ -74,12 +75,12 @@ export function getWeaponModCompatibleMounts(item,component,catalog,projection){
  const actor=item.actor??item.parent;
  if(!owner(item) || actor?.items.get(component?.id)!==component || (component?.actor??component?.parent)!==actor
    || getWeaponModCandidate(component,catalog).profile?.kind!=="weaponAttachment")return [];
- return projection.host.mountIds.filter(mountId=>buildWeaponModCatalogView({catalog,host:projection.host,installed:projection,inventory:values(actor.items),
+ return (projection.host.selectableMountIds??projection.host.mountIds).filter(mountId=>buildWeaponModCatalogView({catalog,host:projection.host,installed:projection,inventory:values(actor.items),
   kind:"weaponAttachment",mountId,isOwner:true}).some(row=>row.instances.some(instance=>instance.itemId===component.id && instance.available)));
 }
 export function getWeaponModMountPositions(host){
  const positions={top:{x:50,y:19},"bottom-1":{x:host.family==="crossbow"?50:40,y:81},"bottom-2":{x:70,y:81},"side-1":{x:12,y:31},"side-2":{x:12,y:69},barrel:{x:88,y:42}};
- return Object.fromEntries(host.mountIds.map(id=>[id,positions[id]]));
+ return Object.fromEntries(host.mountIds.filter(id=>positions[id]).map(id=>[id,positions[id]]));
 }
 export function getWeaponModConnectorPoints(host,mountIds){
  const positions=getWeaponModMountPositions(host),bottom=positions[mountIds.find(id=>id.startsWith("bottom-"))],barrel=mountIds.includes("barrel")&&positions.barrel;
@@ -119,21 +120,29 @@ export function createWeaponModPanelHtml(item,projection,blueprint){
  const bounds=host.family==="advanced"?{x:240,y:180,w:520,h:250}:{x:110,y:180,w:650,h:250},
   scale=Math.min(bounds.w/blueprint.width,bounds.h/blueprint.height),image={w:blueprint.width*scale,h:blueprint.height*scale};
  image.x=bounds.x+(bounds.w-image.w)/2;image.y=bounds.y+(bounds.h-image.h)/2;
- const arrows=host.mountIds.map(id=>{const p=positions[id],anchor=blueprint.anchors[id],x=image.x+anchor.x*image.w,y=image.y+anchor.y*image.h,
+ const baseMounts=host.mountIds.filter(id=>!isExtraWeaponModMount(id)),extraMounts=host.mountIds.filter(isExtraWeaponModMount);
+ const arrows=baseMounts.map(id=>{const p=positions[id],anchor=blueprint.anchors[id],x=image.x+anchor.x*image.w,y=image.y+anchor.y*image.h,
    dx=x-p.x*10,dy=y-p.y*6,ratio=Math.min(1,mountHalfSize/Math.max(Math.abs(dx),Math.abs(dy)));return `<line x1="${p.x*10+dx*ratio}" y1="${p.y*6+dy*ratio}" x2="${x}" y2="${y}"/>`;}).join(""),
   links=attachments.map(child=>{const points=getWeaponModConnectorPoints(host,child.mountIds);return points.length?`<path data-wm-link="${escape(child.itemId)}" d="M${points.map(point=>point.join(",")).join(" L")}"/><g class="rm-wm__lock" data-wm-lock="${escape(child.itemId)}" transform="translate(${(points[1][0]+points[2][0])/2},${points[1][1]})"><path d="M-6,-2v-7a6,6 0 0 1 12,0v7"/><rect x="-10" y="-2" width="20" height="17" rx="2"/><path d="M0,4v5"/></g>`:"";}).join(""),
-  slots=host.mountIds.map(id=>{
+  slots=baseMounts.map(id=>{
    const p=positions[id],child=attachments.find(child=>child.mountIds.includes(id)),primary=child?.mountIds[0]===id,document=child?.item,
     name=document?.name??child?.sourceId,
     content=child?`<img src="${escape(document?.img||"icons/svg/item-bag.svg")}" alt="" draggable="false">`:'<span class="rm-wm__empty" aria-hidden="true">＋</span>',
     tooltip=`${labels[id]}: ${child?name+(!primary?" (Связано)":""):"Пусто"}`;
    return `<button type="button" class="rm-wm__mount ${child?"is-filled":"is-empty"}" style="left:${p.x}%;top:${p.y}%" data-wm-mount="${id}" ${primary?`data-main-child="${escape(child.itemId)}"`:""} ${child?`data-wm-child="${escape(child.itemId)}"`:""} data-rm-tooltip="${escape(tooltip)}" aria-label="${escape(tooltip)}">${content}</button>`;
   }).join(""),
+  extraSlots=extraMounts.map(id=>{
+   const child=attachments.find(child=>child.mountIds.includes(id)),primary=child?.mountIds[0]===id,document=child?.item,
+    name=document?.name??child?.sourceId,tooltip=`${mountLabel(id)}: ${child?name+(!primary?" (Связано)":""):"Пусто"}`,
+    content=child?`<img src="${escape(document?.img||"icons/svg/item-bag.svg")}" alt="" draggable="false">${!primary?'<span class="rm-wm__extra-linked">Связано</span>':""}`:'<span class="rm-wm__empty" aria-hidden="true">＋</span>';
+   return `<button type="button" class="rm-wm__mount ${child?"is-filled":"is-empty"}" data-wm-mount="${escape(id)}" ${primary?`data-main-child="${escape(child.itemId)}"`:""} ${child?`data-wm-child="${escape(child.itemId)}"`:""} data-rm-tooltip="${escape(tooltip)}" aria-label="${escape(tooltip)}">${content}</button>`;
+  }).join(""),
   counted=modernizedParts.filter(part=>part.profile?.countsTowardLimit!==false).length,
   parts=modernizedParts.map(part=>`<button type="button" class="rm-wm__part" data-wm-open="${escape(part.itemId)}">${escape(part.item?.name??part.sourceId)}${part.profile?.countsTowardLimit===false?" · вне лимита":""}</button>`).join(""),
   legacy=diagnostics.map(row=>`<li>${escape(row.reason??"Связь компонента требует сверки мастера.")}${row.itemId?` <button type="button" data-wm-legacy="${escape(row.itemId)}">Открыть / снять старый обвес</button>`:""}</li>`).join("");
  return `<section class="rm-wm" data-weapon-mod-panel data-host-id="${escape(item.id)}">
  <fieldset class="rm-wm__diagram"><legend>${escape(localize("REBREYA.WeaponMods.Title","Оружейные обвесы"))}</legend><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__arrows">${arrows}</svg><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__art"><image href="${escape(blueprint.img)}" x="${image.x}" y="${image.y}" width="${image.w}" height="${image.h}"/></svg><svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" class="rm-wm__connections">${links}</svg>${slots}</fieldset>
+ ${extraSlots?`<div class="rm-wm__extra-grid" aria-label="Дополнительные места обвесов">${extraSlots}</div>`:""}
  <p class="rm-wm__activation">Установка — бонусное действие · снятие — действие</p>
  ${host.family!=="crossbow"?`<div class="rm-wm__modern"><header><strong>Модернизированные части · ${counted}/3</strong><button type="button" data-wm-modern>${escape(localize("REBREYA.WeaponMods.Rebuild","Пересборка · 500 зм"))}</button></header><div class="rm-wm__parts">${parts||"Части не установлены"}</div></div>`:""}
  ${host.quantity!==1?'<p role="status">Для установки разделите оружие на отдельные экземпляры.</p>':""}${legacy?`<ul class="rm-wm__diagnostics">${legacy}</ul>`:""}
@@ -184,7 +193,7 @@ export async function installWeaponModWithChoices(item,component,api,{mountId=nu
   const count=slots.mode==="oneOf"?1:slots.values.length,occupied=new Set((projection.attachments??[]).flatMap(entry=>entry.mountIds));
   mountIds=mountId?[mountId]:[];
   while(mountIds.length<count){
-   const choices=projection.host.mountIds.filter(id=>!occupied.has(id) && !mountIds.includes(id)).map(id=>({id,name:labels[id]??id}));
+   const choices=(projection.host.selectableMountIds??projection.host.mountIds).filter(id=>!occupied.has(id) && !mountIds.includes(id)).map(id=>({id,name:mountLabel(id)}));
    const selected=await chooseMount("Выберите место обвеса",choices);if(!selected)return null;
    if(!choices.some(choice=>choice.id===selected))throw Error("Недопустимое место обвеса.");
    mountIds.push(selected);
@@ -205,7 +214,7 @@ export function createWeaponModCatalogHtml(rows,kind,mountId){
   const content=`<img src="${escape(row.img)}" alt=""><span>${escape(row.name)}</span>`,reference=row.documentUuid?`<a class="content-link rm-wm__reference" data-link data-type="Item" data-uuid="${escape(row.documentUuid)}" role="button" tabindex="0" draggable="false">${content}</a>`:`<span class="rm-wm__reference">${content}</span>`;
   return `<div class="rm-wm__choice ${row.ownedQuantity?"":"is-missing"}" role="listitem" title="${escape(row.reason)}">${reference}<small>${row.ownedQuantity?"×"+row.ownedQuantity:"Нет"}</small><button type="button" data-wm-choice="${escape(row.sourceId)}" ${row.available?"":"disabled"} aria-label="Установить ${escape(row.name)}" title="${escape(row.reason||"Установить")}">＋</button></div>`;
  }).join("");
- return `<header><strong>${kind==="modernizedPart"?"Модернизация · 500 зм":"Обвесы · "+labels[mountId]}</strong><button type="button" data-wm-close aria-label="Закрыть каталог">×</button></header><div class="rm-wm__catalog-rows"><h4>Есть в инвентаре</h4><div role="list">${render(owned)||`<p class="rm-wm__empty-owned">${kind==="modernizedPart"?"Нет подходящих частей в инвентаре":"Нет подходящих обвесов в инвентаре"}.</p>`}</div><hr><h4>Нет в инвентаре</h4><div role="list">${render(missing)||"<p>Нет отсутствующих вариантов.</p>"}</div></div>`;
+ return `<header><strong>${kind==="modernizedPart"?"Модернизация · 500 зм":"Обвесы · "+mountLabel(mountId)}</strong><button type="button" data-wm-close aria-label="Закрыть каталог">×</button></header><div class="rm-wm__catalog-rows"><h4>Есть в инвентаре</h4><div role="list">${render(owned)||`<p class="rm-wm__empty-owned">${kind==="modernizedPart"?"Нет подходящих частей в инвентаре":"Нет подходящих обвесов в инвентаре"}.</p>`}</div><hr><h4>Нет в инвентаре</h4><div role="list">${render(missing)||"<p>Нет отсутствующих вариантов.</p>"}</div></div>`;
 }
 export async function bindWeaponModPanel(root,app,api,{loadBlueprints=loadWeaponBlueprints,loadSourceItems=loadWeaponModSourceItems,resolveBlueprint=getWeaponBlueprint,render=renderWeaponModPanel,getDropData,resolveDropItem,rerender,openContextMenu}={}){
  const item=app?.item??app?.document??app?.object;if(!root?.querySelector || item?.type!=="weapon" || !api?.itemUpgradeService?.getWeaponModsProjection)return false;

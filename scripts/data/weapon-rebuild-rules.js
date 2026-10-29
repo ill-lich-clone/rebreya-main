@@ -1,4 +1,4 @@
-import { validateModernizedPartInstallation, validateWeaponAttachmentInstallation, getWeaponModEffectiveHost } from "./weapon-mod-rules.js?v=1.5.22";
+import { validateModernizedPartInstallation, validateWeaponAttachmentInstallation, getWeaponModEffectiveHost } from "./weapon-mod-rules.js?v=1.5.23";
 const units={pp:1000,gp:100,ep:50,sp:10,cp:1};
 const fail=(code,message)=>{const error=new Error(message);error.code=code;throw error;};
 /** Fixed work fee, independent of the price paid to acquire the physical component. No calendar state. */
@@ -6,7 +6,7 @@ export function buildWeaponRebuildQuote({host,component,parts=[],attachments=[],
   validateModernizedPartInstallation(host,parts,component,{removeItemId,gmApproval});
   const effective=getWeaponModEffectiveHost(host,[...parts.filter(part=>part.itemId!==removeItemId),component]);
   for(const attachment of attachments)validateWeaponAttachmentInstallation(effective,attachments.filter(part=>part!==attachment),
-    {...attachment,available:true,quantity:1},{mountIds:attachment.mountIds,freeMounts:attachment.freeMounts===true});
+    {...attachment,available:true,quantity:1},{mountIds:attachment.mountIds,freeMounts:attachment.freeMounts===true,allowRetained:true});
   if(!currency || typeof currency!=="object" || Array.isArray(currency))fail("invalid-currency","Кошелёк владельца оружия недоступен.");
   let beforeCp=0;
   for(const [key,unit] of Object.entries(units)){

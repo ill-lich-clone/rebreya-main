@@ -1,7 +1,7 @@
 import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.396";
-import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.5.22";
-import { getWeaponModHostDescriptor, validateWeaponAttachmentInstallation, validateModernizedPartInstallation } from "./weapon-mod-rules.js?v=1.5.22";
-import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.5.22";
+import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.5.23";
+import { getWeaponModHostDescriptor, validateWeaponAttachmentInstallation, validateModernizedPartInstallation } from "./weapon-mod-rules.js?v=1.5.23";
+import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.5.23";
 import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.4.250";
 import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.4.383";
 import { applyEquipmentSizeToItemData } from "../integrations/equipment-size.js?v=1.4.393";

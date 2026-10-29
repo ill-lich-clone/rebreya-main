@@ -5,11 +5,11 @@ import { SceneActivityService } from "./application/scene-activity-service.js?v=
 import { SceneActivityError } from "./data/scene-activity-rules.js?v=1.4.271";
 import { SCENE_ACTIVITY_COMMANDS, isValidSceneActivityPayload, authorizeSceneActivity, sceneActivityTransportId } from "./infrastructure/foundry/scene-activity-command-contract.js?v=1.4.271";
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.396";
-import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.5.22";
+import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.5.23";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.396";
 import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.5.19";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.5.22";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.5.23";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js?v=1.4.397";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { clearNamedIconCache } from "./data/compendium-utils.js?v=1.4.327";
@@ -119,9 +119,9 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.22";
-import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.22";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.22";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.23";
+import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.23";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.23";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.16";
@@ -272,7 +272,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.5.19";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.5.19";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.396";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.5.22";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.5.23";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.396";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -295,7 +295,7 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.5.22";
+} from "./data/storage-deposit-source.js?v=1.5.23";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.5.19";
 import {
   StorageCommandService,
@@ -318,7 +318,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.5.22";
+} from "./data/storage-command-service.js?v=1.5.23";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.5.22";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
@@ -326,7 +326,7 @@ import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.2";
 import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.2";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.22";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.23";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
@@ -339,8 +339,8 @@ import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.7
 import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.8";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.1";
-import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.22";
-import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.22";
+import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.23";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.23";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
@@ -392,7 +392,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.22";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.23";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.19";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
@@ -430,7 +430,7 @@ import { ALCHEMY_REAGENT_COMMAND, ALCHEMY_REAGENT_RESERVE_COMMAND, ALCHEMY_REAGE
   registerAlchemyReagentSocketCommand } from "./integrations/alchemy-reagent-socket.js?v=1.5.11";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js?v=1.4.377";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.396";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.5.22";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.5.23";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.396";
 import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.4.396";
 import { hasStorageNarrativeCandidates, prepareStorageNarrativeRows } from "./data/storage-narrative-rows.js?v=1.4.396";
@@ -521,7 +521,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.5.7";
+const MODULE_STYLE_VERSION = "1.5.23";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -7628,7 +7628,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.5.22");
+      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.5.23");
       let app = null;
 
       if (!viewer && !newWindow && !templateUuid) {
