@@ -7,12 +7,12 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.5.24`.
+- Версия: `1.5.25`.
 - Черта «Мастер огнестрельного оружия» добавляет количество мест обвесов по текущему бонусу мастерства владельца; дополнительные места показаны сеткой под чертежом. Уже установленные обвесы сохраняются при потере черты или снижении бонуса.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.5.24` загружает только тонкий `scripts/main-1.5.24.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
+- Manifest версии `1.5.25` загружает только тонкий `scripts/main-1.5.25.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
 - `scripts/main.js` — единственный composition root. Ранее опубликованные versioned entrypoint-файлы, включая `scripts/main-1.4.*.js`, сохранены как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Узкий API регистрации panel tools публикуется в `game.modules.get("rebreya-main")?.api` уже на `init`, до первой сборки Scene Controls. Полный runtime API на `ready` публикуется как `game.rebreyaMain` и заменяет module API.
 
@@ -417,6 +417,8 @@ Lootgen: в настройках генерации доступна «Доля 
 - `createGlobalEvent`, `updateGlobalEvent`, `deleteGlobalEvent`, `duplicateGlobalEvent`, `importDefaultGlobalEventTemplates`.
 - `getMaterialByGoodId`, `openMaterialByGoodId`, `openMaterialById`, `openGearById`, `openMagicItemById`, `syncOwnedMagicItems`, `syncEquippedMagicItems`, `openFeatById`, `openBackgroundById`, `openStateById`, `openTradeEntry`.
 - `resolveItemSource(itemOrData, hints={}) -> Promise<Item|null>` — общий read-only поиск исходного Item. Hints: `sourceUuid`, `sourceType`, `sourceId`, `sourceName`. UUID конкретного доступного standalone world/compendium Item имеет приоритет; поиск по ID/имени предпочитает компендиум. Неоднозначность, неполный поиск или отсутствие источника дают `null`. Метод проверяет права текущего пользователя, не открывает sheet и не выполняет мутаций. Display-only `flags.rebreya-main.itemSourceUuid` сохраняется на новых документных импортах и не предоставляет прав на выдачу/перенос.
+
+На вкладке заклинаний dnd5e у персонажа заклинания магического предмета показываются, только когда этот экземпляр находится на кукле героя; записи, действия и заряды предмета не изменяются.
 
 При `initialize()` и `reloadData()` active GM автоматически обновляет managed-компендиум магических предметов и все распознанные копии на character Actor: надетые, настроенные и лежащие в инвентаре. Полный rarity-aware аудит 672 stable catalog rows хранится в [`docs/magic-item-automation-audit.md`](docs/magic-item-automation-audit.md): 233 строки имеют статус `full`, 196 — `partial`, 243 — `manual`. Простые native `+1/+2/+3`, плоские и безопасно проверяемые conditional effects, подтверждённые сопротивления/скорости/зрение и explicit spell/utility/save/attack/heal activities публикуются как `full` либо `partial`; для `partial` manifest точно перечисляет оставшуюся ручную механику, а неоднозначные правила получают явный `manual` reason. Несколько activities одного предмета расходуют общий `system.uses`, когда описание задаёт общий пул; независимые свойства используют отдельные activity resources, а невосстанавливаемые заряды получают пустой recovery-массив. Бонусы, ограниченные заклинаниями конкретного класса, не превращаются в глобальные Active Effects. Кольца характеристик выбирают характеристику через существующий long-rest pipeline; Вечно горящий фонарь включает и выключает свет активных Token с восстановлением прежнего профиля; Жемчужина силы выбирает израсходованную ячейку 1–3 уровня; Медальон затягивающихся ран удваивает лечение Костью Хитов.
 

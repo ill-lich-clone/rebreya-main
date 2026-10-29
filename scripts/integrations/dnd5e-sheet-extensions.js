@@ -1,4 +1,5 @@
 import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
+import { registerMagicItemSpellbookHook } from "./magic-item-spellbook.js?v=1.5.25";
 import {
   DOWNTIME_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
@@ -7435,6 +7436,8 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return;
   }
+
+  registerMagicItemSpellbookHook();
 
   const multiSubclassRegistered = registerCraftsmanMultiSubclassIntegration();
   if (!multiSubclassRegistered && (
