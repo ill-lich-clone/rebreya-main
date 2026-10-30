@@ -1,5 +1,11 @@
 # Equipment Bonuses Implementation Plan
 
+## Согласованная поправка 1.5.30: native Active Effects
+
+1. RED: закрепить видимый enabled transfer effect с тремя native ADD changes для 7×3 фокусировок; обновление owned copies без дублей и потери ручных данных; Item.prepareFinalAttributes больше не оборачивается. Старые sourceClass negative assertions намеренно заменяются по прямому запросу пользователя, а ресурсные assertions сохраняются.
+2. Реализовать через существующие `spellcastingChanges()`/`PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS`/`buildPassiveMagicItemEffect()` и managed projection. Удалить классовый resolver и Item wrapper, сохранить registry/notes и Actor wrapper одежды. Расширить owned sync на character/NPC тем же владельцем.
+3. Обновить актуальный паспорт/README/audit и release 1.5.30, targeted tests, полный Node/JS/JSON/diff check, один read-only review изменённого поведения, scoped commit/push lich_branch. Live Foundry считать проверенным только при доступной авторизованной сессии; не подменять его Node-тестами.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Исправить базовый КД магических доспехов, включить магические оружейные шаблоны для NPC, добавить классовые бонусы семи семейств фокусировок и бонусы механизированной одежды на кукле.
@@ -116,3 +122,7 @@
 3. Выполнить release/focused тесты, полную runtime/JSON проверку, diff review, commit и push в lich_branch. Новых методов или игрового поведения нет.
 
 Проверка поправки 1.5.29: RED release tests — 12 failed до обновления runtime; GREEN release/equipment/armor — 88 passed, 0 failed. Полный `node --test tests/*.test.mjs`: 5355 passed, 0 failed, 1 skipped (прежняя Foundry Handlebars зависимость); `node --check`: 1128 JS/MJS, 0 failed; `ConvertFrom-Json`: 65 JSON, 0 failed; `git diff --check`: 0. Аудит diff подтвердил только замену equipment cache keys, единственный активный entrypoint и сохранённые forwarders 1.5.27/1.5.28.
+
+Review native-AE поправки: Important/Critical замечаний нет; независимый focused run 27 passed/0 failed. Проверены native dnd5e 5.2.5 ключи, equipped/attuned suppression, отсутствие старого Item handler, сохранение Actor wrapper одежды, ручных эффектов/spent/disabled и повторный sync без дубликатов. Исправлена замеченная пустая строка EOF. Live Foundry недоступен: Playwright-профиль занят, MCP Bridge не подключён. Owned migration, как и прежде, перечисляет world actors (`game.actors`); отдельная миграция уже изменённых unlinked scene-token deltas не заявляется.
+
+Итог native-AE поправки 1.5.30: RED 23 failures зафиксировали отсутствие эффекта и второй handler; GREEN focused 153 passed/0 failed. Полный `node --test tests/*.test.mjs`: 5356 passed, 0 failed, 1 skipped (5357 tests, прежняя Foundry Handlebars зависимость). `node --check`: 1129 JS/MJS, 0 failed; `ConvertFrom-Json`: 65 JSON, 0 failed. После исправления EOF повторный node --check владельца и git diff --check прошли без ошибок.

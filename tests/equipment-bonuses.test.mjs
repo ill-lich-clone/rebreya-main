@@ -1,106 +1,100 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isHeldItemEligible } from "../scripts/integrations/held-items.js?v=1.4.383";
-const equipment = await import("../scripts/integrations/equipment-bonuses.js").catch(() => ({}));
-const families = [
-  ["универсальный-инструмент", "artificer", true], ["магический-гримуар", "wizard", true],
-  ["флакон-с-кровью", "sorcerer", false], ["амулет-благочестия", "cleric", false],
-  ["барабан-задающего-ритм", "bard", true], ["лунный-серп", "druid", true],
-  ["жезл-хранителя-договора", "warlock", true]
-];
-function fixture(family, cls, bonus, held = true) {
-  const focus = { id: "focus", type: "equipment", system: { equipped: true, attunement: "required", attuned: true },
-    flags: { "rebreya-main": { magicItemId: `${family}-${bonus}`, heldHands: held ? ["left"] : [] } } };
-  const actor = { type: "character", items: [focus], spellcastingClasses: { [cls]: { system: { identifier: cls } }, other: { system: { identifier: "paladin" } } },
-    flags: { "rebreya-main": {} } };
-  focus.actor = actor;
-  const spell = { type: "spell", actor, system: { sourceClass: cls, activities: new Map() } };
-  return { focus, actor, spell };
-}
+import { MAGIC_ITEMS } from "../magicItem.js";
+import { normalizeMagicItems, createMagicItemData, MagicItemsCompendiumService } from "../scripts/data/magic-items-compendium.js";
+import { buildMagicItemAutomationProjection, buildEmbeddedMagicItemPatch } from "../scripts/data/magic-item-embedded-sync.js";
+import { isHeldItemEligible } from "../scripts/integrations/held-items.js?v=1.5.29";
+import * as equipment from "../scripts/integrations/equipment-bonuses.js";
 
-for (const [family, cls, held] of families) for (const bonus of [1, 2, 3]) {
-  test(`${family} +${bonus} improves only ${cls} spells while active`, () => {
-    assert.equal(typeof equipment.getClassSpellcastingItemBonus, "function");
-    const { focus, spell } = fixture(family, cls, bonus, held);
-    assert.equal(equipment.getClassSpellcastingItemBonus(spell), bonus);
-    spell.system.sourceClass = "other";
-    assert.equal(equipment.getClassSpellcastingItemBonus(spell), 0);
-    spell.system.sourceClass = "";
-    assert.equal(equipment.getClassSpellcastingItemBonus(spell), 0);
-    spell.system.sourceClass = cls;
-    focus.system.attuned = false;
-    assert.equal(equipment.getClassSpellcastingItemBonus(spell), 0);
-    focus.system.attuned = true;
-    focus.system.equipped = false;
-    assert.equal(equipment.getClassSpellcastingItemBonus(spell), family === "флакон-с-кровью" ? bonus : 0);
-    focus.system.equipped = true;
-    if (held) {
-      focus.flags["rebreya-main"].heldHands = [];
-      assert.equal(equipment.getClassSpellcastingItemBonus(spell), 0);
-    }
+globalThis.CONST ??= { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+const families = ["универсальный-инструмент", "магический-гримуар", "флакон-с-кровью", "амулет-благочестия", "барабан-задающего-ритм", "лунный-серп", "жезл-хранителя-договора"];
+function focusData(family, bonus) {
+  const [row] = normalizeMagicItems([MAGIC_ITEMS.find(item => item.id === `${family}-${bonus}`)]);
+  return createMagicItemData(row, new Map());
+}
+const expectedChanges = bonus => [
+  ["system.bonuses.msak.attack", 2, `+${bonus}`],
+  ["system.bonuses.rsak.attack", 2, `+${bonus}`],
+  ["system.bonuses.spell.dc", 2, `+${bonus}`]
+];
+for (const family of families) for (const bonus of [1, 2, 3]) {
+  test(`${family} +${bonus} has a visible native transfer effect for spell attacks and DC`, () => {
+    const data = focusData(family, bonus);
+    assert.equal(data.effects.length, 1);
+    const effect = data.effects[0];
+    assert.deepEqual(effect.changes.map(({key,mode,value}) => [key,mode,value]), expectedChanges(bonus));
+    assert.equal(effect.transfer, true);
+    assert.equal(effect.disabled, false);
+    assert.match(effect.name, new RegExp(`\\+${bonus}`));
+    assert.equal(effect.flags["rebreya-main"].magicItemAutomation, true);
+    assert.equal(data.system.attunement, "required");
   });
 }
 
-test("class bonuses support the canonical reworked sorcerer and ranger, and deduplicate families", () => {
-  assert.equal(typeof equipment.getClassSpellcastingItemBonus, "function");
-  const { focus, actor, spell } = fixture("флакон-с-кровью", "sorcerer-rework-v011", 2, false);
-  assert.equal(equipment.getClassSpellcastingItemBonus(spell), 2);
-  actor.items.push({ ...focus, id: "copy", flags: { "rebreya-main": { magicItemId: "флакон-с-кровью-3" } } });
-  assert.equal(equipment.getClassSpellcastingItemBonus(spell), 3);
-  const ranger = fixture("лунный-серп", "ranger", 1);
-  assert.equal(equipment.getClassSpellcastingItemBonus(ranger.spell), 1);
-  ranger.actor.spellcastingClasses.ranger.system.identifier = "unknown";
-  assert.equal(equipment.getClassSpellcastingItemBonus(ranger.spell), 0);
+test("owned focus receives one native effect without losing manual data or duplicating it on sync", () => {
+  const pack = focusData("универсальный-инструмент", 2);
+  const projection = buildMagicItemAutomationProjection(pack);
+  const manual = { _id: "manual", name: "Мой эффект", changes: [{ key: "system.attributes.ac.bonus", mode: 2, value: "3" }], flags: {} };
+  const item = { _id: "owned", type: "equipment", name: "Мой инструмент", effects: [manual],
+    system: { equipped: false, attunement: "optional", attuned: true, quantity: 2, description: { value: "Мой текст" }, activities: {}, uses: { ...pack.system.uses, spent: 1 } },
+    flags: { "rebreya-main": { magicItemId: "универсальный-инструмент-2", magicItemAutomation: { kind: "class-spellcasting" } } } };
+  const before = structuredClone(item);
+  const resolution = { status: "resolved", magicItemId: "универсальный-инструмент-2" };
+  const patch = buildEmbeddedMagicItemPatch(item, projection, resolution);
+  assert.equal(patch.status, "updated");
+  assert.equal(patch.update.effects.length, 2);
+  assert.deepEqual(patch.update.effects.find(effect => effect._id === "manual"), manual);
+  assert.deepEqual(patch.update.effects.find(effect => effect._id !== "manual").changes.map(({key,mode,value}) => [key,mode,value]), expectedChanges(2));
+  assert.equal(patch.update.system.uses.spent, 1);
+  for (const field of ["equipped", "attunement", "quantity", "description"]) assert.equal(Object.hasOwn(patch.update.system, field), false);
+  assert.deepEqual(item, before);
+  const updated = { ...item, ...patch.update, system: { ...item.system, ...patch.update.system } };
+  assert.equal(buildEmbeddedMagicItemPatch(updated, projection, resolution).status, "unchanged");
+  updated.effects.find(effect => effect._id !== "manual").disabled = true;
+  assert.equal(buildEmbeddedMagicItemPatch(updated, projection, resolution).status, "unchanged", "native effect toggle survives managed sync");
 });
 
-test("native preparation includes scoped attack and DC bonuses without source writes or accumulation", () => {
-  assert.equal(typeof equipment.registerEquipmentBonusPatches, "function");
-  const { spell, focus } = fixture("магический-гримуар", "wizard", 2);
-  const attack = { type: "attack", attack: { flat: false, bonus: "@custom + 1d4" }, labels: {} };
-  const save = { type: "save", save: { dc: { calculation: "spellcasting", bonus: "+1", formula: "" } }, labels: {} };
-  const fixed = { type: "save", save: { dc: { calculation: "", formula: "17", value: 17 } }, labels: {} };
-  const flat = { type: "attack", attack: { flat: true, bonus: "7" }, labels: {} };
-  spell.system.activities = new Map([['a', attack], ['s', save], ['f', fixed], ['flat', flat]]);
-  class Item5e {
-    prepareFinalAttributes() {
-      save.save.dc.value ??= 13;
-      save.save.dc.value += Number(Function(`return (${save.save.dc.bonus})`)());
-      attack.labels.toHit = attack.attack.bonus;
-      save.labels.save = String(save.save.dc.value);
-      return "prepared";
-    }
-  }
-  Object.setPrototypeOf(spell, Item5e.prototype);
-  spell._source = { system: { activities: { a: structuredClone(attack), s: structuredClone(save) } } };
-  const source = structuredClone(spell._source);
-  const config = { Item: { documentClass: Item5e }, Actor: { dataModels: {} } };
-  const options = { CONFIG: config, game: { system: { id: "dnd5e" } } };
-  equipment.registerEquipmentBonusPatches(options);
-  equipment.registerEquipmentBonusPatches(options);
-  assert.equal(spell.prepareFinalAttributes(), "prepared");
-  const augmented = attack.attack.bonus;
-  assert.ok(augmented.includes("@custom + 1d4"));
-  assert.match(augmented, /2/);
-  assert.equal(save.save.dc.value, 16);
-  assert.equal(save.labels.save, "16");
-  spell.prepareFinalAttributes();
-  assert.equal(attack.attack.bonus, augmented);
-  assert.equal(save.save.dc.value, 16);
-  focus.system.equipped = false;
-  spell.prepareFinalAttributes();
-  assert.equal(attack.attack.bonus, "@custom + 1d4");
-  assert.equal(save.save.dc.value, 14);
-  assert.equal(fixed.save.dc.value, 17);
-  assert.equal(flat.attack.bonus, "7");
-  assert.deepEqual(spell._source, source);
-  assert.deepEqual(equipment.registerEquipmentBonusPatches({ CONFIG: config, game: { system: { id: "other" } } }), { item: false, actors: [] });
+test("ordinary spell preparation remains native and receives no second handler bonus", () => {
+  const actor = { type: "character", spellcastingClasses: { wizard: { system: { identifier: "wizard" } } }, items: [{ id: "focus", type: "equipment", system: { equipped: true, attuned: true }, flags: { "rebreya-main": { magicItemId: "магический-гримуар-2", heldHands: ["left"] } } }] };
+  class Item5e { prepareFinalAttributes() { return "native"; } }
+  const spell = new Item5e();
+  Object.assign(spell, { type: "spell", actor, system: { sourceClass: "wizard", activities: new Map([["attack", { type: "attack", attack: { bonus: "@custom", flat: false } }], ["save", { type: "save", save: { dc: { calculation: "spellcasting", bonus: "", value: 14 } } }]]) } });
+  equipment.registerEquipmentBonusPatches({ CONFIG: { Item: { documentClass: Item5e } }, game: { system: { id: "dnd5e" } } });
+  assert.equal(spell.prepareFinalAttributes(), "native");
+  assert.equal(spell.system.activities.get("attack").attack.bonus, "@custom");
+  assert.equal(spell.system.activities.get("save").save.dc.bonus, "");
+  assert.equal(spell.system.activities.get("save").save.dc.value, 14);
 });
 
-test("the transformed universal tool remains eligible for the existing held-item controls", () => {
-  const { focus } = fixture("универсальный-инструмент", "artificer", 1);
-  focus.type = "tool";
-  focus.flags["rebreya-main"].magicToolTemplate = true;
-  assert.equal(isHeldItemEligible(focus), true);
+test("active GM sync writes native spellcasting effects to an existing NPC focus", async () => {
+  const packData = focusData("магический-гримуар", 1);
+  const item = { _id: "npcFocus", id: "npcFocus", type: "equipment", name: packData.name,
+    system: { equipped: true, attunement: "required", attuned: true, quantity: 1, activities: {} }, effects: [],
+    flags: { "rebreya-main": { sourceType: "magicItem", magicItemId: "магический-гримуар-1" } },
+    toObject() { return structuredClone({ _id: this._id, type: this.type, name: this.name, system: this.system, flags: this.flags, effects: this.effects }); } };
+  const actor = { id: "npc", name: "Маг", type: "npc", items: { contents: [item] },
+    async updateEmbeddedDocuments(type, updates) {
+      assert.equal(type, "Item");
+      assert.equal(updates.length, 1);
+      const update = updates[0];
+      item.effects = structuredClone(update.effects);
+      item.flags = structuredClone(update.flags);
+      item.system = { ...item.system, ...structuredClone(update.system) };
+      return [item];
+    } };
+  item.actor = actor;
+  const pack = { async getDocuments() { return [{ toObject: () => structuredClone(packData) }]; } };
+  const service = new MagicItemsCompendiumService({ gameProvider: () => ({ system: { id: "dnd5e" }, actors: { contents: [actor] }, packs: new Map([["world.rebreya-magic-items", pack]]) }), isActiveGm: () => true });
+  service.sync = async () => pack;
+  const report = await service.syncOwnedMagicItems({ reportToConsole: false });
+  assert.deepEqual(report.errors, []);
+  assert.equal(report.updated.length, 1);
+  assert.deepEqual(item.effects[0].changes.map(({key,mode,value}) => [key,mode,value]), expectedChanges(1));
+  assert.equal((await service.syncOwnedMagicItems({ reportToConsole: false })).updated.length, 0);
+});
+
+test("the transformed universal tool keeps its existing held-item controls", () => {
+  assert.equal(isHeldItemEligible({ type: "tool", flags: { "rebreya-main": { magicItemId: "универсальный-инструмент-1", magicToolTemplate: true } } }), true);
 });
 
 function clothingFixture() {

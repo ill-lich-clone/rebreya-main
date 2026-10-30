@@ -1042,7 +1042,7 @@ test("owned sync plans detached rows, isolates writes, continues after item erro
     "dryRun", "actorsScanned", "itemsScanned", "updated", "unchanged",
     "unresolved", "unresolvedChoices", "skipped", "errors"
   ]);
-  assert.equal(preview.actorsScanned, 2);
+  assert.equal(preview.actorsScanned, 3);
   assert.equal(preview.itemsScanned, 4);
   assert.equal(preview.updated.length, 3);
   assert.equal(preview.skipped.some((row) => row.itemId === "deferred-owned" && row.reason === "deferred-current-iteration"), true);

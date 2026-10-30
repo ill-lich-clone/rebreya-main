@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.5.29";
+} from "./magic-item-embedded-sync.js?v=1.5.30";
 import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
@@ -24,7 +24,7 @@ import {
 } from "./item-classification.js?v=1.5.29";
 import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.21";
 import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.29";
-import { getClassSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.29";
+import { SPELLCASTING_ITEM_FAMILIES, getSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.30";
 import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toNumber
@@ -38,8 +38,8 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 11;
-const MAGIC_ITEM_AUTOMATION_VERSION = 5;
+const MAGIC_TEMPLATE_VERSION = 12;
+const MAGIC_ITEM_AUTOMATION_VERSION = 6;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
   name,
@@ -1922,15 +1922,16 @@ for (const [family, options] of [
   }
 }
 
-for (const family of [
-  "амулет-благочестия",
-  "барабан-задающего-ритм",
-  "лунный-серп",
-  "универсальный-инструмент",
-  "жезл-хранителя-договора"
-]) {
+for (const family of Object.keys(SPELLCASTING_ITEM_FAMILIES)) {
   for (const bonus of [1, 2, 3]) {
-    PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.delete(`${family}-${bonus}`);
+    PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.set(`${family}-${bonus}`, {
+      suffix: `${family}-spellcasting-${bonus}`,
+      label: "Бонусы заклинаний",
+      partial: true,
+      changes: spellcastingChanges(bonus),
+      description: `+${bonus} к атакам заклинаниями и Сл заклинаний всех классов.`,
+      flags: { [MODULE_ID]: { nativeSpellcastingBonus: true } }
+    });
   }
 }
 
@@ -2978,16 +2979,16 @@ function resolveMagicItemAutomationDefinition(item) {
   const chargedDefinition = CHARGED_MAGIC_ITEM_SPELLS[itemId] ?? null;
   const utilityDefinition = MAGIC_ITEM_UTILITY_DEFINITIONS[itemId] ?? null;
   const externalDefinition = EXTERNAL_MAGIC_ITEM_AUTOMATION_DEFINITIONS.get(itemId) ?? null;
-  const spellcasting = getClassSpellcastingItemDefinition(itemId);
+  const spellcasting = getSpellcastingItemDefinition(itemId);
 
   if (spellcasting) {
     return {
       version: MAGIC_ITEM_AUTOMATION_VERSION,
-      kind: "class-spellcasting",
+      kind: chargedDefinition || utilityDefinition ? "passive-and-activities" : "passive",
       coverage: "partial",
       ...spellcasting,
       sharedUses: buildDawnUses(chargedDefinition?.uses ?? utilityDefinition?.uses ?? null),
-      note: `Бонус +${spellcasting.bonus} к атаке и Сл только заклинаний своего класса автоматизирован через sourceClass, при настройке и ${spellcasting.held ? "удержании в руке" : spellcasting.carried ? "наличии предмета при себе" : "ношении"}. ${spellcasting.manual}`
+      note: `Обычный ActiveEffect даёт +${spellcasting.bonus} к атакам заклинаниями и Сл заклинаний всех классов; equipped/attuned обрабатывает dnd5e. ${spellcasting.manual}`
     };
   }
 
@@ -3217,7 +3218,7 @@ function buildMagicItemAutomationEffects(item) {
       buildPassiveMagicItemEffect({
         id: buildMagicItemEffectId(item, passiveDefinition.suffix),
         name: `${item?.name}: ${passiveDefinition.label}`,
-        description: item?.description,
+        description: passiveDefinition.description ?? item?.description,
         changes: passiveDefinition.changes,
         flags: passiveDefinition.flags ?? {}
       })
@@ -3737,7 +3738,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null, act
   const descriptionHtml = buildDescriptionHtml(item, classification);
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const systemData = buildSystemData(item, classification, descriptionHtml);
-  if (getClassSpellcastingItemDefinition(item.id)) systemData.attunement = "required";
+  if (getSpellcastingItemDefinition(item.id)) systemData.attunement = "required";
   const armorProfile = classification.documentType === "equipment"
     ? resolveMagicArmorProfile(item, activityOptions.gear) : null;
   if (armorProfile) {
@@ -4389,7 +4390,7 @@ export class MagicItemsCompendiumService {
     for (const actor of actors) {
       const actorId = String(actor?.id ?? actor?._id ?? "");
       const actorName = String(actor?.name ?? "");
-      if (actor?.type !== "character") {
+      if (!["character", "npc"].includes(actor?.type)) {
         report.skipped.push({ actorId, actorName, itemId: "", itemName: "", reason: "unsupported-actor-type" });
         continue;
       }

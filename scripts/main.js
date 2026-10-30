@@ -24,7 +24,7 @@ import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.29";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
 import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.14";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.26";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.29";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.30";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.22";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
@@ -394,7 +394,7 @@ import {
   registerRebreyaWeaponBaseItemsFromGearPack
 } from "./integrations/dnd5e-sheet-extensions.js?v=1.5.25";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.19";
-import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.29";
+import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.30";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   patchDurabilityItemEffectSuppression,

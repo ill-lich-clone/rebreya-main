@@ -802,9 +802,9 @@ test("magic item compendium projects the approved passive automation matrix", ()
       true,
       item.id
     );
-    assert.equal(created.flags["rebreya-main"].magicItemAutomation.version, 5, item.id);
+    assert.equal(created.flags["rebreya-main"].magicItemAutomation.version, 6, item.id);
     const signature = JSON.parse(created.flags["rebreya-main"].signature);
-    assert.equal(signature.magicItemAutomation.version, 5, item.id);
+    assert.equal(signature.magicItemAutomation.version, 6, item.id);
     assert.deepEqual(signature.magicItemAutomation.effects, created.effects, item.id);
   }
 
@@ -957,7 +957,7 @@ test("magic item compendium uses native magical bonuses without duplicate effect
   }
 });
 
-test("magic item compendium projects only unconditional flat spellcasting bonuses", () => {
+test("magic item compendium projects native spellcasting bonuses for all classes", () => {
   const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
 
   for (const bonus of [1, 2, 3]) {
@@ -985,7 +985,7 @@ test("magic item compendium projects only unconditional flat spellcasting bonuse
         key === "system.bonuses.msak.attack"
         || key === "system.bonuses.rsak.attack"
         || key === "system.bonuses.spell.dc"
-      ))), false, itemId);
+      ))), true, itemId);
     }
   }
 });
@@ -1936,7 +1936,7 @@ test("second-pass partial manifest notes name the exact manual remainder", () =>
   assert.match(byId.get("корона-бехолдеров-белаширры").reason, /симбиот|настрой/iu);
 });
 
-test("class-restricted spellcasting items keep their safe utility resources without global bonuses", () => {
+test("native spellcasting item effects keep their existing utility resources", () => {
   const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
   const expected = new Map([
     ["амулет-благочестия-2", ["Божественный канал без расхода", "dawn"]],
@@ -1952,7 +1952,7 @@ test("class-restricted spellcasting items keep their safe utility resources with
       key.startsWith("system.bonuses.msak")
       || key.startsWith("system.bonuses.rsak")
       || key === "system.bonuses.spell.dc"
-    ))), false, itemId);
+    ))), true, itemId);
     assert.equal(Object.values(created.system.activities).some(({ name }) => name === activityName), true, itemId);
     assert.equal(created.system.uses.recovery[0]?.period, recoveryPeriod, itemId);
   }

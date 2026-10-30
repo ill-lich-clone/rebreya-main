@@ -488,6 +488,10 @@ function mergeEffects(existingEffects, projectedEffects) {
   const unmanagedKeys = new Set(unmanaged.flatMap((effect) => [...effectKeys(effect)]));
   for (const projectedEffect of projectedEffects) {
     const nextEffect = cloneValue(projectedEffect);
+    if (getModuleFlags(nextEffect).nativeSpellcastingBonus === true) {
+      const previous = existingEffects.find(effect => effect._id === nextEffect._id && isManagedAutomation(effect));
+      if (typeof previous?.disabled === "boolean") nextEffect.disabled = previous.disabled;
+    }
     const projectedChanges = Array.isArray(nextEffect?.changes) ? nextEffect.changes : [];
     nextEffect.changes = projectedChanges.filter((change) => (
       !unmanagedKeys.has(cleanText(change?.key))
