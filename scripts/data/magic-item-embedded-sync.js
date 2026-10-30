@@ -475,6 +475,7 @@ export function buildMagicItemAutomationProjection(packItem) {
     signature: cleanText(flags.signature),
     catalogAttunement: cleanText(flags.attunement),
     automationDefinition: cloneValue(flags.magicItemAutomation ?? null),
+    ...(flags.magicArmorProfile ? { armorProfile: cloneValue(flags.magicArmorProfile) } : {}),
     effects,
     activities,
     uses: cloneValue(source?.system?.uses ?? null)
@@ -560,6 +561,20 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   );
 
   const system = supportsActivities ? { activities } : {};
+  const armorProfile = resolution.armorProfile ?? projection?.armorProfile;
+  const selectedGearId = getModuleFlags(itemSource).magicEquipmentGearId;
+  const currentBase = cleanText(itemSource?.system?.type?.baseItem);
+  const armorChanged = itemType === "equipment"
+    && Number(itemSource?.system?.armor?.value ?? 0) === 0
+    && armorProfile?.armor?.value > 0
+    && (!selectedGearId || selectedGearId === armorProfile.gearId)
+    && (!currentBase || currentBase === armorProfile.baseItem || selectedGearId === armorProfile.gearId);
+  if (armorChanged) {
+    system.armor = cloneValue(armorProfile.armor);
+    system.type = { value: armorProfile.type, baseItem: armorProfile.baseItem ?? currentBase };
+    system.strength = armorProfile.strength;
+    system.properties = [...new Set([...(itemSource?.system?.properties ?? []), ...armorProfile.properties])];
+  }
   if (supportsActivities && projection?.uses) {
     system.uses = cloneValue(projection.uses);
     system.uses.spent = itemSource?.system?.uses?.spent ?? system.uses.spent;
@@ -593,7 +608,7 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
       : false
     : Object.hasOwn(system, "-=uses");
   const flagsChanged = !sameValue(flags, existingFlags);
-  if (!effectsChanged && !activitiesChanged && !usesChanged && !flagsChanged) {
+  if (!effectsChanged && !activitiesChanged && !usesChanged && !flagsChanged && !armorChanged) {
     return { status: "unchanged" };
   }
 

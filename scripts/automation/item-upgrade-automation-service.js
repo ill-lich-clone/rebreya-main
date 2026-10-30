@@ -10,7 +10,7 @@ import { readWeaponMods } from "../data/weapon-mod-rules.js?v=1.5.23";
 import { buildWeaponModContributions, projectWeaponModItem } from "./weapon-mod-projections.js?v=1.4.383";
 import { getWeaponModAimState, evaluateWeaponModAttack } from "./weapon-mod-roll-modifiers.js?v=1.4.397";
 import { buildWeaponModActivities, buildWeaponModBayonetProfile, reconcileWeaponModActivities } from "../data/weapon-mod-activities.js?v=1.5.23";
-import { getItemHeldHands } from "../integrations/held-items.js?v=1.4.383";
+import { getItemHeldHands } from "../integrations/held-items.js?v=1.5.27";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { storageTokenCenter } from "../data/storage-access.js";
 

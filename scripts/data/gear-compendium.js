@@ -17,7 +17,7 @@ import {
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js?v=1.4.292";
+} from "./item-classification.js?v=1.5.27";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { getManagedIconProjection, syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {
@@ -37,7 +37,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 27;
+const GEAR_TEMPLATE_VERSION = 28;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const STORAGE_COIN_DENOMINATION_BY_NAME = Object.freeze({
@@ -458,7 +458,10 @@ function buildMetadataRows(item, classification) {
 
 function buildDescriptionHtml(item, classification) {
   const metadataRows = buildMetadataRows(item, classification);
-  const descriptionText = String(item.description ?? "").trim();
+  const rawDescription = String(item.description ?? "").trim();
+  const descriptionText = isMechanizedClothing(item)
+    ? rawDescription.replace(/увеличивается на 2(?=\. Например, с 15 до 16)/u, "увеличивается на 1")
+    : rawDescription;
 
   return `
     <section class="rebreya-gear-item">
@@ -1537,3 +1540,4 @@ export class GearCompendiumService {
     return document;
   }
 }
+import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.27";

@@ -25,7 +25,7 @@ import {
   getItemHeldHands,
   isNaturalWeapon,
   hasDistinctHeldItemsInDifferentHands
-} from "../integrations/held-items.js?v=1.4.383";
+} from "../integrations/held-items.js?v=1.5.27";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";

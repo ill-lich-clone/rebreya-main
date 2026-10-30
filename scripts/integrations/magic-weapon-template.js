@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
-import { buildGearIconLookup, createDnd5eItemData } from "../data/gear-compendium.js?v=1.5.26";
-import { classifyGearEntry } from "../data/item-classification.js";
+import { buildGearIconLookup, createDnd5eItemData } from "../data/gear-compendium.js?v=1.5.27";
+import { classifyGearEntry } from "../data/item-classification.js?v=1.5.27";
 
 let magicWeaponTemplateHookRegistered = false;
 const pendingMagicWeaponTemplateItemKeys = new Set();
@@ -157,7 +157,7 @@ function getOwnedActor(item) {
 }
 
 function isCharacterOwnedItem(item) {
-  return getOwnedActor(item)?.type === "character";
+  return ["character", "npc"].includes(getOwnedActor(item)?.type);
 }
 
 function normalizeUsers(users) {
@@ -1683,7 +1683,7 @@ export async function handleActorRenderMagicWeapons(
     ammunitionPrompt = promptMagicAmmunitionTemplate,
   } = {},
 ) {
-  if (actor?.type !== "character" || !canPromptForActor(actor)) {
+  if (!["character", "npc"].includes(actor?.type) || !canPromptForActor(actor)) {
     return false;
   }
 
@@ -1757,6 +1757,9 @@ export function registerMagicWeaponTemplateHook(moduleApi, { Hooks = globalThis.
     "renderActorSheet5eCharacter2",
     "renderActorSheet5eCharacter",
     "renderCharacterActorSheet",
+    "renderNPCActorSheet",
+    "renderActorSheet5eNPC",
+    "renderActorSheet5eNPC2",
   ]) {
     Hooks.on(hookName, repairActorSheetMagicWeapons);
   }

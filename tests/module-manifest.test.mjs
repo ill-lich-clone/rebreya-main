@@ -9,7 +9,7 @@ test("player sync owners share the released cache key at every runtime import", 
   const seen = new Set();
   for (const { path, source } of await readJavaScriptTree("../scripts/")) {
     for (const [, specifier, owner] of source.matchAll(/["']([^"'\n]*\/(hero-doll-service|socket-command-bus|socket-command-scheduling|privileged-mutation-gateway|ui-refresh-coordinator)\.js(?:\?[^"'\n]*)?)["']/gu)) {
-      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.4" : "1.5.3", `${path}: ${specifier}`);
+      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.27" : "1.5.3", `${path}: ${specifier}`);
       seen.add(owner);
     }
   }
@@ -53,7 +53,7 @@ test("clock and inventory runtime owners each share one canonical module URL", a
   }
   assert.ok(imports >= 12);
   for(const [owner,keys] of cacheKeys)assert.deepEqual(keys,new Set([
-    owner === "inventory-app.js" ? "1.5.20" : ["inventory-service.js", "inventory-sync.js"].includes(owner) ? "1.5.19" : owner === "group-context-service.js" ? "1.5.17" : "1.4.377"
+    owner === "inventory-app.js" ? "1.5.20" : ["inventory-service.js"].includes(owner) ? "1.5.27" : owner === "inventory-sync.js" ? "1.5.19" : owner === "group-context-service.js" ? "1.5.17" : "1.4.377"
   ]),owner);
 });
 
@@ -363,7 +363,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.327",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.5.19",
+    "data/inventory-service.js?v=1.5.27",
     "data/inventory-ingress-descriptor.js?v=1.4.396",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.5.19",
@@ -375,7 +375,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.5.19",
     "integrations/inventory-sync.js?v=1.5.19",
-    "data/gear-compendium.js?v=1.5.26",
+    "data/gear-compendium.js?v=1.5.27",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.5.19",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
@@ -638,9 +638,9 @@ test("module entrypoint cache-busts the shared magic weapon icon graph", async (
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
   assert.match(
     entrypointSource,
-    /magic-weapon-template\.js\?v=1\.4\.327/u,
+    /magic-weapon-template\.js\?v=1\.5\.27/u,
   );
-  assert.match(templateSource, /data\/gear-compendium\.js\?v=1\.5\.26/u);
+  assert.match(templateSource, /data\/gear-compendium\.js\?v=1\.5\.27/u);
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
@@ -649,7 +649,7 @@ test("gear compendium import uses the current clothing projection cache bust", a
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.5\.26/u,
+    /gear-compendium\.js\?v=1\.5\.27/u,
   );
 });
 
@@ -770,11 +770,11 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     sheetSource,
-    /held-items\.js\?v=1\.4\.383/u,
+    /held-items\.js\?v=1\.5\.27/u,
   );
   assert.match(
     attackSource,
-    /held-items\.js\?v=1\.4\.383/u,
+    /held-items\.js\?v=1\.5\.27/u,
   );
 });
 
@@ -787,7 +787,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.5\.21/u
+    /magic-items-compendium\.js\?v=1\.5\.27/u
   );
   assert.match(
     entrypointSource,
@@ -795,7 +795,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
   );
   assert.match(
     compendiumSource,
-    /magic-item-embedded-sync\.js\?v=1\.5\.21/u
+    /magic-item-embedded-sync\.js\?v=1\.5\.27/u
   );
   assert.match(compendiumSource, /magicItem\.js\?v=1\.5\.21/u);
 });

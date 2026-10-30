@@ -16,7 +16,7 @@ import {
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
-import { buildSlug } from "./item-classification.js";
+import { buildSlug } from "./item-classification.js?v=1.5.27";
 
 const PACK_ID = `world.${STATES_COMPENDIUM_NAME}`;
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;

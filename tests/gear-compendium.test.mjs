@@ -19,6 +19,14 @@ import {
 } from "../scripts/integrations/dnd5e-sheet-extensions.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
+test("mechanized clothing exposes the clothing slot and the explicit 15 to 16 rule", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "../data/gear.json"), "utf8"));
+  const item = gear.find(row => row.id === "mekhanizirovannaya-odezhda");
+  const data = createDnd5eItemData(item, new Map());
+  assert.deepEqual(data.flags["rebreya-main"].heroDollSlots, ["clothing"]);
+  assert.match(data.system.description.value, /15.*16/u);
+  assert.doesNotMatch(data.system.description.value, /увеличивается на 2/u);
+});
 const EQUIPMENT_PACK_CONTENTS = {
   "nabor-artista": [
     ["spal-nik", 1],

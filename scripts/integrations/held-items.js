@@ -498,7 +498,9 @@ export function isItemEquipped(item) {
 }
 
 export function isHeldItemEligible(item) {
-  return HELD_ITEM_ELIGIBLE_TYPES.has(String(item?.type ?? "")) && !isNaturalWeapon(item);
+  const magicTool = item?.type === "tool" && getDocumentFlag(item, "magicToolTemplate") === true
+    && /^универсальный-инструмент-[123]$/u.test(String(getDocumentFlag(item, "magicItemId") ?? ""));
+  return (HELD_ITEM_ELIGIBLE_TYPES.has(String(item?.type ?? "")) || magicTool) && !isNaturalWeapon(item);
 }
 
 export function canHoldItemInTwoHands(item) {

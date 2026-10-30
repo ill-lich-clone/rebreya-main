@@ -16,7 +16,7 @@ import {
 } from "./compendium-utils.js?v=1.4.327";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildSlug } from "./item-classification.js";
+import { buildSlug } from "./item-classification.js?v=1.5.27";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
 import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.4.317";
 import { loadGlossaryReferenceDefinitions } from "./glossary-compendium.js?v=1.4.317";

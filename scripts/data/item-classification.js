@@ -911,7 +911,7 @@ export function classifyGearEntry(item = {}) {
         systemTypeSubtype: "",
         baseItem: "",
         folderPath: "Снаряжение/Одежда",
-        heroDollSlots: buildHeroDollSlots(explicitSlots, inferSlotsFromName(item.name, ["chest"])),
+        heroDollSlots: isMechanizedClothing(item) ? ["clothing"] : buildHeroDollSlots(explicitSlots, inferSlotsFromName(item.name, ["chest"])),
         firearmClass: "",
         sourceCategory: equipmentType || "Снаряжение"
       };
@@ -1158,3 +1158,4 @@ export function classifyMagicItem(item = {}) {
   };
 }
 
+import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.27";

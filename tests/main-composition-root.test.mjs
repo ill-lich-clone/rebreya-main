@@ -53,10 +53,10 @@ test("current release reuses the catalog icon cache graph", async () => {
   assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.28.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
-  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.19/u);
+  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.27/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.5\.23/u);
   assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.5\.19/u);
-  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.5\.19/u);
+  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.5\.27/u);
   assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.5\.19/u);
   assert.match(serviceSource, /gear-icon-resolver\.js\?v=1\.4\.327/u);
   assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.5\.20/gu)?.length ?? 0, 3);
@@ -65,7 +65,7 @@ test("current release reuses the catalog icon cache graph", async () => {
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    const cacheVersion = name === "feats-compendium" ? "1\\.5\\.22" : name === "gear-compendium" ? "1\\.5\\.26" : name === "magic-items-compendium" ? "1\\.5\\.21" : "1\\.4\\.330";
+    const cacheVersion = name === "feats-compendium" ? "1\\.5\\.22" : ["gear-compendium", "magic-items-compendium"].includes(name) ? "1\\.5\\.27" : "1\\.4\\.330";
     assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=${cacheVersion}`, "u"));
   }
   assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.327/u);
@@ -549,7 +549,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.5\.19/u,
+    /\.\/data\/inventory-service\.js\?v=1\.5\.27/u,
     "inventory-service cache key must change with the catalog icon workflow"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.5.21";
+} from "./magic-item-embedded-sync.js?v=1.5.27";
 import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
@@ -21,8 +21,10 @@ import {
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js";
+} from "./item-classification.js?v=1.5.27";
 import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.21";
+import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.27";
+import { getClassSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.27";
 import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toNumber
@@ -36,8 +38,8 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 10;
-const MAGIC_ITEM_AUTOMATION_VERSION = 4;
+const MAGIC_TEMPLATE_VERSION = 11;
+const MAGIC_ITEM_AUTOMATION_VERSION = 5;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
   name,
@@ -2976,6 +2978,18 @@ function resolveMagicItemAutomationDefinition(item) {
   const chargedDefinition = CHARGED_MAGIC_ITEM_SPELLS[itemId] ?? null;
   const utilityDefinition = MAGIC_ITEM_UTILITY_DEFINITIONS[itemId] ?? null;
   const externalDefinition = EXTERNAL_MAGIC_ITEM_AUTOMATION_DEFINITIONS.get(itemId) ?? null;
+  const spellcasting = getClassSpellcastingItemDefinition(itemId);
+
+  if (spellcasting) {
+    return {
+      version: MAGIC_ITEM_AUTOMATION_VERSION,
+      kind: "class-spellcasting",
+      coverage: "partial",
+      ...spellcasting,
+      sharedUses: buildDawnUses(chargedDefinition?.uses ?? utilityDefinition?.uses ?? null),
+      note: `Бонус +${spellcasting.bonus} к атаке и Сл только заклинаний своего класса автоматизирован через sourceClass, при настройке и ${spellcasting.held ? "удержании в руке" : spellcasting.carried ? "наличии предмета при себе" : "ношении"}. ${spellcasting.manual}`
+    };
+  }
 
   if (externalDefinition) {
     return {
@@ -3575,6 +3589,7 @@ function buildMagicSignature(item, activityOptions = {}) {
   const magicItemAutomationEffects = buildMagicItemAutomationEffects(item);
   return JSON.stringify({
     templateVersion: MAGIC_TEMPLATE_VERSION,
+    armorProfile: resolveMagicArmorProfile(item, activityOptions.gear),
     id: item.id,
     name: item.name,
     type: item.type,
@@ -3722,6 +3737,15 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null, act
   const descriptionHtml = buildDescriptionHtml(item, classification);
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const systemData = buildSystemData(item, classification, descriptionHtml);
+  if (getClassSpellcastingItemDefinition(item.id)) systemData.attunement = "required";
+  const armorProfile = classification.documentType === "equipment"
+    ? resolveMagicArmorProfile(item, activityOptions.gear) : null;
+  if (armorProfile) {
+    systemData.type = { value: armorProfile.type, baseItem: armorProfile.baseItem };
+    systemData.armor = { ...armorProfile.armor };
+    systemData.strength = armorProfile.strength;
+    systemData.properties = [...new Set([...systemData.properties, ...armorProfile.properties])];
+  }
   const magicItemActivities = buildMagicItemActivities(item, activityOptions);
 
   const nativeMagicBonus = NATIVE_MAGIC_ITEM_BONUSES.get(String(item?.id ?? "").trim());
@@ -3776,6 +3800,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null, act
         sourceType: "magicItem",
         magicItemId: item.id,
         signature: buildMagicSignature(item, activityOptions),
+        magicArmorProfile: armorProfile,
         rarity: item.rarity,
         itemType: item.itemType,
         itemSubtype: item.itemSubtype,
@@ -3969,7 +3994,8 @@ export class MagicItemsCompendiumService {
     isActiveGm = isActiveGmClient,
     promptSpellSlot = null,
     promptAbilityChoice = null,
-    placementPreview = null
+    placementPreview = null,
+    gearProvider = async () => []
   } = {}) {
     this.gameProvider = gameProvider;
     this.consoleProvider = consoleProvider;
@@ -3978,6 +4004,8 @@ export class MagicItemsCompendiumService {
     this.promptSpellSlot = promptSpellSlot;
     this.promptAbilityChoice = promptAbilityChoice;
     this.placementPreview = placementPreview;
+    this.gearProvider = gearProvider;
+    this.gear = [];
   }
 
   registerLongRestSteps(pipeline) {
@@ -4252,7 +4280,9 @@ export class MagicItemsCompendiumService {
     }
 
     const normalizedItems = normalizeMagicItems(items);
+    this.gear = await this.gearProvider();
     const activityOptions = {
+      gear: this.gear,
       cprAntagonizeUuid: await resolveOptionalCprSpellUuid(game, "Antagonize")
     };
     const pack = await ensurePack();
@@ -4403,7 +4433,9 @@ export class MagicItemsCompendiumService {
           report.unresolved.push({ ...row, reason: "automation-projection-not-found" });
           continue;
         }
-        const merge = buildEmbeddedMagicItemPatch(item, projection, resolution);
+        const catalogItem = MAGIC_ITEMS.find(row => row.id === resolution.magicItemId);
+        const armorProfile = resolveMagicArmorProfile({ ...catalogItem, flags: item.flags }, this.gear);
+        const merge = buildEmbeddedMagicItemPatch(item, projection, { ...resolution, armorProfile });
         if (merge.status === "unresolved") {
           report.unresolved.push({ ...row, reason: merge.reason });
           continue;

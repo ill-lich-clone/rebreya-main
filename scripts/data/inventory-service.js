@@ -6906,7 +6906,8 @@ export class InventoryService {
         const weightSnapshot = buildActorInventoryWeightSnapshot(actorDocument);
         const inventoryWeight = weightSnapshot.weightLb;
         const effectiveStrength = memberState.strOverride ?? getActorStrength(actorDocument);
-        const capacityMultiplier = memberState.capModOverride ?? state.defaultCapMod;
+        const capacityMultiplier = (memberState.capModOverride ?? state.defaultCapMod)
+          + getMechanizedClothingBonuses(actorDocument).capacityMultiplierBonus;
         const legacyCapacityLb = memberState.role === "transport"
           ? roundNumber(memberState.capBonusLb, 2)
           : roundNumber((effectiveStrength * capacityMultiplier) + memberState.capBonusLb, 2);
@@ -10152,3 +10153,4 @@ export class InventoryService {
 }
 
 
+import { getMechanizedClothingBonuses } from "./mechanized-clothing.js?v=1.5.27";

@@ -825,9 +825,9 @@ test("handleCreatedMagicWeaponItem still prompts on the current user's create ho
   assert.equal(item.updates[0].data.name, "Длинный меч +2");
 });
 
-test("handleCreatedMagicWeaponItem ignores other users and non-character items", async () => {
+test("handleCreatedMagicWeaponItem ignores other users and unsupported actor types", async () => {
   const otherUserItem = new FakeItem();
-  const npcItem = new FakeItem({ actorType: "npc" });
+  const npcItem = new FakeItem({ actorType: "vehicle" });
   const moduleApi = {
     getModel: async () => ({
       gear: [makeLongsword()],
@@ -850,6 +850,28 @@ test("handleCreatedMagicWeaponItem ignores other users and non-character items",
   assert.equal(promptCalls, 0);
   assert.equal(otherUserItem.updates.length, 0);
   assert.equal(npcItem.updates.length, 0);
+});
+
+test("NPC weapons use the same creation and sheet fallback adapters with ownership guards", async () => {
+  const moduleApi = { getModel: async () => ({ gear: [makeLongsword()] }) };
+  for (const bonus of [1, 2, 3]) {
+    const item = new FakeItem({ actorType: "npc", name: `Оружие +${bonus}` });
+    assert.equal(await handleCreatedMagicWeaponItem(item, {}, "player-1", moduleApi, { prompt: async () => "longsword" }), true);
+    assert.equal(item.updates[0].data.name, `Длинный меч +${bonus}`);
+    assert.equal(item.updates[0].data.system.magicalBonus, bonus);
+  }
+  const item = new FakeItem({ actorType: "npc" });
+  const actor = new FakeActor({ type: "npc", items: [item] });
+  actor.isToken = true;
+  assert.equal(await handleActorRenderMagicWeapons(actor, moduleApi, { prompt: async () => "longsword" }), true);
+  assert.equal(item.updates.length, 1);
+  item.flags["rebreya-main"] = { magicWeaponTemplate: true };
+  assert.equal(await handleActorRenderMagicWeapons(actor, moduleApi, { prompt: async () => { throw new Error("already templated"); } }), false);
+  const cancelled = new FakeItem({ actorType: "npc" });
+  assert.equal(await handleCreatedMagicWeaponItem(cancelled, {}, "player-1", moduleApi, { prompt: async () => null }), false);
+  assert.equal(cancelled.updates.length, 0);
+  const denied = new FakeActor({ type: "npc", isOwner: false, items: [new FakeItem({ actorType: "npc" })] });
+  assert.equal(await handleActorRenderMagicWeapons(denied, moduleApi, { prompt: async () => { throw new Error("not owner"); } }), false);
 });
 
 test("handleCreatedMagicArmorItem prompts and updates generic armor and shield items", async () => {

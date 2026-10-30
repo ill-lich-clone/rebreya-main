@@ -3839,6 +3839,32 @@ test("getPartySnapshot uses native group system.members and ignores stale partyS
   }
 });
 
+test("mechanized clothing changes derived cargo from 15 to 16 and preserves manual overrides", async () => {
+  const coat = createItem({ id: "coat", flags: { [MODULE_ID]: { gearId: "mekhanizirovannaya-odezhda" } } });
+  const hero = createActor({ id: "hero", type: "character", abilities: { str: { value: 10 } }, items: [coat],
+    flags: { [MODULE_ID]: { heroDoll: { slots: { clothing: { itemId: "coat" } } } } } });
+  const group = createActor({ id: "party", type: "group", isOwner: true, members: [{ actor: hero }] });
+  const fx = installInventoryFixture({ actors: [group, hero] });
+  const memberState = {};
+  const service = new InventoryService({
+    getModel: async () => ({ gear: [], gearById: new Map(), materials: [], materialById: new Map(), materialByGoodId: new Map() }),
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor: group, groupId: group.id, canManage: true,
+      groupState: { memberStateByActorId: { hero: memberState } } }) }
+  });
+  const read = async () => (await service.getPartySnapshot({ actor: group })).members[0];
+  try {
+    assert.equal((await read()).capacityLb, 160);
+    memberState.capModOverride = 20;
+    memberState.capBonusLb = 7;
+    assert.equal((await read()).capacityLb, 217);
+    assert.equal(memberState.capModOverride, 20);
+    memberState.strOverride = 12;
+    assert.equal((await read()).capacityLb, 259);
+    delete hero.flags[MODULE_ID].heroDoll.slots.clothing;
+    assert.equal((await read()).capacityLb, 247);
+  } finally { fx.restore(); }
+});
+
 test("cargo edits preserve the shown group and round-trip the screenshot capacities after reopening", async () => {
   const gartar = createActor({ id: "gartar", type: "character", abilities: { str: { value: 18 } } });
   const others = [30, 30, 30, 24, 10].map((str, i) => createActor({ id: `other-${i}`, type: "character", abilities: { str: { value: str } } }));

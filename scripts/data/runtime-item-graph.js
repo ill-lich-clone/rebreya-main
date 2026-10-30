@@ -1,6 +1,6 @@
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
-import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.4.383";
+import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.5.27";
 import { collectItemSourceUuids, preserveItemSourceUuid } from "./item-source-reference.js?v=1.4.377";
 const MODULE_ID = "rebreya-main";
 export const RUNTIME_ITEM_GRAPH_FLAG = "runtimeItemGraph";

@@ -13,6 +13,14 @@ function setup(options={}) {
   return fx;
 }
 
+test("legacy mechanized clothing can use the clothing slot despite its old chest metadata", async t => {
+  const fx = setup({ quantity: 1, itemFlags: { gearId: "mekhanizirovannaya-odezhda", heroDollSlots: ["chest"] } });
+  t.after(() => fx.restore());
+  const result = await fx.run({ ...fx.payload, slotId: "clothing" });
+  assert.equal(result.itemId, fx.source.id);
+  assert.equal(fx.hero.getFlag("rebreya-main", "heroDoll").slots.clothing.itemId, fx.source.id);
+});
+
 test("NPC equips and clears a real unit with existing owner authorization",async t=>{
   const fx=setup({quantity:1});t.after(()=>fx.restore());fx.hero.type="npc";
   const result=await fx.run(fx.payload,{id:"player",isGM:false});assert.equal(result.itemId,fx.source.id);

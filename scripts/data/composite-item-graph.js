@@ -3,7 +3,7 @@ import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalo
 import { getWeaponModHostDescriptor, validateWeaponAttachmentInstallation, validateModernizedPartInstallation } from "./weapon-mod-rules.js?v=1.5.23";
 import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.5.23";
 import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.4.250";
-import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.4.383";
+import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.5.27";
 import { applyEquipmentSizeToItemData } from "../integrations/equipment-size.js?v=1.4.393";
 
 const MODULE_ID = "rebreya-main";

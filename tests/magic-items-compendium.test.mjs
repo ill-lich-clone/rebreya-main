@@ -365,9 +365,9 @@ test("catalog gap report locks current coverage totals by rarity", () => {
     })),
     [
       { rarity: "Обычный", total: 102, full: 34, partial: 16, manual: 52, candidates: 21 },
-      { rarity: "Необычный", total: 170, full: 70, partial: 50, manual: 50, candidates: 35 },
-      { rarity: "Редкий", total: 192, full: 66, partial: 61, manual: 65, candidates: 53 },
-      { rarity: "Очень редкий", total: 124, full: 37, partial: 41, manual: 46, candidates: 35 },
+      { rarity: "Необычный", total: 170, full: 70, partial: 52, manual: 48, candidates: 33 },
+      { rarity: "Редкий", total: 192, full: 66, partial: 63, manual: 63, candidates: 51 },
+      { rarity: "Очень редкий", total: 124, full: 37, partial: 43, manual: 44, candidates: 33 },
       { rarity: "Легендарный", total: 82, full: 26, partial: 28, manual: 28, candidates: 27 },
       { rarity: "Артефакт", total: 1, full: 0, partial: 0, manual: 1, candidates: 1 },
       { rarity: "Без редкости", total: 1, full: 0, partial: 0, manual: 1, candidates: 0 }
@@ -802,9 +802,9 @@ test("magic item compendium projects the approved passive automation matrix", ()
       true,
       item.id
     );
-    assert.equal(created.flags["rebreya-main"].magicItemAutomation.version, 4, item.id);
+    assert.equal(created.flags["rebreya-main"].magicItemAutomation.version, 5, item.id);
     const signature = JSON.parse(created.flags["rebreya-main"].signature);
-    assert.equal(signature.magicItemAutomation.version, 4, item.id);
+    assert.equal(signature.magicItemAutomation.version, 5, item.id);
     assert.deepEqual(signature.magicItemAutomation.effects, created.effects, item.id);
   }
 
