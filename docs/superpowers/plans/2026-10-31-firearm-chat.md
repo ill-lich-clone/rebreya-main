@@ -9,7 +9,7 @@
 
 ## Global Constraints
 
-Preserve quantities, 1/3/6, formulas, check order, actual Roll, jam mutations, notifications, visibility, result objects, createMessage:false. No new sockets/hooks/queues/receipts. Keep native privacy fallback and string-note flags. Only own files/commits on lich_branch.
+Preserve quantities, 1/3/6, formulas, check order, actual Roll, jam mutations, notifications, existing attack privacy (except deliberately author-only reload notifications), result objects, createMessage:false. No new sockets/hooks/queues/receipts. Keep native privacy fallback and string-note flags. Only own files/commits on lich_branch.
 
 ## Review Focus
 
@@ -33,8 +33,8 @@ Files: scripts/combat/attack-service.js, styles/main.css, tests/combat-attack-se
 
 - [x] Version/cache/forwarder, passport and README updates.
 - [x] Full tests, JS/JSON/diff checks. Reuse successful results unless code changes.
-- [ ] Fresh whole-change review; fix Important findings RED→GREEN.
-- [ ] Commit/push own paths to lich_branch and verify remote/working tree.
+- [x] Fresh whole-change review; no Critical/Important findings.
+- [x] Commit/push own paths to lich_branch and verify remote/working tree.
 
 ## Verification evidence
 
@@ -46,3 +46,14 @@ Files: scripts/combat/attack-service.js, styles/main.css, tests/combat-attack-se
 - Screenshots inspected: author-final.png and other-viewer-final.png in `.superpowers/sdd/2026-10-31-firearm-chat/`; private-final.png records parent path before last visibility refinement. Collapsed Foundry sidebar initially produced an off-screen black crop; expanded through ui.sidebar.expand() and recaptured. No console errors; pre-existing deprecation warnings only.
 - Original Actor9l5K3URGU5nvhy13 entire toObject snapshot unchanged. All owned fixture messages and fixture cleaned.
 - Final release1.5.34 includes a33 compatibility forwarder because intermediate33 was loaded during live user feedback; only current service/style caches advance to34, unchanged subsystem caches retained.
+
+## Final review and delivery
+
+Implementation commit `fb529a0d`, range `a8e7bca5..fb529a0d`. Fresh Astra review: no Critical/Important/actionable Minor findings; independently focused190/190 and range diff check clean. No runtime changes after final full suite; follow-up documentation clarifies scope.
+
+Review scope decisions:
+
+- Parent keeps established text/flags misfire result and its attack Roll; standalone keeps native misfire Roll.toMessage. Adding another attack-message roll is outside this presentation change. Cost: parent does not expose a separate native misfire die tooltip; threshold/d20/outcome and jam state remain.
+- Pre-use standalone jam keeps existing core roll-mode behavior. Additional per-call privacy overrides were not introduced. Cost: callers needing an override beyond existing core mode remain outside this task; author-only reload notices and changed parent/fallback privacy are tested.
+- Shared-card owner hint is rendered visibility, not partial source secrecy; user requested less chat noise. Cost: a viewer with source access can read stored hidden text. Separate reload-only confirmations use real whisper.
+- Independent player login was not repeated. Live GM author, real native private parent, DOM other-viewer render and unit ownership/author cases cover this change. Cost: a second real player session is not part of the recorded browser evidence.
