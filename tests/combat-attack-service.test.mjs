@@ -98,6 +98,30 @@ test("OWNER loads ammunition through one native batch without GM sockets journal
   }finally{game.user.isGM=previous;}
 });
 
+for (const [automation, method] of [["firearm-reload", "openMagazineEditor"], ["firearm-unload", "unloadFirearm"]]) {
+  test(`${automation} activity resolves dnd5e temporary item to the owned weapon`, () => {
+    const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3"},ammoState:{current:0,capacity:3}});
+    const actor=makeActor([weapon]),service=new CombatAttackService({});
+    const temporary=Object.assign(Object.create(Object.getPrototypeOf(weapon)),weapon);
+    let received;
+    service[method]=async (owner,item)=>{received={owner,item};};
+    assert.equal(service.applyDnd5ePreUseActivity({type:"utility",actor,item:temporary,flags:{[MODULE_ID]:{automation}}}),false);
+    assert.equal(received?.owner,actor);
+    assert.equal(received?.item,weapon);
+    assert.equal(actor.embeddedDocumentUpdateCalls.length,0);
+  });
+}
+
+test("magazine editor still rejects unavailable weapons and actors without native update rights",()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3"},ammoState:{current:0,capacity:3}});
+  const actor=makeActor([weapon]),service=new CombatAttackService({});
+  actor.canUserModify=()=>false;
+  assert.throws(()=>service.getMagazineEditorData(actor,weapon),/Нет прав/);
+  actor.canUserModify=()=>true;
+  assert.throws(()=>service.getMagazineEditorData(actor,{...weapon,id:"deleted"}),/Нет прав/);
+  assert.equal(service.getMagazineEditorData(actor,weapon).capacity,3);
+});
+
 test("opening reload twice concurrently reuses the same editor",async()=>{
   const previous=foundry.applications;
   foundry.applications={api:{ApplicationV2:class{async render(){this.rendered=true;return this;}bringToFront(){}},HandlebarsApplicationMixin:Base=>Base}};

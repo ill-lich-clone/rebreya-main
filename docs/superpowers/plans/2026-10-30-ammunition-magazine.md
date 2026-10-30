@@ -104,3 +104,18 @@ Live acceptance: Foundry 13.351, dnd5e 5.2.5, test world testovyj3, authenticate
 Live limits: tested as GM; player OWNER/no-GM behavior is covered by focused capability tests, not a separate authenticated player browser. Console was clear after the final native damage/reload/unload checks; shrinking the viewport intentionally triggered Foundry’s minimum-resolution warning. An earlier QA-only weapon-property setup edit showed a base-data notification and was not reproduced by subsequent normal attacks; no claim is made about unrelated startup warnings. Complex ammunition effects remain manual as approved.
 
 Independent scoped follow-up approved the two last functional fixes and footer CSS; reviewer independently ran the pure/editor files: 12 passed, 0 failed. No unresolved Critical/Important findings. Delivery follows the explicit repository instruction: commit and push to lich_branch, no main merge or additional integration decision.
+
+## Task 6: Fix temporary native activity Item routing
+
+Spec: native activity correction above in the existing approved specification. Inline execution continues under the user's explicit bugfix/shared-copy authorization.
+
+- [x] RED: regression through applyDnd5ePreUseActivity for native-shaped temporary reload/unload Items must route to actor.items.get(id), with zero writes before confirmation; denied capability/deleted Item still rejected.
+- [x] GREEN: resolve the canonical owned Item at the existing firearm utility boundary; keep strict editor/native capability checks. No socket, permission grants or new mutation infrastructure.
+- [x] Verify focused combat tests, actual installed Activity.use when browser available, full runtime/JSON checks and one scoped independent review.
+- [x] Bump release/cache entrypoint, update passport and report evidence. Stage only this task; preserve user's parallel changes, including the rest of main.js; commit/push lich_branch.
+
+Task 6 review/live evidence: clone routing tests RED 2 failed / 1 guard passed; corrected combat suite 113 passed / 0 failed. Scoped independent review approved runtime/authorization behavior and independently ran the three new tests (3/3). Its unrelated held-items cache-key finding was excluded from the own patch; the user’s working source retains it. Actual installed Activity.use (Foundry13.351/dnd5e5.2.5, CODEX GM in testovyj3) opened exactly one editor bound to canonical Actor/Item; empty count remained0. Actual native unload returned success. Fixture and editor removed. Release1.5.28 leaves parallel 1.5.27 work intact. Full verification uses HEAD424ea441 plus only the own patch, materialized from a private index; no shared worktree or index reset is used.
+
+Verification-copy setup note: the first full run had 13 failures from checkout autocrlf conversion and missing relative installed-system/module fixtures (plus one additional environment skip). Restored exact Git line endings and supplied the existing installed fixtures to the copy; all 221 affected environment/contract tests then passed without product-code or test-expectation changes. Full repeat follows on that corrected verification environment.
+
+Task 6 final verification: `node --test tests/*.test.mjs` on the own patch/index snapshot — 5317 passed, 0 failed, 1 skipped (5318 total). `node --check` — 1120 JS/MJS passed; tracked JSON — 65 passed. Focused combat — 113/113. `git diff --check` passed. Only the eleven own patch paths/hunks are committed; parallel user source/import/test changes remain outside the commit. Authorized delivery: commit/push lich_branch.

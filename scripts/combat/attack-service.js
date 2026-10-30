@@ -4275,12 +4275,14 @@ export class CombatAttackService {
       return null;
     }
 
-    const item = activity?.item ?? null;
+    const activityItem = activity?.item ?? null;
+    const actor = activity?.actor ?? activityItem?.actor ?? null;
+    // dnd5e Activity.use passes a temporary Item clone with the original ID.
+    const item = actor?.items?.get?.(activityItem?.id) ?? activityItem;
     if (!isFirearmItem(item)) {
       return true;
     }
 
-    const actor = activity?.actor ?? item.actor ?? null;
     if(automation==="firearm-unload"){
       this.unloadFirearm(actor,item).catch(error=>ui.notifications?.warn?.(error.message));return false;
     }
