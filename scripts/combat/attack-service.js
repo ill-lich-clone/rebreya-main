@@ -41,6 +41,7 @@ const FIREARM_RELOAD_PROPERTY = "lchFirearmReload";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
+const FIREARM_RELOAD_CHAT_FLAG = "firearmReload";
 const EQUIPMENT_SIZE_ATTACK_BUILDER = Symbol("rebreyaEquipmentSizeAttackBuilder");
 const DND5E_AMMUNITION_PROPERTY = "amm";
 const IMPLANT_RELOAD_RESERVOIR_FLAG = "implantReloadReservoir";
@@ -1873,7 +1874,7 @@ export class CombatAttackService {
       return;
     }
 
-    if (this.#appendFirearmChatNote(options, safeContent)) {
+    if (!options.firearmOwnerOnly && this.#appendFirearmChatNote(options, safeContent, options.firearmReload)) {
       return;
     }
 
@@ -1884,15 +1885,17 @@ export class CombatAttackService {
     const userId = String(game.user?.id ?? "").trim();
     Promise.resolve(ChatMessage.create({
       ...(userId ? { user: userId } : {}),
+      ...(options.firearmOwnerOnly && userId ? {whisper:[userId]} : {}),
       speaker: ChatMessage.getSpeaker?.({ actor }) ?? {},
-      content: safeContent,
+      ...(options.firearmReload ? {flags:{[MODULE_ID]:{[FIREARM_RELOAD_CHAT_FLAG]:options.firearmReload}}} : {}),
+      content: this.#buildFirearmChatCardNotesHtml([safeContent]),
       flavor: item?.name ?? ""
     })).catch((error) => {
       console.error(`${MODULE_ID} | Failed to create firearm chat message.`, error);
     });
   }
 
-  #appendFirearmChatNote(options = {}, content = "") {
+  #appendFirearmChatNote(options = {}, content = "", reloadTarget = null) {
     const messageConfig = options?.messageConfig ?? null;
     const safeContent = cleanText(content);
     if (!safeContent || !isPlainObject(messageConfig)) {
@@ -1902,8 +1905,9 @@ export class CombatAttackService {
     if (!isPlainObject(messageConfig.data)) {
       messageConfig.data = {};
     }
+    if (reloadTarget) foundry.utils.setProperty(messageConfig.data, `flags.${MODULE_ID}.${FIREARM_RELOAD_CHAT_FLAG}`, reloadTarget);
     const currentFlavor = cleanText(messageConfig.data.flavor ?? messageConfig.flavor);
-    messageConfig.data.flavor = [currentFlavor, safeContent].filter(Boolean).join("<br>");
+    messageConfig.data.flavor = [currentFlavor, this.#buildFirearmChatCardNotesHtml([safeContent])].filter(Boolean).join("<br>");
     const notes = this.#appendFirearmChatCardNote(messageConfig, safeContent);
     if(!options.deferFirearmChatSync)this.#syncFirearmChatCardNotes(options, notes);
     return true;
@@ -1950,8 +1954,10 @@ export class CombatAttackService {
     }
 
     const nextContent = this.#withFirearmChatCardNotes(content, safeNotes);
+    const reloadTarget=foundry.utils.getProperty(options.messageConfig?.data,`flags.${MODULE_ID}.${FIREARM_RELOAD_CHAT_FLAG}`);
     const update = {
       ...(options.ammunitionPatch??{}),
+      ...(reloadTarget?{[`flags.${MODULE_ID}.${FIREARM_RELOAD_CHAT_FLAG}`]:reloadTarget}:{}),
       [`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`]: safeNotes
     };
     if (nextContent !== content) {
@@ -1964,8 +1970,9 @@ export class CombatAttackService {
       Promise.resolve(ChatMessage.create({
         ...(game.user?.id?{user:game.user.id}:{}),
         ...(message.speaker?{speaker:message.speaker}:{}),
-        ...(message.whisper?{whisper:message.whisper}:{}),
+        ...(safeNotes.every(note=>note.startsWith("Магазин пуст."))?{whisper:[game.user.id]}:message.whisper?{whisper:message.whisper}:{}),
         ...(message.blind?{blind:true}:{}),
+        ...(reloadTarget?{flags:{[MODULE_ID]:{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}}}:{}),
         content:this.#buildFirearmChatCardNotesHtml(safeNotes)
       })).catch(fallbackError=>console.error(`${MODULE_ID} | Failed to publish firearm chat notes.`,fallbackError));
     });
@@ -2058,11 +2065,11 @@ export class CombatAttackService {
 
   #buildFirearmChatCardNotesHtml(notes = []) {
     const rows = notes
-      .map((note) => cleanText(note))
+      .flatMap((note) => cleanText(note).split("\n"))
       .filter(Boolean)
-      .map((note) => `<span>${escapeHtml(note)}</span>`)
-      .join("<br>");
-    return `<p class="supplement rebreya-firearm-chat-notes" data-rebreya-firearm-chat-notes="true"><strong>Огнестрел:</strong> ${rows}</p>`;
+      .map((note) => `<span${note.startsWith("Магазин пуст.") ? ' data-rebreya-firearm-owner-only hidden' : ''}>${escapeHtml(note)}</span>`)
+      .join("");
+    return `<p class="supplement rm-reaction-chat rebreya-firearm-chat-notes" data-rebreya-firearm-chat-notes="true"><span class="rm-reaction-chat__icon" aria-hidden="true"><i class="fa-solid fa-crosshairs"></i></span><span class="rm-reaction-chat__body"><span class="rm-reaction-chat__label">Огнестрел</span><span class="rm-reaction-chat__text">${rows}</span></span></p>`;
   }
 
   #notifyFirearmAmmoEmpty(item) {
@@ -2187,15 +2194,6 @@ export class CombatAttackService {
       ...(state.schemaVersion===2?{rounds:ordered.rounds.slice(ammoSpent)}:{}),
       current: state.current - ammoSpent
     });
-    if (nextState.current <= 0) {
-      this.#createFirearmChatMessage(
-        actor,
-        item,
-        `${item?.name ?? "Оружие"}: магазин пуст. Используйте действие «Перезарядить».`,
-        options
-      );
-    }
-
     return {
       success: true,
       tracked: true,
@@ -3395,8 +3393,18 @@ export class CombatAttackService {
     const threshold = Math.max(1, Math.floor(toNumber(result?.threshold, 1)));
     const rollTotal = Math.max(1, Math.floor(toNumber(result?.rollTotal, 1)));
     const outcome = result?.jammed === true ? "заклинено" : "без осечки";
-    const content = `${weaponName}: Осечка ${threshold}, d20 = ${rollTotal} (${outcome})`;
-    if (result?.jammed !== true && this.#appendFirearmChatNote(options, content)) {
+    const notes = [];
+    const reloadTarget=options.firearmAmmo?.tracked && options.firearmAmmo.ammoSpent>0 && options.firearmAmmo.current===0
+      ? {actorUuid:actor?.uuid,weaponId:item?.id} : null;
+    if (result?.checked !== false) notes.push(`${weaponName}: Осечка ${threshold}, d20 = ${rollTotal} (${outcome})`);
+    if (reloadTarget) {
+      notes.push("Магазин пуст. Используйте действие «Перезарядить».");
+    }
+    if (!notes.length) return;
+    const content = notes.join("\n");
+    // A pre-use jam can abort before an attack message exists. An actual parent
+    // already exists after an attack roll and owns the complete, private status.
+    if ((result?.jammed !== true || this.#resolveFirearmOriginatingMessage(options)?.content) && this.#appendFirearmChatNote(options, content, reloadTarget)) {
       return;
     }
 
@@ -3408,7 +3416,9 @@ export class CombatAttackService {
       if (result?.roll && typeof result.roll.toMessage === "function") {
         Promise.resolve(result.roll.toMessage({
           speaker: ChatMessage.getSpeaker({ actor }),
-          flavor
+          flavor,
+          ...(reloadTarget?{flags:{[MODULE_ID]:{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}}}:{}),
+          content: this.#buildFirearmChatCardNotesHtml(notes)
         })).catch((error) => {
           console.error(`${MODULE_ID} | Failed to create firearm misfire roll message.`, error);
         });
@@ -3419,8 +3429,10 @@ export class CombatAttackService {
       if (typeof ChatMessage?.create === "function" && userId) {
         Promise.resolve(ChatMessage.create({
           user: userId,
+          ...(result?.checked===false?{whisper:[userId]}:{}),
           speaker: ChatMessage.getSpeaker?.({ actor }) ?? {},
-          content
+          ...(reloadTarget?{flags:{[MODULE_ID]:{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}}}:{}),
+          content: this.#buildFirearmChatCardNotesHtml(notes)
         })).catch((error) => {
           console.error(`${MODULE_ID} | Failed to create firearm misfire chat message.`, error);
         });
@@ -3478,19 +3490,20 @@ export class CombatAttackService {
       this.#writeItemFlag(item, FIREARM_BASE_MISFIRE_FLAG, baseMisfire);
       this.#writeItemName(item, nextName);
     }
-    this.#createFirearmMisfireMessage(actor, item, { ...result, jammed: true }, options);
     this.#notifyFirearmJammed(item);
   }
 
   #rollFirearmMisfire(actor, item, options = {}) {
     const threshold = this.#resolveFirearmMisfireThreshold(item, options);
     if (threshold <= 0) {
-      return {
+      const result = {
         checked: false,
         jammed: false,
         threshold: 0,
         rollTotal: null
       };
+      this.#createFirearmMisfireMessage(actor, item, result, options);
+      return result;
     }
 
     const { roll, total } = this.#evaluateFirearmMisfireDie(options);
@@ -3505,9 +3518,7 @@ export class CombatAttackService {
     if (result.jammed) {
       this.#jamFirearm(actor, item, result, options);
     }
-    else {
-      this.#createFirearmMisfireMessage(actor, item, result, options);
-    }
+    this.#createFirearmMisfireMessage(actor, item, result, options);
 
     return result;
   }
@@ -4389,7 +4400,7 @@ export class CombatAttackService {
     const shot={data:structuredClone(ammo.ammunitionData),count:ammo.ammoSpent,weaponId:item.id,spent:true};
     usageConfig.rebreyaAmmunitionShot=shot;
     foundry.utils.setProperty(messageConfig,`data.flags.${MODULE_ID}.ammunitionShot`,shot);
-    const misfire = this.#rollFirearmMisfire(actor, item, { messageConfig });
+    const misfire = this.#rollFirearmMisfire(actor, item, { messageConfig, firearmAmmo: ammo });
     if (misfire.jammed) {
       return false;
     }
@@ -4714,10 +4725,38 @@ export class CombatAttackService {
 
   renderAmmunitionNotice(message,html) {
     const root=html?.[0]??html,shot=readDocumentFlag(message,MODULE_ID,"ammunitionShot");
+    this.renderFirearmChatActions(message,root);
     if(!shot?.data || !root?.querySelector || root.querySelector(".rm-ammunition-notice"))return;
     const text=getAmmunitionDamage(shot.data).manual,notice=document.createElement("p");notice.className="rm-ammunition-notice";
     notice.textContent=`Боеприпас: ${shot.data.name}. Потрачено: ${shot.count}.${text?` Вручную: ${text}`:""}`;
     root.append(notice);
+  }
+
+  renderFirearmChatActions(message,root) {
+    if(!root?.querySelector)return;
+    root.querySelector(".rm-firearm-reload")?.remove();
+    const target=readDocumentFlag(message,MODULE_ID,FIREARM_RELOAD_CHAT_FLAG);
+    const authorId=message.author?.id??message.author??message.user?.id??message.user;
+    for(const row of root.querySelectorAll?.("[data-rebreya-firearm-owner-only]")??[])row.hidden=authorId!==game.user?.id;
+    for(const card of root.querySelectorAll?.(".rebreya-firearm-chat-notes")??[]){
+      const rows=Array.from(card.querySelectorAll(".rm-reaction-chat__text>span"));
+      card.hidden=rows.length>0&&rows.every(row=>row.hidden);
+    }
+    if(authorId!==game.user?.id || !target)return;
+    const actor=this.#resolveActorFromUuid(target.actorUuid),weapon=actor?.items?.get?.(target.weaponId);
+    const host=root.querySelector(".rebreya-firearm-chat-notes .rm-reaction-chat__body");
+    if(!actor?.isOwner || !isFirearmItem(weapon) || !host)return;
+    const button=document.createElement("button");button.type="button";button.className="rm-firearm-reload";button.textContent="Перезарядить";
+    button.addEventListener("click",async event=>{
+      event.preventDefault();if(button.disabled)return;button.disabled=true;
+      try{
+        const current=this.#resolveActorFromUuid(target.actorUuid),item=current?.items?.get?.(target.weaponId);
+        if(!current?.isOwner || !isFirearmItem(item))throw new Error("Оружие недоступно.");
+        await this.openMagazineEditor(current,item);
+      }catch(error){ui.notifications?.warn?.(error.message);}
+      finally{button.disabled=false;}
+    });
+    host.append(button);
   }
 
   applyDnd5ePostAttackRoll(rolls = [], context = {}) {
@@ -4751,7 +4790,7 @@ export class CombatAttackService {
         if (ammo.success) {
           firearmMessageOptions.ammunitionPatch=this.#recordAmmunitionShot(firstRoll, activity, ammo.ammunitionData, ammo.ammoSpent,{defer:firearmMessageOptions.deferFirearmChatSync});
           if(activity.attack?.type?.value!=="melee")startFirearmTuning(item,Number(game.time?.worldTime)).catch(error=>console.error(`${MODULE_ID} | Failed to start firearm tuning.`,error));
-          this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
+          this.#rollFirearmMisfire(actor, item, {...firearmMessageOptions, firearmAmmo: ammo});
         }
         if(firearmMessageOptions.deferFirearmChatSync){
           const synced=this.#syncFirearmChatCardNotes(firearmMessageOptions,foundry.utils.getProperty(firearmMessageOptions.messageConfig.data,`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`));
@@ -5742,7 +5781,7 @@ export class CombatAttackService {
     }
     if(draft.rounds.length===state.current)return {success:false,reason:"firearmAmmoUnavailable",loaded:0,current:state.current,capacity:state.capacity};
     const result=await this.commitMagazine(actor,weapon,draft);
-    this.#createFirearmChatMessage(actor,weapon,`${weapon.name}: перезарядка.`,options);return result;
+    this.#createFirearmChatMessage(actor,weapon,`${weapon.name}: перезарядка.`,{...options,firearmOwnerOnly:true});return result;
   }
 
   async planWeaponAmmoReconfiguration(actor,weapon,{capacity,ammunition,modernizedParts=[]}={}) {
@@ -5900,7 +5939,7 @@ export class CombatAttackService {
       actor,
       ammunitionItem,
       `Механизм перезарядки: загружено ${loaded}, боезапас ${reservoir.quantity}/${reservoir.capacity}.`,
-      options
+      {...options,firearmOwnerOnly:true}
     );
     return {
       success: true,
@@ -5991,8 +6030,8 @@ export class CombatAttackService {
     this.#createFirearmChatMessage(
       actor,
       weapon,
-      `${weapon.name}: ${mode === "automatic" ? "автоматический" : "полуавтоматический"} огонь, конус ${coneFeet} фт., Сл ${saveDC} Ловкости, урон ${damageFormula || "оружия"}. Потрачено ${ammo.ammoSpent} боеприпасов.`,
-      options
+      `${weapon.name}: ${mode === "automatic" ? "автоматический" : "полуавтоматический"} огонь, конус ${coneFeet} фт., Сл ${saveDC} Ловкости, урон ${damageFormula || "оружия"}. Потрачено ${ammo.ammoSpent} боеприпасов.${ammo.tracked && ammo.current === 0 ? "\nМагазин пуст. Используйте действие «Перезарядить»." : ""}`,
+      {...options,firearmReload:ammo.tracked&&ammo.current===0?{actorUuid:actor.uuid,weaponId:weapon.id}:null}
     );
 
     return {
@@ -6107,7 +6146,7 @@ export class CombatAttackService {
       }
 
       ammunitionShot={data:structuredClone(ammo.ammunitionData),count:ammo.ammoSpent,weaponId:weapon.id,spent:true};
-      const misfire = this.#rollFirearmMisfire(actor, weapon, options);
+      const misfire = this.#rollFirearmMisfire(actor, weapon, {...options, firearmAmmo: ammo});
       if (misfire.jammed) {
         return {
           success: false,

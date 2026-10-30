@@ -14254,6 +14254,10 @@ summary:focus-visible {
 .rm-wm__catalog.rm-context-menu{position:relative;inset:auto;width:300px;max-width:calc(100vw - 32px);margin:0}
 
 /* Physical ammunition editor: all interactions edit a local draft. */
+.rebreya-firearm-chat-notes{margin:8px 0;align-items:flex-start;}
+.rebreya-firearm-chat-notes .rm-reaction-chat__text>span{display:block;white-space:pre-line;}
+.rebreya-firearm-chat-notes[hidden],.rebreya-firearm-chat-notes [hidden]{display:none!important;}
+.rebreya-firearm-chat-notes .rm-firearm-reload{width:100%;height:auto;min-height:28px;margin-top:8px;padding:4px 8px;border:1px solid var(--rm-border-strong);border-radius:4px;background:var(--rm-surface-2);color:var(--rm-text-primary);font-size:12px;line-height:1.4;}
 .rm-ammunition-magazine .window-content{padding:16px;overflow:auto;background:linear-gradient(145deg,#252326,#17191c 65%);}
 .rm-ammunition-magazine .rm-ammo-body{display:flex;flex-direction:column;gap:10px;min-height:0;color:#e5ded3;}
 .rm-ammunition-magazine .rm-ammo-header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-bottom:12px;border-bottom:1px solid #665140;}

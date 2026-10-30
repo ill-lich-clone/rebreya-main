@@ -3170,6 +3170,65 @@ test("disabled Repeating Shot restores ordinary typed ammunition handling", () =
   assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), ["", bolts.id]);
 });
 
+for(const jammed of [false,true])test(`last firearm round publishes one styled status with misfire outcome (jammed=${jammed})`,()=>{
+  TestRoll.queuedTotals=[jammed?1:13];TestRoll.messages=[];ChatMessage.messages=[];
+  const weapon=makeFirearmItem({name:'Аркебуза <img src=x onerror="bad()">',properties:{lchFirearmReload:true,lchFirearmMisfire:true},values:{reload:"Перезарядка 1",misfire:4},ammoState:{current:1,capacity:1}}),actor=makeActor([weapon]);
+  new CombatAttackService({}).applyDnd5ePostAttackRoll([{total:15}],{subject:{type:"attack",actor,item:weapon}});
+  const messages=[...ChatMessage.messages,...TestRoll.messages.map(m=>m.messageData)];
+  assert.equal(messages.length,1,"one shot must not emit separate empty-magazine and misfire messages");
+  assert.match(messages[0].content,/data-rebreya-firearm-chat-notes/u);assert.match(messages[0].content,/магазин пуст/iu);
+  assert.match(messages[0].content,jammed?/заклинено/u:/без осечки/u);assert.match(messages[0].content,/&lt;img/u);assert.doesNotMatch(messages[0].content,/<img\b/u);
+  assert.equal(TestRoll.messages[0].formula,"1d20");assert.equal(TestRoll.queuedTotals.length,0);
+  assert.deepEqual(messages[0].flags?.[MODULE_ID]?.firearmReload,{actorUuid:actor.uuid,weaponId:weapon.id});
+  assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);assert.equal(Boolean(weapon.getFlag(MODULE_ID,"firearmJammed")?.value),jammed);
+});
+
+test("last round without a misfire property still produces one styled empty-magazine notice and no die",()=>{
+  TestRoll.queuedTotals=[];TestRoll.messages=[];ChatMessage.messages=[];
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 1"},ammoState:{current:1,capacity:1}}),actor=makeActor([weapon]);
+  new CombatAttackService({}).applyDnd5ePostAttackRoll([{total:15}],{subject:{type:"attack",actor,item:weapon}});
+  assert.equal(ChatMessage.messages.length,1);assert.match(ChatMessage.messages[0].content,/data-rebreya-firearm-chat-notes/u);
+  assert.match(ChatMessage.messages[0].content,/магазин пуст/iu);assert.doesNotMatch(ChatMessage.messages[0].content,/d20/u);assert.equal(TestRoll.messages.length,0);
+  assert.deepEqual(ChatMessage.messages[0].whisper,[game.user.id]);
+});
+
+test("empty-magazine hint is visible only to the attack author and an empty-only block is hidden for others",()=>{
+  const ownerRow={hidden:true},publicRow={hidden:false},cards=[{querySelectorAll:()=>[publicRow,ownerRow]},{querySelectorAll:()=>[ownerRow]}];
+  const root={querySelector:()=>null,querySelectorAll:selector=>selector==="[data-rebreya-firearm-owner-only]"?[ownerRow]:cards};
+  const service=new CombatAttackService({}),message={author:{id:game.user.id}};
+  service.renderFirearmChatActions(message,root);assert.equal(ownerRow.hidden,false);assert.equal(cards[0].hidden,false);assert.equal(cards[1].hidden,false);
+  message.author.id="other-user";service.renderFirearmChatActions(message,root);assert.equal(ownerRow.hidden,true);assert.equal(cards[0].hidden,false);assert.equal(cards[1].hidden,true);
+});
+
+test("jammed last-round status stays in its private originating card in one update",()=>{
+  TestRoll.queuedTotals=[1];TestRoll.messages=[];ChatMessage.messages=[];
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true,lchFirearmMisfire:true},values:{reload:"Перезарядка 1",misfire:4},ammoState:{current:1,capacity:1}}),actor=makeActor([weapon]);
+  const card={content:"<div>private attack</div>",whisper:["gm"],blind:true,updates:[],update(patch){this.updates.push(patch);this.content=patch.content??this.content;}};
+  new CombatAttackService({}).applyDnd5ePostAttackRoll([{total:15,parent:card}],{subject:{type:"attack",actor,item:weapon}});
+  assert.equal(TestRoll.messages.length+ChatMessage.messages.length,0);assert.equal(card.updates.length,1);
+  assert.match(card.content,/заклинено/u);assert.match(card.content,/магазин пуст/iu);assert.equal((card.content.match(/data-rebreya-firearm-chat-notes=/gu)??[]).length,1);
+  assert.deepEqual(card.updates[0][`flags.${MODULE_ID}.firearmReload`],{actorUuid:actor.uuid,weaponId:weapon.id});
+});
+
+test("chat reload action is local to the attack author, checks ownership, and opens one existing editor",async()=>{
+  const previous={document:globalThis.document,fromUuidSync:globalThis.fromUuidSync};
+  const weapon=makeFirearmItem(),actor=makeActor([weapon]);actor.isOwner=true;
+  const buttons=[],host={append(button){buttons.push(button);}};
+  const root={querySelector(selector){return selector===".rm-firearm-reload"?buttons[0]??null:host;}};
+  globalThis.document={createElement(){const b=new EventTarget();b.remove=()=>buttons.splice(buttons.indexOf(b),1);return b;}};
+  globalThis.fromUuidSync=uuid=>uuid===actor.uuid?actor:null;
+  const message={author:{id:game.user.id},flags:{[MODULE_ID]:{firearmReload:{actorUuid:actor.uuid,weaponId:weapon.id}}}},service=new CombatAttackService({});
+  let opened=0;service.openMagazineEditor=async(a,w)=>{assert.equal(a,actor);assert.equal(w,weapon);opened++;};
+  try{
+    service.renderFirearmChatActions(message,root);service.renderFirearmChatActions(message,root);
+    assert.equal(buttons.length,1);assert.equal(buttons[0].textContent,"Перезарядить");
+    buttons[0].dispatchEvent(new Event("click"));await new Promise(resolve=>setImmediate(resolve));assert.equal(opened,1);assert.equal(actor.embeddedDocumentUpdateCalls.length,0);
+    message.author.id="other-user";service.renderFirearmChatActions(message,root);assert.equal(buttons.length,0);
+    message.author.id=game.user.id;actor.isOwner=false;service.renderFirearmChatActions(message,root);assert.equal(buttons.length,0);
+    actor.isOwner=true;message.flags[MODULE_ID].firearmReload.weaponId="deleted";service.renderFirearmChatActions(message,root);assert.equal(buttons.length,0);
+  }finally{globalThis.document=previous.document;globalThis.fromUuidSync=previous.fromUuidSync;}
+});
+
 test("firearm attack roll notes ammo and misfire in the originating attack card", () => {
   TestRoll.queuedTotals = [13];
   TestRoll.messages = [];
@@ -3255,14 +3314,15 @@ test("successful misfire check remains visible when the roll parent cannot be up
   new CombatAttackService({}).applyDnd5ePostAttackRoll([{ total: 15, parent: {} }], { subject: { type: "attack", actor, item: weapon } });
   assert.equal(TestRoll.messages.length, 1);
 });
-test("a rejected attack-card update publishes the misfire result as a private fallback",async()=>{
+for(const lastRound of [false,true])test(`a rejected attack-card update publishes the misfire result as a private fallback (lastRound=${lastRound})`,async()=>{
   TestRoll.queuedTotals=[13];globalThis.ChatMessage.messages=[];
-  const weapon=makeFirearmItem({name:"Musket",properties:{lchFirearmMisfire:true},values:{misfire:3}}),actor=makeActor([weapon]);
+  const weapon=makeFirearmItem({name:"Musket",properties:{lchFirearmMisfire:true,...(lastRound?{lchFirearmReload:true}:{})},values:{misfire:3,...(lastRound?{reload:"Перезарядка 1"}:{})},...(lastRound?{ammoState:{current:1,capacity:1}}:{})}),actor=makeActor([weapon]);
   const card={content:"<div>attack</div>",speaker:{actor:actor.id},whisper:["gm"],blind:true,update:async()=>{throw Error("no access");}};
   new CombatAttackService({}).applyDnd5ePostAttackRoll([{total:15,parent:card}],{subject:{type:"attack",actor,item:weapon}});
   await new Promise(resolve=>setImmediate(resolve));
   assert.match(globalThis.ChatMessage.messages.at(-1).content,/d20 = 13/u);
   assert.deepEqual(globalThis.ChatMessage.messages.at(-1).whisper,["gm"]);assert.equal(globalThis.ChatMessage.messages.at(-1).blind,true);
+  if(lastRound)assert.deepEqual(ChatMessage.messages.at(-1).flags?.[MODULE_ID]?.firearmReload,{actorUuid:actor.uuid,weaponId:weapon.id});
 });
 
 test("already jammed firearms cannot be used for attack activities", async () => {
@@ -3440,6 +3500,7 @@ test("firearm attacks spend loaded ammunition and mark an empty magazine in the 
   assert.match(weapon.name, /0\/1/u);
   assert.doesNotMatch(weapon.name, /пуст|боезапас/iu);
   assert.equal(TestRoll.queuedTotals.length, 0);
+  assert.equal(TestRoll.messages.length,0);assert.equal(ChatMessage.messages.length,0);
 });
 test("legacy firearm attack applies tuning to the shot and starts its minute",async()=>{
  const previous=game.time;game.time={worldTime:200};
@@ -3627,10 +3688,9 @@ test("reloading a firearm consumes matching actor ammunition and fills the magaz
   });
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 24);
   assert.match(weapon.name, /24\/24/u);
-  assert.equal(
-    globalThis.ChatMessage.messages.at(-1)?.content,
-    "Автоматическая винтовка (24/24): перезарядка."
-  );
+  assert.match(globalThis.ChatMessage.messages.at(-1)?.content,/data-rebreya-firearm-chat-notes/u);
+  assert.match(globalThis.ChatMessage.messages.at(-1)?.content,/<span>Автоматическая винтовка \(24\/24\): перезарядка\.<\/span>/u);
+  assert.deepEqual(globalThis.ChatMessage.messages.at(-1)?.whisper,[game.user.id]);
   assert.doesNotMatch(globalThis.ChatMessage.messages.at(-1)?.content ?? "", /боезапас|загружено/iu);
 });
 
@@ -3984,6 +4044,15 @@ test("automatic fire area action empties the magazine and reports save data", as
   assert.equal(result.ammoSpent, 7);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
 });
+test("area fire combines its empty magazine notice without adding a misfire die",async()=>{
+  TestRoll.queuedTotals=[];TestRoll.messages=[];ChatMessage.messages=[];
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true,lchFirearmAutomatic:true,lchFirearmMisfire:true},values:{reload:"Перезарядка 6",fireMode:"Автоматический (4d8)",misfire:4},ammoState:{current:6,capacity:6}}),actor=makeActor([weapon]);
+  const result=await new CombatAttackService({}).resolveFirearmAreaFire(actor,weapon,{mode:"automatic"});
+  assert.equal(result.success,true);assert.equal(result.ammoSpent,6);assert.equal(result.current,0);
+  assert.equal(ChatMessage.messages.length,1);assert.match(ChatMessage.messages[0].content,/автоматический/u);assert.match(ChatMessage.messages[0].content,/магазин пуст/iu);
+  assert.match(ChatMessage.messages[0].content,/data-rebreya-firearm-chat-notes/u);assert.equal(TestRoll.messages.length,0);
+});
+
 test("successful automatic fire starts tuning without increasing its saving throw DC",async()=>{
  const previous=game.time;game.time={worldTime:500};
  try{
