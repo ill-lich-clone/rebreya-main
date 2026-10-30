@@ -14253,31 +14253,79 @@ summary:focus-visible {
 .rm-wm__diagnostics,.rm-wm__status{font-size:12px;color:var(--color-text-warning,#d8af66)}.rm-wm[aria-busy=true] .rm-wm__catalog{opacity:.65;pointer-events:none}
 .rm-wm__catalog.rm-context-menu{position:relative;inset:auto;width:300px;max-width:calc(100vw - 32px);margin:0}
 
-/* Ordered ammunition editor: all selection stays in a local draft. */
-.rm-ammunition-magazine .window-content { overflow:auto; }
-.rm-ammunition-magazine .rm-ammo-body { display:flex; flex-direction:column; gap:10px; }
-.rm-ammunition-magazine header h2 { margin:0; font-size:20px; }
-.rm-ammunition-magazine fieldset { border:0; padding:0; margin:0; min-width:0; }
-.rm-ammunition-magazine .rm-ammo-columns { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:18px; max-height:330px; overflow:auto; }
-.rm-ammunition-magazine .rm-ammo-cell { display:grid; grid-template-columns:minmax(0,1fr) 30px 30px; gap:5px; margin-bottom:10px; }
-.rm-ammunition-magazine .rm-ammo-cell label { grid-column:1/-1; display:flex; justify-content:space-between; }
-.rm-ammunition-magazine .rm-ammo-cell select { width:100%; min-width:0; }
-.rm-ammunition-magazine .rm-ammo-stock { display:flex; flex-direction:column; gap:4px; padding:8px; margin-bottom:8px; border:1px solid var(--color-border-light-primary); border-radius:5px; }
-.rm-ammunition-magazine .rm-ammo-stock small { overflow-wrap:anywhere; }
-.rm-ammunition-magazine .rm-ammo-error { color:var(--color-level-error,#e87868); grid-column:1/-1; }
-.rm-ammunition-magazine .rm-ammo-presets { display:flex; flex-wrap:wrap; align-items:end; gap:7px; margin-top:14px; }
-.rm-ammunition-magazine .rm-ammo-presets label { flex:1 1 180px; }
-.rm-ammunition-magazine .rm-ammo-presets select { width:100%; }
-.rm-ammunition-magazine .rm-ammo-presets input { flex:1 1 160px; width:160px; }
-.rm-ammunition-magazine .rm-ammo-presets button { width:auto; }
-.rm-ammunition-magazine .rm-ammo-last { width:100%; min-height:40px; font-weight:700; margin:8px 0; }
-.rm-ammunition-magazine footer { display:flex; flex-wrap:wrap; gap:8px; }
-.rm-ammunition-magazine footer button { flex:1; min-width:110px; height:auto; min-height:28px; line-height:1.2; padding:5px; }
-.rm-ammunition-magazine .rm-ammo-confirm { font-weight:700; border-color:var(--color-border-highlight); }
-.rm-ammunition-magazine .rm-ammo-legacy { display:block; margin-top:10px; }
-@media(max-width:600px){ .rm-ammunition-magazine .rm-ammo-columns { grid-template-columns:1fr; max-height:45vh; } }
-.rm-ammunition-magazine .window-content { padding:12px; }
-.rm-ammunition-magazine header p { margin:5px 0 8px; }
-.rm-ammunition-magazine .rm-ammo-columns { max-height:280px; }
-.rm-ammunition-magazine h3 { font-size:16px; margin:4px 0 10px; }
-.rm-ammunition-magazine .hint { font-size:12px; line-height:1.4; margin:8px 0; }
+/* Physical ammunition editor: all interactions edit a local draft. */
+.rm-ammunition-magazine .window-content{padding:16px;overflow:auto;background:linear-gradient(145deg,#252326,#17191c 65%);}
+.rm-ammunition-magazine .rm-ammo-body{display:flex;flex-direction:column;gap:10px;min-height:0;color:#e5ded3;}
+.rm-ammunition-magazine .rm-ammo-header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-bottom:12px;border-bottom:1px solid #665140;}
+.rm-ammunition-magazine .rm-ammo-header h2{margin:0;font-size:24px;line-height:1.2;border:0;}
+.rm-ammunition-magazine .rm-ammo-header p{margin:6px 0 0;font-size:13px;color:#b9b1a8;}
+.rm-ammunition-magazine .rm-ammo-count{text-align:right;flex:none;}
+.rm-ammunition-magazine .rm-ammo-count strong{font-size:28px;line-height:1;font-variant-numeric:tabular-nums;color:#e8c596;}
+.rm-ammunition-magazine .rm-ammo-count span{font-size:18px;color:#a69d94;}
+.rm-ammunition-magazine .rm-ammo-count small{display:block;margin-top:5px;font-size:12px;color:#b9b1a8;}
+.rm-ammunition-magazine fieldset{border:0;padding:0;margin:0;min-width:0;}
+.rm-ammunition-magazine .rm-ammo-workbench{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:22px;}
+.rm-ammunition-magazine .rm-ammo-section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:2px 0 8px;}
+.rm-ammunition-magazine .rm-ammo-section-title h3{font-size:18px;margin:0;border:0;}
+.rm-ammunition-magazine .rm-ammo-section-title>span{font-size:11px;color:#a9a19b;}
+.rm-ammunition-magazine .rm-ammo-stage{height:340px;display:grid;grid-template-rows:minmax(0,1fr);grid-template-columns:minmax(110px,1fr) minmax(0,1.35fr);align-items:center;position:relative;}
+.rm-ammunition-magazine .rm-ammo-physical{width:100%;height:100%;min-width:0;min-height:0;overflow:visible;filter:drop-shadow(5px 9px 7px #0008);}
+.rm-ammunition-magazine .rm-ammo-cutaway{fill:#0d1115;stroke:#8b7862;stroke-width:.8;pointer-events:none;}
+.rm-ammunition-magazine .rm-ammo-mag-group{cursor:pointer;outline:none;}
+.rm-ammunition-magazine .rm-ammo-band{fill:#202936;fill-opacity:.1;stroke:#8d7961;stroke-opacity:.25;stroke-width:.7;transition:fill-opacity .15s;}
+.rm-ammunition-magazine .rm-ammo-mag-group.is-selected .rm-ammo-band,.rm-ammunition-magazine .rm-ammo-mag-group:focus .rm-ammo-band,.rm-ammunition-magazine .rm-ammo-mag-group.is-drop-target .rm-ammo-band{fill:var(--ammo-tone,#cfa875);fill-opacity:.22;stroke:#f0cf99;stroke-opacity:1;}
+.rm-ammunition-magazine .rm-ammo-round{pointer-events:none;}
+.rm-ammunition-magazine .rm-ammo-tip{fill:var(--ammo-tone,#d3a465);opacity:.7;pointer-events:none;}
+.rm-ammunition-magazine .rm-ammo-slot.is-empty{opacity:.13;filter:grayscale(1);}
+.rm-ammunition-magazine .rm-ammo-tone-unknown .rm-ammo-slot{filter:grayscale(1);opacity:.6;}
+.rm-ammunition-magazine .rm-ammo-tone-fire{--ammo-tone:#f1a15d;}.rm-ammunition-magazine .rm-ammo-tone-cold{--ammo-tone:#8cc9e3;}.rm-ammunition-magazine .rm-ammo-tone-unknown{--ammo-tone:#a6a4a4;}.rm-ammunition-magazine .rm-ammo-tone-lightning{--ammo-tone:#d9cc6d;}.rm-ammunition-magazine .rm-ammo-tone-acid{--ammo-tone:#a2d57e;}
+.rm-ammunition-magazine .rm-ammo-groups{display:flex;flex-direction:column;gap:5px;max-height:100%;min-height:0;overflow:auto;padding:8px 0;z-index:1;}
+.rm-ammunition-magazine .rm-ammo-group-label{display:grid;grid-template-columns:minmax(0,1fr) 23px;border-left:2px solid #5c5147;padding-left:5px;}
+.rm-ammunition-magazine .rm-ammo-group-label.is-selected{border-color:var(--ammo-tone,#d8b98f);background:linear-gradient(90deg,#ba8f5c20,transparent);}
+.rm-ammunition-magazine .rm-ammo-group-select{height:auto;padding:6px 3px;display:flex;align-items:flex-start;text-align:left;gap:7px;background:transparent;border:0;box-shadow:none;line-height:1.2;white-space:normal;}
+.rm-ammunition-magazine .rm-ammo-group-number{font-size:19px;color:var(--ammo-tone,#cfb58f);line-height:1.2;}
+.rm-ammunition-magazine .rm-ammo-group-select strong{display:block;font-size:13px;line-height:1.3;margin:3px 0;overflow-wrap:anywhere;}
+.rm-ammunition-magazine .rm-ammo-group-select small{font-size:10px;color:#bcb0a2;}.rm-ammunition-magazine .rm-ammo-group-select em{display:block;font-size:11px;font-style:normal;color:#bcb7b2;}
+.rm-ammunition-magazine .rm-ammo-reorder{display:flex;flex-direction:column;justify-content:center;gap:3px;}
+.rm-ammunition-magazine .rm-ammo-reorder button{height:23px;min-height:0;padding:0;border:0;background:#0002;color:#bca17b;font-size:11px;}
+.rm-ammunition-magazine .rm-ammo-selection{font-size:12px;margin:2px 0 0;color:#dfc29c;}
+.rm-ammunition-magazine .rm-ammo-selection span{display:block;font-size:11px;color:#a9a19b;margin:4px 0 0 16px;}
+.rm-ammunition-magazine .rm-ammo-stock-scroll{max-height:376px;overflow:auto;padding-right:5px;}
+.rm-ammunition-magazine .rm-ammo-stock{display:grid;grid-template-columns:48px minmax(0,1fr);gap:10px;padding:14px 0;border-bottom:1px solid #4b4340;cursor:grab;}
+.rm-ammunition-magazine .rm-ammo-stock:first-child{padding-top:6px;}
+.rm-ammunition-magazine .rm-ammo-stock>img{width:48px;height:48px;object-fit:cover;border:1px solid #8c7150;border-radius:3px;}
+.rm-ammunition-magazine .rm-ammo-stock-info{min-width:0;display:flex;flex-direction:column;gap:5px;}
+.rm-ammunition-magazine .rm-ammo-stock-info>strong{font-size:14px;line-height:1.35;overflow-wrap:anywhere;}
+.rm-ammunition-magazine .rm-ammo-stock-info>span{font-size:12px;color:#b7afa6;}.rm-ammunition-magazine .rm-ammo-stock-info b{color:#f0d7b3;font-variant-numeric:tabular-nums;}
+.rm-ammunition-magazine .rm-ammo-bonus{font-size:11px;line-height:1.3;color:var(--ammo-tone,#d1b38c);}.rm-ammunition-magazine .rm-ammo-manual{font-size:11px;line-height:1.4;color:#b9b0a7;}
+.rm-ammunition-magazine .rm-ammo-stock-actions{grid-column:1/-1;display:flex;gap:8px;}
+.rm-ammunition-magazine .rm-ammo-stock-actions button{height:auto;min-height:28px;padding:5px 8px;font-size:12px;line-height:1.2;}
+.rm-ammunition-magazine .rm-ammo-stock-actions button:first-child{background:#582b2c;border-color:#b08a62;}.rm-ammunition-magazine .rm-ammo-stock-actions button:last-child{background:transparent;}
+.rm-ammunition-magazine .rm-ammo-empty-stock{font-size:13px;color:#b8afa7;padding:22px 0;}
+.rm-ammunition-magazine .rm-ammo-legacy{display:flex;gap:10px;margin-top:12px;padding:10px 12px;border-left:2px solid #b99b6b;background:#b99b6b0d;font-size:12px;}
+.rm-ammunition-magazine .rm-ammo-legacy>i{color:#bfa77e;margin-top:2px;}.rm-ammunition-magazine .rm-ammo-legacy strong,.rm-ammunition-magazine .rm-ammo-legacy span{display:block;}.rm-ammunition-magazine .rm-ammo-legacy span{color:#b7afa6;margin-top:3px;}
+.rm-ammunition-magazine .rm-ammo-legacy label{display:flex;align-items:center;gap:12px;margin-top:8px;}.rm-ammunition-magazine .rm-ammo-legacy select{width:auto;min-width:200px;font-size:12px;}
+.rm-ammunition-magazine .rm-ammo-presets{display:flex;align-items:end;gap:8px;margin-top:14px;}.rm-ammunition-magazine .rm-ammo-presets label{flex:1;min-width:0;font-size:12px;}.rm-ammunition-magazine .rm-ammo-presets select{width:100%;margin-top:4px;font-size:12px;}.rm-ammunition-magazine .rm-ammo-presets input{flex:1;min-width:110px;font-size:12px;}.rm-ammunition-magazine .rm-ammo-presets button{width:auto;flex:none;font-size:12px;}.rm-ammunition-magazine .rm-ammo-presets [data-ammo-action=delete]{width:28px;padding:0;}
+.rm-ammunition-magazine .hint{font-size:11px;line-height:1.4;color:#aaa29a;margin:9px 0 8px;}
+.rm-ammunition-magazine footer{display:grid;grid-template-columns:.65fr .7fr 1.7fr 1.2fr;gap:8px;border-top:1px solid #665140;padding-top:12px;}.rm-ammunition-magazine footer button{height:auto;min-height:36px;padding:7px;font-size:12px;line-height:1.3;white-space:normal;}.rm-ammunition-magazine .rm-ammo-last{font-weight:600;border-color:#ac8760;}.rm-ammunition-magazine .rm-ammo-confirm{font-weight:700;background:#69232e;border-color:#c59a70;color:#f9e6d2;}
+.rm-ammunition-magazine .rm-ammo-error{font-size:12px;padding:8px 10px;margin:0;border-left:2px solid #d7796c;background:#8c302b25;color:#f3b1a4;}
+@media(max-width:850px){.rm-ammunition-magazine .rm-ammo-workbench{gap:12px;}.rm-ammunition-magazine .rm-ammo-stage{grid-template-columns:1fr 1.2fr;}.rm-ammunition-magazine .rm-ammo-presets{flex-wrap:wrap;}.rm-ammunition-magazine .rm-ammo-presets label{flex-basis:45%;}}
+@media(max-width:600px){.rm-ammunition-magazine .rm-ammo-workbench{grid-template-columns:1fr;}.rm-ammunition-magazine .rm-ammo-stage{height:340px;}.rm-ammunition-magazine .rm-ammo-stock-scroll{max-height:220px;}.rm-ammunition-magazine footer{grid-template-columns:1fr 1fr;}.rm-ammunition-magazine .rm-ammo-header h2{font-size:20px;}}
+@media(prefers-reduced-motion:reduce){.rm-ammunition-magazine .rm-ammo-band{transition:none;}}
+
+.rm-ammunition-magazine .rm-ammo-legacy>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.8fr);column-gap:16px;row-gap:3px;width:100%;}.rm-ammunition-magazine .rm-ammo-legacy strong{grid-column:1;}.rm-ammunition-magazine .rm-ammo-legacy span{grid-column:1;margin:0;}.rm-ammunition-magazine .rm-ammo-legacy label{grid-column:2;grid-row:1/3;margin:0;}.rm-ammunition-magazine .rm-ammo-legacy select{min-width:0;flex:1;}
+@media(max-width:600px){.rm-ammunition-magazine .rm-ammo-legacy>div{grid-template-columns:1fr;}.rm-ammunition-magazine .rm-ammo-legacy label{grid-column:1;grid-row:auto;}}
+
+.rm-ammunition-magazine .window-content{container-type:inline-size;}
+.rm-ammunition-magazine .rm-ammo-tone-fire .rm-ammo-band,.rm-ammunition-magazine .rm-ammo-tone-cold .rm-ammo-band{fill:var(--ammo-tone);fill-opacity:.12;}
+.rm-ammunition-magazine .rm-ammo-tone-cold .rm-ammo-tip{opacity:1;filter:drop-shadow(0 0 .8px #8cc9e3);}
+@container(max-width:700px){
+ .rm-ammunition-magazine .rm-ammo-workbench{grid-template-columns:1fr;}
+ .rm-ammunition-magazine .rm-ammo-stage{height:300px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+ .rm-ammunition-magazine .rm-ammo-stock-scroll{max-height:220px;}
+ .rm-ammunition-magazine .rm-ammo-presets{flex-wrap:wrap;}
+ .rm-ammunition-magazine .rm-ammo-presets label{flex-basis:45%;}
+ .rm-ammunition-magazine footer{grid-template-columns:1fr 1fr;position:sticky;bottom:-16px;background:#1b1b1e;z-index:4;}
+ .rm-ammunition-magazine .rm-ammo-legacy>div{grid-template-columns:1fr;}
+ .rm-ammunition-magazine .rm-ammo-legacy label{grid-column:1;grid-row:auto;}
+}

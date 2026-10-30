@@ -23,7 +23,7 @@ import { getManagedIconProjection, syncManagedDocuments } from "./managed-compen
 import {
   inferWeaponAmmunitionSubtype,
   isSelfAmmunitionWeapon
-} from "./ammunition-compatibility.js?v=1.5.26";
+} from "./ammunition-compatibility.js?v=1.5.31";
 import { inferRebreyaWeaponAmmunitionSubtype } from "./ammunition-types.js";
 import {
   escapeFoundryHtml as escapeHtml,

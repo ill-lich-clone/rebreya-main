@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.30");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.30.js"]);
+  assert.equal(manifest.version, "1.5.31");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.31.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.29/u);
@@ -65,7 +65,7 @@ test("current release reuses the catalog icon cache graph", async () => {
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    const cacheVersion = name === "feats-compendium" ? "1\\.5\\.22" : name === "gear-compendium" ? "1\\.5\\.29" : name === "magic-items-compendium" ? "1\\.5\\.30" : "1\\.4\\.330";
+    const cacheVersion = name === "feats-compendium" ? "1\\.5\\.22" : name === "gear-compendium" ? "1\\.5\\.31" : name === "magic-items-compendium" ? "1\\.5\\.30" : "1\\.4\\.330";
     assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=${cacheVersion}`, "u"));
   }
   assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.327/u);

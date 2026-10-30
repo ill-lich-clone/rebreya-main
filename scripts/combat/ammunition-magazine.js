@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
+import { resolveAmmunitionProfile } from "../data/ammunition-compatibility.js?v=1.5.31";
 
 export const LEGACY_AMMUNITION = "@legacy";
 export function ammunitionFingerprint(value) {
@@ -8,8 +9,12 @@ export function ammunitionFingerprint(value) {
   return JSON.stringify(value);
 }
 
-export function captureAmmunition(item) {
-  const data = structuredClone(item?.toObject?.() ?? {name:item.name,type:item.type,img:item.img,system:item.system,flags:item.flags??{},effects:item.effects?.toObject?.()??item.effects??[]});
+export function captureAmmunition(item, options = {}) {
+  const data = structuredClone(item?.toObject?.() ?? {name:item.name,type:item.type,img:item.img,system:item.system,flags:item.flags??{},...(item.effects!==undefined?{effects:item.effects?.toObject?.()??item.effects}:{})});
+  const profile=resolveAmmunitionProfile(item,options);
+  if(profile!=null && data.flags?.[MODULE_ID]?.ammunition==null){
+    data.flags??={};data.flags[MODULE_ID]??={};data.flags[MODULE_ID].ammunition=structuredClone(profile);
+  }
   for (const key of ["_id", "id", "_stats", "folder", "sort", "ownership"]) delete data[key];
   data.system ??= {};
   delete data.system.quantity; delete data.system.container;
@@ -59,9 +64,12 @@ export function getAmmunitionDamage(data) {
   if(!data)return {parts:[],type:"",dieStep:0,manual:""};
   const profile=data.flags?.[MODULE_ID]?.ammunition??{},id=data.flags?.[MODULE_ID]?.gearId;
   const native=[nativeDamagePart(data.system?.damage?.base),...(data.system?.damage?.parts??[]).map(nativeDamagePart)].filter(Boolean);
-  const direct={"боеприпасы-с-огненной-мазью-20":[{formula:"1d6",type:"fire"}],"боеприпасы-с-ледяной-мазью-20":[{formula:"1d6",type:"cold"}]}[id];
-  return {parts:native.length?native:structuredClone(direct??profile.damageModifiers??[]),type:profile.damageType??"",dieStep:Number(profile.handCannonDamageDieStep)||0,
-    replace:Boolean(native.length && data.system?.damage?.replace),native:Boolean(native.length),manual:direct?"":String(profile.propertiesText??"")};
+  const type={"боеприпасы-с-огненной-мазью-20":"fire","boepripasy-s-ognennoy-maz-yu-20":"fire","боеприпасы-с-ледяной-мазью-20":"cold","boepripasy-s-ledyanoy-maz-yu-20":"cold"}[id];
+  const direct=type?[{formula:"1d6",type}]:null;
+  const authored=profile.damageModifiers??[],text=String(profile.propertiesText??"");
+  const defaultText=type==="fire"?"При попадании атака наносит дополнительно 1к6 урона огнём.":"При попадании атака наносит дополнительно 1к6 урона холодом.";
+  return {parts:native.length?native:structuredClone(authored.length?authored:direct??[]),type:profile.damageType??"",dieStep:Number(profile.handCannonDamageDieStep)||0,
+    replace:Boolean(native.length && data.system?.damage?.replace),native:Boolean(native.length),manual:direct&&!native.length&&!authored.length&&text===defaultText?"":text};
 }
 
 export function applyAmmunitionDamage(config,data,{nativeApplied=false,physicalProperties=[]}={}) {

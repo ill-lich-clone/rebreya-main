@@ -122,6 +122,21 @@ test("magazine editor still rejects unavailable weapons and actors without nativ
   assert.equal(service.getMagazineEditorData(actor,weapon).capacity,3);
 });
 
+test("catalog profiles restore existing inventory ammunition without opening writes or losing known refunds",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 6",ammunition:"Винтовочный"},ammoState:{current:3,capacity:6,ammunition:"Винтовочный"}});
+  weapon.system.ammunition={type:"rebreyaRifle"};
+  const ammo=makeAmmoItem({name:"Боеприпасы с огненной мазью",quantity:20});ammo.system.type.subtype="firearmBullet";
+  ammo.flags[MODULE_ID]={gearId:"boepripasy-s-ognennoy-maz-yu-20",ammunition:null};
+  const old=captureAmmunition(ammo);Object.assign(weapon.flags[MODULE_ID].firearmAmmoState,{schemaVersion:2,rounds:Array(3).fill(old.key),sources:{[old.key]:old.data},lastPattern:Array(3).fill(old.key),presets:[{name:"Старая",rounds:Array(3).fill(old.key)}]});
+  const actor=makeActor([weapon,ammo]),profile={compatibility:["all"],replaces:[],propertiesText:"При попадании 1к6 огнём."};
+  const service=new CombatAttackService({repository:{model:{gearById:new Map([[ammo.flags[MODULE_ID].gearId,{ammunition:profile}]])}}});
+  const draft=service.getMagazineEditorData(actor,weapon),stock=draft.stock.find(row=>row.quantity===20);
+  assert.ok(stock,"existing inventory stack must be offered");assert.deepEqual(stock.data.flags[MODULE_ID].ammunition,profile);
+  assert.deepEqual(draft.rounds,Array(3).fill(stock.key));assert.deepEqual(draft.presets[0].rounds,draft.rounds);assert.deepEqual(draft.lastPattern,draft.rounds);
+  assert.equal(actor.embeddedDocumentUpdateCalls.length,0);assert.equal(ammo.flags[MODULE_ID].ammunition,null);
+  await service.unloadFirearm(actor,weapon);assert.equal(ammo.system.quantity,23);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);
+});
+
 test("opening reload twice concurrently reuses the same editor",async()=>{
   const previous=foundry.applications;
   foundry.applications={api:{ApplicationV2:class{async render(){this.rendered=true;return this;}bringToFront(){}},HandlebarsApplicationMixin:Base=>Base}};
@@ -3723,6 +3738,7 @@ test("weapon reload implant loads one ammunition type into its twenty-round rese
     name: "Мушкетный патрон",
     quantity: 10
   });
+  rifleAmmo.effects=[]; // Native Item sources include their empty effects collection.
   const actor = makeActor([rifleAmmo, musketAmmo]);
   const service = new CombatAttackService({
     implantAutomationService: {

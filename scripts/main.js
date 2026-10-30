@@ -20,10 +20,10 @@ import {
 } from "./data/icon-badge-build.js?v=1.4.330";
 import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.29";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.31";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
 import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.14";
-import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.26";
+import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.30";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.22";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
@@ -47,7 +47,7 @@ import { ensureWorldShieldSpell } from "./data/shield-spell-item.js?v=1.5.8";
 import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js?v=1.4.347";
+import { EconomyRepository } from "./data/repository.js?v=1.5.31";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.327";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
@@ -326,7 +326,7 @@ import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.2";
 import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.2";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.28";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.31";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
@@ -522,7 +522,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.5.26";
+const MODULE_STYLE_VERSION = "1.5.31";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;

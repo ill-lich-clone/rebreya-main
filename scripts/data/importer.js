@@ -1,5 +1,5 @@
 ﻿import { BUILTIN_DATA_PATH, DATA_SOURCE_MODES, MODULE_ID, SETTINGS_KEYS } from "../constants.js";
-import { normalizeEconomyDataset } from "./normalizer.js?v=1.4.137-city-panorama-normalizer";
+import { normalizeEconomyDataset } from "./normalizer.js?v=1.5.31";
 
 const LEGACY_IMPLANT_ID_BY_SOURCE_NAME = Object.freeze({
   "Настроенные сервопривод": "nastroennye-servoprivody",

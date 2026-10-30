@@ -1,6 +1,6 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 import { buildDetailedCitySnapshot, buildEconomyModel, buildReachableImportRoutesForCity } from "../engine/economy-engine.js";
-import { loadEconomyDataset } from "./importer.js?v=1.4.347";
+import { loadEconomyDataset } from "./importer.js?v=1.5.31";
 
 import {
   mergeCityPresentation,

@@ -1,36 +1,77 @@
-<div class="rm-ammo-body">
-  <header><h2>{{weaponName}}</h2><p>{{current}} / {{capacity}} патронов · Одна ячейка — {{groupSize}} на атаку</p></header>
+<div class="rm-ammo-body" aria-busy="{{busy}}">
+  <header class="rm-ammo-header">
+    <div><h2>{{weaponName}}</h2><p>Снаряжение магазина · {{groupSize}} на атаку</p></div>
+    <div class="rm-ammo-count"><strong>{{current}} <span>/ {{capacity}}</span></strong><small>патронов</small></div>
+  </header>
   {{#if error}}<p class="rm-ammo-error" role="alert">{{error}}</p>{{/if}}
   <fieldset {{#if busy}}disabled{{/if}}>
-    <div class="rm-ammo-columns">
-      <section aria-label="Порядок выстрелов"><h3>Порядок выстрелов</h3>
-        {{#each cells}}<div class="rm-ammo-cell">
-          <label for="rm-ammo-{{index}}">Ячейка {{number}} <small>{{count}} / {{size}}</small></label>
-          <select id="rm-ammo-{{index}}" data-ammo-cell="{{index}}" {{#if locked}}disabled{{/if}}>
-            <option value="">Пусто</option>{{#each choices}}<option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
-          </select>
-          <button type="button" data-ammo-action="up" data-index="{{index}}" aria-label="Переместить ячейку {{number}} выше"><i class="fa-solid fa-arrow-up"></i></button>
-          <button type="button" data-ammo-action="down" data-index="{{index}}" aria-label="Переместить ячейку {{number}} ниже"><i class="fa-solid fa-arrow-down"></i></button>
-          {{#if mixed}}<span class="rm-ammo-error">Смешанная ячейка — выберите один тип</span>{{/if}}
-        </div>{{/each}}
+    <div class="rm-ammo-workbench">
+      <section class="rm-ammo-magazine" aria-label="Магазин и порядок выстрелов">
+        <div class="rm-ammo-section-title"><h3>Магазин</h3><span>Первый патрон — сверху</span></div>
+        <div class="rm-ammo-stage">
+          <nav class="rm-ammo-groups" aria-label="Ячейки будущих атак">
+            {{#each cells}}
+            <div class="rm-ammo-group-label rm-ammo-tone-{{tone}} {{#if selected}}is-selected{{/if}}">
+              <button type="button" class="rm-ammo-group-select" data-ammo-action="select" data-index="{{index}}" aria-pressed="{{selected}}" {{#if locked}}disabled{{/if}}>
+                <span class="rm-ammo-group-number">{{number}}</span>
+                <span><small>{{#if first}}Следующая атака{{else}}Атака {{number}}{{/if}}</small><strong title="{{name}}">{{shortName}}</strong><em>{{count}} / {{size}}</em></span>
+              </button>
+              <div class="rm-ammo-reorder">
+                <button type="button" data-ammo-action="up" data-index="{{index}}" aria-label="Переместить ячейку {{number}} выше"><i class="fa-solid fa-chevron-up"></i></button>
+                <button type="button" data-ammo-action="down" data-index="{{index}}" aria-label="Переместить ячейку {{number}} ниже"><i class="fa-solid fa-chevron-down"></i></button>
+              </div>
+            </div>
+            {{/each}}
+          </nav>
+          <svg class="rm-ammo-physical" viewBox="25 25 170 330" role="group" aria-label="Изогнутый магазин, {{current}} из {{capacity}} патронов">
+            <defs>
+              <clipPath id="{{clipId}}-body"><path d="M82 75 L155 41 L170 75 C186 154 169 261 111 345 L42 307 C86 234 95 156 82 75 Z"/></clipPath>
+              <clipPath id="{{clipId}}-window"><path d="M112 91 L151 71 C177 151 156 261 113 321 L80 294 C124 217 132 160 112 91 Z"/></clipPath>
+            </defs>
+            <image href="{{shell}}" width="520" height="387" clip-path="url(#{{clipId}}-body)" aria-hidden="true"/>
+            <path class="rm-ammo-cutaway" d="M112 91 L151 71 C177 151 156 261 113 321 L80 294 C124 217 132 160 112 91 Z" aria-hidden="true"/>
+            <g clip-path="url(#{{clipId}}-window)">
+              {{#each cells}}
+              <g class="rm-ammo-mag-group rm-ammo-tone-{{tone}} {{#if selected}}is-selected{{/if}}" data-ammo-group="{{index}}" data-ammo-action="select" data-index="{{index}}" role="button" tabindex="0" aria-disabled="{{locked}}" aria-label="Ячейка {{number}}: {{name}}, {{count}} из {{size}}">
+                <rect class="rm-ammo-band" x="40" y="{{bandY}}" width="140" height="{{bandHeight}}"/>
+                {{#each slots}}
+                <g transform="translate({{x}} {{y}}) rotate({{angle}})" class="rm-ammo-slot {{#unless loaded}}is-empty{{/unless}}">
+                  <image href="{{@root.cartridge}}" x="-22" y="-7.333" width="44" height="14.666" class="rm-ammo-round" aria-hidden="true"/>
+                  {{#if loaded}}<path class="rm-ammo-tip" d="M12 -1.9 L20 0 L12 1.9 Z"/>{{/if}}
+                </g>
+                {{/each}}
+              </g>
+              {{/each}}
+            </g>
+          </svg>
+        </div>
+        <p class="rm-ammo-selection"><i class="fa-solid fa-crosshairs"></i> Выбрана ячейка {{selectedGroupNumber}} <span>Нажми на неё или перетащи патроны в магазин</span></p>
       </section>
-      <section aria-label="Боеприпасы"><h3>Свободный запас</h3>
-        {{#each stock}}<article class="rm-ammo-stock"><strong>{{name}}</strong><span>Доступно: {{remaining}}</span>
-          <button type="button" data-ammo-action="fill" data-key="{{key}}">Заполнить остаток</button>
-          {{#if manual}}<small>Вручную: {{manual}}</small>{{/if}}
-        </article>{{else}}<p>Совместимых патронов нет.</p>{{/each}}
+      <section class="rm-ammo-stock-list" aria-label="Доступные боеприпасы">
+        <div class="rm-ammo-section-title"><h3>Боеприпасы</h3><span>Свободный запас</span></div>
+        <div class="rm-ammo-stock-scroll">
+          {{#each stock}}
+          <article class="rm-ammo-stock rm-ammo-tone-{{tone}}" draggable="true" data-ammo-key="{{key}}" aria-label="{{name}}, доступно {{remaining}}">
+            <img src="{{img}}" alt="" draggable="false"><div class="rm-ammo-stock-info"><strong>{{name}}</strong><span>Доступно: <b>{{remaining}}</b></span>
+              {{#if bonus}}<small class="rm-ammo-bonus">{{bonus}} · один раз на атаку</small>{{/if}}
+              {{#if manual}}<small class="rm-ammo-manual">Вручную: {{manual}}</small>{{/if}}
+            </div>
+            <div class="rm-ammo-stock-actions"><button type="button" data-ammo-action="place" data-key="{{key}}">В ячейку</button><button type="button" data-ammo-action="fill" data-key="{{key}}" {{#if empty}}disabled{{/if}}>Заполнить остаток</button></div>
+          </article>
+          {{else}}<p class="rm-ammo-empty-stock"><i class="fa-solid fa-box-open"></i> В инвентаре нет совместимых патронов.</p>{{/each}}
+        </div>
       </section>
     </div>
-    {{#if canResolve}}<label class="rm-ammo-legacy">Решение мастера: разновидность старых зарядов
-      <select data-ammo-resolve><option value="">Не определена</option>{{#each resolveChoices}}<option value="{{key}}">{{name}}</option>{{/each}}</select>
-    </label>{{/if}}
-    <div class="rm-ammo-presets"><label>Пресет <select data-ammo-preset><option value="">Выберите схему</option>{{#each presets}}<option value="{{index}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
-      <button type="button" data-ammo-action="delete">Удалить</button>
-      <input data-ammo-preset-name maxlength="80" aria-label="Название пресета" placeholder="Название нового пресета">
-      <button type="button" data-ammo-action="save">Запомнить схему</button>
+    {{#if hasLegacy}}<div class="rm-ammo-legacy"><i class="fa-solid fa-circle-question"></i><div><strong>Разновидность старых зарядов неизвестна</strong><span>Количество сохранено. Перед возвратом патронов мастер должен определить их тип.</span>
+      {{#if canResolve}}<label>Решение мастера <select data-ammo-resolve><option value="">Не определена</option>{{#each resolveChoices}}<option value="{{key}}">{{name}}</option>{{/each}}</select></label>{{/if}}
+    </div></div>{{/if}}
+    <div class="rm-ammo-presets">
+      <label>Пресет<select data-ammo-preset><option value="">Выберите схему</option>{{#each presets}}<option value="{{index}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+      <button type="button" data-ammo-action="delete" title="Удалить выбранный пресет" aria-label="Удалить выбранный пресет"><i class="fa-solid fa-trash-can"></i></button>
+      <input data-ammo-preset-name maxlength="80" aria-label="Название пресета" placeholder="Название схемы">
+      <button type="button" data-ammo-action="save">Сохранить схему</button>
     </div>
-    <p class="hint">До подтверждения меняется только черновик. Пресеты сохраняются вместе с зарядкой. Сложные спецэффекты применяются вручную.</p>
-    <button type="button" class="rm-ammo-last" data-ammo-action="last" {{#unless hasLast}}disabled{{/unless}}>Зарядить как в прошлый раз</button>
-    <footer><button type="button" data-ammo-action="cancel">Отмена</button><button type="button" data-ammo-action="clear">Разрядить при подтверждении</button><button type="button" class="rm-ammo-confirm" data-ammo-action="load">{{#if busy}}Сохранение…{{else}}Зарядить{{/if}}</button></footer>
+    <p class="hint"><i class="fa-solid fa-circle-info"></i> До подтверждения меняется только черновик. Сложные спецэффекты применяются вручную.</p>
+    <footer><button type="button" data-ammo-action="cancel">Отмена</button><button type="button" data-ammo-action="clear">Разрядить</button><button type="button" class="rm-ammo-last" data-ammo-action="last" {{#unless hasLast}}disabled{{/unless}}>Зарядить как в прошлый раз</button><button type="button" class="rm-ammo-confirm" data-ammo-action="load">{{#if busy}}Сохранение…{{else}}{{#if unloading}}Подтвердить разрядку{{else}}Зарядить{{/if}}{{/if}}</button></footer>
   </fieldset>
 </div>

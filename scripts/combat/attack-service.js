@@ -1,5 +1,5 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
-import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.26";
+import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
 import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.22";
 import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
@@ -13,8 +13,9 @@ import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } fr
 import {
   hasActiveRepeatingShot,
   inferAmmunitionItemSubtype,
-  isCompatibleAmmunition
-} from "../data/ammunition-compatibility.js?v=1.5.26";
+  isCompatibleAmmunition,
+  resolveAmmunitionProfile
+} from "../data/ammunition-compatibility.js?v=1.5.31";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
 import { getNaturalReachFeet } from "./natural-reach.js";
 import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.1";
@@ -1730,6 +1731,17 @@ export class CombatAttackService {
     return Number.isFinite(fromState) ? Math.max(0, Math.floor(fromState)) : 0;
   }
 
+  #projectMagazineState(state) {
+    const {rounds,sources}=magazineRounds(state),renamed={};
+    for(const [key,data] of Object.entries(sources)){
+      if(data.flags?.[MODULE_ID]?.ammunition!=null || !resolveAmmunitionProfile(data,{gearById:this.moduleApi?.repository?.model?.gearById}))continue;
+      const captured=this.#captureAmmunition(data);renamed[key]=captured.key;
+      if(key!==captured.key)delete sources[key];sources[captured.key]=captured.data;
+    }
+    const remap=keys=>keys.map(key=>renamed[key]??key);
+    return {schemaVersion:2,rounds:remap(rounds),sources,presets:(state.presets??[]).map(p=>({...p,rounds:remap(p.rounds)})),lastPattern:remap(state.lastPattern??[])};
+  }
+
   #resolveFirearmAmmoState(item, options = {}) {
     const state = readDocumentFlag(item, MODULE_ID, FIREARM_AMMO_STATE_FLAG);
     const values = this.#getLichWeaponPropertyValues(item, options);
@@ -1740,8 +1752,9 @@ export class CombatAttackService {
       ? explicitCurrent
       : (Number.isFinite(stateCurrent) ? stateCurrent : capacity);
 
+    const ordered=state?.schemaVersion===2?this.#projectMagazineState(state):{};
     return {
-      ...(state?.schemaVersion === 2 ? { schemaVersion: 2, ...magazineRounds(state), presets: state.presets ?? [], lastPattern: state.lastPattern ?? [] } : {}),
+      ...ordered,
       tracked: capacity > 0,
       current: capacity > 0 ? clampInteger(current, 0, capacity) : 0,
       capacity,
@@ -2208,6 +2221,14 @@ export class CombatAttackService {
     return firstWord.length > 8 ? firstWord.slice(0, 8) : firstWord;
   }
 
+  #captureAmmunition(item) {
+    return captureAmmunition(item,{gearById:this.moduleApi?.repository?.model?.gearById});
+  }
+
+  #isCompatibleAmmunition(weapon,item) {
+    return isCompatibleAmmunition(weapon,item,{gearById:this.moduleApi?.repository?.model?.gearById});
+  }
+
   #isAmmunitionItem(item) {
     if (!(item instanceof Item) || item.type !== "consumable") {
       return false;
@@ -2273,7 +2294,7 @@ export class CombatAttackService {
   #findMatchingAmmunition(actor, weapon, ammunitionLabel) {
     const directAmmunition = this.#resolveAmmunitionItemByIdentifier(actor, ammunitionLabel);
     const hasNativeSubtype=cleanText(foundry.utils.getProperty(weapon,"system.ammunition.type"));
-    if (directAmmunition && (!hasNativeSubtype || isCompatibleAmmunition(weapon,directAmmunition))) {
+    if (directAmmunition && (!hasNativeSubtype || this.#isCompatibleAmmunition(weapon,directAmmunition))) {
       return [directAmmunition];
     }
 
@@ -2282,7 +2303,7 @@ export class CombatAttackService {
       return collectionValues(actor?.items)
         .filter((item) => this.#isAmmunitionItem(item))
         .filter((item) => this.#getItemQuantity(item) > 0)
-        .filter((item) => isCompatibleAmmunition(weapon,item));
+        .filter((item) => this.#isCompatibleAmmunition(weapon,item));
     }
 
     const wantedStem = this.#ammunitionStem(ammunitionLabel);
@@ -2293,8 +2314,12 @@ export class CombatAttackService {
     return collectionValues(actor?.items)
       .filter((item) => this.#isAmmunitionItem(item))
       .filter((item) => this.#getItemQuantity(item) > 0)
-      .filter((item) => this.#ammunitionStem(item.name).includes(wantedStem)
-        || wantedStem.includes(this.#ammunitionStem(item.name)));
+      .filter((item) => {
+        const profile=resolveAmmunitionProfile(item,{gearById:this.moduleApi?.repository?.model?.gearById});
+        if(profile?.compatibility?.length || profile?.replaces?.length)return this.#isCompatibleAmmunition(weapon,item);
+        return this.#isCompatibleAmmunition(weapon,item) || this.#ammunitionStem(item.name).includes(wantedStem)
+          || wantedStem.includes(this.#ammunitionStem(item.name));
+      });
   }
 
   #resolveMinimumStrengthRequirement(actor, item, options = {}) {
@@ -4103,7 +4128,7 @@ export class CombatAttackService {
 
   #isValidNativeAmmunitionOption(actor, weapon, option) {
     const value = cleanText(option?.value);
-    return !value || isCompatibleAmmunition(weapon, this.#actorItemById(actor, value));
+    return !value || this.#isCompatibleAmmunition(weapon, this.#actorItemById(actor, value));
   }
 
   #clearInvalidNativeAmmunitionSelection(activity, config = {}, dialog = {}) {
@@ -4124,7 +4149,7 @@ export class CombatAttackService {
         return value === undefined ? undefined : "";
       }
 
-      if (isCompatibleAmmunition(weapon, this.#actorItemById(actor, safeValue))) {
+      if (this.#isCompatibleAmmunition(weapon, this.#actorItemById(actor, safeValue))) {
         return value;
       }
 
@@ -4595,7 +4620,7 @@ export class CombatAttackService {
       if (!isFirearm && !repeatingShot) {
         this.#clearInvalidNativeAmmunitionSelection(activity, config, dialog);
         if(this.#hasItemProperty(item,"amm")){
-          const choices=collectionValues(activity.actor?.items??item.actor?.items).filter(ammo=>isCompatibleAmmunition(item,ammo) && !readDocumentFlag(ammo,MODULE_ID,"installedWeaponMod")?.hostItemId);
+          const choices=collectionValues(activity.actor?.items??item.actor?.items).filter(ammo=>this.#isCompatibleAmmunition(item,ammo) && !readDocumentFlag(ammo,MODULE_ID,"installedWeaponMod")?.hostItemId);
           if(!choices.length){ui.notifications?.warn?.("Нет совместимых боеприпасов.");return false;}
           dialog.configure=true;dialog.options??={};
           dialog.options.ammunitionOptions=[{value:"",label:"Выберите боеприпас"},...choices.map(ammo=>({value:ammo.id,label:`${ammo.name} (${this.#getItemQuantity(ammo)})`}))];
@@ -4671,8 +4696,8 @@ export class CombatAttackService {
     if(!rolls?.length)return true;
     for(const roll of rolls){
       const ammo=activity.actor?.items?.get?.(roll.options?.ammunition);
-      if(!isCompatibleAmmunition(item,ammo)){ui.notifications?.warn?.("Выберите доступный совместимый боеприпас.");return false;}
-      roll.options.rebreyaAmmunitionData=captureAmmunition(ammo).data;
+      if(!this.#isCompatibleAmmunition(item,ammo)){ui.notifications?.warn?.("Выберите доступный совместимый боеприпас.");return false;}
+      roll.options.rebreyaAmmunitionData=this.#captureAmmunition(ammo).data;
     }
     return true;
   }
@@ -4735,7 +4760,7 @@ export class CombatAttackService {
       }
       else if (firstRoll.options?.ammunition && !hasActiveRepeatingShot(item)) {
         const source=firstRoll.options.rebreyaAmmunitionData??activity.actor?.items?.get?.(firstRoll.options.ammunition)??firstRoll.parent?.getFlag?.("dnd5e","roll.ammunitionData");
-        if(source)this.#recordAmmunitionShot(firstRoll,activity,captureAmmunition(source).data,1);
+        if(source)this.#recordAmmunitionShot(firstRoll,activity,this.#captureAmmunition(source).data,1);
       }
 
       const automation = this.#getLichAutomationState(item);
@@ -4969,7 +4994,7 @@ export class CombatAttackService {
     const originId=config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId??config.workflow?.itemCardId??config.workflow?.itemCardUuid?.split(".").at(-1);
     const origin=originId?game.messages?.get?.(originId):null;
     const savedShot=config.rebreyaAmmunitionShot??config.workflow?.rebreyaAmmunitionShot??readDocumentFlag(origin,MODULE_ID,"ammunitionShot");
-    const ammunitionData=savedShot?.data??(config.ammunition?captureAmmunition(config.ammunition).data:null);
+    const ammunitionData=savedShot?.data??(config.ammunition?this.#captureAmmunition(config.ammunition).data:null);
     const physicalProperties=Array.from(ammunitionData?.system?.properties??[]).filter(key=>globalThis.CONFIG?.DND5E?.itemProperties?.[key]?.isPhysical);
     const area=[FIREARM_AUTOMATIC_FIRE_AUTOMATION,FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION].includes(activity?.flags?.[MODULE_ID]?.automation);
     if(area && isFirearmItem(activity?.item)){
@@ -5549,7 +5574,7 @@ export class CombatAttackService {
     if(existing instanceof Promise)return existing;
     if(existing?.rendered){existing.bringToFront();return existing;}
     const opening=(async()=>{
-      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.26");
+      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.31");
       const app=new AmmunitionMagazineApp(this,actor,weapon);await app.render({force:true});return app;
     })();
     this._magazineEditors.set(key,opening);
@@ -5563,19 +5588,19 @@ export class CombatAttackService {
     const state = this.#resolveFirearmAmmoState(weapon), ordered = magazineRounds(state), stock = [], sources = {...ordered.sources};
     for (const item of this.#findMatchingAmmunition(actor, weapon, state.ammunition)) {
       if (readDocumentFlag(item, MODULE_ID, "installedWeaponMod")?.hostItemId) continue;
-      const captured=captureAmmunition(item); sources[captured.key]=captured.data;
+      const captured=this.#captureAmmunition(item); sources[captured.key]=captured.data;
       const row=stock.find(x=>x.key===captured.key);
       if(row)row.quantity+=this.#getItemQuantity(item);
       else stock.push({...captured,quantity:this.#getItemQuantity(item)});
     }
     const reservoir=readDocumentFlag(actor,MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG);
     const legacyReservoirMatch=reservoir?.ammunitionIdentifier===state.ammunition || reservoir?.ammunitionItemId===state.ammunition || this.#ammunitionStem(reservoir?.ammunitionName)===this.#ammunitionStem(state.ammunition);
-    const snapshotCompatible=reservoir?.ammunitionData && isCompatibleAmmunition(weapon,{...reservoir.ammunitionData,system:{...reservoir.ammunitionData.system,quantity:reservoir.quantity}});
+    const snapshotCompatible=reservoir?.ammunitionData && this.#isCompatibleAmmunition(weapon,{...reservoir.ammunitionData,system:{...reservoir.ammunitionData.system,quantity:reservoir.quantity}});
     const canUseReservoir=this.moduleApi.implantAutomationService?.hasCapability?.(actor,"reloadWithoutFreeHand") && reservoir?.quantity>0
       && (snapshotCompatible || ((!reservoir.ammunitionData || !weapon.system.ammunition?.type) && legacyReservoirMatch));
     let reservoirKey=null;
     if(canUseReservoir){
-      const captured=reservoir.ammunitionData?captureAmmunition(reservoir.ammunitionData):{key:LEGACY_AMMUNITION,data:null};
+      const captured=reservoir.ammunitionData?this.#captureAmmunition(reservoir.ammunitionData):{key:LEGACY_AMMUNITION,data:null};
       reservoirKey=captured.key;if(captured.data)sources[captured.key]=captured.data;
       const row=stock.find(x=>x.key===captured.key);
       if(row)row.quantity+=reservoir.quantity;else stock.unshift({...captured,quantity:reservoir.quantity});
@@ -5604,7 +5629,7 @@ export class CombatAttackService {
       let delta=rounds.filter(x=>x===key).length-old.filter(x=>x===key).length;
       if(!delta)continue;
       if(delta<0 && key===LEGACY_AMMUNITION)throw new Error("Разновидность старых зарядов неизвестна. Мастер должен указать её перед возвратом.");
-      const matches=collectionValues(actor.items).filter(item=>this.#isAmmunitionItem(item) && (delta<0 || eligibleIds.has(item.id)) && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId && captureAmmunition(item).key===key);
+      const matches=collectionValues(actor.items).filter(item=>this.#isAmmunitionItem(item) && (delta<0 || eligibleIds.has(item.id)) && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId && this.#captureAmmunition(item).key===key);
       if(delta>0){
         loaded+=delta;
         if(current.reservoirKey===key){const n=Math.min(delta,current.reservoir.quantity);delta-=n;reservoirLoaded+=n;reservoirAfter.quantity-=n;}
@@ -5645,12 +5670,12 @@ export class CombatAttackService {
         try{await actor.createEmbeddedDocuments("Item",[structuredClone(data)],{keepId:true});}
         catch(error){if(!actor.items.get(data._id))throw error;}
         const item=actor.items.get(data._id);
-        if(!item || captureAmmunition(item).key!==checks[data._id].key || this.#getItemQuantity(item)!==0)throw new Error("Не удалось создать стак возвращаемых боеприпасов.");
-        createdIds.push(data._id);createdSnapshots.set(data._id,captureAmmunition(item).data);
+        if(!item || this.#captureAmmunition(item).key!==checks[data._id].key || this.#getItemQuantity(item)!==0)throw new Error("Не удалось создать стак возвращаемых боеприпасов.");
+        createdIds.push(data._id);createdSnapshots.set(data._id,this.#captureAmmunition(item).data);
       }
       for(const [id,check] of Object.entries(checks)){
         const item=actor.items.get(id);
-        if(!item || captureAmmunition(item).key!==check.key || this.#getItemQuantity(item)!==check.before)throw new Error("Запас изменился во время зарядки.");
+        if(!item || this.#captureAmmunition(item).key!==check.key || this.#getItemQuantity(item)!==check.before)throw new Error("Запас изменился во время зарядки.");
       }
       if(!same(readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG)??null,beforeState))throw new Error("Состав магазина изменился.");
       if(!same(reservoirBefore,reservoirAfter)){
@@ -5670,7 +5695,7 @@ export class CombatAttackService {
       const stateBefore=same(actualState,beforeState),stateAfter=same(actualState,afterState);
       const known=(stateBefore || stateAfter) && (stateBefore || [beforeName,result.weaponName].includes(weapon.name))
         && [reservoirBefore,reservoirAfter].some(value=>same(readReservoir(),value))
-        && Object.entries(checks).every(([id,c])=>{const item=actor.items.get(id);return item && captureAmmunition(item).key===c.key && [c.before,c.after].includes(this.#getItemQuantity(item));});
+        && Object.entries(checks).every(([id,c])=>{const item=actor.items.get(id);return item && this.#captureAmmunition(item).key===c.key && [c.before,c.after].includes(this.#getItemQuantity(item));});
       if(known && itemWriteAttempted){
         const restore=[];
         for(const [id,c] of Object.entries(checks)){
@@ -5686,12 +5711,12 @@ export class CombatAttackService {
           && Object.entries(checks).every(([id,c])=>this.#getItemQuantity(actor.items.get(id))===c.before);
         if(restored && !same(reservoirBefore,reservoirAfter) && same(readReservoir(),reservoirAfter))await actor.setFlag(MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG,structuredClone(reservoirBefore));
         if(restored){
-          const empty=createdIds.filter(id=>{const item=actor.items.get(id);return item && this.#getItemQuantity(item)===0 && same(captureAmmunition(item).data,createdSnapshots.get(id));});
+          const empty=createdIds.filter(id=>{const item=actor.items.get(id);return item && this.#getItemQuantity(item)===0 && same(this.#captureAmmunition(item).data,createdSnapshots.get(id));});
           if(empty.length)await actor.deleteEmbeddedDocuments("Item",empty);
         }
       }
       if(!itemWriteAttempted){
-        const empty=createdIds.filter(id=>{const item=actor.items.get(id);return item && this.#getItemQuantity(item)===0 && same(captureAmmunition(item).data,createdSnapshots.get(id));});
+        const empty=createdIds.filter(id=>{const item=actor.items.get(id);return item && this.#getItemQuantity(item)===0 && same(this.#captureAmmunition(item).data,createdSnapshots.get(id));});
         if(empty.length)await actor.deleteEmbeddedDocuments("Item",empty);
       }
       throw error;
@@ -5749,14 +5774,14 @@ export class CombatAttackService {
     const statePath=`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`,before={[weapon.id]:{...identity,[statePath]:saved,name:weapon.name}},
       after={[weapon.id]:{...identity,[statePath]:next,name:withFirearmAmmoSuffix(weapon.name,nextCurrent,desired.capacity)}},creates=[];
     if(saved?.schemaVersion===2){
-      const ordered=magazineRounds(saved),tail=ordered.rounds.slice(nextCurrent);
+      const ordered=this.#projectMagazineState(saved),tail=ordered.rounds.slice(nextCurrent);
       if(tail.includes(LEGACY_AMMUNITION))fail();
-      next.rounds=ordered.rounds.slice(0,nextCurrent);
+      Object.assign(next,{rounds:ordered.rounds.slice(0,nextCurrent),sources:ordered.sources,presets:ordered.presets,lastPattern:ordered.lastPattern});
       for(const key of new Set(tail)){
         const quantity=tail.filter(k=>k===key).length,data=ordered.sources[key];if(!data)fail();
-        const target=collectionValues(actor.items).find(item=>this.#isAmmunitionItem(item) && captureAmmunition(item).key===key && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId);
+        const target=collectionValues(actor.items).find(item=>this.#isAmmunitionItem(item) && this.#captureAmmunition(item).key===key && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId);
         if(target){
-          const path=this.#itemQuantityUpdatePath(target),n=this.#getItemQuantity(target),snapshot=target.toObject?.()??captureAmmunition(target).data;
+          const path=this.#itemQuantityUpdatePath(target),n=this.#getItemQuantity(target),snapshot=target.toObject?.()??this.#captureAmmunition(target).data;
           const snapshotIdentity={name:snapshot.name,type:snapshot.type,flags:structuredClone(snapshot.flags??null),effects:structuredClone(snapshot.effects??null),...Object.fromEntries(Object.entries(snapshot.system??{}).filter(([k])=>k!=="quantity").map(([k,v])=>[`system.${k}`,structuredClone(v)]))};
           before[target.id]={...snapshotIdentity,[path]:n};after[target.id]={...snapshotIdentity,[path]:n+quantity};
         }else{const source=structuredClone(data);source.system.quantity=quantity;source.system.container=null;creates.push({sourceId:source.flags?.[MODULE_ID]?.gearId??key,data:source});}
@@ -5814,9 +5839,9 @@ export class CombatAttackService {
       quantity: clampInteger(currentSource?.quantity, 0, IMPLANT_RELOAD_RESERVOIR_CAPACITY),
       capacity: IMPLANT_RELOAD_RESERVOIR_CAPACITY
     };
-    const ammunitionData=captureAmmunition(ammunitionItem).data;
+    const ammunitionData=this.#captureAmmunition(ammunitionItem).data;
     const sameAmmunition = current.quantity <= 0 || (currentSource?.ammunitionData
-      && captureAmmunition(currentSource.ammunitionData).key===captureAmmunition(ammunitionItem).key);
+      && this.#captureAmmunition(currentSource.ammunitionData).key===this.#captureAmmunition(ammunitionItem).key);
     if (!sameAmmunition) {
       ui.notifications?.warn?.("В механизме уже находятся боеприпасы другого типа.");
       return {

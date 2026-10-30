@@ -165,13 +165,17 @@ export function inferAmmunitionItemSubtype(item) {
   return inferAmmunitionSubtypeFromIdentity(item);
 }
 
-export function isCompatibleAmmunition(weapon, ammunition) {
+export function resolveAmmunitionProfile(ammunition, {gearById} = {}) {
+  return moduleFlag(ammunition, "ammunition") ?? gearById?.get?.(gearId(ammunition))?.ammunition ?? null;
+}
+
+export function isCompatibleAmmunition(weapon, ammunition, options = {}) {
   const expected = inferWeaponAmmunitionSubtype(weapon)
     || clean(getProperty(weapon, "system.ammunition.type"));
   const actual = inferAmmunitionItemSubtype(ammunition);
   const quantity = Number(getProperty(ammunition, "system.quantity"));
   if (!expected || !actual || !Number.isFinite(quantity) || quantity <= 0) return false;
-  const profile=moduleFlag(ammunition,"ammunition"),families={arrow:"bow",crossbowBolt:"crossbow",blowgunNeedle:"blowgun",slingBullet:"sling",rebreyaMusket:"musket",rebreyaRifle:"rifle",rebreyaShotgun:"shotgun",rebreyaPistol:"pistol",rebreyaCannonball:"hand-cannon"};
+  const profile=resolveAmmunitionProfile(ammunition,options),families={arrow:"bow",crossbowBolt:"crossbow",blowgunNeedle:"blowgun",slingBullet:"sling",rebreyaMusket:"musket",rebreyaRifle:"rifle",rebreyaShotgun:"shotgun",rebreyaPistol:"pistol",rebreyaCannonball:"hand-cannon"};
   const physical=new Set(["arrow","crossbowBolt","blowgunNeedle","slingBullet","firearmBullet","rebreyaMusket","rebreyaRifle","rebreyaShotgun","rebreyaPistol","rebreyaCannonball","rebreyaGaussBolt","rebreyaRocket"]);
   const matches=entries=>Array.isArray(entries) && entries.some(key=>key===gearId(weapon) || key===families[expected] || (key==="all" && physical.has(expected)));
   if(profile?.replaces?.length)return matches(profile.replaces);

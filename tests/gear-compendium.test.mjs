@@ -13,12 +13,34 @@ import { buildNamedIconLookup } from "../scripts/data/compendium-utils.js";
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 import { getRebreyaWeaponBaseItemDefinitions } from "../scripts/data/item-classification.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
+import { isCompatibleAmmunition } from "../scripts/data/ammunition-compatibility.js";
+import { getAmmunitionDamage } from "../scripts/combat/ammunition-magazine.js";
 import {
   buildRebreyaWeaponIdsConfig,
   registerRebreyaWeaponBaseItemsFromGearPack
 } from "../scripts/integrations/dnd5e-sheet-extensions.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
+test("real ointment catalog rows survive normalization and produce compatible typed ammunition", () => {
+  const gear=JSON.parse(readFileSync(join(TESTS_DIR,"../data/gear.json"),"utf8"));
+  const rows=gear.filter(row=>["avtomaticheskaya-vintovka","боеприпасы-с-огненной-мазью-20","боеприпасы-с-ледяной-мазью-20"].includes(row.id));
+  const normalized=normalizeEconomyDataset({goods:[],regions:[],cities:[],materials:[],reference:{},gear:rows});
+  const native=normalized.gear.map(row=>createDnd5eItemData(row,new Map()));
+  const weapon=native.find(row=>row.type==="weapon");
+  for(const [name,type] of [["огненной","fire"],["ледяной","cold"]]) {
+    const source=normalized.gear.find(row=>row.name.includes(name)),ammo=native.find(row=>row.name.includes(name));
+    assert.deepEqual(source.ammunition.compatibility,["all"]);
+    assert.equal(isCompatibleAmmunition(weapon,ammo),true);
+    assert.deepEqual(getAmmunitionDamage(ammo).parts,[{formula:"1d6",type}]);
+  }
+});
+
+test("gear normalization preserves detached ammunition explosive and attachment profiles",()=>{
+  const profiles={ammunition:{compatibility:["all"],damageModifiers:[{formula:"1d6",type:"fire"}]},explosive:{damageFormula:"2d6"},attachment:{slots:["barrel"]}};
+  const normalized=normalizeEconomyDataset({goods:[],regions:[],cities:[],materials:[],reference:{},gear:[{id:"profiles",name:"Profiles",...profiles}]}).gear[0];
+  for(const key of Object.keys(profiles)){assert.deepEqual(normalized[key],profiles[key]);assert.notEqual(normalized[key],profiles[key]);}
+  normalized.ammunition.compatibility.push("rifle");assert.deepEqual(profiles.ammunition.compatibility,["all"]);
+});
 test("mechanized clothing exposes the clothing slot and the explicit 15 to 16 rule", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "../data/gear.json"), "utf8"));
   const item = gear.find(row => row.id === "mekhanizirovannaya-odezhda");

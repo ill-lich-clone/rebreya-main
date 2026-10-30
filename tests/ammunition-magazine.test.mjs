@@ -3,6 +3,19 @@ import assert from "node:assert/strict";
 import { captureAmmunition, magazineRounds, validateMagazine, getAmmunitionDamage, applyAmmunitionDamage } from "../scripts/combat/ammunition-magazine.js";
 
 const ammo = (id = "боеприпасы-с-огненной-мазью-20") => ({ name: "Патрон", type: "consumable", system: { quantity: 20, type: { value: "ammo", subtype: "rebreyaRifle" } }, flags: { "rebreya-main": { gearId: id } }, effects: [] });
+
+test("capturing a detached snapshot preserves identity when empty effects were not serialized",()=>{
+  const data=ammo();delete data.effects;
+  const first=captureAmmunition({toObject:()=>structuredClone(data)});
+  assert.equal(captureAmmunition(first.data).key,first.key);
+});
+
+test("ointment default never replaces authored profile damage or custom manual effects",()=>{
+  for(const id of ["boepripasy-s-ognennoy-maz-yu-20","боеприпасы-с-огненной-мазью-20","boepripasy-s-ledyanoy-maz-yu-20","боеприпасы-с-ледяной-мазью-20"]){
+    const data=ammo(id);data.flags["rebreya-main"].ammunition={damageModifiers:[{formula:"2d8",type:"acid"}],propertiesText:"Авторский ручной эффект"};
+    const rule=getAmmunitionDamage(data);assert.deepEqual(rule.parts,[{formula:"2d8",type:"acid"}]);assert.equal(rule.manual,"Авторский ручной эффект");
+  }
+});
 test("magazine identity ignores stack quantity and location but distinguishes authored effects", () => {
   const a=ammo(), b=structuredClone(a); b._id="other";b.system.quantity=2;b.system.container="bag";
   assert.equal(captureAmmunition(a).key,captureAmmunition(b).key);

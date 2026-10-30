@@ -288,6 +288,9 @@ test("builtin dataset loader reads upgrade profiles and merges them into base ge
       armor: null,
       implant: null,
       upgrade: upgradeProfile.upgrade,
+      ammunition: null,
+      explosive: null,
+      attachment: null,
       source: "gear-workbook"
     }]);
   }

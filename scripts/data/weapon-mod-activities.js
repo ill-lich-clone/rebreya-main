@@ -1,5 +1,5 @@
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { createDnd5eItemData } from "./gear-compendium.js?v=1.5.29";
+import { createDnd5eItemData } from "./gear-compendium.js?v=1.5.31";
 import { weaponModProfileSignature, weaponModFlag } from "./weapon-mod-rules.js?v=1.5.23";
 const NS="rebreya-main";
 export const WEAPON_MOD_LAUNCHER_CAPACITY=6;
