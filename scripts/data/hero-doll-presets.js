@@ -1,4 +1,4 @@
-import { getHeroDollSlots } from "./item-classification.js?v=1.5.27";
+import { getHeroDollSlots } from "./item-classification.js?v=1.5.29";
 
 const slotIds = new Set(getHeroDollSlots().map(slot => slot.id));
 export const HERO_DOLL_GHOST_IMAGE = "icons/svg/item-bag.svg";

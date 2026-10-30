@@ -108,3 +108,11 @@
 ## Проверенные результаты
 
 Полный Node test runner: 5355 passed, 0 failed, 1 skipped (5356 tests); единственный skip — существующая rendered ghost проверка без Foundry Handlebars/NODE_PATH. Синтаксис: 1127 JS/MJS checked, 0 failed; JSON: 65 checked, 0 failed; git diff --check: 0. После review изменённые equipment resolver/adapter повторно прошли node --check. Профильный повтор проверяющего: 26 passed, 0 failed, нерешённых Important/Critical замечаний нет. Live-проверка не проведена: Playwright-профиль занят, Foundry MCP bridge не подключён, Computer Use остановлен из-за невозможности установить URL; ограничения не обходились.
+
+## Выпуск снаряжения 1.5.29 — согласованная поправка
+
+1. Зафиксировать ожидаемые manifest/forwarder/equipment cache keys 1.5.29 в существующих release-тестах и увидеть RED.
+2. Синхронно обновить manifest, добавить тонкий forwarder, перевести только собственные cache keys 1.5.27→1.5.29 и README; прежние forwarders и независимое исправление боеприпасов сохранить.
+3. Выполнить release/focused тесты, полную runtime/JSON проверку, diff review, commit и push в lich_branch. Новых методов или игрового поведения нет.
+
+Проверка поправки 1.5.29: RED release tests — 12 failed до обновления runtime; GREEN release/equipment/armor — 88 passed, 0 failed. Полный `node --test tests/*.test.mjs`: 5355 passed, 0 failed, 1 skipped (прежняя Foundry Handlebars зависимость); `node --check`: 1128 JS/MJS, 0 failed; `ConvertFrom-Json`: 65 JSON, 0 failed; `git diff --check`: 0. Аудит diff подтвердил только замену equipment cache keys, единственный активный entrypoint и сохранённые forwarders 1.5.27/1.5.28.

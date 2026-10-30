@@ -1,5 +1,5 @@
 import { GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
-import { resolveRebreyaOrdinaryWeaponGearId } from "./item-classification.js?v=1.5.27";
+import { resolveRebreyaOrdinaryWeaponGearId } from "./item-classification.js?v=1.5.29";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import {
   CORPSE_MATERIALIZATION_VERSION,

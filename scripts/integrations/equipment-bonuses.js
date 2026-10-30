@@ -1,7 +1,7 @@
-import { equipmentCollectionValues, getClassSpellcastingItemBonus } from "../data/equipment-bonuses.js?v=1.5.27";
-import { getMechanizedClothingBonuses } from "../data/mechanized-clothing.js?v=1.5.27";
-export { getMechanizedClothingBonuses } from "../data/mechanized-clothing.js?v=1.5.27";
-export { CLASS_SPELLCASTING_ITEM_FAMILIES, getClassSpellcastingItemBonus } from "../data/equipment-bonuses.js?v=1.5.27";
+import { equipmentCollectionValues, getClassSpellcastingItemBonus } from "../data/equipment-bonuses.js?v=1.5.29";
+import { getMechanizedClothingBonuses } from "../data/mechanized-clothing.js?v=1.5.29";
+export { getMechanizedClothingBonuses } from "../data/mechanized-clothing.js?v=1.5.29";
+export { CLASS_SPELLCASTING_ITEM_FAMILIES, getClassSpellcastingItemBonus } from "../data/equipment-bonuses.js?v=1.5.29";
 
 const ITEM_PATCH = Symbol.for("rebreya-main.equipment-bonus-item");
 const ACTOR_PATCH = Symbol.for("rebreya-main.equipment-bonus-actor");

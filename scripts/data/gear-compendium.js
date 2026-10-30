@@ -17,7 +17,7 @@ import {
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js?v=1.5.27";
+} from "./item-classification.js?v=1.5.29";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { getManagedIconProjection, syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {
@@ -1540,4 +1540,4 @@ export class GearCompendiumService {
     return document;
   }
 }
-import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.27";
+import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.29";

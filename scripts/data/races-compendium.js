@@ -13,7 +13,7 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
-import { buildSlug } from "./item-classification.js?v=1.5.27";
+import { buildSlug } from "./item-classification.js?v=1.5.29";
 import { getManagedIconProjection, syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 
 const DND5E_SYSTEM_ID = "dnd5e";

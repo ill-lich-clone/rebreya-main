@@ -10153,4 +10153,4 @@ export class InventoryService {
 }
 
 
-import { getMechanizedClothingBonuses } from "./mechanized-clothing.js?v=1.5.27";
+import { getMechanizedClothingBonuses } from "./mechanized-clothing.js?v=1.5.29";

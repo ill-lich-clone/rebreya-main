@@ -1158,4 +1158,4 @@ export function classifyMagicItem(item = {}) {
   };
 }
 
-import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.27";
+import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.29";

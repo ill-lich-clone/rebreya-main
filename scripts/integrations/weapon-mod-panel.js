@@ -2,7 +2,7 @@ import {MODULE_ID,GEAR_COMPENDIUM_NAME} from "../constants.js";
 import {getWeaponModCandidate} from "../data/weapon-mod-catalog.js?v=1.5.23";
 import {weaponModFlag,validateWeaponAttachmentInstallation,validateModernizedPartInstallation,isExtraWeaponModMount} from "../data/weapon-mod-rules.js?v=1.5.23";
 import {loadWeaponBlueprints,getWeaponBlueprint} from "../data/weapon-blueprints.js?v=1.5.23";
-import {getItemHeldHands,isItemEquipped} from "./held-items.js?v=1.5.27";
+import {getItemHeldHands,isItemEquipped} from "./held-items.js?v=1.5.29";
 import {AnchoredOverlay,bindAnchoredTooltips} from "../ui/anchored-overlay.js?v=1.4.392";
 const states=new WeakMap(),requests=new WeakMap(),viewSelections=new WeakMap(),tabBindings=new WeakMap(),values=collection=>Array.from(collection?.contents??collection?.values?.()??collection??[]);
 const escape=value=>String(value??"").replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));

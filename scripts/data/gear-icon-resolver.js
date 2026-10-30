@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { buildNamedIconLookup, normalizeFolderPath, resolveNamedIcon } from "./compendium-utils.js?v=1.4.327";
-import { classifyGearEntry } from "./item-classification.js?v=1.5.27";
+import { classifyGearEntry } from "./item-classification.js?v=1.5.29";
 
 export const DEFAULT_GEAR_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 

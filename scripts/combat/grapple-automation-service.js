@@ -3,7 +3,7 @@ import {
   buildActorHandReservationsUpdate,
   getActorHandReservations,
   getFreeHandSlots
-} from "../integrations/held-items.js?v=1.5.27";
+} from "../integrations/held-items.js?v=1.5.29";
 import { getNaturalReachFeet } from "./natural-reach.js";
 import { computeTwistedPullPosition, tokenFootprint, twistedDistanceFeet, validateGrapplePlacement } from "./grapple-geometry.js";
 

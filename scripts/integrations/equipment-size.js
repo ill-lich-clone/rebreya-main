@@ -3,7 +3,7 @@ import {
   EQUIPMENT_SIZES, getEquipmentSize, isEquipmentSize, shiftEquipmentDamage,
   inferEquipmentSize, getEquipmentSizeMultipliers
 } from "../data/equipment-size-rules.js?v=1.4.393";
-import { isNaturalWeapon, buildVersatileBaseDamage, getActorHandSlots, getActorHandReservations, getItemHeldHands, isItemEquipped } from "./held-items.js?v=1.5.27";
+import { isNaturalWeapon, buildVersatileBaseDamage, getActorHandSlots, getActorHandReservations, getItemHeldHands, isItemEquipped } from "./held-items.js?v=1.5.29";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 
 const ROOT = `flags.${MODULE_ID}`;

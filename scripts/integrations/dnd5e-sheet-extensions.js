@@ -35,7 +35,7 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup,
   normalizeHeroDollSlots
-} from "../data/item-classification.js?v=1.5.27";
+} from "../data/item-classification.js?v=1.5.29";
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
@@ -55,7 +55,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.5.27";
+} from "./held-items.js?v=1.5.29";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js?v=1.4.317";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";

@@ -2,7 +2,7 @@ import { captureRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.5.18"
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.379";
 import { itemInstanceFingerprint as fingerprint } from "./item-instance-workflow.js?v=1.5.17";
-import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.5.27";
+import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.5.29";
 import { DisarmError } from "../combat/disarm-rules.js?v=1.4.252";
 const MODULE_ID = "rebreya-main";
 const get = (object, path) => path.split(".").reduce((value, key) => value?.[key], object);

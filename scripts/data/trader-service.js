@@ -10,7 +10,7 @@ import {
   getTraderPlanByKey
 } from "../engine/trader-engine.js?v=1.4.109-lazy-trader-restock";
 import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.327";
-import { classifyGearEntry } from "./item-classification.js?v=1.5.27";
+import { classifyGearEntry } from "./item-classification.js?v=1.5.29";
 import { formatPercent, formatSignedPercent } from "../ui.js";
 import {
   isValidTradeTransactionId,

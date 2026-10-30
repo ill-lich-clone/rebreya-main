@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.5.27";
+} from "./magic-item-embedded-sync.js?v=1.5.29";
 import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
@@ -21,10 +21,10 @@ import {
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js?v=1.5.27";
+} from "./item-classification.js?v=1.5.29";
 import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.21";
-import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.27";
-import { getClassSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.27";
+import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.29";
+import { getClassSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.29";
 import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toNumber

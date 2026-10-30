@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
-import { buildGearIconLookup, createDnd5eItemData } from "../data/gear-compendium.js?v=1.5.27";
-import { classifyGearEntry } from "../data/item-classification.js?v=1.5.27";
+import { buildGearIconLookup, createDnd5eItemData } from "../data/gear-compendium.js?v=1.5.29";
+import { classifyGearEntry } from "../data/item-classification.js?v=1.5.29";
 
 let magicWeaponTemplateHookRegistered = false;
 const pendingMagicWeaponTemplateItemKeys = new Set();

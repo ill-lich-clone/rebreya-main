@@ -1,4 +1,4 @@
-import { getItemHeldHands, getActorHandSlots, getActorHandReservations, isItemEquipped } from "../integrations/held-items.js?v=1.5.27";
+import { getItemHeldHands, getActorHandSlots, getActorHandReservations, isItemEquipped } from "../integrations/held-items.js?v=1.5.29";
 import { isBrokenDurabilityItem } from "../integrations/durability-hooks.js?v=1.5.19";
 
 export const CLASS_SPELLCASTING_ITEM_FAMILIES = Object.freeze({

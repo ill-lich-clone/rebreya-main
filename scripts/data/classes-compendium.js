@@ -35,7 +35,7 @@ import {
   CRAFTSMAN_CONSTRUCT_FEATURE_ID,
   buildCraftsmanConstructSummonAutomation
 } from "./craftsman-construct-definitions.js";
-import { buildSlug } from "./item-classification.js?v=1.5.27";
+import { buildSlug } from "./item-classification.js?v=1.5.29";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
 import { getManagedIconProjection, syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {

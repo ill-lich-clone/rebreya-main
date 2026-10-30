@@ -1,6 +1,6 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
-import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.27";
-import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.5.27";
+import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.29";
+import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.5.29";
 
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
@@ -9,7 +9,7 @@ import { normalizeHeroDollPresets, captureHeroDollPresetSlots, heroDollPresetMod
 import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.5.18";
 import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.5.18";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js?v=1.5.27";
+import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js?v=1.5.29";
 import { readInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
 
 export const HERO_DOLL_ASSIGN_COMMAND = "hero-doll.assign";

@@ -20,11 +20,11 @@ import {
 } from "./data/icon-badge-build.js?v=1.4.330";
 import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.27";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.29";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
 import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.14";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.26";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.27";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.29";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.22";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
@@ -100,7 +100,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.5.27";
+} from "./data/inventory-service.js?v=1.5.29";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -115,7 +115,7 @@ import {
 } from "./application/inventory-ingress-planner.js?v=1.4.396";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.27";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.29";
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
@@ -376,7 +376,7 @@ import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/ra
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.15";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
-import { getActorHandReservations } from "./integrations/held-items.js?v=1.5.27";
+import { getActorHandReservations } from "./integrations/held-items.js?v=1.5.29";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js?v=1.4.397";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
@@ -394,7 +394,7 @@ import {
   registerRebreyaWeaponBaseItemsFromGearPack
 } from "./integrations/dnd5e-sheet-extensions.js?v=1.5.25";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.19";
-import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.27";
+import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.29";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   patchDurabilityItemEffectSuppression,
@@ -409,7 +409,7 @@ import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.27";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.29";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.19";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.2";
