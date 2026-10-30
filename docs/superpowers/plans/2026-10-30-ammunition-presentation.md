@@ -42,8 +42,8 @@ Interfaces: pure resolveMagazinePresentation(weapon,capacity) chooses kind/asset
 
 - [x] Update passport/README/spec/plan with actual verification and limitations.
 - [x] Bump release/cache and forwarder; full tests and JS/JSON/diff checks, affected reruns after fixes.
-- [ ] Fresh whole-change review; fix Important findings with RED/GREEN.
-- [ ] Explicitly stage own files, commit/push lich_branch, verify state and report paths/commit/results.
+- [x] Fresh whole-change review; no Critical/Important findings.
+- [x] Explicitly stage own files, commit/push lich_branch, verify state and report paths/commit/results.
 
 ## Verification evidence
 
@@ -53,5 +53,9 @@ Interfaces: pure resolveMagazinePresentation(weapon,capacity) chooses kind/asset
 - Live Foundry 13.351/dnd5e 5.2.5, testovyj3, GM CODEX, fixture TCO2a0yN6rIDRpq0: rifle24, primitive1/6, shotgun2/6 render correct counts/art. True native drag + Enter selection + preset blur/click confirmed. Whole fixture unchanged during draft/cancel. Load fire6+cold18: stock20/20→14/2; unload→20/20; last pattern→14/2; second unload→20/20.
 - Saved legacy1: explicit GM type confirmation does not spend stock19; unload returns exactly1→20. Real saved scalar count remains intact until confirmation.
 - Window540×740: no horizontal overflow, footer inside window; screenshots inspected. Browser reported zero console errors; Foundry deprecation warnings preexist.
-- Source Actor9l5K3URGU5nvhy13 remained byte-equivalent to its initial toObject snapshot throughout; original stock musket19/rifle10/cold20/fire20 unchanged. Own fixture and its message removed.
+- Source Actor9l5K3URGU5nvhy13 remained byte-equivalent to its initial toObject snapshot throughout; original stock musket19/rifle10/cold20/fire20 unchanged. Own fixture removed; no fixture chat messages remained.
 - Ignored screenshots/logs: `.superpowers/sdd/2026-10-30-ammunition-presentation/` (rifle-final, arkebuza-final, mnogostvol-nyy-kremnevyy-pistolet-final, dvukhstvol-nyy-drobovik-final, drobovik-final, legacy-final, narrow-final).
+
+## Final review and delivery
+
+Implementation commit `020db875`, range `54f01325..020db875`, pushed to `origin/lich_branch`. Independent fresh-context Astra review: no Critical, Important, or actionable Minor findings; no declined scope judgments. Reviewer independently reran the five focused suites (206 passed, 0 failed) and range diff check. Full suite/live checks above remain valid because review required no code changes. Final follow-up commit records this delivery evidence only.
