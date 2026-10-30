@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+
+
 globalThis.foundry ??= {
   utils: {
     getProperty: (object, path) => String(path ?? "").split(".").reduce((value, key) => value?.[key], object),
@@ -228,4 +230,12 @@ test("actor repair removes native ammunition selection from self-ammunition dart
   assert.deepEqual(dart.system.properties, ["lchDeadly"]);
   assert.equal(dart.system.activities.attack.ammunition, "");
   assert.equal(dart.flags.dnd5e.last.attack.ammunition, "");
+});
+
+test("special ammunition profiles match physical weapon families without admitting incompatible replacements", () => {
+  const rifle={type:"weapon",system:{ammunition:{type:"rebreyaRifle"}}},pistol={type:"weapon",system:{ammunition:{type:"rebreyaPistol"}}};
+  const ammo={type:"consumable",system:{quantity:6,type:{value:"ammo",subtype:"firearmBullet"}},flags:{"rebreya-main":{ammunition:{compatibility:["all"],replaces:[]}}}};
+  assert.equal(isCompatibleAmmunition(rifle,ammo),true);
+  ammo.flags["rebreya-main"].ammunition={compatibility:[],replaces:["musket","rifle"]};
+  assert.equal(isCompatibleAmmunition(rifle,ammo),true);assert.equal(isCompatibleAmmunition(pistol,ammo),false);
 });

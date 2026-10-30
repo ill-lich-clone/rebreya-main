@@ -75,6 +75,10 @@ export function registerCombatHooks(moduleApi) {
   game[HOOKS_REGISTERED_KEY] = true;
 
   if (hasAttackService) {
+    Hooks.on("dnd5e.postAttackRollConfiguration", (rolls,config)=>moduleApi.combatAttackService.validateAmmunitionRollConfiguration?.(rolls,config));
+    Hooks.on("midi-qol.preAttackRoll", workflow=>moduleApi.combatAttackService.prepareAmmunitionWorkflow?.(workflow));
+    Hooks.on("midi-qol.preDamageRoll", (workflow,activity,config)=>{if(config && workflow?.rebreyaAmmunitionShot){config.rebreyaAmmunitionShot=workflow.rebreyaAmmunitionShot;const data=workflow.rebreyaAmmunitionShot.data;if(data)config.ammunition=new Item.implementation({...structuredClone(data),system:{...structuredClone(data.system),quantity:1}},{parent:activity?.actor??workflow.actor});}return true;});
+    Hooks.on("renderChatMessageHTML", (message,html)=>moduleApi.combatAttackService.renderAmmunitionNotice?.(message,html));
     Hooks.on("midi-qol.preAttackRollConfig", workflow => ignoreProneFireDisadvantage(workflow));
     Hooks.on("dnd5e.preApplyEnchantment", (item, data, {activity}={}) => canApplyFirearmTuning(item,activity,data));
     Hooks.on("dnd5e.canEnchant", (activity,item,errors) => allowMagicalFirearmTuning(activity,item,errors));

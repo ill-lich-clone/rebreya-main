@@ -1,0 +1,36 @@
+<div class="rm-ammo-body">
+  <header><h2>{{weaponName}}</h2><p>{{current}} / {{capacity}} патронов · Одна ячейка — {{groupSize}} на атаку</p></header>
+  {{#if error}}<p class="rm-ammo-error" role="alert">{{error}}</p>{{/if}}
+  <fieldset {{#if busy}}disabled{{/if}}>
+    <div class="rm-ammo-columns">
+      <section aria-label="Порядок выстрелов"><h3>Порядок выстрелов</h3>
+        {{#each cells}}<div class="rm-ammo-cell">
+          <label for="rm-ammo-{{index}}">Ячейка {{number}} <small>{{count}} / {{size}}</small></label>
+          <select id="rm-ammo-{{index}}" data-ammo-cell="{{index}}" {{#if locked}}disabled{{/if}}>
+            <option value="">Пусто</option>{{#each choices}}<option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+          </select>
+          <button type="button" data-ammo-action="up" data-index="{{index}}" aria-label="Переместить ячейку {{number}} выше"><i class="fa-solid fa-arrow-up"></i></button>
+          <button type="button" data-ammo-action="down" data-index="{{index}}" aria-label="Переместить ячейку {{number}} ниже"><i class="fa-solid fa-arrow-down"></i></button>
+          {{#if mixed}}<span class="rm-ammo-error">Смешанная ячейка — выберите один тип</span>{{/if}}
+        </div>{{/each}}
+      </section>
+      <section aria-label="Боеприпасы"><h3>Свободный запас</h3>
+        {{#each stock}}<article class="rm-ammo-stock"><strong>{{name}}</strong><span>Доступно: {{remaining}}</span>
+          <button type="button" data-ammo-action="fill" data-key="{{key}}">Заполнить остаток</button>
+          {{#if manual}}<small>Вручную: {{manual}}</small>{{/if}}
+        </article>{{else}}<p>Совместимых патронов нет.</p>{{/each}}
+      </section>
+    </div>
+    {{#if canResolve}}<label class="rm-ammo-legacy">Решение мастера: разновидность старых зарядов
+      <select data-ammo-resolve><option value="">Не определена</option>{{#each resolveChoices}}<option value="{{key}}">{{name}}</option>{{/each}}</select>
+    </label>{{/if}}
+    <div class="rm-ammo-presets"><label>Пресет <select data-ammo-preset><option value="">Выберите схему</option>{{#each presets}}<option value="{{index}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+      <button type="button" data-ammo-action="delete">Удалить</button>
+      <input data-ammo-preset-name maxlength="80" aria-label="Название пресета" placeholder="Название нового пресета">
+      <button type="button" data-ammo-action="save">Запомнить схему</button>
+    </div>
+    <p class="hint">До подтверждения меняется только черновик. Пресеты сохраняются вместе с зарядкой. Сложные спецэффекты применяются вручную.</p>
+    <button type="button" class="rm-ammo-last" data-ammo-action="last" {{#unless hasLast}}disabled{{/unless}}>Зарядить как в прошлый раз</button>
+    <footer><button type="button" data-ammo-action="cancel">Отмена</button><button type="button" data-ammo-action="clear">Разрядить при подтверждении</button><button type="button" class="rm-ammo-confirm" data-ammo-action="load">{{#if busy}}Сохранение…{{else}}Зарядить{{/if}}</button></footer>
+  </fieldset>
+</div>

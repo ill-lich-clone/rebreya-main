@@ -23,7 +23,7 @@ import { getManagedIconProjection, syncManagedDocuments } from "./managed-compen
 import {
   inferWeaponAmmunitionSubtype,
   isSelfAmmunitionWeapon
-} from "./ammunition-compatibility.js?v=1.4.147-native-ammunition";
+} from "./ammunition-compatibility.js?v=1.5.26";
 import { inferRebreyaWeaponAmmunitionSubtype } from "./ammunition-types.js";
 import {
   escapeFoundryHtml as escapeHtml,
@@ -37,7 +37,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 26;
+const GEAR_TEMPLATE_VERSION = 27;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const STORAGE_COIN_DENOMINATION_BY_NAME = Object.freeze({
@@ -852,6 +852,7 @@ function buildFirearmActivities(item) {
   };
   if (reloadActivity) {
     activities[reloadActivity._id] = reloadActivity;
+    activities.lchUnloadGun0001 = buildSelfUtilityActivity({activityId:"lchUnloadGun0001",name:"Разрядить",activationType:"action",chatFlavor:"Вернуть оставшиеся патроны в инвентарь.",automation:"firearm-unload",sort:60});
   }
   if (areaFireActivity) {
     activities[areaFireActivity._id] = areaFireActivity;

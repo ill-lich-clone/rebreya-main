@@ -1,4 +1,5 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
+import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.26";
 import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.22";
 import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
@@ -9,12 +10,11 @@ import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { measureStorageTokenDistance, storageTokenFootprintCenters, measureStorageGridDistance } from "../data/storage-access.js";
 import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
-import { createDnd5eItemData } from "../data/gear-compendium.js?v=1.5.1";
 import {
   hasActiveRepeatingShot,
   inferAmmunitionItemSubtype,
   isCompatibleAmmunition
-} from "../data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
+} from "../data/ammunition-compatibility.js?v=1.5.26";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
 import { getNaturalReachFeet } from "./natural-reach.js";
 import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.1";
@@ -908,6 +908,8 @@ export class CombatAttackService {
     this._weaponModDeferred = new WeakSet();
     this._weaponModUtilityRequests=new Map();
     this._weaponModDamageWarnings=new WeakSet();
+    this._ammunitionShots = new WeakMap();
+    this._magazineEditors = new Map();
   }
 
   getWeaponModAttackConditions(activity,target,config={}) {
@@ -1739,6 +1741,7 @@ export class CombatAttackService {
       : (Number.isFinite(stateCurrent) ? stateCurrent : capacity);
 
     return {
+      ...(state?.schemaVersion === 2 ? { schemaVersion: 2, ...magazineRounds(state), presets: state.presets ?? [], lastPattern: state.lastPattern ?? [] } : {}),
       tracked: capacity > 0,
       current: capacity > 0 ? clampInteger(current, 0, capacity) : 0,
       capacity,
@@ -1780,11 +1783,11 @@ export class CombatAttackService {
     const state = this.#resolveFirearmAmmoState(item, options);
     const mode = this.#resolveFirearmFireMode(item, options);
     if (mode === "semi") {
-      return state.capacity > 0 ? Math.min(3, state.capacity) : 3;
+      return 3;
     }
 
     if (mode === "automatic") {
-      return state.capacity > 0 ? Math.min(6, state.capacity) : 6;
+      return 6;
     }
 
     return 1;
@@ -1801,6 +1804,9 @@ export class CombatAttackService {
     }
 
     const required = Math.max(1, this.#resolveFirearmShotAmmoCost(item, options));
+    if (state.schemaVersion === 2 && new Set(state.rounds.slice(0, required)).size > 1) {
+      return { reason: "firearmAmmoMixed", current: state.current, capacity: state.capacity, required, state };
+    }
     if (state.current <= 0) {
       return {
         reason: "firearmAmmoEmpty",
@@ -1831,6 +1837,10 @@ export class CombatAttackService {
     }
 
     this.#setFirearmAmmoStateSync(item, block.state);
+    if (block.reason === "firearmAmmoMixed") {
+      ui.notifications?.warn?.("В одной очереди должны быть одинаковые патроны. Откройте перезарядку.");
+      return true;
+    }
     if (block.reason === "firearmAmmoInsufficient") {
       this.#notifyFirearmAmmoInsufficient(item, block.current, block.required);
     }
@@ -1928,6 +1938,7 @@ export class CombatAttackService {
 
     const nextContent = this.#withFirearmChatCardNotes(content, safeNotes);
     const update = {
+      ...(options.ammunitionPatch??{}),
       [`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`]: safeNotes
     };
     if (nextContent !== content) {
@@ -2059,9 +2070,13 @@ export class CombatAttackService {
     const nextName = withFirearmAmmoSuffix(item?.name, current, capacity);
     const stateUnchanged = toNumber(currentState?.current, NaN) === current
       && toNumber(currentState?.capacity, NaN) === capacity
-      && cleanText(currentState?.ammunition) === ammunition;
+      && cleanText(currentState?.ammunition) === ammunition
+      && ammunitionFingerprint(currentState?.rounds) === ammunitionFingerprint(state?.rounds)
+      && ammunitionFingerprint(currentState?.presets) === ammunitionFingerprint(state?.presets)
+      && ammunitionFingerprint(currentState?.lastPattern) === ammunitionFingerprint(state?.lastPattern);
     if (stateUnchanged && item?.name === nextName) {
       return {
+        ...(currentState?.schemaVersion === 2 ? structuredClone(currentState) : {}),
         current,
         capacity,
         ammunition,
@@ -2070,6 +2085,7 @@ export class CombatAttackService {
     }
 
     const nextState = {
+      ...(state?.schemaVersion === 2 ? {schemaVersion:2,rounds:structuredClone(state.rounds),sources:structuredClone(state.sources),presets:structuredClone(state.presets??[]),lastPattern:structuredClone(state.lastPattern??[])} : {}),
       current,
       capacity,
       ...(Number.isSafeInteger(state?.baseCapacity)?{baseCapacity:state.baseCapacity}:{}),
@@ -2147,8 +2163,15 @@ export class CombatAttackService {
     }
 
     const ammoSpent = Math.min(state.current, required);
+    const ordered = magazineRounds(state);
+    if (new Set(ordered.rounds.slice(0,ammoSpent)).size > 1) {
+      ui.notifications?.warn?.("В одной атаке должны быть одинаковые патроны.");
+      return {success:false,reason:"firearmAmmoMixed",current:state.current,capacity:state.capacity,ammoSpent:0};
+    }
+    const ammunitionData = ordered.sources[ordered.rounds[0]] ?? null;
     const nextState = this.#setFirearmAmmoStateSync(item, {
       ...state,
+      ...(state.schemaVersion===2?{rounds:ordered.rounds.slice(ammoSpent)}:{}),
       current: state.current - ammoSpent
     });
     if (nextState.current <= 0) {
@@ -2164,6 +2187,7 @@ export class CombatAttackService {
       success: true,
       tracked: true,
       ammoSpent,
+      ammunitionData,
       current: nextState.current,
       capacity: nextState.capacity
     };
@@ -2248,7 +2272,8 @@ export class CombatAttackService {
 
   #findMatchingAmmunition(actor, weapon, ammunitionLabel) {
     const directAmmunition = this.#resolveAmmunitionItemByIdentifier(actor, ammunitionLabel);
-    if (directAmmunition) {
+    const hasNativeSubtype=cleanText(foundry.utils.getProperty(weapon,"system.ammunition.type"));
+    if (directAmmunition && (!hasNativeSubtype || isCompatibleAmmunition(weapon,directAmmunition))) {
       return [directAmmunition];
     }
 
@@ -2257,7 +2282,7 @@ export class CombatAttackService {
       return collectionValues(actor?.items)
         .filter((item) => this.#isAmmunitionItem(item))
         .filter((item) => this.#getItemQuantity(item) > 0)
-        .filter((item) => inferAmmunitionItemSubtype(item) === nativeSubtype);
+        .filter((item) => isCompatibleAmmunition(weapon,item));
     }
 
     const wantedStem = this.#ammunitionStem(ammunitionLabel);
@@ -2270,99 +2295,6 @@ export class CombatAttackService {
       .filter((item) => this.#getItemQuantity(item) > 0)
       .filter((item) => this.#ammunitionStem(item.name).includes(wantedStem)
         || wantedStem.includes(this.#ammunitionStem(item.name)));
-  }
-
-  #planActorAmmunitionSpend(actor, weapon, ammunitionLabel, amount) {
-    const requested = Math.max(0, Math.floor(toNumber(amount, 0)));
-    if (requested <= 0) {
-      return {
-        spent: 0,
-        updates: []
-      };
-    }
-
-    let remaining = requested;
-    const updates = [];
-    for (const ammoItem of this.#findMatchingAmmunition(actor, weapon, ammunitionLabel)) {
-      if (remaining <= 0) {
-        break;
-      }
-
-      const quantity = this.#getItemQuantity(ammoItem);
-      const spend = Math.min(quantity, remaining);
-      if (spend <= 0) {
-        continue;
-      }
-
-      const nextQuantity = quantity - spend;
-      const path = this.#itemQuantityUpdatePath(ammoItem);
-      updates.push({
-        item: ammoItem,
-        itemId: ammoItem.id,
-        itemName: ammoItem.name,
-        spent: spend,
-        remaining: nextQuantity,
-        path
-      });
-      remaining -= spend;
-    }
-
-    return {
-      spent: requested - remaining,
-      updates
-    };
-  }
-
-  async #spendImplantReloadReservoir(actor, ammunitionLabel, amount) {
-    const requested = Math.max(0, Math.floor(toNumber(amount, 0)));
-    const implantAutomationService = this.moduleApi?.implantAutomationService;
-    if (
-      requested <= 0
-      || typeof implantAutomationService?.hasCapability !== "function"
-      || !implantAutomationService.hasCapability(actor, "reloadWithoutFreeHand")
-    ) {
-      return { spent: 0, reservoir: null };
-    }
-
-    const source = readDocumentFlag(actor, MODULE_ID, IMPLANT_RELOAD_RESERVOIR_FLAG);
-    const quantity = clampInteger(source?.quantity, 0, IMPLANT_RELOAD_RESERVOIR_CAPACITY);
-    if (quantity <= 0) return { spent: 0, reservoir: source ?? null };
-
-    const wanted = cleanText(ammunitionLabel);
-    const reservoirIdentifiers = [
-      source?.ammunitionItemId,
-      source?.ammunitionIdentifier
-    ].map(cleanText).filter(Boolean);
-    const wantedStem = this.#ammunitionStem(wanted);
-    const reservoirStem = this.#ammunitionStem(source?.ammunitionName);
-    const compatible = reservoirIdentifiers.includes(wanted)
-      || (
-        wantedStem
-        && reservoirStem
-        && (
-          wantedStem.includes(reservoirStem)
-          || reservoirStem.includes(wantedStem)
-        )
-      );
-    if (!compatible) return { spent: 0, reservoir: source };
-
-    const spent = Math.min(requested, quantity);
-    const reservoir = {
-      ammunitionItemId: cleanText(source?.ammunitionItemId),
-      ammunitionIdentifier: cleanText(source?.ammunitionIdentifier),
-      ammunitionName: cleanText(source?.ammunitionName),
-      quantity: quantity - spent,
-      capacity: IMPLANT_RELOAD_RESERVOIR_CAPACITY
-    };
-    if (typeof actor?.setFlag === "function") {
-      await actor.setFlag(MODULE_ID, IMPLANT_RELOAD_RESERVOIR_FLAG, reservoir);
-    }
-    else {
-      await actor?.update?.({
-        [`flags.${MODULE_ID}.${IMPLANT_RELOAD_RESERVOIR_FLAG}`]: reservoir
-      });
-    }
-    return { spent, reservoir };
   }
 
   #resolveMinimumStrengthRequirement(actor, item, options = {}) {
@@ -2749,8 +2681,8 @@ export class CombatAttackService {
 
   #isFirearmReloadActivity(activityId, activity) {
     const safeActivityId = cleanText(activityId ?? activity?._id ?? activity?.id);
-    return safeActivityId === FIREARM_RELOAD_ACTIVITY_ID
-      || cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`)) === FIREARM_RELOAD_AUTOMATION;
+    return [FIREARM_RELOAD_ACTIVITY_ID,"lchUnloadGun0001"].includes(safeActivityId)
+      || [FIREARM_RELOAD_AUTOMATION,"firearm-unload"].includes(cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`)));
   }
 
   #buildFirearmUtilityActivity({ activityId, name, activationType, chatFlavor, automation, sort }) {
@@ -2885,6 +2817,7 @@ export class CombatAttackService {
         const ammunition = cleanText(canonicalValues.ammunition ?? values.ammunition);
         values.reload = reload;
         update[`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`] = { current: 0, capacity, ammunition };
+        nextActivities.lchUnloadGun0001=this.#buildFirearmUtilityActivity({activityId:"lchUnloadGun0001",name:"Разрядить",activationType:"action",chatFlavor:"Вернуть оставшиеся патроны в инвентарь.",automation:"firearm-unload",sort:60});
         nextName = withFirearmAmmoSuffix(nextName, 0, capacity);
         nextActivities[FIREARM_RELOAD_ACTIVITY_ID] = this.#buildFirearmUtilityActivity({
           activityId: FIREARM_RELOAD_ACTIVITY_ID,
@@ -3188,6 +3121,10 @@ export class CombatAttackService {
         }
       }
 
+      if(this.#hasItemProperty(item,FIREARM_RELOAD_PROPERTY) && !nextActivities.lchUnloadGun0001){
+        nextActivities.lchUnloadGun0001=this.#buildFirearmUtilityActivity({activityId:"lchUnloadGun0001",name:"Разрядить",activationType:"action",chatFlavor:"Вернуть оставшиеся патроны в инвентарь.",automation:"firearm-unload",sort:60});
+        upgradedActivityIds.push("lchUnloadGun0001");
+      }
       if (!removedActivityIds.length && !upgradedActivityIds.length) {
         continue;
       }
@@ -4333,6 +4270,7 @@ export class CombatAttackService {
       FIREARM_CLEAR_JAM_AUTOMATION,
       FIREARM_MAINTAIN_AUTOMATION,
       FIREARM_RELOAD_AUTOMATION
+      , "firearm-unload"
     ].includes(automation)) {
       return null;
     }
@@ -4343,6 +4281,9 @@ export class CombatAttackService {
     }
 
     const actor = activity?.actor ?? item.actor ?? null;
+    if(automation==="firearm-unload"){
+      this.unloadFirearm(actor,item).catch(error=>ui.notifications?.warn?.(error.message));return false;
+    }
     if (automation === FIREARM_CLEAR_JAM_AUTOMATION) {
       this.clearFirearmJam(item).catch((error) => {
         console.error(`${MODULE_ID} | Failed to clear firearm jam from activity.`, error);
@@ -4352,7 +4293,7 @@ export class CombatAttackService {
     }
 
     if (automation === FIREARM_RELOAD_AUTOMATION) {
-      this.reloadFirearm(actor instanceof Actor ? actor : item, actor instanceof Actor ? item : null, { actor }).catch((error) => {
+      this.openMagazineEditor(actor,item).catch((error) => {
         console.error(`${MODULE_ID} | Failed to reload firearm from activity.`, error);
         ui.notifications?.error?.("Не удалось перезарядить оружие.");
       });
@@ -4418,6 +4359,9 @@ export class CombatAttackService {
       return false;
     }
 
+    const shot={data:structuredClone(ammo.ammunitionData),count:ammo.ammoSpent,weaponId:item.id,spent:true};
+    usageConfig.rebreyaAmmunitionShot=shot;
+    foundry.utils.setProperty(messageConfig,`data.flags.${MODULE_ID}.ammunitionShot`,shot);
     const misfire = this.#rollFirearmMisfire(actor, item, { messageConfig });
     if (misfire.jammed) {
       return false;
@@ -4637,10 +4581,23 @@ export class CombatAttackService {
       }
 
       const isFirearm = isFirearmItem(item);
+      if(isFirearm){
+        const ordered=magazineRounds(this.#resolveFirearmAmmoState(item)),source=ordered.sources[ordered.rounds[0]],bonus=source?.system?.magicalBonus;
+        for(const roll of config.rolls??[]){
+          roll.options??={};
+          if(bonus && source.system.magicAvailable!==false && !roll.options.rebreyaAmmunitionBonus){roll.parts??=[];roll.parts.push(String(bonus));roll.options.rebreyaAmmunitionBonus=true;}
+        }
+      }
       if (isFirearm && activity.attack?.type?.value!=="melee") applyFirearmTuning(item,config,Number(game.time?.worldTime));
       const repeatingShot = !isFirearm && hasActiveRepeatingShot(item);
       if (!isFirearm && !repeatingShot) {
         this.#clearInvalidNativeAmmunitionSelection(activity, config, dialog);
+        if(this.#hasItemProperty(item,"amm")){
+          const choices=collectionValues(activity.actor?.items??item.actor?.items).filter(ammo=>isCompatibleAmmunition(item,ammo) && !readDocumentFlag(ammo,MODULE_ID,"installedWeaponMod")?.hostItemId);
+          if(!choices.length){ui.notifications?.warn?.("Нет совместимых боеприпасов.");return false;}
+          dialog.configure=true;dialog.options??={};
+          dialog.options.ammunitionOptions=[{value:"",label:"Выберите боеприпас"},...choices.map(ammo=>({value:ammo.id,label:`${ammo.name} (${this.#getItemQuantity(ammo)})`}))];
+        }
       }
 
       if (isFirearm || repeatingShot) {
@@ -4692,6 +4649,50 @@ export class CombatAttackService {
     return true;
   }
 
+  #recordAmmunitionShot(roll,activity,data,count,{defer=false}={}) {
+    const shot={data:structuredClone(data),count,weaponId:activity.item.id,spent:true};
+    this._ammunitionShots.set(roll,shot);
+    const card=roll.parent;
+    if(card){
+      const patch={[`flags.${MODULE_ID}.ammunitionShot`]:shot};
+      if(data)patch["flags.dnd5e.roll.ammunitionData"]={...structuredClone(data),system:{...structuredClone(data.system),quantity:1}};
+      if(data){const rule=getAmmunitionDamage(data);if(rule.manual)patch[`flags.${MODULE_ID}.ammunitionManual`]=rule.manual;}
+      for(const [key,value] of Object.entries(patch))try{foundry.utils.setProperty(card,key,value);}catch(_){}
+      if(defer)return patch;
+      Promise.resolve(card.update?.(patch)).catch(error=>console.error(`${MODULE_ID} | Failed to save ammunition shot context.`,error));
+    }
+  }
+
+  validateAmmunitionRollConfiguration(rolls,config={}) {
+    const activity=config.subject,item=activity?.item;
+    if(!this.#isWeaponAttackActivity(activity) || isFirearmItem(item) || hasActiveRepeatingShot(item) || !this.#hasItemProperty(item,"amm"))return true;
+    if(!rolls?.length)return true;
+    for(const roll of rolls){
+      const ammo=activity.actor?.items?.get?.(roll.options?.ammunition);
+      if(!isCompatibleAmmunition(item,ammo)){ui.notifications?.warn?.("Выберите доступный совместимый боеприпас.");return false;}
+      roll.options.rebreyaAmmunitionData=captureAmmunition(ammo).data;
+    }
+    return true;
+  }
+
+  prepareAmmunitionWorkflow(workflow) {
+    const activity=workflow?.activity,item=activity?.item??workflow?.item;
+    if(!item || !isFirearmItem(item) || activity?.flags?.[MODULE_ID]?.weaponModActivity)return true;
+    const state=this.#resolveFirearmAmmoState(item),amount=this.#resolveFirearmShotAmmoCost(item);
+    if(this.#blockFirearmShotWithoutAmmo(item))return false;
+    const ordered=magazineRounds(state);
+    workflow.rebreyaAmmunitionShot={data:structuredClone(ordered.sources[ordered.rounds[0]]??null),count:amount,weaponId:item.id};
+    return true;
+  }
+
+  renderAmmunitionNotice(message,html) {
+    const root=html?.[0]??html,shot=readDocumentFlag(message,MODULE_ID,"ammunitionShot");
+    if(!shot?.data || !root?.querySelector || root.querySelector(".rm-ammunition-notice"))return;
+    const text=getAmmunitionDamage(shot.data).manual,notice=document.createElement("p");notice.className="rm-ammunition-notice";
+    notice.textContent=`Боеприпас: ${shot.data.name}. Потрачено: ${shot.count}.${text?` Вручную: ${text}`:""}`;
+    root.append(notice);
+  }
+
   applyDnd5ePostAttackRoll(rolls = [], context = {}) {
     this.reportWhirlwindAttack(rolls, context).catch(error => console.error(`${MODULE_ID} | Whirlwind hit report failed.`, error));
     const activity = context?.subject ?? null;
@@ -4706,6 +4707,7 @@ export class CombatAttackService {
       if (!firstRoll) {
         return true;
       }
+      if (this._ammunitionShots.has(firstRoll) || readDocumentFlag(firstRoll.parent,MODULE_ID,"ammunitionShot")?.spent) return true;
 
       if (isFirearmItem(item)) {
         const actor = activity.actor ?? item.actor ?? null;
@@ -4720,11 +4722,18 @@ export class CombatAttackService {
           firearmMessageOptions
         );
         if (ammo.success) {
+          firearmMessageOptions.ammunitionPatch=this.#recordAmmunitionShot(firstRoll, activity, ammo.ammunitionData, ammo.ammoSpent,{defer:firearmMessageOptions.deferFirearmChatSync});
           if(activity.attack?.type?.value!=="melee")startFirearmTuning(item,Number(game.time?.worldTime)).catch(error=>console.error(`${MODULE_ID} | Failed to start firearm tuning.`,error));
           this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
         }
-        if(firearmMessageOptions.deferFirearmChatSync)this.#syncFirearmChatCardNotes(firearmMessageOptions,
-          foundry.utils.getProperty(firearmMessageOptions.messageConfig.data,`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`));
+        if(firearmMessageOptions.deferFirearmChatSync){
+          const synced=this.#syncFirearmChatCardNotes(firearmMessageOptions,foundry.utils.getProperty(firearmMessageOptions.messageConfig.data,`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`));
+          if(!synced && firearmMessageOptions.ammunitionPatch)Promise.resolve(firstRoll.parent.update(firearmMessageOptions.ammunitionPatch)).catch(error=>console.error(`${MODULE_ID} | Failed to save ammunition shot.`,error));
+        }
+      }
+      else if (firstRoll.options?.ammunition && !hasActiveRepeatingShot(item)) {
+        const source=firstRoll.options.rebreyaAmmunitionData??activity.actor?.items?.get?.(firstRoll.options.ammunition)??firstRoll.parent?.getFlag?.("dnd5e","roll.ammunitionData");
+        if(source)this.#recordAmmunitionShot(firstRoll,activity,captureAmmunition(source).data,1);
       }
 
       const automation = this.#getLichAutomationState(item);
@@ -4955,12 +4964,23 @@ export class CombatAttackService {
       markWhirlwindDamageRolls(config);
       this.prepareWhirlwindDamageCard(config, message);
     }
+    const originId=config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId??config.workflow?.itemCardId??config.workflow?.itemCardUuid?.split(".").at(-1);
+    const origin=originId?game.messages?.get?.(originId):null;
+    const savedShot=config.rebreyaAmmunitionShot??config.workflow?.rebreyaAmmunitionShot??readDocumentFlag(origin,MODULE_ID,"ammunitionShot");
+    const ammunitionData=savedShot?.data??(config.ammunition?captureAmmunition(config.ammunition).data:null);
+    const physicalProperties=Array.from(ammunitionData?.system?.properties??[]).filter(key=>globalThis.CONFIG?.DND5E?.itemProperties?.[key]?.isPhysical);
+    const area=[FIREARM_AUTOMATIC_FIRE_AUTOMATION,FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION].includes(activity?.flags?.[MODULE_ID]?.automation);
+    if(area && isFirearmItem(activity?.item)){
+      if(ammunitionData)applyAmmunitionDamage(config,ammunitionData,{nativeApplied:Boolean(config.ammunition),physicalProperties});
+      return true;
+    }
     if (!this.#isWeaponAttackActivity(activity)) {
       return true;
     }
 
     try {
       const item = activity.item;
+      if(ammunitionData)applyAmmunitionDamage(config,ammunitionData,{nativeApplied:Boolean(config.ammunition),physicalProperties});
       if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollDamage(config, message) === false) return false;
       this.#applyEquipmentSizeDamage(config, message);
       const automation = this.#getLichAutomationState(item);
@@ -5522,122 +5542,180 @@ export class CombatAttackService {
     };
   }
 
-  async reloadFirearm(actorOrItem, weaponOrId = null, options = {}) {
-    const weapon = this.#resolveFirearmWeapon(actorOrItem, weaponOrId);
-    const actor = options.actor instanceof Actor
-      ? options.actor
-      : (weapon.actor instanceof Actor ? weapon.actor : this.#resolveActor(actorOrItem));
-    const state = this.#resolveFirearmAmmoState(weapon, options);
-    if (!state.tracked) {
-      ui.notifications?.warn?.(`${weapon.name}: у оружия не задан размер магазина.`);
-      return {
-        success: false,
-        reason: "firearmAmmoUntracked",
-        weaponId: weapon.id,
-        weaponName: weapon.name,
-        loaded: 0,
-        current: state.current,
-        capacity: state.capacity
-      };
-    }
+  async openMagazineEditor(actor,weapon) {
+    const key=weapon.uuid??`${actor.id}:${weapon.id}`,existing=this._magazineEditors.get(key);
+    if(existing instanceof Promise)return existing;
+    if(existing?.rendered){existing.bringToFront();return existing;}
+    const opening=(async()=>{
+      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.26");
+      const app=new AmmunitionMagazineApp(this,actor,weapon);await app.render({force:true});return app;
+    })();
+    this._magazineEditors.set(key,opening);
+    try{const app=await opening;this._magazineEditors.set(key,app);return app;}
+    catch(error){this._magazineEditors.delete(key);throw error;}
+  }
 
-    const missing = Math.max(0, state.capacity - state.current);
-    if (missing <= 0) {
-      this.#setFirearmAmmoStateSync(weapon, state);
-      this.#createFirearmChatMessage(actor, weapon, `${weapon.name}: магазин уже полон.`, options);
-      return {
-        success: true,
-        reason: "firearmMagazineFull",
-        weaponId: weapon.id,
-        weaponName: weapon.name,
-        loaded: 0,
-        current: state.current,
-        capacity: state.capacity
-      };
+  getMagazineEditorData(actor, weapon) {
+    const canUpdate=actor?.canUserModify?.(game.user,"update")??(actor?.isOwner!==false);
+    if (!(actor instanceof Actor) || weapon?.actor !== actor || actor.items?.get?.(weapon.id) !== weapon || !canUpdate) throw new Error("Нет прав на оружие персонажа.");
+    const state = this.#resolveFirearmAmmoState(weapon), ordered = magazineRounds(state), stock = [], sources = {...ordered.sources};
+    for (const item of this.#findMatchingAmmunition(actor, weapon, state.ammunition)) {
+      if (readDocumentFlag(item, MODULE_ID, "installedWeaponMod")?.hostItemId) continue;
+      const captured=captureAmmunition(item); sources[captured.key]=captured.data;
+      const row=stock.find(x=>x.key===captured.key);
+      if(row)row.quantity+=this.#getItemQuantity(item);
+      else stock.push({...captured,quantity:this.#getItemQuantity(item)});
     }
+    const reservoir=readDocumentFlag(actor,MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG);
+    const legacyReservoirMatch=reservoir?.ammunitionIdentifier===state.ammunition || reservoir?.ammunitionItemId===state.ammunition || this.#ammunitionStem(reservoir?.ammunitionName)===this.#ammunitionStem(state.ammunition);
+    const snapshotCompatible=reservoir?.ammunitionData && isCompatibleAmmunition(weapon,{...reservoir.ammunitionData,system:{...reservoir.ammunitionData.system,quantity:reservoir.quantity}});
+    const canUseReservoir=this.moduleApi.implantAutomationService?.hasCapability?.(actor,"reloadWithoutFreeHand") && reservoir?.quantity>0
+      && (snapshotCompatible || ((!reservoir.ammunitionData || !weapon.system.ammunition?.type) && legacyReservoirMatch));
+    let reservoirKey=null;
+    if(canUseReservoir){
+      const captured=reservoir.ammunitionData?captureAmmunition(reservoir.ammunitionData):{key:LEGACY_AMMUNITION,data:null};
+      reservoirKey=captured.key;if(captured.data)sources[captured.key]=captured.data;
+      const row=stock.find(x=>x.key===captured.key);
+      if(row)row.quantity+=reservoir.quantity;else stock.unshift({...captured,quantity:reservoir.quantity});
+    }
+    for(const key of new Set(ordered.rounds)) if(!stock.some(x=>x.key===key))stock.push({key,data:sources[key]??null,quantity:0});
+    const revision=ammunitionFingerprint({state:readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG),stock:stock.map(x=>[x.key,x.quantity]),reservoir});
+    return {revision,capacity:state.capacity,groupSize:this.#resolveFirearmShotAmmoCost(weapon),
+      ...ordered,sources,stock,reservoir:canUseReservoir?structuredClone(reservoir):null,reservoirKey,presets:structuredClone(state.presets??[]),lastPattern:structuredClone(state.lastPattern??[])};
+  }
 
-    if (!(actor instanceof Actor)) {
-      ui.notifications?.warn?.(`${weapon.name}: не удалось найти владельца для списания боеприпасов.`);
-      return {
-        success: false,
-        reason: "actorUnavailable",
-        weaponId: weapon.id,
-        weaponName: weapon.name,
-        loaded: 0,
-        current: state.current,
-        capacity: state.capacity
-      };
+  async commitMagazine(actor, weapon, draft) {
+    const current=this.getMagazineEditorData(actor,weapon);
+    if(current.revision!==draft.revision)throw new Error("Запас боеприпасов изменился. Откройте перезарядку заново.");
+    const rounds=structuredClone(draft.rounds);validateMagazine(rounds,current.groupSize,current.capacity);
+    const sources={...current.sources},old=[...current.rounds],updates=[],creates=[],checks={};
+    const eligibleIds=new Set(this.#findMatchingAmmunition(actor,weapon,this.#resolveFirearmAmmoState(weapon).ammunition).map(item=>item.id));
+    if(draft.legacyResolutionKey){
+      if(!game.user?.isGM || !sources[draft.legacyResolutionKey])throw new Error("Разновидность старых зарядов может указать только мастер.");
+      for(let i=0;i<old.length;i++)if(old[i]===LEGACY_AMMUNITION)old[i]=draft.legacyResolutionKey;
     }
-
-    const reservoirSpent = await this.#spendImplantReloadReservoir(
-      actor,
-      state.ammunition,
-      missing
-    );
-    const inventorySpent = this.#planActorAmmunitionSpend(
-      actor,
-      weapon,
-      state.ammunition,
-      Math.max(0, missing - reservoirSpent.spent)
-    );
-    const totalSpent = reservoirSpent.spent + inventorySpent.spent;
-    if (totalSpent <= 0) {
-      ui.notifications?.warn?.(`${weapon.name}: нет подходящих боеприпасов (${state.ammunition || "тип не задан"}).`);
-      return {
-        success: false,
-        reason: "firearmAmmoUnavailable",
-        weaponId: weapon.id,
-        weaponName: weapon.name,
-        loaded: 0,
-        current: state.current,
-        capacity: state.capacity,
-        ammunition: state.ammunition
-      };
-    }
-
-    const nextState = this.#setFirearmAmmoStateSync(weapon, {
-      ...state,
-      current: Math.min(state.capacity, state.current + totalSpent)
-    }, { persist: false });
-    const itemUpdates = inventorySpent.updates.map((update) => ({
-      _id: update.itemId,
-      [update.path]: update.remaining
-    }));
-    itemUpdates.push({
-      _id: weapon.id,
-      [`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`]: nextState,
-      name: weapon.name
-    });
-    if (typeof actor.updateEmbeddedDocuments === "function") {
-      await actor.updateEmbeddedDocuments("Item", itemUpdates);
-    }
-    else {
-      for (const update of inventorySpent.updates) {
-        await update.item?.update?.({ [update.path]: update.remaining });
+    const keys=new Set([...old,...rounds]);let loaded=0,reservoirLoaded=0;
+    const reservoirBefore=readDocumentFlag(actor,MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG)??null;
+    let reservoirAfter=structuredClone(reservoirBefore);
+    for(const key of keys){
+      if(key!==LEGACY_AMMUNITION && !sources[key])throw new Error("Неизвестная разновидность боеприпаса.");
+      let delta=rounds.filter(x=>x===key).length-old.filter(x=>x===key).length;
+      if(!delta)continue;
+      if(delta<0 && key===LEGACY_AMMUNITION)throw new Error("Разновидность старых зарядов неизвестна. Мастер должен указать её перед возвратом.");
+      const matches=collectionValues(actor.items).filter(item=>this.#isAmmunitionItem(item) && (delta<0 || eligibleIds.has(item.id)) && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId && captureAmmunition(item).key===key);
+      if(delta>0){
+        loaded+=delta;
+        if(current.reservoirKey===key){const n=Math.min(delta,current.reservoir.quantity);delta-=n;reservoirLoaded+=n;reservoirAfter.quantity-=n;}
+        for(const item of matches){
+          const available=this.#getItemQuantity(item),n=Math.min(delta,available);if(!n)continue;
+          updates.push({_id:item.id,[this.#itemQuantityUpdatePath(item)]:available-n});checks[item.id]={key,before:available,after:available-n};delta-=n;if(!delta)break;
+        }
+        if(delta)throw new Error("Не хватает выбранных патронов. Состав не изменён.");
+      }else{
+        const item=matches[0];
+        if(item){const quantity=this.#getItemQuantity(item);updates.push({_id:item.id,[this.#itemQuantityUpdatePath(item)]:quantity-delta});checks[item.id]={key,before:quantity,after:quantity-delta};}
+        else{
+          const id=globalThis.foundry?.utils?.randomID?.()??globalThis.crypto.randomUUID().replaceAll("-","").slice(0,16),data=structuredClone(sources[key]);
+          data._id=id;data.system.quantity=0;data.system.container=null;creates.push(data);updates.push({_id:id,"system.quantity":-delta});checks[id]={key,before:0,after:-delta};
+        }
       }
-      const { _id, ...weaponUpdate } = itemUpdates.at(-1);
-      await weapon.update?.(weaponUpdate);
     }
-    this.#createFirearmChatMessage(
-      actor,
-      weapon,
-      `${weapon.name}: перезарядка.`,
-      options
-    );
+    const presets=structuredClone(draft.presets??current.presets);
+    if(!Array.isArray(presets) || presets.length>30 || presets.some(p=>typeof p.name!=="string" || p.name.length>80 || !Array.isArray(p.rounds) || p.rounds.some(k=>k!==LEGACY_AMMUNITION && !sources[k])))throw new Error("Неверный пресет магазина.");
+    for(const preset of presets)validateMagazine(preset.rounds,current.groupSize,current.capacity);
+    const pattern=rounds.length?rounds:current.lastPattern;
+    const usedKeys=new Set([...rounds,...pattern,...presets.flatMap(p=>p.rounds)]);
+    const persistedSources=Object.fromEntries(Object.entries(sources).filter(([key])=>usedKeys.has(key)));
+    const beforeState=structuredClone(readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG)??null),beforeName=weapon.name;
+    const state=this.#resolveFirearmAmmoState(weapon),afterState={...(beforeState??{}),...state,schemaVersion:2,current:rounds.length,rounds,sources:persistedSources,presets,lastPattern:pattern};delete afterState.tracked;
+    const result={success:true,weaponId:weapon.id,weaponName:withFirearmAmmoSuffix(weapon.name,rounds.length,current.capacity),loaded,current:rounds.length,capacity:current.capacity,
+      reservoirLoaded,inventoryLoaded:loaded-reservoirLoaded,requested:Math.max(0,current.capacity-current.rounds.length),ammunition:state.ammunition,
+      ammoUpdates:updates.map(x=>({itemId:x._id,remaining:Object.values(x)[1]}))};
+    const same=(a,b)=>ammunitionFingerprint(a)===ammunitionFingerprint(b);
+    const createdIds=[],createdSnapshots=new Map();
+    let itemWriteAttempted=false;
+    const readReservoir=()=>readDocumentFlag(actor,MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG)??null;
+    const applied=()=>same(readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG),afterState)
+      && same(readReservoir(),reservoirAfter)
+      && Object.entries(checks).every(([id,c])=>this.#getItemQuantity(actor.items.get(id))===c.after);
+    try {
+      for(const data of creates){
+        try{await actor.createEmbeddedDocuments("Item",[structuredClone(data)],{keepId:true});}
+        catch(error){if(!actor.items.get(data._id))throw error;}
+        const item=actor.items.get(data._id);
+        if(!item || captureAmmunition(item).key!==checks[data._id].key || this.#getItemQuantity(item)!==0)throw new Error("Не удалось создать стак возвращаемых боеприпасов.");
+        createdIds.push(data._id);createdSnapshots.set(data._id,captureAmmunition(item).data);
+      }
+      for(const [id,check] of Object.entries(checks)){
+        const item=actor.items.get(id);
+        if(!item || captureAmmunition(item).key!==check.key || this.#getItemQuantity(item)!==check.before)throw new Error("Запас изменился во время зарядки.");
+      }
+      if(!same(readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG)??null,beforeState))throw new Error("Состав магазина изменился.");
+      if(!same(reservoirBefore,reservoirAfter)){
+        if(!same(readDocumentFlag(actor,MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG),reservoirBefore))throw new Error("Запас импланта изменился.");
+        try{await actor.setFlag(MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG,structuredClone(reservoirAfter));}
+        catch(error){if(!same(readReservoir(),reservoirAfter))throw error;}
+        if(!same(readReservoir(),reservoirAfter))throw new Error("Foundry отменил изменение запаса импланта.");
+      }
+      const patches=[...structuredClone(updates),{_id:weapon.id,[`flags.${MODULE_ID}.==${FIREARM_AMMO_STATE_FLAG}`]:structuredClone(afterState),name:result.weaponName}];
+      itemWriteAttempted=true;
+      if(typeof actor.updateEmbeddedDocuments==="function")await actor.updateEmbeddedDocuments("Item",patches);
+      else for(const {_id,...patch} of patches)await actor.items.get(_id).update(patch);
+      if(!applied())throw new Error("Foundry не сохранил показанный состав боеприпасов.");
+    }catch(error){
+      if(applied())return result; // The native write succeeded but its acknowledgement was lost.
+      const actualState=readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG)??null;
+      const stateBefore=same(actualState,beforeState),stateAfter=same(actualState,afterState);
+      const known=(stateBefore || stateAfter) && (stateBefore || [beforeName,result.weaponName].includes(weapon.name))
+        && [reservoirBefore,reservoirAfter].some(value=>same(readReservoir(),value))
+        && Object.entries(checks).every(([id,c])=>{const item=actor.items.get(id);return item && captureAmmunition(item).key===c.key && [c.before,c.after].includes(this.#getItemQuantity(item));});
+      if(known && itemWriteAttempted){
+        const restore=[];
+        for(const [id,c] of Object.entries(checks)){
+          const item=actor.items.get(id);
+          if(c.before!==c.after && this.#getItemQuantity(item)===c.after)restore.push({_id:id,[this.#itemQuantityUpdatePath(item)]:c.before});
+        }
+        if(stateAfter)restore.push({_id:weapon.id,[`flags.${MODULE_ID}.${beforeState===null?"-=":"=="}${FIREARM_AMMO_STATE_FLAG}`]:structuredClone(beforeState),name:beforeName});
+        if(restore.length){
+          if(typeof actor.updateEmbeddedDocuments==="function")await actor.updateEmbeddedDocuments("Item",structuredClone(restore));
+          else for(const {_id,...patch}of restore)await actor.items.get(_id).update(patch);
+        }
+        const restored=same(readDocumentFlag(weapon,MODULE_ID,FIREARM_AMMO_STATE_FLAG)??null,beforeState)
+          && Object.entries(checks).every(([id,c])=>this.#getItemQuantity(actor.items.get(id))===c.before);
+        if(restored && !same(reservoirBefore,reservoirAfter) && same(readReservoir(),reservoirAfter))await actor.setFlag(MODULE_ID,IMPLANT_RELOAD_RESERVOIR_FLAG,structuredClone(reservoirBefore));
+        if(restored){
+          const empty=createdIds.filter(id=>{const item=actor.items.get(id);return item && this.#getItemQuantity(item)===0 && same(captureAmmunition(item).data,createdSnapshots.get(id));});
+          if(empty.length)await actor.deleteEmbeddedDocuments("Item",empty);
+        }
+      }
+      if(!itemWriteAttempted){
+        const empty=createdIds.filter(id=>{const item=actor.items.get(id);return item && this.#getItemQuantity(item)===0 && same(captureAmmunition(item).data,createdSnapshots.get(id));});
+        if(empty.length)await actor.deleteEmbeddedDocuments("Item",empty);
+      }
+      throw error;
+    }
+    return result;
+  }
 
-    return {
-      success: true,
-      weaponId: weapon.id,
-      weaponName: weapon.name,
-      loaded: totalSpent,
-      reservoirLoaded: reservoirSpent.spent,
-      inventoryLoaded: inventorySpent.spent,
-      requested: missing,
-      current: nextState.current,
-      capacity: nextState.capacity,
-      ammunition: state.ammunition,
-      ammoUpdates: inventorySpent.updates
-    };
+  async unloadFirearm(actorOrItem,weaponOrId=null,options={}) {
+    const weapon=this.#resolveFirearmWeapon(actorOrItem,weaponOrId),actor=weapon.actor;
+    const draft=this.getMagazineEditorData(actor,weapon);draft.rounds=[];
+    if(options.legacyResolutionKey)draft.legacyResolutionKey=options.legacyResolutionKey;
+    return this.commitMagazine(actor,weapon,draft);
+  }
+
+  async reloadFirearm(actorOrItem, weaponOrId = null, options = {}) {
+    const weapon=this.#resolveFirearmWeapon(actorOrItem,weaponOrId),actor=weapon.actor;
+    if(options.draft)return this.commitMagazine(actor,weapon,options.draft);
+    const draft=this.getMagazineEditorData(actor,weapon),state=this.#resolveFirearmAmmoState(weapon,options);
+    if(!state.tracked)return {success:false,reason:"firearmAmmoUntracked",loaded:0,current:state.current,capacity:state.capacity};
+    if(!draft.capacity || draft.rounds.length>=draft.capacity)return {success:true,reason:"firearmMagazineFull",loaded:0,current:state.current,capacity:state.capacity};
+    for(const row of [...draft.stock].sort((a,b)=>Number(b.key===draft.reservoirKey)-Number(a.key===draft.reservoirKey))){
+      const n=Math.min(draft.capacity-draft.rounds.length,row.quantity);draft.rounds.push(...Array(n).fill(row.key));
+    }
+    if(draft.rounds.length===state.current)return {success:false,reason:"firearmAmmoUnavailable",loaded:0,current:state.current,capacity:state.capacity};
+    const result=await this.commitMagazine(actor,weapon,draft);
+    this.#createFirearmChatMessage(actor,weapon,`${weapon.name}: перезарядка.`,options);return result;
   }
 
   async planWeaponAmmoReconfiguration(actor,weapon,{capacity,ammunition,modernizedParts=[]}={}) {
@@ -5668,30 +5746,22 @@ export class CombatAttackService {
       "system.properties":structuredClone(weaponSource.system?.properties??null)};
     const statePath=`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`,before={[weapon.id]:{...identity,[statePath]:saved,name:weapon.name}},
       after={[weapon.id]:{...identity,[statePath]:next,name:withFirearmAmmoSuffix(weapon.name,nextCurrent,desired.capacity)}},creates=[];
-    if(returned){
-      const canonicalIds={rebreyaMusket:"mushketnyy-patron-20",rebreyaRifle:"vintovochnyy-patron-10",rebreyaShotgun:"kartechnyy-patron-20",rebreyaPistol:"pistoletnyy-patron-20",
-        rebreyaFuelTank:"toplivnyy-bak-1",rebreyaRocket:"raketnyy-vystrel-3",rebreyaEnergyBattery:"batareya-4",rebreyaGaussBolt:"stal-noy-bolt-1",rebreyaAntimatter:"zaryad-antimaterii-20",rebreyaThermalBattery:"teplovaya-batareya-20"};
-      const sourceId=inferRebreyaAmmunitionSubtype({id:previousAmmo})?previousAmmo:canonicalIds[oldType];
-      // Refund exact native subtype/identity; never use fuzzy name matching to mint ammunition.
-      const matches=collectionValues(actor.items).filter(item=>this.#isAmmunitionItem(item)
-        && (inferRebreyaAmmunitionSubtype(item) || inferAmmunitionItemSubtype(item))===oldType
-        && readDocumentFlag(item,MODULE_ID,"gearId")===sourceId
-        && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId).sort((a,b)=>a.id.localeCompare(b.id));
-      const target=matches[0];
-      if(target){
-        const path=this.#itemQuantityUpdatePath(target),quantity=this.#getItemQuantity(target);
-        if(!Number.isSafeInteger(quantity+returned))fail();
-        const snapshot=target.toObject?.()??target,identity={name:snapshot.name,type:snapshot.type,flags:structuredClone(snapshot.flags??null),effects:structuredClone(snapshot.effects??null),
-          ...Object.fromEntries(Object.entries(snapshot.system??{}).filter(([key])=>key!=="quantity").map(([key,value])=>[`system.${key}`,structuredClone(value)]))};
-        before[target.id]={...identity,[path]:quantity};after[target.id]={...identity,[path]:quantity+returned};
-      }else{
-        const model=this.moduleApi?.repository?.model??await this.moduleApi?.getModel?.(),source=model?.gearById?.get(sourceId)??model?.gear?.find(row=>row.id===sourceId);
-        if(!source || inferRebreyaAmmunitionSubtype(source)!==oldType)fail();
-        const data=createDnd5eItemData(source,new Map());
-        for(const key of ["_id","id","folder","ownership"])delete data[key];
-        data.system.quantity=returned;data.system.container=null;creates.push({sourceId:source.id,data});
+    if(saved?.schemaVersion===2){
+      const ordered=magazineRounds(saved),tail=ordered.rounds.slice(nextCurrent);
+      if(tail.includes(LEGACY_AMMUNITION))fail();
+      next.rounds=ordered.rounds.slice(0,nextCurrent);
+      for(const key of new Set(tail)){
+        const quantity=tail.filter(k=>k===key).length,data=ordered.sources[key];if(!data)fail();
+        const target=collectionValues(actor.items).find(item=>this.#isAmmunitionItem(item) && captureAmmunition(item).key===key && !readDocumentFlag(item,MODULE_ID,"installedWeaponMod")?.hostItemId);
+        if(target){
+          const path=this.#itemQuantityUpdatePath(target),n=this.#getItemQuantity(target),snapshot=target.toObject?.()??captureAmmunition(target).data;
+          const snapshotIdentity={name:snapshot.name,type:snapshot.type,flags:structuredClone(snapshot.flags??null),effects:structuredClone(snapshot.effects??null),...Object.fromEntries(Object.entries(snapshot.system??{}).filter(([k])=>k!=="quantity").map(([k,v])=>[`system.${k}`,structuredClone(v)]))};
+          before[target.id]={...snapshotIdentity,[path]:n};after[target.id]={...snapshotIdentity,[path]:n+quantity};
+        }else{const source=structuredClone(data);source.system.quantity=quantity;source.system.container=null;creates.push({sourceId:source.flags?.[MODULE_ID]?.gearId??key,data:source});}
       }
+      return {updates:Object.entries(after).map(([itemId,patch])=>({itemId,patch})),creates,before,after,returned:{quantity:returned,ammunition:previousAmmo}};
     }
+    if(returned)fail(); // Historical count/family does not prove which cartridges were loaded.
     return {updates:Object.entries(after).map(([itemId,patch])=>({itemId,patch})),creates,before,after,
       returned:{quantity:returned,ammunition:previousAmmo}};
   }
@@ -5742,12 +5812,9 @@ export class CombatAttackService {
       quantity: clampInteger(currentSource?.quantity, 0, IMPLANT_RELOAD_RESERVOIR_CAPACITY),
       capacity: IMPLANT_RELOAD_RESERVOIR_CAPACITY
     };
-    const sameAmmunition = current.quantity <= 0
-      || current.ammunitionItemId === cleanText(ammunitionItem.id)
-      || (
-        this.#ammunitionStem(current.ammunitionName)
-        && this.#ammunitionStem(current.ammunitionName) === this.#ammunitionStem(ammunitionItem.name)
-      );
+    const ammunitionData=captureAmmunition(ammunitionItem).data;
+    const sameAmmunition = current.quantity <= 0 || (currentSource?.ammunitionData
+      && captureAmmunition(currentSource.ammunitionData).key===captureAmmunition(ammunitionItem).key);
     if (!sameAmmunition) {
       ui.notifications?.warn?.("В механизме уже находятся боеприпасы другого типа.");
       return {
@@ -5787,6 +5854,7 @@ export class CombatAttackService {
       [this.#itemQuantityUpdatePath(ammunitionItem)]: nextQuantity
     });
     const reservoir = {
+      ammunitionData,
       ammunitionItemId: cleanText(ammunitionItem.id),
       ammunitionIdentifier: cleanText(ammunitionItem.id),
       ammunitionName: cleanText(ammunitionItem.name),
@@ -5946,6 +6014,7 @@ export class CombatAttackService {
   }
 
   async rollWeaponAttack(actorOrId, weaponOrId, options = {}) {
+    let ammunitionShot=null;
     const actor = this.#resolveActor(actorOrId);
     if (!(actor instanceof Actor)) {
       throw new Error("Failed to resolve actor for attack roll.");
@@ -6010,6 +6079,7 @@ export class CombatAttackService {
         };
       }
 
+      ammunitionShot={data:structuredClone(ammo.ammunitionData),count:ammo.ammoSpent,weaponId:weapon.id,spent:true};
       const misfire = this.#rollFirearmMisfire(actor, weapon, options);
       if (misfire.jammed) {
         return {
@@ -6025,7 +6095,7 @@ export class CombatAttackService {
         };
       }
     }
-    const situationalBonus = toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0) + getFirearmTuningBonus(weapon,Number(game.time?.worldTime));
+    const situationalBonus = (ammunitionShot?.data?.system?.magicAvailable!==false ? toNumber(ammunitionShot?.data?.system?.magicalBonus,0):0) + toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0) + getFirearmTuningBonus(weapon,Number(game.time?.worldTime));
     const attackBonus = abilityMod + proficiencyBonus + situationalBonus;
     let rollMode = resolveRollMode(options);
     if(upgradeModifiers?.weaponMods?.range?.disadvantage){
@@ -6075,14 +6145,14 @@ export class CombatAttackService {
 
     if (options.createMessage !== false) {
       const flavor = this.#buildAttackFlavor(actor, weapon, options, breakdown);
-      await roll.toMessage({
-        speaker: ChatMessage.getSpeaker({ actor }),
-        flavor,
-        ...(roll.options?.rebreyaWeaponModAttack?{flags:{dnd5e:{activity:{uuid:modActivity.uuid},roll:{type:"attack"},messageType:"roll"}}}:{})
-      });
+      const flags=roll.options?.rebreyaWeaponModAttack?{dnd5e:{activity:{uuid:modActivity.uuid},roll:{type:"attack"},messageType:"roll"}}:{};
+      if(ammunitionShot){flags[MODULE_ID]={ammunitionShot};flags.dnd5e??={};flags.dnd5e.roll??={type:"attack"};
+        if(ammunitionShot.data)flags.dnd5e.roll.ammunitionData={...structuredClone(ammunitionShot.data),system:{...structuredClone(ammunitionShot.data.system),quantity:1}};}
+      await roll.toMessage({speaker: ChatMessage.getSpeaker({ actor }),flavor,...(Object.keys(flags).length?{flags}:{})});
     }
 
     return {
+      ammunitionShot,
       actorId: actor.id,
       actorName: actor.name,
       weaponId: weapon.id,

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {makeWeaponModMutationFixture, makeItem, gear} from "./helpers/weapon-mod-fixture.mjs";
 const NS="rebreya-main";
+import {captureAmmunition} from "../scripts/combat/ammunition-magazine.js";
 test("extra mounts require current proficiency and remain removable after the feat is lost",async()=>{
  const fx=await makeWeaponModMutationFixture({quantity:1});try{
   fx.group.system.attributes={prof:3};
@@ -144,6 +145,8 @@ async function expandedWeaponFixture({inventoryAmmo=true}={}){
   fx.host.data.flags[NS].firearmAmmoState.current=27;
   const source=makeItem("oblegchyonnyy-korpus");Object.assign(fx.component.data,{name:source.name,flags:source.flags});
   if(inventoryAmmo){const ammo=new Item({_id:"ammo",name:"Винтовочный патрон",type:"consumable",system:{quantity:5,type:{value:"ammo",subtype:"rebreyaRifle"}},flags:{[NS]:{gearId:"vintovochnyy-patron-10"}}},fx.group);fx.group.items.contents.push(ammo);}
+  const sourceAmmo=fx.group.items.get("ammo")??new Item({name:"Винтовочный патрон",type:"consumable",system:{quantity:1,type:{value:"ammo",subtype:"rebreyaRifle"}},flags:{[NS]:{gearId:"vintovochnyy-patron-10"}}},fx.group);
+  const captured=captureAmmunition(sourceAmmo);Object.assign(fx.host.data.flags[NS].firearmAmmoState,{schemaVersion:2,rounds:Array(27).fill(captured.key),sources:{[captured.key]:captured.data}});
   return fx;
 }
 test("modernization shrinking magazine returns overflow exactly once in the same durable batch",async()=>{

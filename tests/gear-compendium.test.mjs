@@ -414,6 +414,8 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
 
 test("real firearm gear data maps firearm sheet damage, properties, and attack activity", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const anyGun=gear.find(row=>row.weapon?.lichWeaponPropertyValues?.reload);
+  assert.ok(anyGun);assert.ok(Object.values(createDnd5eItemData(anyGun,new Map()).system.activities).some(a=>a.flags?.["rebreya-main"]?.automation==="firearm-unload"));
   const byId = new Map(gear.map((item) => [item.id, item]));
   const musket = byId.get("mushket");
   const arquebus = byId.get("arkebuza");
@@ -465,7 +467,7 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
     versatile: false,
     versatileDamageFormula: null
   });
-  assert.equal(musketActivityIds.length, 4);
+  assert.equal(musketActivityIds.length, 5);
   assert.ok(musketActivityIds.every((activityId) => /^[A-Za-z0-9]{16}$/u.test(activityId)));
   assert.equal(musketAttack._id, musketActivityIds[0]);
   assert.equal(musketAttack.type, "attack");

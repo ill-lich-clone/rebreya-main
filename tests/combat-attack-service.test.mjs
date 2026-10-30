@@ -6,7 +6,7 @@ globalThis.foundry ??= {
     getProperty: (object, path) => String(path ?? "").split(".").reduce((value, key) => value?.[key], object),
     deepClone: (value) => JSON.parse(JSON.stringify(value)),
     setProperty: (object, path, value) => {
-      const keys = String(path ?? "").split(".").filter(Boolean);
+      const keys = String(path ?? "").replaceAll(".==", ".").split(".").filter(Boolean);
       let cursor = object;
       while (keys.length > 1) {
         const key = keys.shift();
@@ -82,6 +82,185 @@ globalThis.Roll = TestRoll;
 
 const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
 const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
+const {captureAmmunition}=await import("../scripts/combat/ammunition-magazine.js");
+
+test("OWNER loads ammunition through one native batch without GM sockets journals or preliminary flag writes", async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",ammunition:"Винтовочный"},ammoState:{current:0,capacity:3,ammunition:"Винтовочный"}});
+  const ammo=makeAmmoItem({name:"Винтовочный патрон",quantity:6}),actor=makeActor([weapon,ammo]);actor.isOwner=true;
+  const forbidden=()=>{throw new Error("Custom GM/socket/journal must not be used");};
+  const service=new CombatAttackService({privilegedMutationGateway:{mutate:forbidden},inventoryService:{mutationJournal:new Proxy({},{get:forbidden}),mutationCoordinator:{run:forbidden}}});
+  const previous=game.user.isGM;game.user.isGM=false;
+  try{
+    const draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock[0].key);
+    assert.equal((await service.commitMagazine(actor,weapon,draft)).success,true);
+    assert.equal(ammo.system.quantity,3);assert.equal(actor.embeddedDocumentUpdateCalls.length,1);assert.equal(weapon.updateCalls.length,1);
+    assert.equal(weapon.getFlag(MODULE_ID,"ammunitionMutation"),undefined);
+  }finally{game.user.isGM=previous;}
+});
+
+test("opening reload twice concurrently reuses the same editor",async()=>{
+  const previous=foundry.applications;
+  foundry.applications={api:{ApplicationV2:class{async render(){this.rendered=true;return this;}bringToFront(){}},HandlebarsApplicationMixin:Base=>Base}};
+  try{
+    const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3"},ammoState:{current:0,capacity:3}}),actor=makeActor([weapon]),service=new CombatAttackService({});
+    const [a,b]=await Promise.all([service.openMagazineEditor(actor,weapon),service.openMagazineEditor(actor,weapon)]);
+    assert.equal(a,b);assert.equal(actor.embeddedDocumentUpdateCalls.length,0);
+  }finally{foundry.applications=previous;}
+});
+
+test("reconfiguration returns the exact mixed tail and rejects unknown historical refunds", async () => {
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Смена магазина 6",ammunition:"Винтовочный"},ammoState:{current:6,capacity:6,ammunition:"Винтовочный"}});
+  const fire=makeAmmoItem({id:"fire",name:"Огненные",quantity:3}),cold=makeAmmoItem({id:"cold",name:"Ледяные",quantity:4});cold.system.magicalBonus=1;
+  const actor=makeActor([weapon,fire,cold]),service=new CombatAttackService({});
+  await assert.rejects(service.planWeaponAmmoReconfiguration(actor,weapon,{capacity:3,ammunition:"Винтовочный"}),/достоверно/u);
+  const a=captureAmmunition(fire),b=captureAmmunition(cold);Object.assign(weapon.flags[MODULE_ID].firearmAmmoState,{schemaVersion:2,rounds:[a.key,a.key,a.key,b.key,b.key,b.key],sources:{[a.key]:a.data,[b.key]:b.data}});
+  const plan=await service.planWeaponAmmoReconfiguration(actor,weapon,{capacity:3,ammunition:"Винтовочный"});
+  assert.equal(plan.after.cold["system.quantity"],7);assert.equal(plan.after.fire,undefined);
+  assert.deepEqual(plan.after[weapon.id][`flags.${MODULE_ID}.firearmAmmoState`].rounds,[a.key,a.key,a.key]);
+});
+
+test("cancelled weapon update in a native batch returns the debited stock",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",ammunition:"Винтовочный"},ammoState:{current:0,capacity:3,ammunition:"Винтовочный"}}),ammo=makeAmmoItem({name:"Винтовочный",quantity:6});
+  const actor=makeActor([weapon,ammo]),native=actor.updateEmbeddedDocuments.bind(actor),service=new CombatAttackService({});
+  actor.updateEmbeddedDocuments=(type,patches)=>native(type,patches.filter(p=>p._id!==weapon.id));
+  const draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock[0].key);
+  await assert.rejects(service.commitMagazine(actor,weapon,draft));
+  assert.equal(ammo.system.quantity,6);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);
+});
+
+test("cancelled native reservoir update does not load unspent ammunition",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",ammunition:"Винтовочный"},ammoState:{current:0,capacity:3,ammunition:"Винтовочный"}}),ammo=makeAmmoItem({name:"Винтовочный",quantity:0});
+  const actor=makeActor([weapon,ammo]),service=new CombatAttackService({implantAutomationService:{hasCapability:()=>true}});
+  await actor.setFlag(MODULE_ID,"implantReloadReservoir",{quantity:3,capacity:20,ammunitionName:ammo.name,ammunitionData:captureAmmunition(ammo).data});
+  actor.setFlag=async()=>actor;
+  const draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock[0].key);
+  await assert.rejects(service.commitMagazine(actor,weapon,draft));
+  assert.equal(actor.getFlag(MODULE_ID,"implantReloadReservoir").quantity,3);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);
+});
+
+test("known reservoir snapshot matches the native family independently of its display name",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",ammunition:"Винтовочный"},ammoState:{current:0,capacity:3,ammunition:"Винтовочный"}}),ammo=makeAmmoItem({name:"Огненные патроны",quantity:6,subtype:"rebreyaRifle"});
+  weapon.system.ammunition={type:"rebreyaRifle"};
+  const actor=makeActor([weapon,ammo]),service=new CombatAttackService({implantAutomationService:{hasCapability:()=>true}});
+  assert.equal((await service.loadImplantReloadReservoir(actor,{ammunitionItemId:ammo.id,amount:6,createMessage:false})).loaded,6);
+  assert.equal(service.getMagazineEditorData(actor,weapon).reservoir?.quantity,6);
+  assert.equal((await service.reloadFirearm(actor,weapon,{createMessage:false})).loaded,3);
+  assert.equal(actor.getFlag(MODULE_ID,"implantReloadReservoir").quantity,3);
+});
+
+test("native recursive flag updates replace the magazine sources and retain authored state fields",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",ammunition:"Винтовочный"},ammoState:{current:0,capacity:3,ammunition:"Винтовочный"}}),fire=makeAmmoItem({id:"fire",name:"Винтовочный огненный",quantity:6}),cold=makeAmmoItem({id:"cold",name:"Винтовочный ледяной",quantity:6});cold.system.magicalBonus=1;
+  const actor=makeActor([weapon,fire,cold]),service=new CombatAttackService({}),native=actor.updateEmbeddedDocuments.bind(actor),path=`flags.${MODULE_ID}.firearmAmmoState`;
+  const merge=(a,b)=>{const out=structuredClone(a);for(const [key,value]of Object.entries(b)){out[key]=value && typeof value==="object" && !Array.isArray(value) && out[key] && typeof out[key]==="object"?merge(out[key],value):structuredClone(value);}return out;};
+  actor.updateEmbeddedDocuments=(type,patches)=>native(type,patches.map(p=>p[path]?{...p,[path]:merge(weapon.getFlag(MODULE_ID,"firearmAmmoState"),p[path])}:p));
+  let draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock[0].key);await service.commitMagazine(actor,weapon,draft);
+  weapon.flags[MODULE_ID].firearmAmmoState.customNote="authored";weapon.flags[MODULE_ID].firearmAmmoState.updatedAt="previous-shot";
+  draft=service.getMagazineEditorData(actor,weapon);const key=draft.stock.find(row=>row.data.name===cold.name).key;draft.rounds=Array(3).fill(key);
+  assert.equal((await service.commitMagazine(actor,weapon,draft)).success,true);
+  const state=weapon.getFlag(MODULE_ID,"firearmAmmoState");assert.deepEqual(Object.keys(state.sources),[key]);assert.equal(state.customNote,"authored");
+});
+
+test("a stock edit during native refund creation is never rolled back before our Item batch",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",ammunition:"Винтовочный"},ammoState:{current:3,capacity:3,ammunition:"Винтовочный"}}),fire=makeAmmoItem({name:"Винтовочный огненный",quantity:0}),cold=makeAmmoItem({id:"cold",name:"Винтовочный ледяной",quantity:6});cold.system.magicalBonus=1;
+  const source=captureAmmunition(fire);Object.assign(weapon.flags[MODULE_ID].firearmAmmoState,{schemaVersion:2,rounds:Array(3).fill(source.key),sources:{[source.key]:source.data}});
+  const actor=makeActor([weapon,cold]),service=new CombatAttackService({});
+  actor.createEmbeddedDocuments=async(type,rows)=>rows.map(row=>{const item=makeAmmoItem({id:row._id,name:row.name,quantity:0});item.system=structuredClone(row.system);item.flags=structuredClone(row.flags);item.effects=structuredClone(row.effects);item.actor=actor;actor.items.contents.push(item);cold.system.quantity=3;return item;});
+  actor.deleteEmbeddedDocuments=async(type,ids)=>{for(const id of ids){const i=actor.items.contents.findIndex(item=>item.id===id);if(i>=0)actor.items.contents.splice(i,1);}};
+  const draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock.find(row=>row.data.name===cold.name).key);
+  await assert.rejects(service.commitMagazine(actor,weapon,draft),/изменился/u);
+  assert.equal(cold.system.quantity,3);assert.equal(actor.embeddedDocumentUpdateCalls.length,0);
+  assert.deepEqual(weapon.getFlag(MODULE_ID,"firearmAmmoState").rounds,Array(3).fill(source.key));
+});
+
+test("ordered magazine confirmation preserves neighboring types and unloads exact snapshots", async () => {
+  const weapon=makeFirearmItem({properties:{lchFirearmAmmunition:true,lchFirearmReload:true},values:{ammunition:"Винтовочный",reload:"Смена магазина 6",fireMode:"Полуавтоматический"},ammoState:{current:0,capacity:6,ammunition:"Винтовочный"}});
+  const fire=makeAmmoItem({id:"fire",name:"Винтовочный огненный",quantity:9}),cold=makeAmmoItem({id:"cold",name:"Винтовочный ледяной",quantity:9});
+  fire.flags={[MODULE_ID]:{gearId:"боеприпасы-с-огненной-мазью-20"}};cold.flags={[MODULE_ID]:{gearId:"боеприпасы-с-ледяной-мазью-20"}};
+  const actor=makeActor([weapon,fire,cold]),service=new CombatAttackService({}),draft=service.getMagazineEditorData(actor,weapon);
+  assert.equal(draft.groupSize,3);
+  draft.rounds=Array(3).fill(draft.stock.find(x=>x.data.name===fire.name).key).concat(Array(3).fill(draft.stock.find(x=>x.data.name===cold.name).key));
+  const result=await service.commitMagazine(actor,weapon,draft);
+  assert.equal(result.success,true);assert.equal(fire.system.quantity,6);assert.equal(cold.system.quantity,6);
+  assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").rounds.length,6);
+  service.applyDnd5ePostAttackRoll([{total:15}],{subject:{type:"attack",actor,item:weapon}});
+  fire.system.magicalBonus=2;
+  assert.equal((await service.unloadFirearm(actor,weapon)).success,true);
+  assert.equal(fire.system.quantity,6);assert.equal(cold.system.quantity,9);
+  await service.unloadFirearm(actor,weapon);assert.equal(fire.system.quantity,6);
+});
+
+test("mixed burst and stale editor confirmation spend nothing", async () => {
+  const weapon=makeFirearmItem({properties:{lchFirearmAmmunition:true,lchFirearmReload:true},values:{ammunition:"Винтовочный",reload:"Смена магазина 6",fireMode:"Полуавтоматический"},ammoState:{current:0,capacity:6,ammunition:"Винтовочный"}});
+  const a=makeAmmoItem({id:"a",name:"Винтовочный A",quantity:6}),b=makeAmmoItem({id:"b",name:"Винтовочный B",quantity:6});b.system.magicalBonus=1;
+  const actor=makeActor([weapon,a,b]),service=new CombatAttackService({}),draft=service.getMagazineEditorData(actor,weapon);
+  draft.rounds=[draft.stock[0].key,draft.stock[1].key,draft.stock[0].key];
+  await assert.rejects(service.commitMagazine(actor,weapon,draft),/одинаковые/u);
+  assert.equal(a.system.quantity,6);assert.equal(b.system.quantity,6);assert.equal(actor.embeddedDocumentUpdateCalls.length,0);
+  draft.rounds=Array(3).fill(draft.stock[0].key);a.system.quantity=2;
+  await assert.rejects(service.commitMagazine(actor,weapon,draft),/изменил|хватает/u);
+  assert.equal(a.system.quantity,2);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);
+});
+
+test("ordinary burst costs do not shrink with magazine capacity", async () => {
+  const weapon=makeFirearmItem({properties:{lchFirearmAmmunition:true,lchFirearmReload:true},values:{ammunition:"Винтовочный",reload:"Смена магазина 2",fireMode:"Полуавтоматический"},ammoState:{current:2,capacity:2,ammunition:"Винтовочный"}});
+  const actor=makeActor([weapon]);const result=await new CombatAttackService({}).rollFirearmAttack(actor,weapon,{createMessage:false});
+  assert.equal(result.success,false);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,2);
+});
+
+test("ordered shot keeps its ammunition on the card and duplicate hooks do not consume again", async () => {
+  const weapon=makeFirearmItem({properties:{lchFirearmAmmunition:true,lchFirearmReload:true},values:{ammunition:"Винтовочный",reload:"Смена магазина 6",fireMode:"Полуавтоматический"},ammoState:{current:0,capacity:6,ammunition:"Винтовочный"}});
+  const fire=makeAmmoItem({id:"fire",name:"Винтовочный огненный",quantity:6});fire.flags={[MODULE_ID]:{gearId:"боеприпасы-с-огненной-мазью-20"}};
+  const actor=makeActor([weapon,fire]),service=new CombatAttackService({}),draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(6).fill(draft.stock[0].key);
+  await service.commitMagazine(actor,weapon,draft);
+  const card={flags:{},update:async function(patch){for(const [k,v]of Object.entries(patch))foundry.utils.setProperty(this,k,v);}},activity={type:"attack",actor,item:weapon},roll={total:15,parent:card};
+  service.applyDnd5ePostAttackRoll([roll],{subject:activity});service.applyDnd5ePostAttackRoll([roll],{subject:activity});
+  await Promise.resolve();
+  assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,3);
+  assert.equal(card.flags[MODULE_ID].ammunitionShot.data.flags[MODULE_ID].gearId,"боеприпасы-с-огненной-мазью-20");
+  fire.flags[MODULE_ID].gearId="changed";
+  const config={subject:activity,ammunition:card.flags.dnd5e.roll.ammunitionData,rolls:[{base:true,parts:["1d8","@mod"],options:{type:"piercing"}}]};
+  service.applyDnd5eDamageRollConfig(config,{},{});
+  assert.equal(config.rolls.filter(x=>x.options.rebreyaAmmunition).length,1);
+  assert.deepEqual(config.rolls.at(-1).parts,["1d6"]);assert.equal(config.rolls.at(-1).options.type,"fire");
+});
+
+test("native reload observes write-then-throw and rejects an outdated second confirmation", async () => {
+  const weapon=makeFirearmItem({properties:{lchFirearmAmmunition:true,lchFirearmReload:true},values:{ammunition:"Винтовочный",reload:"Смена магазина 3"},ammoState:{current:0,capacity:3,ammunition:"Винтовочный"}});
+  const ammo=makeAmmoItem({id:"ammo",name:"Винтовочный",quantity:6}),actor=makeActor([weapon,ammo]),service=new CombatAttackService({});
+  const native=actor.updateEmbeddedDocuments.bind(actor);actor.updateEmbeddedDocuments=async(...args)=>{await native(...args);throw new Error("connection lost after commit");};
+  const draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock[0].key);
+  assert.equal((await service.commitMagazine(actor,weapon,draft)).success,true);
+  await assert.rejects(new CombatAttackService({}).commitMagazine(actor,weapon,draft),/изменился/u);
+  assert.equal(ammo.system.quantity,3);
+});
+
+test("ordinary ammunition requires selection even on quick rolls and rejects a blank confirmation", () => {
+  const weapon=makeFirearmItem();weapon.system.type.value="martialR";weapon.system.properties=["amm"];weapon.system.ammunition={type:"crossbowBolt"};
+  const bolts=makeAmmoItem({id:"bolts",subtype:"crossbowBolt",quantity:3}),actor=makeActor([weapon,bolts]),service=new CombatAttackService({});
+  const activity={type:"attack",actor,item:weapon},config={subject:activity,rolls:[{options:{}}]},dialog={configure:false,options:{ammunitionOptions:[]}};
+  service.applyDnd5eAttackRollConfig(config,dialog,{});
+  assert.equal(dialog.configure,true);
+  assert.equal(service.validateAmmunitionRollConfiguration([{options:{ammunition:""}}],config),false);
+  const rolls=[{options:{ammunition:bolts.id}}];
+  assert.equal(service.validateAmmunitionRollConfiguration(rolls,config),true);
+  assert.equal(rolls[0].options.rebreyaAmmunitionData.name,bolts.name);
+});
+
+test("public firearm attack uses the loaded snapshot for bonuses and returns that shot context",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",ammunition:"Винтовочный"},ammoState:{current:0,capacity:3,ammunition:"Винтовочный"}});
+  const ammo=makeAmmoItem({name:"Винтовочный патрон",quantity:6});ammo.system.magicalBonus=2;
+  const actor=makeActor([weapon,ammo]),service=new CombatAttackService({}),draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock[0].key);
+  await service.commitMagazine(actor,weapon,draft);ammo.system.magicalBonus=9;
+  const result=await service.rollFirearmAttack(actor,weapon,{createMessage:false});
+  assert.equal(result.breakdown.attackBonus,7);assert.equal(result.ammunitionShot.data.system.magicalBonus,2);
+});
+
+test("area damage applies its saved ammunition once and preserves the authored area formula", () => {
+  const weapon=makeFirearmItem(),actor=makeActor([weapon]),service=new CombatAttackService({});
+  const data={type:"consumable",name:"Огненные",system:{},flags:{[MODULE_ID]:{gearId:"боеприпасы-с-огненной-мазью-20"}}};
+  const config={subject:{type:"save",actor,item:weapon,flags:{[MODULE_ID]:{automation:"firearm-automatic-fire"}}},rebreyaAmmunitionShot:{data,count:18},rolls:[{base:true,parts:["4d8"],options:{type:"piercing"}}]};
+  service.applyDnd5eDamageRollConfig(config);assert.deepEqual(config.rolls[0].parts,["4d8"]);assert.deepEqual(config.rolls[1].parts,["1d6"]);
+});
 
 test("concurrent native reaction receipts spend distinct available uses exactly once", async () => {
   const actor = makeActor([]);
@@ -324,6 +503,7 @@ test("ammo reconfiguration plans exact overflow and rifling without mutating nat
     ammoState:{current:27,capacity:27,baseCapacity:18,ammunition:"Винтовочный"}}),ammo=makeAmmoItem({quantity:5,subtype:"rebreyaRifle"});
   const actor=makeActor([weapon,ammo]),service=new CombatAttackService({});
   ammo.flags[MODULE_ID].gearId="vintovochnyy-patron-10";
+  const captured=captureAmmunition(ammo);Object.assign(weapon.flags[MODULE_ID].firearmAmmoState,{schemaVersion:2,rounds:Array(27).fill(captured.key),sources:{[captured.key]:captured.data}});
   const before=JSON.stringify({name:weapon.name,flags:weapon.flags,quantity:ammo.system.quantity});
   const plan=await service.planWeaponAmmoReconfiguration(actor,weapon,{capacity:18,ammunition:"Винтовочный"});
   assert.equal(plan.returned.quantity,9);assert.equal(plan.after[weapon.id][`flags.${MODULE_ID}.firearmAmmoState`].current,18);
@@ -2176,8 +2356,8 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
 
   assert.equal(result.updated, 1);
   assert.equal(result.removed, 2);
-  assert.equal(result.upgraded, 1);
-  assert.deepEqual(Object.keys(weapon.system.activities).sort(), ["automatic-fire", "shot"]);
+  assert.equal(result.upgraded, 2);
+  assert.deepEqual(Object.keys(weapon.system.activities).sort(), ["automatic-fire", "lchUnloadGun0001", "shot"]);
   const repairedAutomaticFire = weapon.updateCalls.at(-1)["system.activities"][automaticFireActivity._id];
   assert.equal(repairedAutomaticFire.type, "save");
   assert.equal(repairedAutomaticFire.target.template.type, "cone");
@@ -2924,7 +3104,7 @@ test("disabled Repeating Shot restores ordinary typed ammunition handling", () =
   assert.equal(config.ammunition, bolts.id);
   assert.equal(config.rolls[0].ammunition, bolts.id);
   assert.equal(config.rolls[0].options.ammunition, bolts.id);
-  assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), [bolts.id]);
+  assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), ["", bolts.id]);
 });
 
 test("firearm attack roll notes ammo and misfire in the originating attack card", () => {
@@ -3538,6 +3718,7 @@ test("weapon reload implant loads one ammunition type into its twenty-round rese
   assert.equal(loaded.loaded, 12);
   assert.equal(rifleAmmo.system.quantity, 18);
   assert.deepEqual(actor.getFlag(MODULE_ID, "implantReloadReservoir"), {
+    ammunitionData: {name:"Винтовочный патрон",type:"consumable",img:undefined,system:{type:{value:"ammo",subtype:"firearmBullet"}},flags:{[MODULE_ID]:{}},effects:[]},
     ammunitionItemId: rifleAmmo.id,
     ammunitionIdentifier: rifleAmmo.id,
     ammunitionName: rifleAmmo.name,

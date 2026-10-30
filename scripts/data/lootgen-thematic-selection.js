@@ -1,5 +1,5 @@
 import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "./ammunition-types.js";
-import { inferWeaponAmmunitionSubtype } from "./ammunition-compatibility.js";
+import { inferWeaponAmmunitionSubtype } from "./ammunition-compatibility.js?v=1.5.26";
 
 const normalized = value => String(value ?? "").toLowerCase().replace(/ё/gu, "е");
 const profile = (themes, role, details = {}) => ({ themes: [...new Set(themes)], role, ...details });

@@ -170,7 +170,12 @@ export function isCompatibleAmmunition(weapon, ammunition) {
     || clean(getProperty(weapon, "system.ammunition.type"));
   const actual = inferAmmunitionItemSubtype(ammunition);
   const quantity = Number(getProperty(ammunition, "system.quantity"));
-  return Boolean(expected && actual === expected && Number.isFinite(quantity) && quantity > 0);
+  if (!expected || !actual || !Number.isFinite(quantity) || quantity <= 0) return false;
+  const profile=moduleFlag(ammunition,"ammunition"),families={arrow:"bow",crossbowBolt:"crossbow",blowgunNeedle:"blowgun",slingBullet:"sling",rebreyaMusket:"musket",rebreyaRifle:"rifle",rebreyaShotgun:"shotgun",rebreyaPistol:"pistol",rebreyaCannonball:"hand-cannon"};
+  const physical=new Set(["arrow","crossbowBolt","blowgunNeedle","slingBullet","firearmBullet","rebreyaMusket","rebreyaRifle","rebreyaShotgun","rebreyaPistol","rebreyaCannonball","rebreyaGaussBolt","rebreyaRocket"]);
+  const matches=entries=>Array.isArray(entries) && entries.some(key=>key===gearId(weapon) || key===families[expected] || (key==="all" && physical.has(expected)));
+  if(profile?.replaces?.length)return matches(profile.replaces);
+  return actual===expected || matches(profile?.compatibility);
 }
 
 export function hasActiveRepeatingShot(item) {
