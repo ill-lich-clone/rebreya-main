@@ -112,6 +112,30 @@ for (const [automation, method] of [["firearm-reload", "openMagazineEditor"], ["
   });
 }
 
+test("missing magazine state is empty while a genuinely saved scalar count remains unknown",()=>{
+  const fresh=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 1",ammunition:"Мушкетные"}});
+  const old=makeFirearmItem({id:"old",properties:{lchFirearmReload:true},values:{reload:"Перезарядка 1",ammunition:"Мушкетные"},ammoState:{current:1,capacity:1,ammunition:"Мушкетные"}});
+  const actor=makeActor([fresh,old]),service=new CombatAttackService({});
+  assert.deepEqual(service.getMagazineEditorData(actor,fresh).rounds,[]);
+  assert.deepEqual(service.getMagazineEditorData(actor,old).rounds,["@legacy"]);
+  assert.equal(actor.embeddedDocumentUpdateCalls.length,0);assert.equal(fresh.getFlag(MODULE_ID,"firearmAmmoState"),undefined);
+  assert.equal(old.getFlag(MODULE_ID,"firearmAmmoState").current,1);
+});
+
+test("modernizing an uninitialized firearm cannot refund phantom ammunition",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 6",ammunition:"Винтовочный"}}),actor=makeActor([weapon]);
+  const plan=await new CombatAttackService({}).planWeaponAmmoReconfiguration(actor,weapon,{capacity:3,ammunition:"Винтовочный"});
+  assert.equal(plan.returned.quantity,0);assert.equal(plan.creates.length,0);
+  assert.equal(plan.after[weapon.id]["flags.rebreya-main.firearmAmmoState"].current,0);
+});
+
+test("explicit firearm current still supplies a round when no state was saved",async()=>{
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3",fireMode:"Одиночные",ammunition:"Винтовочный"}}),actor=makeActor([weapon]);
+  TestRoll.queuedTotals=[15];
+  const result=await new CombatAttackService({}).rollFirearmAttack(actor,weapon,{createMessage:false,firearmAmmoCurrent:2});
+  assert.equal(result.total,15);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,1);
+});
+
 test("magazine editor still rejects unavailable weapons and actors without native update rights",()=>{
   const weapon=makeFirearmItem({properties:{lchFirearmReload:true},values:{reload:"Перезарядка 3"},ammoState:{current:0,capacity:3}});
   const actor=makeActor([weapon]),service=new CombatAttackService({});

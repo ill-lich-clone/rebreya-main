@@ -14275,6 +14275,11 @@ summary:focus-visible {
 .rm-ammunition-magazine .rm-ammo-band{fill:#202936;fill-opacity:.1;stroke:#8d7961;stroke-opacity:.25;stroke-width:.7;transition:fill-opacity .15s;}
 .rm-ammunition-magazine .rm-ammo-mag-group.is-selected .rm-ammo-band,.rm-ammunition-magazine .rm-ammo-mag-group:focus .rm-ammo-band,.rm-ammunition-magazine .rm-ammo-mag-group.is-drop-target .rm-ammo-band{fill:var(--ammo-tone,#cfa875);fill-opacity:.22;stroke:#f0cf99;stroke-opacity:1;}
 .rm-ammunition-magazine .rm-ammo-round{pointer-events:none;}
+.rm-ammunition-magazine .rm-ammo-bore{fill:#101115;stroke:#665f53;stroke-width:7;}
+.rm-ammunition-magazine .rm-ammo-chamber{fill:#13171b;stroke:#706558;stroke-width:3;}
+.rm-ammunition-magazine .rm-ammo-visual-muzzle .rm-ammo-band,.rm-ammunition-magazine .rm-ammo-visual-shotgun-chambers .rm-ammo-band{stroke-width:1.3;}
+.rm-ammunition-magazine .rm-ammo-tube-frame{fill:#34383a;stroke:#92816c;stroke-width:2;}
+.rm-ammunition-magazine .rm-ammo-tube-inner{fill:#0d1115;stroke:#686354;stroke-width:1;}
 .rm-ammunition-magazine .rm-ammo-tip{fill:var(--ammo-tone,#d3a465);opacity:.7;pointer-events:none;}
 .rm-ammunition-magazine .rm-ammo-slot.is-empty{opacity:.13;filter:grayscale(1);}
 .rm-ammunition-magazine .rm-ammo-tone-unknown .rm-ammo-slot{filter:grayscale(1);opacity:.6;}

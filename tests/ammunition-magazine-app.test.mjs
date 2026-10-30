@@ -7,6 +7,48 @@ const fixture=()=>({capacity:8,groupSize:3,rounds:[],sources:{a:{name:"Обыч�
 test("native template identifier has a valid extension for Foundry socket loading",()=>{
   assert.match(AmmunitionMagazineApp.PARTS.main.template,/\.(?:hbs|html|handlebars)$/u);
 });
+
+test("rifle cartridges follow the actual two frame edges and stay separated",()=>{
+  const value={...fixture(),capacity:24,groupSize:6};
+  const slots=buildMagazineView(value,0,{system:{type:{value:"firearmAdvanced"},ammunition:{type:"rebreyaRifle"}}}).cells.flatMap(cell=>cell.slots);
+  for(const [i,x,y,angle] of [[0,132.88875,85.66775,-26.0779],[11,139.66757,191.65256,18.02531],[23,99.18091,303.19944,40.32439]]){
+    assert.ok(Math.abs(slots[i].x-x)<.02);assert.ok(Math.abs(slots[i].y-y)<.02);assert.ok(Math.abs(slots[i].angle-angle)<.02);
+  }
+  for(let i=1;i<slots.length;i++){
+    const a=slots[i-1],b=slots[i],angle=(a.angle+b.angle)/2*Math.PI/180;
+    const spacing=(b.x-a.x)*-Math.sin(angle)+(b.y-a.y)*Math.cos(angle);
+    const support=s=>s.width/2*Math.abs(Math.sin(s.angle*Math.PI/180-angle))+s.height/2*Math.abs(Math.cos(s.angle*Math.PI/180-angle));
+    assert.ok(spacing>=support(a)+support(b),"cartridge bodies must not intersect");
+  }
+});
+
+test("primitive and shotgun weapons use their own loading presentation",()=>{
+  const cases=[
+    [{system:{type:{value:"firearmPrimitive"},ammunition:{type:"rebreyaMusket"}}},1,"muzzle"],
+    [{system:{type:{value:"firearmPrimitive"},ammunition:{type:"rebreyaShotgun"}}},6,"muzzle"],
+    [{system:{type:{value:"firearmAdvanced"},ammunition:{type:"rebreyaShotgun"}}},2,"shotgun-chambers"],
+    [{system:{type:{value:"firearmAdvanced"},ammunition:{type:"rebreyaShotgun"}}},6,"shotgun-tube"]
+  ];
+  for(const [weapon,capacity,kind] of cases){const view=buildMagazineView({...fixture(),capacity,groupSize:1},0,weapon);assert.equal(view.presentation.kind,kind);assert.equal(view.cells.flatMap(cell=>cell.slots).length,capacity);assert.equal(view.presentation.isCurved,false);}
+});
+
+test("slot counts and cropped sprites remain correct at small and dense capacities",()=>{
+  for(const capacity of [1,2,6,18,24,36]){
+    const view=buildMagazineView({...fixture(),capacity,groupSize:capacity>6?6:1},0,{system:{ammunition:{type:"rebreyaRifle"}}});
+    const slots=view.cells.flatMap(cell=>cell.slots);
+    assert.equal(slots.length,capacity);assert.equal(view.presentation.isCurved,capacity>2);
+    assert.equal(view.presentation.sprite.viewBox,"14 174 2144 364");
+    for(const slot of slots){assert.ok(slot.width>0&&slot.height>0);assert.equal(slot.left,-slot.width/2);assert.equal(slot.top,-slot.height/2);assert.ok(Math.abs(slot.width/slot.height-2144/364)<1e-8);}
+  }
+  const flags={"rebreya-main":{firearmClass:"primitive",lichWeaponPropertyValues:{ammunition:"Картечные"}}};
+  assert.equal(buildMagazineView({...fixture(),capacity:1},0,{flags}).presentation.kind,"muzzle");
+});
+
+test("legacy explanation refers to original loaded count even after selecting new ammunition",()=>{
+  const view=buildMagazineView({...fixture(),rounds:["b","b","b"],originalRounds:["@legacy","@legacy","@legacy"]});
+  assert.equal(view.legacyCount,3);assert.equal(view.hasSavedLegacy,true);assert.equal(view.hasLegacy,true);
+  assert.equal(buildMagazineView(fixture()).hasLegacy,false);
+});
 test("magazine draft fills groups and tail locally without modifying its source",()=>{
   const source=fixture(),draft=new MagazineDraft(source);draft.selectGroup(0,"a");draft.fill("b");
   assert.deepEqual(draft.value.rounds,["a","a","a","b","b","b","b","b"]);

@@ -1,8 +1,8 @@
 import { MODULE_ID } from "../constants.js";
 import { LEGACY_AMMUNITION, validateMagazine, getAmmunitionDamage } from "../combat/ammunition-magazine.js?v=1.5.31";
+import { resolveMagazinePresentation, buildCartridgeLayout, buildMagazineBand } from "./ammunition-magazine-visuals.js?v=1.5.32";
 
 const AMMO_DRAG_TYPE="application/x-rebreya-ammunition";
-const ASSETS="modules/"+MODULE_ID+"/assets/ammunition";
 const DAMAGE_LABELS={fire:"огнём",cold:"холодом",acid:"кислотой",lightning:"электричеством",thunder:"звуком",poison:"ядом",radiant:"излучением",necrotic:"некротического",force:"силового",piercing:"колющего",bludgeoning:"дробящего",slashing:"рубящего"};
 
 export class MagazineDraft {
@@ -54,27 +54,29 @@ export class MagazineDraft {
   }
 }
 
-export function buildMagazineView(value,selectedGroup=0){
+export function buildMagazineView(value,selectedGroup=0,weapon={}){
+  const presentation=resolveMagazinePresentation(weapon,value.capacity),layout=buildCartridgeLayout(presentation,value.capacity);
   const source=key=>value.sources[key]??value.stock.find(row=>row.key===key)?.data;
   const tone=key=>key===LEGACY_AMMUNITION?"unknown":getAmmunitionDamage(source(key)).parts[0]?.type??"normal";
   const cells=[];
   for(let start=0;start<value.capacity;start+=value.groupSize){
     const rounds=value.rounds.slice(start,start+value.groupSize),key=rounds[0],size=Math.min(value.groupSize,value.capacity-start),index=start/value.groupSize;
     const slots=Array.from({length:size},(_,i)=>{
-      const position=start+i,t=(position+.5)/Math.max(1,value.capacity);
-      return {position,x:137+13*t-46*t*t,y:97+210*t,angle:-10+32*t,loaded:position<value.rounds.length};
+      const position=start+i;
+      return {...layout[position],loaded:position<value.rounds.length};
     });
     const name=key===LEGACY_AMMUNITION?"Неизвестные заряды":source(key)?.name??"Пусто";
     cells.push({index,number:index+1,size,count:rounds.length,name,shortName:name.replace(/^Боеприпасы с /u,"С "),
       key,tone:tone(key),unknown:key===LEGACY_AMMUNITION,selected:index===selectedGroup,first:index===0,locked:start>value.rounds.length,
-      slots,bandY:97+210*start/Math.max(1,value.capacity),bandHeight:210*size/Math.max(1,value.capacity),mixed:new Set(rounds).size>1});
+      slots,bandPath:buildMagazineBand(presentation,start,size,value.capacity,slots),mixed:new Set(rounds).size>1});
   }
   const stock=value.stock.filter(row=>row.key!==LEGACY_AMMUNITION||row.quantity>0).map(row=>{
     const data=source(row.key),damage=getAmmunitionDamage(data),remaining=row.quantity+(value.originalRounds??[]).filter(key=>key===row.key).length-value.rounds.filter(key=>key===row.key).length;
     return {...row,name:row.key===LEGACY_AMMUNITION?"Неизвестные патроны импланта":data?.name??"Боеприпас",img:data?.img??"icons/svg/item-bag.svg",tone:tone(row.key),remaining,empty:remaining<=0,manual:damage.manual,
       bonus:damage.parts.map(part=>"+"+part.formula.replaceAll("d","к")+" "+(DAMAGE_LABELS[part.type]??part.type)).join(", ")};
   });
-  return {cells,stock,hasLegacy:value.rounds.includes(LEGACY_AMMUNITION)||(value.originalRounds??[]).includes(LEGACY_AMMUNITION)};
+  const legacyCount=(value.originalRounds??[]).filter(key=>key===LEGACY_AMMUNITION).length;
+  return {cells,stock,presentation,legacyCount,hasSavedLegacy:legacyCount>0,hasLegacy:legacyCount>0||value.rounds.includes(LEGACY_AMMUNITION)};
 }
 
 const {ApplicationV2,HandlebarsApplicationMixin}=foundry.applications.api;
@@ -86,11 +88,11 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
     this.draft=new MagazineDraft(service.getMagazineEditorData(actor,weapon));this.error="";this.busy=false;this.selectedPreset=null;this.selectedGroup=0;
   }
   async _prepareContext(){
-    const value=this.draft.value,view=buildMagazineView(value,this.selectedGroup);
+    const value=this.draft.value,view=buildMagazineView(value,this.selectedGroup,this.weapon);
     return {...view,weaponName:this.weapon.name.replace(/\s+\(\d+\/\d+\)$/u,""),current:value.rounds.length,capacity:value.capacity,groupSize:value.groupSize,selectedGroupNumber:this.selectedGroup+1,
       presets:value.presets.map((p,index)=>({...p,index,selected:index===this.selectedPreset})),hasLast:value.lastPattern.length>0,busy:this.busy,error:this.error,
       canResolve:globalThis.game?.user?.isGM && value.originalRounds.includes(LEGACY_AMMUNITION),resolveChoices:view.stock.filter(row=>row.key!==LEGACY_AMMUNITION),unloading:value.rounds.length===0&&value.originalRounds.length>0,
-      shell:ASSETS+"/magazine-body.png",cartridge:ASSETS+"/rifle-cartridge.png",clipId:("rm-ammo-"+(this.id??this.weapon.id??"draft")).replaceAll(/[^a-zA-Z0-9_-]/g,"")};
+      clipId:("rm-ammo-"+(this.id??this.weapon.id??"draft")).replaceAll(/[^a-zA-Z0-9_-]/g,"")};
   }
   async _onRender(context,options){
     await super._onRender(context,options);const root=this.element,body=root.querySelector(".rm-ammo-body");

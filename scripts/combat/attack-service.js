@@ -1750,7 +1750,7 @@ export class CombatAttackService {
     const stateCurrent = toNumber(state?.current, NaN);
     const current = Number.isFinite(explicitCurrent)
       ? explicitCurrent
-      : (Number.isFinite(stateCurrent) ? stateCurrent : capacity);
+      : (Number.isFinite(stateCurrent) ? stateCurrent : 0);
 
     const ordered=state?.schemaVersion===2?this.#projectMagazineState(state):{};
     return {
@@ -5574,7 +5574,7 @@ export class CombatAttackService {
     if(existing instanceof Promise)return existing;
     if(existing?.rendered){existing.bringToFront();return existing;}
     const opening=(async()=>{
-      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.31");
+      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.32");
       const app=new AmmunitionMagazineApp(this,actor,weapon);await app.render({force:true});return app;
     })();
     this._magazineEditors.set(key,opening);
@@ -5762,7 +5762,7 @@ export class CombatAttackService {
     const subtype=label=>inferRebreyaAmmunitionSubtype({id:label}) || inferRebreyaWeaponAmmunitionSubtype({lichWeaponPropertyValues:{ammunition:aliases[label]??label}});
     const previousAmmo=cleanText(saved?.ammunition || values.ammunition),oldType=subtype(previousAmmo),nextType=subtype(desired.ammunition);
     if(!oldType || !nextType)fail();
-    const current=saved?.current ?? desired.baseCapacity;
+    const current=saved?.current ?? 0;
     if(!Number.isSafeInteger(current) || current<0 || (saved && (!Number.isSafeInteger(saved.capacity) || current>saved.capacity)))fail();
     const returned=oldType!==nextType?current:Math.max(0,current-desired.capacity),nextCurrent=current-returned;
     const next={...(saved??{}),current:nextCurrent,capacity:desired.capacity,baseCapacity:desired.baseCapacity,

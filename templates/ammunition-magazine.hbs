@@ -1,13 +1,13 @@
 <div class="rm-ammo-body" aria-busy="{{busy}}">
   <header class="rm-ammo-header">
-    <div><h2>{{weaponName}}</h2><p>Снаряжение магазина · {{groupSize}} на атаку</p></div>
-    <div class="rm-ammo-count"><strong>{{current}} <span>/ {{capacity}}</span></strong><small>патронов</small></div>
+    <div><h2>{{weaponName}}</h2><p>{{presentation.subtitle}} · {{groupSize}} на атаку</p></div>
+    <div class="rm-ammo-count"><strong>{{current}} <span>/ {{capacity}}</span></strong><small>{{presentation.unit}}</small></div>
   </header>
   {{#if error}}<p class="rm-ammo-error" role="alert">{{error}}</p>{{/if}}
   <fieldset {{#if busy}}disabled{{/if}}>
     <div class="rm-ammo-workbench">
       <section class="rm-ammo-magazine" aria-label="Магазин и порядок выстрелов">
-        <div class="rm-ammo-section-title"><h3>Магазин</h3><span>Первый патрон — сверху</span></div>
+        <div class="rm-ammo-section-title"><h3>{{presentation.title}}</h3><span>{{presentation.order}}</span></div>
         <div class="rm-ammo-stage">
           <nav class="rm-ammo-groups" aria-label="Ячейки будущих атак">
             {{#each cells}}
@@ -23,21 +23,31 @@
             </div>
             {{/each}}
           </nav>
-          <svg class="rm-ammo-physical" viewBox="25 25 170 330" role="group" aria-label="Изогнутый магазин, {{current}} из {{capacity}} патронов">
+          <svg class="rm-ammo-physical rm-ammo-visual-{{presentation.kind}}" viewBox="{{presentation.viewBox}}" role="group" aria-label="{{presentation.title}}, {{current}} из {{capacity}}">
+            {{#if presentation.isCurved}}
             <defs>
               <clipPath id="{{clipId}}-body"><path d="M82 75 L155 41 L170 75 C186 154 169 261 111 345 L42 307 C86 234 95 156 82 75 Z"/></clipPath>
-              <clipPath id="{{clipId}}-window"><path d="M112 91 L151 71 C177 151 156 261 113 321 L80 294 C124 217 132 160 112 91 Z"/></clipPath>
+              <clipPath id="{{clipId}}-window"><path d="{{presentation.windowPath}}"/></clipPath>
             </defs>
-            <image href="{{shell}}" width="520" height="387" clip-path="url(#{{clipId}}-body)" aria-hidden="true"/>
-            <path class="rm-ammo-cutaway" d="M112 91 L151 71 C177 151 156 261 113 321 L80 294 C124 217 132 160 112 91 Z" aria-hidden="true"/>
-            <g clip-path="url(#{{clipId}}-window)">
+            <image href="{{presentation.body}}" width="520" height="387" clip-path="url(#{{clipId}}-body)" aria-hidden="true"/>
+            <path class="rm-ammo-cutaway" d="{{presentation.windowPath}}" aria-hidden="true"/>
+            {{/if}}
+            {{#if presentation.isTube}}<rect class="rm-ammo-tube-frame" x="84" y="18" width="32" height="286" rx="12"/><rect class="rm-ammo-tube-inner" x="88" y="30" width="24" height="264" rx="8"/>{{/if}}
+            <g {{#if presentation.isCurved}}clip-path="url(#{{clipId}}-window)"{{/if}}>
               {{#each cells}}
               <g class="rm-ammo-mag-group rm-ammo-tone-{{tone}} {{#if selected}}is-selected{{/if}}" data-ammo-group="{{index}}" data-ammo-action="select" data-index="{{index}}" role="button" tabindex="0" aria-disabled="{{locked}}" aria-label="Ячейка {{number}}: {{name}}, {{count}} из {{size}}">
-                <rect class="rm-ammo-band" x="40" y="{{bandY}}" width="140" height="{{bandHeight}}"/>
+                {{#each slots}}
+                {{#if @root.presentation.isGrid}}
+                {{#if @root.presentation.isMuzzle}}<circle class="rm-ammo-bore" cx="{{x}}" cy="{{y}}" r="{{boreRadius}}"/>
+                {{else}}<rect class="rm-ammo-chamber" x="{{frameLeft}}" y="-48" width="{{frameWidth}}" height="96" rx="24" transform="translate({{x}} {{y}})"/>{{/if}}
+                {{/if}}
+                {{/each}}
+                <path class="rm-ammo-band" d="{{bandPath}}"/>
                 {{#each slots}}
                 <g transform="translate({{x}} {{y}}) rotate({{angle}})" class="rm-ammo-slot {{#unless loaded}}is-empty{{/unless}}">
-                  <image href="{{@root.cartridge}}" x="-22" y="-7.333" width="44" height="14.666" class="rm-ammo-round" aria-hidden="true"/>
-                  {{#if loaded}}<path class="rm-ammo-tip" d="M12 -1.9 L20 0 L12 1.9 Z"/>{{/if}}
+                  <svg x="{{left}}" y="{{top}}" width="{{width}}" height="{{height}}" viewBox="{{@root.presentation.sprite.viewBox}}" class="rm-ammo-round" aria-hidden="true">
+                    <image href="{{@root.presentation.sprite.url}}" width="{{@root.presentation.sprite.width}}" height="{{@root.presentation.sprite.height}}"/>
+                  </svg>
                 </g>
                 {{/each}}
               </g>
@@ -45,7 +55,7 @@
             </g>
           </svg>
         </div>
-        <p class="rm-ammo-selection"><i class="fa-solid fa-crosshairs"></i> Выбрана ячейка {{selectedGroupNumber}} <span>Нажми на неё или перетащи патроны в магазин</span></p>
+        <p class="rm-ammo-selection"><i class="fa-solid fa-crosshairs"></i> Выбрана ячейка {{selectedGroupNumber}} <span>Выбери ячейку и боеприпас или перетащи его сюда</span></p>
       </section>
       <section class="rm-ammo-stock-list" aria-label="Доступные боеприпасы">
         <div class="rm-ammo-section-title"><h3>Боеприпасы</h3><span>Свободный запас</span></div>
@@ -62,8 +72,9 @@
         </div>
       </section>
     </div>
-    {{#if hasLegacy}}<div class="rm-ammo-legacy"><i class="fa-solid fa-circle-question"></i><div><strong>Разновидность старых зарядов неизвестна</strong><span>Количество сохранено. Перед возвратом патронов мастер должен определить их тип.</span>
-      {{#if canResolve}}<label>Решение мастера <select data-ammo-resolve><option value="">Не определена</option>{{#each resolveChoices}}<option value="{{key}}">{{name}}</option>{{/each}}</select></label>{{/if}}
+    {{#if hasLegacy}}<div class="rm-ammo-legacy"><i class="fa-solid fa-circle-question"></i><div><strong>Укажите уже заряженные боеприпасы</strong>
+      <span>{{#if hasSavedLegacy}}В старой записи оружия сохранено только количество: {{legacyCount}}. Тип нужен, чтобы правильно вернуть их в инвентарь при разрядке или замене.{{else}}У выбранных патронов импланта не записан тип. Их спецэффекты нужно учитывать вручную.{{/if}}</span>
+      {{#if canResolve}}<label>В оружии сейчас <select data-ammo-resolve><option value="">Выберите боеприпас</option>{{#each resolveChoices}}<option value="{{key}}">{{name}}</option>{{/each}}</select></label>{{/if}}
     </div></div>{{/if}}
     <div class="rm-ammo-presets">
       <label>Пресет<select data-ammo-preset><option value="">Выберите схему</option>{{#each presets}}<option value="{{index}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
