@@ -275,7 +275,7 @@ test("ordered shot keeps its ammunition on the card and duplicate hooks do not c
   const fire=makeAmmoItem({id:"fire",name:"Винтовочный огненный",quantity:6});fire.flags={[MODULE_ID]:{gearId:"боеприпасы-с-огненной-мазью-20"}};
   const actor=makeActor([weapon,fire]),service=new CombatAttackService({}),draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(6).fill(draft.stock[0].key);
   await service.commitMagazine(actor,weapon,draft);
-  const card={flags:{},update:async function(patch){for(const [k,v]of Object.entries(patch))foundry.utils.setProperty(this,k,v);}},activity={type:"attack",actor,item:weapon},roll={total:15,parent:card};
+  const card={flags:{dnd5e:{roll:{type:"attack"}}},update:async function(patch){for(const [k,v]of Object.entries(patch))foundry.utils.setProperty(this,k,v);}},activity={type:"attack",actor,item:weapon},roll={total:15,parent:card};
   service.applyDnd5ePostAttackRoll([roll],{subject:activity});service.applyDnd5ePostAttackRoll([roll],{subject:activity});
   await Promise.resolve();
   assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,3);
@@ -285,6 +285,24 @@ test("ordered shot keeps its ammunition on the card and duplicate hooks do not c
   service.applyDnd5eDamageRollConfig(config,{},{});
   assert.equal(config.rolls.filter(x=>x.options.rebreyaAmmunition).length,1);
   assert.deepEqual(config.rolls.at(-1).parts,["1d6"]);assert.equal(config.rolls.at(-1).options.type,"fire");
+});
+
+for(const jammed of [false,true])test(`MIDI ammunition retains its bonus without fabricating a native roll card (jammed=${jammed})`,async()=>{
+  const previous=globalThis.MidiQOL;TestRoll.queuedTotals=[jammed?1:20];
+  const weapon=makeFirearmItem({properties:{lchFirearmAmmunition:true,lchFirearmReload:true,lchFirearmMisfire:true},values:{ammunition:"Винтовочный",reload:"Перезарядка 1",misfire:4},ammoState:{current:0,capacity:1,ammunition:"Винтовочный"}});
+  const fire=makeAmmoItem({id:"fire",name:"Винтовочный огненный",quantity:2});fire.flags={[MODULE_ID]:{gearId:"боеприпасы-с-огненной-мазью-20"}};
+  const actor=makeActor([weapon,fire]),service=new CombatAttackService({}),draft=service.getMagazineEditorData(actor,weapon);draft.rounds=[draft.stock[0].key];await service.commitMagazine(actor,weapon,draft);
+  const card={content:'<div class="midi-chat-card">attack</div>',flags:{"midi-qol":{messageType:"attack"}},async update(patch){this.patch=patch;for(const[k,v]of Object.entries(patch))foundry.utils.setProperty(this,k,v);}};
+  const activity={type:"attack",actor,item:weapon},workflow={id:"ChatMessage.ammo",chatCard:card},roll={total:19,options:{rebreyaFirearmWorkflowId:workflow.id}};
+  globalThis.MidiQOL={Workflow:{getWorkflow:id=>id===workflow.id?workflow:null}};
+  try{
+    service.applyDnd5ePostAttackRoll([roll],{subject:activity});await Promise.resolve();
+    assert.equal(card.flags.dnd5e?.roll,undefined,"activation card must not enter dnd5e native roll-flavor enrichment");
+    assert.equal(card.flags[MODULE_ID].ammunitionShot.count,1);assert.equal(card.flags[MODULE_ID].ammunitionShot.data.name,"Винтовочный огненный");
+    assert.equal(card.patch[`flags.${MODULE_ID}.==firearmMisfire`]?.actorUuid,actor.uuid,"native forced replacement retains complete shot metadata");
+    if(!jammed){const config={subject:activity,rebreyaAmmunitionShot:card.flags[MODULE_ID].ammunitionShot,rolls:[{base:true,parts:["1d8"],options:{type:"piercing"}}]};service.applyDnd5eDamageRollConfig(config,{},{});assert.equal(config.rolls.filter(r=>r.options.rebreyaAmmunition).length,1);assert.deepEqual(config.rolls.at(-1).parts,["1d6"]);}
+    assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);assert.equal(fire.system.quantity,1);
+  }finally{globalThis.MidiQOL=previous;}
 });
 
 test("native reload observes write-then-throw and rejects an outdated second confirmation", async () => {
@@ -3201,15 +3219,19 @@ test("firearm damage guard leaves unrelated successful workflows alone",()=>{
 test("per-shot snapshots replace stale fields under native recursive JSON flag updates",async()=>{
   const merge=(a,b)=>{const out=structuredClone(a??{});for(const[k,v]of Object.entries(b)){out[k]=v&&typeof v==='object'&&!Array.isArray(v)?merge(out[k],v):v;}return out;};
   const path=`flags.${MODULE_ID}.firearmMisfire`,card={flags:{[MODULE_ID]:{keep:'authored',firearmMisfire:{stalePrevious:true,midiOriginal:{critical:{natural:false,forced:false,suppressed:false,override:false}}}}},async update(patch){
+    this.patch=patch;
     for(const[k,v]of Object.entries(patch)){
       if(k===`flags.${MODULE_ID}.-=firearmMisfire`)delete this.flags[MODULE_ID].firearmMisfire;
       else if(k===path)this.flags[MODULE_ID].firearmMisfire=merge(this.flags[MODULE_ID].firearmMisfire,JSON.parse(JSON.stringify(v)));
+      else if(k===`flags.${MODULE_ID}.==firearmMisfire`)this.flags[MODULE_ID].firearmMisfire=JSON.parse(JSON.stringify(v));
     }
   }};
-  const state={jammed:true,cancelled:false,rollOptions:{criticalSuccess:20,criticalFailure:1},dieOptions:{criticalSuccess:20,criticalFailure:1}},workflow={chatCard:card,rebreyaFirearmMisfire:state,attackRoll:{options:{},d20:{options:{}}},isCritical:true,isFumble:false,
+  const state={actorUuid:"Actor.original",weaponId:"original",jammedAt:"shot",jammed:true,cancelled:false,rollOptions:{criticalSuccess:20,criticalFailure:1},dieOptions:{criticalSuccess:20,criticalFailure:1}},workflow={chatCard:card,rebreyaFirearmMisfire:state,attackRoll:{options:{},d20:{options:{}}},isCritical:true,isFumble:false,
     attackRollModifierTracker:{critical:{get:{natural:true,forced:false,suppressed:false,override:undefined}},fumble:{get:{natural:false,forced:false,suppressed:false,override:undefined}}}};
   await new CombatAttackService({}).applyMidiFirearmMisfire(workflow);
   const saved=card.flags[MODULE_ID].firearmMisfire;
+  assert.ok(card.patch[`flags.${MODULE_ID}.==firearmMisfire`],"use native forced replacement rather than deleting and writing the same key");
+  assert.equal(saved.actorUuid,"Actor.original");assert.equal(saved.weaponId,"original");assert.equal(saved.jammed,true);
   assert.equal(saved.stalePrevious,undefined);assert.equal(saved.midiOriginal.critical.override,undefined);assert.equal(saved.midiOriginal.critical.natural,true);assert.equal(card.flags[MODULE_ID].keep,'authored');
 });
 
@@ -3225,7 +3247,7 @@ for(const [natural,existingDamage,restored] of [[1,false],[19,false],[20,false],
   const previous={midi:globalThis.MidiQOL,fromUuidSync:globalThis.fromUuidSync};TestRoll.queuedTotals=[1];
   const weapon=makeFirearmItem({name:"Аркебуза",properties:{lchFirearmReload:true,lchFirearmMisfire:true},values:{reload:"Перезарядка 1",misfire:4},ammoState:{current:1,capacity:1}}),actor=makeActor([weapon]);actor.isOwner=true;
   const activity={uuid:actor.uuid+".Item."+weapon.id+".Activity.attack",type:"attack",actor,item:weapon,attack:{type:{value:"firearm"}}};
-  const card={uuid:"ChatMessage.cancel",author:{id:game.user.id},content:"<div>attack</div>",flags:{},getFlag(s,k){return this.flags[s]?.[k];},async update(patch){for(const [k,v] of Object.entries(patch))foundry.utils.setProperty(this,k,v);return this;}};
+  const card={uuid:"ChatMessage.cancel",author:{id:game.user.id},content:"<div>attack</div>",flags:{},snapshotUpdates:[],getFlag(s,k){return this.flags[s]?.[k];},async update(patch){if(Object.hasOwn(patch,`flags.${MODULE_ID}.==firearmMisfire`))this.snapshotUpdates.push(patch);for(const [k,v] of Object.entries(patch))foundry.utils.setProperty(this,k,v);return this;}};
   const target={id:"target"},workflow={id:card.uuid,actor,activity,chatCard:card,isFumble:natural===1,isCritical:natural===20,hitTargets:new Set(),hitTargetsEC:new Set(),targets:new Set([target]),shouldRollDamage:true,
     async checkHits(){this.hitTargets=new Set(natural>=15?[target]:[]);},async displayAttackRoll(){},async displayHits(){},async callMidiHooks(){},
     damageRolls:existingDamage?[{total:12}]:[],postAttackRollState(){},WorkflowState_ConfirmRoll(){},async performState(stage,options){this.resumed=(this.resumed??0)+1;this.resumeStage=stage;this.resumeOptions=options;}};
@@ -3250,6 +3272,7 @@ for(const [natural,existingDamage,restored] of [[1,false],[19,false],[20,false],
     assert.equal(roll.total,natural);assert.equal(roll.d20.options.criticalFailure,1);assert.equal(roll.d20.options.criticalSuccess,20);
     assert.equal(workflow.isFumble,natural===1);assert.equal(workflow.isCritical,natural===20);assert.equal(workflow.hitTargets.size,natural>=15?1:0);
     assert.equal(card.getFlag(MODULE_ID,"firearmMisfire").cancelled,true);assert.match(card.content,/осечка отменена/u);
+    assert.equal(card.snapshotUpdates.length,3,"sync, preCheck and cancel must all use native forced replacement");
     assert.equal(service.canRollFirearmDamage(workflow),true);
     if(existingDamage){assert.equal(workflow.resumeStage,workflow.WorkflowState_ConfirmRoll);assert.equal(workflow.resumeOptions.damageRoll,workflow.damageRolls[0]);}
     const resumed=workflow.resumed;await service.cancelFirearmMisfire(card);assert.equal(workflow.resumed,resumed);
