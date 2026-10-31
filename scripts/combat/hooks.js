@@ -75,6 +75,10 @@ export function registerCombatHooks(moduleApi) {
   game[HOOKS_REGISTERED_KEY] = true;
 
   if (hasAttackService) {
+    Hooks.on("midi-qol.preCheckHits", workflow=>moduleApi.combatAttackService.applyMidiFirearmMisfire?.(workflow));
+    Hooks.on("midi-qol.hitsChecked", workflow=>moduleApi.combatAttackService.applyMidiFirearmMisfire?.(workflow,{afterHits:true}));
+    Hooks.on("midi-qol.preDamageRoll", workflow=>moduleApi.combatAttackService.canRollFirearmDamage?.(workflow));
+    Hooks.on("renderChatLog", (_app,html)=>moduleApi.combatAttackService.refreshFirearmChatActions?.(html?.[0]??html));
     Hooks.on("dnd5e.postAttackRollConfiguration", (rolls,config)=>moduleApi.combatAttackService.validateAmmunitionRollConfiguration?.(rolls,config));
     Hooks.on("midi-qol.preAttackRoll", workflow=>moduleApi.combatAttackService.prepareAmmunitionWorkflow?.(workflow));
     Hooks.on("midi-qol.preDamageRoll", (workflow,activity,config)=>{if(config && workflow?.rebreyaAmmunitionShot){config.rebreyaAmmunitionShot=workflow.rebreyaAmmunitionShot;const data=workflow.rebreyaAmmunitionShot.data;if(data)config.ammunition=new Item.implementation({...structuredClone(data),system:{...structuredClone(data.system),quantity:1}},{parent:activity?.actor??workflow.actor});}return true;});
@@ -856,6 +860,7 @@ export function registerCombatHooks(moduleApi) {
 
     Hooks.on("midi-qol.hitsChecked", async (workflow) => {
       try {
+        if(moduleApi.combatAttackService.canRollFirearmDamage?.(workflow)===false)return true;
         if (hasAttackRollBoostService) {
           await moduleApi.attackRollBoostService.applyMidiHitsChecked(workflow);
         }

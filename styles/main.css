@@ -14257,7 +14257,9 @@ summary:focus-visible {
 .rebreya-firearm-chat-notes{margin:8px 0;align-items:flex-start;}
 .rebreya-firearm-chat-notes .rm-reaction-chat__text>span{display:block;white-space:pre-line;}
 .rebreya-firearm-chat-notes[hidden],.rebreya-firearm-chat-notes [hidden]{display:none!important;}
-.rebreya-firearm-chat-notes .rm-firearm-reload{width:100%;height:auto;min-height:28px;margin-top:8px;padding:4px 8px;border:1px solid var(--rm-border-strong);border-radius:4px;background:var(--rm-surface-2);color:var(--rm-text-primary);font-size:12px;line-height:1.4;}
+.rebreya-firearm-chat-notes .rm-firearm-reload,.rebreya-firearm-chat-notes .rm-firearm-cancel-misfire{width:100%;height:auto;min-height:28px;margin-top:8px;padding:4px 8px;border:1px solid var(--rm-border-strong);border-radius:4px;background:var(--rm-surface-2);color:var(--rm-text-primary);font-size:12px;line-height:1.4;}
+.rebreya-firearm-chat-notes .rm-reaction-chat__icon{position:relative;}
+.rebreya-firearm-chat-notes .rm-firearm-reload-icon{position:absolute;right:-5px;bottom:-5px;display:grid;place-items:center;width:18px;height:18px;border:1px solid var(--rm-reaction-accent);border-radius:50%;background:var(--rm-surface-1);font-size:9px;}
 .rm-ammunition-magazine .window-content{padding:16px;overflow:auto;background:linear-gradient(145deg,#252326,#17191c 65%);}
 .rm-ammunition-magazine .rm-ammo-body{display:flex;flex-direction:column;gap:10px;min-height:0;color:#e5ded3;}
 .rm-ammunition-magazine .rm-ammo-header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-bottom:12px;border-bottom:1px solid #665140;}

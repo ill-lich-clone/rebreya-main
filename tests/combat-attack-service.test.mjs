@@ -3170,6 +3170,134 @@ test("disabled Repeating Shot restores ordinary typed ammunition handling", () =
   assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), ["", bolts.id]);
 });
 
+for(const natural of [19,20])test(`a firearm jam forces the originating MIDI shot to miss before damage (natural=${natural})`,async()=>{
+  const previous=globalThis.MidiQOL;TestRoll.queuedTotals=[1];TestRoll.messages=[];ChatMessage.messages=[];
+  const weapon=makeFirearmItem({properties:{lchFirearmReload:true,lchFirearmMisfire:true},values:{reload:"Перезарядка 1",misfire:4},ammoState:{current:1,capacity:1}}),actor=makeActor([weapon]);
+  const activity={id:"attack",uuid:actor.uuid+".Item."+weapon.id+".Activity.attack",type:"attack",actor,item:weapon,attack:{type:{value:"firearm"}}};
+  const card={uuid:"ChatMessage.firearm",content:"<div>attack</div>",updates:[],update(patch){this.updates.push(patch);if(patch.content)this.content=patch.content;return this;}};
+  const target={id:"target"},workflow={id:card.uuid,actor,activity,chatCard:card,targets:new Set([target]),hitTargets:new Set([target]),hitTargetsEC:new Set([target]),isFumble:false,isCritical:natural===20,displayAttackRoll:async()=>{},hitDisplayData:{target:{hitResult:"hit",hitString:"Hit",hitSymbol:"fa-check"}}};
+  globalThis.MidiQOL={Workflow:{getWorkflow:id=>id===workflow.id?workflow:null}};
+  const service=new CombatAttackService({}),config={subject:activity,workflow,rolls:[{options:{criticalSuccess:20,criticalFailure:1}}]};
+  try{
+    service.applyDnd5eAttackRollConfig(config,{},{});
+    assert.equal(config.rolls[0].options.rebreyaFirearmWorkflowId,workflow.id);
+    const roll={total:natural,options:config.rolls[0].options,d20:{options:{criticalSuccess:20,criticalFailure:1}},isCritical:natural===20,isFumble:false};workflow.attackRoll=roll;
+    service.applyDnd5ePostAttackRoll([roll],{subject:activity});
+    assert.equal(ChatMessage.messages.length+TestRoll.messages.length,0,"MIDI status belongs in its actual attack card");
+    assert.match(card.content,/заклинено/u);
+    await service.applyMidiFirearmMisfire(workflow);
+    assert.equal(workflow.isFumble,true);assert.equal(workflow.isCritical,false);assert.equal(roll.total,natural);
+    assert.equal(roll.d20.options.criticalFailure,20);assert.equal(roll.d20.options.criticalSuccess,21);
+    await service.applyMidiFirearmMisfire(workflow,{afterHits:true});
+    assert.equal(workflow.hitTargets.size,0);assert.equal(workflow.hitTargetsEC.size,0);assert.equal(workflow.hitDisplayData.target.hitResult,"miss");
+    assert.equal(service.canRollFirearmDamage(workflow),false);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);
+  }finally{globalThis.MidiQOL=previous;}
+});
+
+test("firearm damage guard leaves unrelated successful workflows alone",()=>{
+  assert.equal(new CombatAttackService({}).canRollFirearmDamage({attackRoll:{options:{}}}),true);
+});
+
+test("initialization binds actions to chat cards that were rendered before actors were ready",async()=>{
+  const previous={document:globalThis.document,messages:game.messages},root={dataset:{messageId:"old-card"}},message={id:"old-card"};
+  globalThis.document={querySelectorAll:()=>[root]};game.messages=new Map([[message.id,message]]);
+  const calls=[],service=new CombatAttackService({});service.renderFirearmChatActions=(m,r)=>calls.push([m,r]);
+  try{await service.initialize();assert.deepEqual(calls,[[message,root]]);}
+  finally{globalThis.document=previous.document;game.messages=previous.messages;}
+});
+
+for(const [natural,existingDamage,restored] of [[1,false],[19,false],[20,false],[19,true],[19,false,true]])test(`cancelling a shot misfire restores its original attack without spending again (natural=${natural}, existingDamage=${existingDamage}, restored=${Boolean(restored)})`,async()=>{
+  const previous={midi:globalThis.MidiQOL,fromUuidSync:globalThis.fromUuidSync};TestRoll.queuedTotals=[1];
+  const weapon=makeFirearmItem({name:"Аркебуза",properties:{lchFirearmReload:true,lchFirearmMisfire:true},values:{reload:"Перезарядка 1",misfire:4},ammoState:{current:1,capacity:1}}),actor=makeActor([weapon]);actor.isOwner=true;
+  const activity={uuid:actor.uuid+".Item."+weapon.id+".Activity.attack",type:"attack",actor,item:weapon,attack:{type:{value:"firearm"}}};
+  const card={uuid:"ChatMessage.cancel",author:{id:game.user.id},content:"<div>attack</div>",flags:{},getFlag(s,k){return this.flags[s]?.[k];},async update(patch){for(const [k,v] of Object.entries(patch))foundry.utils.setProperty(this,k,v);return this;}};
+  const target={id:"target"},workflow={id:card.uuid,actor,activity,chatCard:card,isFumble:natural===1,isCritical:natural===20,hitTargets:new Set(),hitTargetsEC:new Set(),targets:new Set([target]),shouldRollDamage:true,
+    async checkHits(){this.hitTargets=new Set(natural>=15?[target]:[]);},async displayAttackRoll(){},async displayHits(){},async callMidiHooks(){},
+    damageRolls:existingDamage?[{total:12}]:[],postAttackRollState(){},WorkflowState_ConfirmRoll(){},async performState(stage,options){this.resumed=(this.resumed??0)+1;this.resumeStage=stage;this.resumeOptions=options;}};
+  globalThis.MidiQOL={Workflow:{getWorkflow:id=>id===workflow.id?workflow:null}};globalThis.fromUuidSync=id=>id===actor.uuid?actor:null;
+  const service=new CombatAttackService({}),config={subject:activity,workflow,rolls:[{options:{criticalFailure:1,criticalSuccess:20}}]};
+  try{
+    service.applyDnd5eAttackRollConfig(config,{},{});const roll={total:natural,options:config.rolls[0].options,d20:{options:{criticalFailure:1,criticalSuccess:20}},isFumble:natural===1,isCritical:natural===20};workflow.attackRoll=roll;
+    service.applyDnd5ePostAttackRoll([roll],{subject:activity});await service.applyMidiFirearmMisfire(workflow);await new Promise(resolve=>setImmediate(resolve));
+    if(restored){
+      // MIDI lazily loads persisted isFumble on its first getter call. This must
+      // happen before restoring the pre-misfire tracker state.
+      let loaded=false,fumble=true,critical=false;
+      Object.defineProperty(workflow,'isFumble',{get(){if(!loaded){fumble=true;loaded=true;}return fumble;},set(v){fumble=v;loaded=true;}});
+      Object.defineProperty(workflow,'isCritical',{get(){return critical;},set(v){critical=v;}});
+      workflow.attackRollModifierTracker={critical:{restore(s){critical=s.natural;}},fumble:{restore(s){fumble=s.natural;}}};
+      const saved=card.getFlag(MODULE_ID,'firearmMisfire');saved.midiOriginal.critical={natural:false};saved.midiOriginal.fumble={natural:false};workflow.persistFields=()=>{};
+    }
+    const before=weapon.getFlag(MODULE_ID,"firearmAmmoState").current;
+    const result=await service.cancelFirearmMisfire(card);
+    assert.equal(result.success,true);assert.equal(weapon.getFlag(MODULE_ID,"firearmJammed"),undefined);
+    assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,before);assert.equal(weapon.getFlag(MODULE_ID,"firearmMisfire"),undefined);
+    assert.equal(roll.total,natural);assert.equal(roll.d20.options.criticalFailure,1);assert.equal(roll.d20.options.criticalSuccess,20);
+    assert.equal(workflow.isFumble,natural===1);assert.equal(workflow.isCritical,natural===20);assert.equal(workflow.hitTargets.size,natural>=15?1:0);
+    assert.equal(card.getFlag(MODULE_ID,"firearmMisfire").cancelled,true);assert.match(card.content,/осечка отменена/u);
+    assert.equal(service.canRollFirearmDamage(workflow),true);
+    if(existingDamage){assert.equal(workflow.resumeStage,workflow.WorkflowState_ConfirmRoll);assert.equal(workflow.resumeOptions.damageRoll,workflow.damageRolls[0]);}
+    const resumed=workflow.resumed;await service.cancelFirearmMisfire(card);assert.equal(workflow.resumed,resumed);
+  }finally{globalThis.MidiQOL=previous.midi;globalThis.fromUuidSync=previous.fromUuidSync;}
+});
+
+test("cancellation does not remove a later weapon jam or increase its misfire threshold",async()=>{
+  const previous=globalThis.fromUuidSync;
+  const weapon=makeFirearmItem({name:"Аркебуза (клин)",jammed:{value:true,jammedAt:"later"},ammoState:{current:0,capacity:1}}),actor=makeActor([weapon]);actor.isOwner=true;weapon.flags[MODULE_ID].firearmMisfire=8;
+  const state={actorUuid:actor.uuid,weaponId:weapon.id,jammed:true,cancelled:false,jammedAt:"earlier"};
+  const message={author:{id:game.user.id},flags:{[MODULE_ID]:{firearmMisfire:state,firearmChatNotes:["Осечка 4, d20 = 2 (заклинено)"]}},content:"<div>attack</div>",getFlag(s,k){return this.flags[s]?.[k];},async update(patch){for(const [k,v] of Object.entries(patch))foundry.utils.setProperty(this,k,v);}};
+  globalThis.fromUuidSync=()=>actor;
+  try{await new CombatAttackService({}).cancelFirearmMisfire(message);assert.equal(weapon.getFlag(MODULE_ID,"firearmJammed").jammedAt,"later");assert.equal(weapon.getFlag(MODULE_ID,"firearmMisfire"),8);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);}
+  finally{globalThis.fromUuidSync=previous;}
+});
+
+test("cancellation requires the attack author or GM and native actor/message rights",async()=>{
+  const previous={fromUuidSync:globalThis.fromUuidSync,isGM:game.user.isGM};
+  const weapon=makeFirearmItem({jammed:{value:true,jammedAt:"original"}}),actor=makeActor([weapon]);actor.isOwner=true;
+  const state={actorUuid:actor.uuid,weaponId:weapon.id,jammed:true,cancelled:false,jammedAt:"original"},message={author:{id:"other"},flags:{[MODULE_ID]:{firearmMisfire:state}},canUserModify:()=>true};
+  globalThis.fromUuidSync=()=>actor;game.user.isGM=false;const service=new CombatAttackService({});
+  try{
+    await assert.rejects(service.cancelFirearmMisfire(message),/Нет прав/u);
+    message.author.id=game.user.id;actor.isOwner=false;await assert.rejects(service.cancelFirearmMisfire(message),/Нет прав/u);
+    actor.isOwner=true;message.canUserModify=()=>false;await assert.rejects(service.cancelFirearmMisfire(message),/Нет прав/u);
+    assert.equal(state.cancelled,false);assert.equal(weapon.getFlag(MODULE_ID,"firearmJammed").jammedAt,"original");
+  }finally{globalThis.fromUuidSync=previous.fromUuidSync;game.user.isGM=previous.isGM;}
+});
+
+test("an older fallback cannot cancel a newer successful shot in the reused MIDI card",async()=>{
+  const previous={fromUuidSync:globalThis.fromUuidSync,midi:globalThis.MidiQOL};
+  const weapon=makeFirearmItem(),actor=makeActor([weapon]);actor.isOwner=true;
+  const old={actorUuid:actor.uuid,weaponId:weapon.id,jammed:true,cancelled:false,jammedAt:"old",workflowId:"ChatMessage.reused"};
+  const source={author:{id:game.user.id},flags:{[MODULE_ID]:{firearmMisfire:old}},async update(){throw Error("Unexpected write to stale card");}};
+  globalThis.fromUuidSync=()=>actor;globalThis.MidiQOL={Workflow:{getWorkflow:()=>({attackRoll:{},chatCard:{getFlag:()=>({...old,jammed:false,jammedAt:null})}})}};
+  try{await assert.rejects(new CombatAttackService({}).cancelFirearmMisfire(source),/другой выстрел/u);}
+  finally{globalThis.fromUuidSync=previous.fromUuidSync;globalThis.MidiQOL=previous.midi;}
+});
+
+test("misfire chat action opens once for its author or GM and is hidden after cancellation",async()=>{
+  const previous={fromUuidSync:globalThis.fromUuidSync,document:globalThis.document,isGM:game.user.isGM};
+  const weapon=makeFirearmItem(),actor=makeActor([weapon]);actor.isOwner=true;const buttons=[];
+  const root={querySelector(selector){if(selector.startsWith('.rm-firearm-'))return buttons.find(b=>'.'+b.className===selector)??null;return {append(b){buttons.push(b);}};}};
+  globalThis.document={createElement(){const b=new EventTarget();b.remove=()=>buttons.splice(buttons.indexOf(b),1);return b;}};globalThis.fromUuidSync=()=>actor;
+  const state={actorUuid:actor.uuid,weaponId:weapon.id,jammed:true,cancelled:false},message={author:{id:game.user.id},flags:{[MODULE_ID]:{firearmMisfire:state}}},service=new CombatAttackService({});let clicks=0;
+  service.cancelFirearmMisfire=async m=>{assert.equal(m,message);clicks++;};
+  try{
+    game.user.isGM=false;service.renderFirearmChatActions(message,root);service.renderFirearmChatActions(message,root);assert.equal(buttons.length,1);assert.equal(buttons[0].textContent,"Отменить осечку");
+    buttons[0].dispatchEvent(new Event('click'));await new Promise(resolve=>setImmediate(resolve));assert.equal(clicks,1);
+    message.author.id="other";service.renderFirearmChatActions(message,root);assert.equal(buttons.length,0);
+    game.user.isGM=true;service.renderFirearmChatActions(message,root);assert.equal(buttons.length,1);
+    state.workflowId="ChatMessage.expired";service.renderFirearmChatActions(message,root);assert.equal(buttons[0].disabled,true);
+    state.cancelled=true;service.renderFirearmChatActions(message,root);assert.equal(buttons.length,0);
+  }finally{globalThis.fromUuidSync=previous.fromUuidSync;globalThis.document=previous.document;game.user.isGM=previous.isGM;}
+});
+
+test("native damage is blocked only for an active misfire on the originating shot",()=>{
+  const previous=game.messages,state={jammed:true,cancelled:false};game.messages=new Map([["jam-card",{flags:{[MODULE_ID]:{firearmMisfire:state}}}]]);
+  const service=new CombatAttackService({}),config={event:{target:{closest:()=>({dataset:{messageId:"jam-card"}})}}};
+  try{assert.equal(service.applyDnd5eDamageRollConfig(config,{},{}),false);state.cancelled=true;assert.equal(service.applyDnd5eDamageRollConfig(config,{},{}),true);}
+  finally{game.messages=previous;}
+});
+
 for(const jammed of [false,true])test(`last firearm round publishes one styled status with misfire outcome (jammed=${jammed})`,()=>{
   TestRoll.queuedTotals=[jammed?1:13];TestRoll.messages=[];ChatMessage.messages=[];
   const weapon=makeFirearmItem({name:'Аркебуза <img src=x onerror="bad()">',properties:{lchFirearmReload:true,lchFirearmMisfire:true},values:{reload:"Перезарядка 1",misfire:4},ammoState:{current:1,capacity:1}}),actor=makeActor([weapon]);
@@ -3179,6 +3307,8 @@ for(const jammed of [false,true])test(`last firearm round publishes one styled s
   assert.match(messages[0].content,/data-rebreya-firearm-chat-notes/u);assert.match(messages[0].content,/магазин пуст/iu);
   assert.match(messages[0].content,jammed?/заклинено/u:/без осечки/u);assert.match(messages[0].content,/&lt;img/u);assert.doesNotMatch(messages[0].content,/<img\b/u);
   assert.equal(TestRoll.messages[0].formula,"1d20");assert.equal(TestRoll.queuedTotals.length,0);
+  assert.match(messages[0].content,jammed?/fa-triangle-exclamation/u:/fa-crosshairs/u);
+  assert.match(messages[0].content,/rm-firearm-reload-icon/u);
   assert.deepEqual(messages[0].flags?.[MODULE_ID]?.firearmReload,{actorUuid:actor.uuid,weaponId:weapon.id});
   assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);assert.equal(Boolean(weapon.getFlag(MODULE_ID,"firearmJammed")?.value),jammed);
 });

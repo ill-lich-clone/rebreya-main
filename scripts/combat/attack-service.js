@@ -1,4 +1,5 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
+import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire } from "./firearm-misfire.js?v=1.5.37";
 import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
 import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.22";
 import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
@@ -42,6 +43,7 @@ const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
 const FIREARM_RELOAD_CHAT_FLAG = "firearmReload";
+const FIREARM_MISFIRE_CHAT_FLAG = "firearmMisfire";
 const EQUIPMENT_SIZE_ATTACK_BUILDER = Symbol("rebreyaEquipmentSizeAttackBuilder");
 const DND5E_AMMUNITION_PROPERTY = "amm";
 const IMPLANT_RELOAD_RESERVOIR_FLAG = "implantReloadReservoir";
@@ -1524,7 +1526,14 @@ export class CombatAttackService {
       queue.registerType(PARRY_REACTION_KIND, this.#attackReactionProvider(PARRY_REACTION_KIND));
       queue.registerType(INTERCEPTION_REACTION_KIND, this.#attackReactionProvider(INTERCEPTION_REACTION_KIND));
     }
+    this.refreshFirearmChatActions();
     return queue ?? null;
+  }
+
+  refreshFirearmChatActions(root=globalThis.document) {
+    for(const element of root?.querySelectorAll?.("[data-message-id]")??[]){
+      const message=game.messages?.get?.(element.dataset.messageId);if(message)this.renderFirearmChatActions(message,element);
+    }
   }
 
   #resolveActor(actorOrId) {
@@ -1955,9 +1964,11 @@ export class CombatAttackService {
 
     const nextContent = this.#withFirearmChatCardNotes(content, safeNotes);
     const reloadTarget=foundry.utils.getProperty(options.messageConfig?.data,`flags.${MODULE_ID}.${FIREARM_RELOAD_CHAT_FLAG}`);
+    const misfire=foundry.utils.getProperty(options.messageConfig?.data,`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`);
     const update = {
       ...(options.ammunitionPatch??{}),
       ...(reloadTarget?{[`flags.${MODULE_ID}.${FIREARM_RELOAD_CHAT_FLAG}`]:reloadTarget}:{}),
+      ...(misfire?{[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:misfire}:{}),
       [`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`]: safeNotes
     };
     if (nextContent !== content) {
@@ -1972,7 +1983,7 @@ export class CombatAttackService {
         ...(message.speaker?{speaker:message.speaker}:{}),
         ...(safeNotes.every(note=>note.startsWith("Магазин пуст."))?{whisper:[game.user.id]}:message.whisper?{whisper:message.whisper}:{}),
         ...(message.blind?{blind:true}:{}),
-        ...(reloadTarget?{flags:{[MODULE_ID]:{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}}}:{}),
+        ...((reloadTarget||misfire)?{flags:{[MODULE_ID]:{...(reloadTarget?{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}:{}),...(misfire?{[FIREARM_MISFIRE_CHAT_FLAG]:misfire}:{})}}}:{}),
         content:this.#buildFirearmChatCardNotesHtml(safeNotes)
       })).catch(fallbackError=>console.error(`${MODULE_ID} | Failed to publish firearm chat notes.`,fallbackError));
     });
@@ -2064,12 +2075,16 @@ export class CombatAttackService {
   }
 
   #buildFirearmChatCardNotesHtml(notes = []) {
+    const jammed=notes.some(note=>String(note).includes("(заклинено)"));
+    const reload=notes.some(note=>String(note).includes("Магазин пуст."));
+    const icon=jammed?"fa-triangle-exclamation":"fa-crosshairs";
+    const badge=reload?'<span class="rm-firearm-reload-icon" data-rebreya-firearm-owner-only hidden title="Нужна перезарядка"><i class="fa-solid fa-rotate"></i></span>':"";
     const rows = notes
       .flatMap((note) => cleanText(note).split("\n"))
       .filter(Boolean)
       .map((note) => `<span${note.startsWith("Магазин пуст.") ? ' data-rebreya-firearm-owner-only hidden' : ''}>${escapeHtml(note)}</span>`)
       .join("");
-    return `<p class="supplement rm-reaction-chat rebreya-firearm-chat-notes" data-rebreya-firearm-chat-notes="true"><span class="rm-reaction-chat__icon" aria-hidden="true"><i class="fa-solid fa-crosshairs"></i></span><span class="rm-reaction-chat__body"><span class="rm-reaction-chat__label">Огнестрел</span><span class="rm-reaction-chat__text">${rows}</span></span></p>`;
+    return `<p class="supplement rm-reaction-chat rebreya-firearm-chat-notes" data-rebreya-firearm-chat-notes="true"><span class="rm-reaction-chat__icon" aria-hidden="true"><i class="fa-solid ${icon}"></i>${badge}</span><span class="rm-reaction-chat__body"><span class="rm-reaction-chat__label">Огнестрел</span><span class="rm-reaction-chat__text">${rows}</span></span></p>`;
   }
 
   #notifyFirearmAmmoEmpty(item) {
@@ -3402,6 +3417,9 @@ export class CombatAttackService {
     }
     if (!notes.length) return;
     const content = notes.join("\n");
+    const shot=result.shot;
+    const flags={[MODULE_ID]:{[FIREARM_CHAT_NOTES_FLAG]:notes,...(reloadTarget?{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}:{}),...(shot?{[FIREARM_MISFIRE_CHAT_FLAG]:shot}:{})}};
+    if(shot && options.messageConfig)foundry.utils.setProperty(options.messageConfig,`data.flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`,shot);
     // A pre-use jam can abort before an attack message exists. An actual parent
     // already exists after an attack roll and owns the complete, private status.
     if ((result?.jammed !== true || this.#resolveFirearmOriginatingMessage(options)?.content) && this.#appendFirearmChatNote(options, content, reloadTarget)) {
@@ -3417,7 +3435,7 @@ export class CombatAttackService {
         Promise.resolve(result.roll.toMessage({
           speaker: ChatMessage.getSpeaker({ actor }),
           flavor,
-          ...(reloadTarget?{flags:{[MODULE_ID]:{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}}}:{}),
+          flags,
           content: this.#buildFirearmChatCardNotesHtml(notes)
         })).catch((error) => {
           console.error(`${MODULE_ID} | Failed to create firearm misfire roll message.`, error);
@@ -3431,7 +3449,7 @@ export class CombatAttackService {
           user: userId,
           ...(result?.checked===false?{whisper:[userId]}:{}),
           speaker: ChatMessage.getSpeaker?.({ actor }) ?? {},
-          ...(reloadTarget?{flags:{[MODULE_ID]:{[FIREARM_RELOAD_CHAT_FLAG]:reloadTarget}}}:{}),
+          flags,
           content: this.#buildFirearmChatCardNotesHtml(notes)
         })).catch((error) => {
           console.error(`${MODULE_ID} | Failed to create firearm misfire chat message.`, error);
@@ -3495,28 +3513,23 @@ export class CombatAttackService {
 
   #rollFirearmMisfire(actor, item, options = {}) {
     const threshold = this.#resolveFirearmMisfireThreshold(item, options);
-    if (threshold <= 0) {
-      const result = {
-        checked: false,
-        jammed: false,
-        threshold: 0,
-        rollTotal: null
-      };
-      this.#createFirearmMisfireMessage(actor, item, result, options);
-      return result;
-    }
-
-    const { roll, total } = this.#evaluateFirearmMisfireDie(options);
+    const { roll, total } = threshold>0?this.#evaluateFirearmMisfireDie(options):{roll:null,total:null};
     const result = {
-      checked: true,
-      jammed: total <= threshold,
+      checked: threshold>0,
+      jammed: threshold>0 && total <= threshold,
       threshold,
       rollTotal: total,
-      roll
+      ...(threshold>0?{roll}:{})
     };
 
     if (result.jammed) {
       this.#jamFirearm(actor, item, result, options);
+    }
+    if(options.firearmAttackRoll){
+      result.shot=captureFirearmMisfire(options.firearmAttackRoll,result,{actorUuid:actor?.uuid,weaponId:item?.id,workflowId:options.firearmWorkflowId??null,
+        jammedAt:result.jammed?readDocumentFlag(item,MODULE_ID,FIREARM_JAMMED_FLAG)?.jammedAt:null});
+      if(options.firearmWorkflowId){options.firearmAttackRoll.options??={};options.firearmAttackRoll.options.rebreyaFirearmMisfire=result.shot;}
+      else applyFirearmMisfireToRoll(options.firearmAttackRoll,result.shot);
     }
     this.#createFirearmMisfireMessage(actor, item, result, options);
 
@@ -4623,6 +4636,7 @@ export class CombatAttackService {
         const ordered=magazineRounds(this.#resolveFirearmAmmoState(item)),source=ordered.sources[ordered.rounds[0]],bonus=source?.system?.magicalBonus;
         for(const roll of config.rolls??[]){
           roll.options??={};
+          if(config.workflow?.id)roll.options.rebreyaFirearmWorkflowId=config.workflow.id;
           if(bonus && source.system.magicAvailable!==false && !roll.options.rebreyaAmmunitionBonus){roll.parts??=[];roll.parts.push(String(bonus));roll.options.rebreyaAmmunitionBonus=true;}
         }
       }
@@ -4687,10 +4701,10 @@ export class CombatAttackService {
     return true;
   }
 
-  #recordAmmunitionShot(roll,activity,data,count,{defer=false}={}) {
+  #recordAmmunitionShot(roll,activity,data,count,{defer=false,message=roll?.parent}={}) {
     const shot={data:structuredClone(data),count,weaponId:activity.item.id,spent:true};
     this._ammunitionShots.set(roll,shot);
-    const card=roll.parent;
+    const card=message;
     if(card){
       const patch={[`flags.${MODULE_ID}.ammunitionShot`]:shot};
       if(data)patch["flags.dnd5e.roll.ammunitionData"]={...structuredClone(data),system:{...structuredClone(data.system),quantity:1}};
@@ -4734,6 +4748,7 @@ export class CombatAttackService {
 
   renderFirearmChatActions(message,root) {
     if(!root?.querySelector)return;
+    this.#renderFirearmMisfireAction(message,root);
     root.querySelector(".rm-firearm-reload")?.remove();
     const target=readDocumentFlag(message,MODULE_ID,FIREARM_RELOAD_CHAT_FLAG);
     const authorId=message.author?.id??message.author??message.user?.id??message.user;
@@ -4759,6 +4774,25 @@ export class CombatAttackService {
     host.append(button);
   }
 
+  #renderFirearmMisfireAction(message,root) {
+    root.querySelector(".rm-firearm-cancel-misfire")?.remove?.();
+    const state=readDocumentFlag(message,MODULE_ID,FIREARM_MISFIRE_CHAT_FLAG);
+    if(!state?.jammed||state.cancelled)return;
+    const authorId=message.author?.id??message.author??message.user?.id??message.user;
+    const actor=this.#resolveActorFromUuid(state.actorUuid),weapon=actor?.items?.get?.(state.weaponId);
+    if(!actor?.isOwner||!isFirearmItem(weapon)||(!game.user?.isGM&&authorId!==game.user?.id))return;
+    const host=root.querySelector(".rebreya-firearm-chat-notes .rm-reaction-chat__body");if(!host)return;
+    const button=document.createElement("button");button.type="button";button.className="rm-firearm-cancel-misfire";button.textContent="Отменить осечку";
+    button.disabled=Boolean(state.workflowId&&!globalThis.MidiQOL?.Workflow?.getWorkflow?.(state.workflowId)?.attackRoll);
+    button.title=button.disabled?"MIDI не сохранил исходную сессию броска.":"Игнорировать осечку этого выстрела";
+    button.addEventListener("click",async event=>{
+      event.preventDefault();if(button.disabled)return;button.disabled=true;
+      try{await this.cancelFirearmMisfire(message);}
+      catch(error){ui.notifications?.warn?.(error.message);}
+      finally{button.disabled=false;}
+    });host.append(button);
+  }
+
   applyDnd5ePostAttackRoll(rolls = [], context = {}) {
     this.reportWhirlwindAttack(rolls, context).catch(error => console.error(`${MODULE_ID} | Whirlwind hit report failed.`, error));
     const activity = context?.subject ?? null;
@@ -4777,9 +4811,11 @@ export class CombatAttackService {
 
       if (isFirearmItem(item)) {
         const actor = activity.actor ?? item.actor ?? null;
+        const midiWorkflow=globalThis.MidiQOL?.Workflow?.getWorkflow?.(firstRoll.options?.rebreyaFirearmWorkflowId);
+        const message=firstRoll.parent??midiWorkflow?.chatCard??null;
         const firearmMessageOptions = {
-          message: firstRoll.parent ?? null,
-          ...(typeof firstRoll.parent?.update === "function" && firstRoll.parent.content ? { messageConfig: {},deferFirearmChatSync:true } : {})
+          message,
+          ...(typeof message?.update === "function" && message.content ? { messageConfig: {},deferFirearmChatSync:true } : {})
         };
         const ammo = this.#consumeLoadedFirearmAmmo(
           actor,
@@ -4788,13 +4824,16 @@ export class CombatAttackService {
           firearmMessageOptions
         );
         if (ammo.success) {
-          firearmMessageOptions.ammunitionPatch=this.#recordAmmunitionShot(firstRoll, activity, ammo.ammunitionData, ammo.ammoSpent,{defer:firearmMessageOptions.deferFirearmChatSync});
+          firearmMessageOptions.ammunitionPatch=this.#recordAmmunitionShot(firstRoll, activity, ammo.ammunitionData, ammo.ammoSpent,{defer:firearmMessageOptions.deferFirearmChatSync,message})??{};
           if(activity.attack?.type?.value!=="melee")startFirearmTuning(item,Number(game.time?.worldTime)).catch(error=>console.error(`${MODULE_ID} | Failed to start firearm tuning.`,error));
-          this.#rollFirearmMisfire(actor, item, {...firearmMessageOptions, firearmAmmo: ammo});
+          const misfire=this.#rollFirearmMisfire(actor, item, {...firearmMessageOptions, firearmAmmo: ammo,firearmAttackRoll:firstRoll,firearmWorkflowId:midiWorkflow?.id??null});
+          if(midiWorkflow)midiWorkflow.rebreyaFirearmMisfire=misfire.shot;
+          firearmMessageOptions.ammunitionPatch[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]=misfire.shot;
+          if(!midiWorkflow&&message?.rolls?.includes?.(firstRoll)&&typeof firstRoll.toJSON==="function")firearmMessageOptions.ammunitionPatch.rolls=message.rolls.map(roll=>roll.toJSON());
         }
         if(firearmMessageOptions.deferFirearmChatSync){
           const synced=this.#syncFirearmChatCardNotes(firearmMessageOptions,foundry.utils.getProperty(firearmMessageOptions.messageConfig.data,`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`));
-          if(!synced && firearmMessageOptions.ammunitionPatch)Promise.resolve(firstRoll.parent.update(firearmMessageOptions.ammunitionPatch)).catch(error=>console.error(`${MODULE_ID} | Failed to save ammunition shot.`,error));
+          if(!synced && firearmMessageOptions.ammunitionPatch)Promise.resolve(message.update(firearmMessageOptions.ammunitionPatch)).catch(error=>console.error(`${MODULE_ID} | Failed to save ammunition shot.`,error));
         }
       }
       else if (firstRoll.options?.ammunition && !hasActiveRepeatingShot(item)) {
@@ -4836,6 +4875,63 @@ export class CombatAttackService {
     }
 
     return true;
+  }
+
+  async applyMidiFirearmMisfire(workflow,{afterHits=false}={}) {
+    const state=activeFirearmMisfire(workflow);if(!state)return false;
+    if(!state.midiOriginal){
+      const tracker=workflow.attackRollModifierTracker;
+      state.midiOriginal={isFumble:workflow.isFumble,isCritical:workflow.isCritical,
+        ...(tracker?.critical?.get?{critical:structuredClone(tracker.critical.get),fumble:structuredClone(tracker.fumble.get)}:{})};
+      await workflow.chatCard?.update?.({[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:state});
+    }
+    applyFirearmMisfireToRoll(workflow.attackRoll,state);
+    workflow.isFumble=true;workflow.isCritical=false;
+    if(afterHits){
+      workflow.hitTargets=new Set();workflow.hitTargetsEC=new Set();
+      for(const data of Object.values(workflow.hitDisplayData??{})){data.hitResult="miss";data.hitString="Промах: осечка";data.hitSymbol="fa-xmark";}
+      await workflow.displayAttackRoll?.();
+    }
+    return true;
+  }
+
+  canRollFirearmDamage(workflow) {return !activeFirearmMisfire(workflow);}
+
+  async cancelFirearmMisfire(message) {
+    const state=readDocumentFlag(message,MODULE_ID,FIREARM_MISFIRE_CHAT_FLAG);
+    if(!state?.jammed)throw new Error("У этого выстрела нет сохранённой осечки.");
+    const actor=this.#resolveActorFromUuid(state.actorUuid),weapon=actor?.items?.get?.(state.weaponId);
+    const authorId=message.author?.id??message.author??message.user?.id??message.user;
+    if(!actor?.isOwner || !isFirearmItem(weapon) || (!game.user?.isGM&&authorId!==game.user?.id) || message.canUserModify?.(game.user,"update")===false)throw new Error("Нет прав отменить осечку этого выстрела.");
+    if(state.cancelled)return {success:true,alreadyCancelled:true};
+    const workflow=state.workflowId?globalThis.MidiQOL?.Workflow?.getWorkflow?.(state.workflowId):null;
+    if(state.workflowId && !workflow?.attackRoll)throw new Error("Не удалось восстановить исходный бросок атаки.");
+    const currentState=readDocumentFlag(workflow?.chatCard,MODULE_ID,FIREARM_MISFIRE_CHAT_FLAG);
+    if(currentState && (currentState.jammedAt!==state.jammedAt||currentState.weaponId!==state.weaponId||currentState.actorUuid!==state.actorUuid))throw new Error("В этой карточке уже другой выстрел.");
+    const next={...state,cancelled:true};
+    const notes=(readDocumentFlag(message,MODULE_ID,FIREARM_CHAT_NOTES_FLAG)??[]).map(note=>note.replace("(заклинено)","(осечка отменена)").replace(/\s+\(клин\)/gu,""));
+    await message.update({[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:next,[`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`]:notes,content:this.#withFirearmChatCardNotes(message.content,notes)});
+    if(readDocumentFlag(weapon,MODULE_ID,FIREARM_JAMMED_FLAG)?.jammedAt===state.jammedAt){
+      await weapon.update({[`flags.${MODULE_ID}.-=${FIREARM_JAMMED_FLAG}`]:null,name:stripFirearmJamSuffix(weapon.name)});
+    }
+    if(workflow){
+      workflow.rebreyaFirearmMisfire=next;applyFirearmMisfireToRoll(workflow.attackRoll,next);
+      const original=state.midiOriginal??{isFumble:state.originalIsFumble,isCritical:state.originalIsCritical};
+      if(original.critical&&workflow.attackRollModifierTracker?.critical?.restore){
+        // Load MIDI's lazy persisted overrides before restoring this shot's state.
+        void workflow.isFumble;void workflow.isCritical;
+        workflow.attackRollModifierTracker.critical.restore(original.critical);workflow.attackRollModifierTracker.fumble.restore(original.fumble);
+        workflow.persistFields?.({isCritical:workflow.isCritical,isFumble:workflow.isFumble});
+      }else{workflow.isFumble=original.isFumble;workflow.isCritical=original.isCritical;}
+      await workflow.checkHits();await workflow.displayAttackRoll();
+      await workflow.callMidiHooks?.("midi-qol.hitsChecked");await workflow.displayHits?.(workflow.whisperAttackCard);
+      if(workflow.damageRolls?.length)await workflow.performState(workflow.WorkflowState_ConfirmRoll,{damageRoll:workflow.damageRolls[0]});
+      else if(workflow.shouldRollDamage)await workflow.performState(workflow.postAttackRollState);
+    }else{
+      const roll=message.rolls?.find(roll=>roll.options?.rebreyaFirearmMisfire?.jammedAt===state.jammedAt);
+      if(roll){applyFirearmMisfireToRoll(roll,next);await message.update({rolls:message.rolls.map(r=>r.toJSON())});}
+    }
+    return {success:true,cancelled:true};
   }
 
   applyMidiHitsChecked(workflow) {
@@ -5031,7 +5127,8 @@ export class CombatAttackService {
       this.prepareWhirlwindDamageCard(config, message);
     }
     const originId=config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId??config.workflow?.itemCardId??config.workflow?.itemCardUuid?.split(".").at(-1);
-    const origin=originId?game.messages?.get?.(originId):null;
+    const origin=(originId?game.messages?.get?.(originId):null)??this.#resolveFirearmOriginatingMessage({messageConfig:message});
+    if(activeFirearmMisfire(config.workflow??{chatCard:origin}))return false;
     const savedShot=config.rebreyaAmmunitionShot??config.workflow?.rebreyaAmmunitionShot??readDocumentFlag(origin,MODULE_ID,"ammunitionShot");
     const ammunitionData=savedShot?.data??(config.ammunition?this.#captureAmmunition(config.ammunition).data:null);
     const physicalProperties=Array.from(ammunitionData?.system?.properties??[]).filter(key=>globalThis.CONFIG?.DND5E?.itemProperties?.[key]?.isPhysical);

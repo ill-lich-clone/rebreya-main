@@ -7,6 +7,18 @@ const {
 } = await import("../scripts/combat/environment-automation-service.js");
 const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 
+test("firearm misfire hooks precede hit resolution and damage and suppress hit-only followups",async()=>{
+  const previous={game:globalThis.game,Hooks:globalThis.Hooks},listeners=new Map(),calls=[];
+  globalThis.game={};globalThis.Hooks={on(name,fn){const list=listeners.get(name)??[];list.push(fn);listeners.set(name,list);}};
+  try{
+    registerCombatHooks({combatAttackService:{applyMidiFirearmMisfire(_wf,options){calls.push(options?.afterHits?'after':'before');return true;},canRollFirearmDamage(){return false;},refreshFirearmChatActions(root){assert.equal(root.marker,'chat-root');},async resolveWhirlwindHits(){},chooseWhirlwindEffectTarget(){return true;}},attackRollBoostService:{async applyMidiHitsChecked(){throw Error('hit boost must not run on a jam');}}});
+    const workflow={};await listeners.get('midi-qol.preCheckHits')[0](workflow);
+    assert.equal(listeners.get('midi-qol.preDamageRoll')[0](workflow),false);
+    for(const listener of listeners.get('midi-qol.hitsChecked'))await listener(workflow);assert.deepEqual(calls,['before','after']);
+    listeners.get('renderChatLog')[0]({},{marker:'chat-root'});
+  }finally{globalThis.game=previous.game;globalThis.Hooks=previous.Hooks;}
+});
+
 test("reaction lifecycle hooks retry MIDI setup and recover messages after GM presence changes once", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
