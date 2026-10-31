@@ -146,12 +146,13 @@ export class CurseUpgradeAutomationService {
       await this.syncActor(actor);
     }
   }
-  registerNativeSaveWrapper() {
+  registerNativeSaveWrapper(beforePost = null) {
     const RollClass = globalThis.CONFIG?.Dice?.D20Roll;
     if (!RollClass || RollClass.rebreyaCurseSaveWrapped) return;
     const service = this;
     if (globalThis.libWrapper?.register) {
       globalThis.libWrapper.register(MODULE_ID, "CONFIG.Dice.D20Roll.buildPost", async function(wrapped, rolls, config, message) {
+        await beforePost?.(rolls, config, message);
         await service.saves.applyNativeBuildPost(rolls, config, message);
         return wrapped(rolls, config, message);
       }, "WRAPPER");
@@ -159,6 +160,7 @@ export class CurseUpgradeAutomationService {
       const original = RollClass.buildPost;
       if (typeof original !== "function") return;
       RollClass.buildPost = async function(rolls, config, message) {
+        await beforePost?.(rolls, config, message);
         await service.saves.applyNativeBuildPost(rolls, config, message);
         return original.call(this, rolls, config, message);
       };

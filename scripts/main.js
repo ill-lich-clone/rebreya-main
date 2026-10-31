@@ -372,6 +372,7 @@ import {
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.5.22";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
+import { registerBardicInspirationCommand } from "./infrastructure/foundry/bardic-inspiration-command.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.1";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.15";
@@ -2898,6 +2899,7 @@ export class RebreyaMainModule {
       scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetTokenUuid)]),
       execute: (payload) => this.grappleAutomationService.twistedReleaseAndMove(payload)
     });
+    registerBardicInspirationCommand(this.socketCommandBus, this.bardicInspirationCompatService);
     this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
       validate: isValidPerformerApplyResultPayload,
       authorize: (payload, { sender }) => traderActorIsOwnedByUser(
@@ -3632,7 +3634,10 @@ export class RebreyaMainModule {
     try {
       await this.curseEaterAutomationService.initialize();
       await this.curseUpgradeAutomationService.initialize();
-      this.curseUpgradeAutomationService.registerNativeSaveWrapper();
+      this.curseUpgradeAutomationService.registerNativeSaveWrapper(async (rolls, config, message) => {
+        await this.performerAutomationService.applyNativeBuildPost(rolls, config, message);
+        await this.attackRollBoostService.applyNativeBuildPost(rolls, config, message);
+      });
       this.curseUpgradeAutomationService.damage.registerNativeDamageOptions();
       this.combatAttackService.initializeWeaponModTargetIndex();
     }

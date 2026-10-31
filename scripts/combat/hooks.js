@@ -1163,6 +1163,9 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasBardicInspirationCompatService) {
+    for (const hook of ["dnd5e.preUseActivity", "dnd5e.preActivityConsumption"]) {
+      Hooks.on(hook, (activity, usageConfig) => moduleApi.bardicInspirationCompatService.applyDnd5ePreUseActivity(activity, usageConfig));
+    }
     Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
       moduleApi.bardicInspirationCompatService.applyDnd5ePostUseActivity(
         activity,
@@ -1170,6 +1173,7 @@ export function registerCombatHooks(moduleApi) {
         results
       ).catch((error) => {
         console.error(`${MODULE_ID} | Failed to synchronize bardic inspiration compatibility.`, error);
+        globalThis.ui?.notifications?.warn(error.message);
       });
       return true;
     });

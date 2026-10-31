@@ -544,6 +544,73 @@ test("allied performer die is not spent when the holder declines the d20 bonus",
   assert.equal(effect.deleted, false);
 });
 
+test("coexisting generic dice can both be used once, preserving expired and declined effects", async () => {
+  const first = makeD20BonusEffect({ formula: "1d6", label: "Бард" });
+  const second = makePerformerEffect({ formula: "1d3" });
+  const expired = makeD20BonusEffect({ formula: "1d12", label: "Истекло" });
+  expired.duration = { startTime: 0, seconds: 10 };
+  const declined = makeD20BonusEffect({ formula: "1d4", label: "Оставить" });
+  const actor = new TestActor({ id: "target", effects: [expired, first, second, declined] });
+  const labels = [];
+  const service = new PerformerAutomationService({}, {
+    promptD20Bonus: async details => { labels.push(details.label); return details.label !== "Оставить"; },
+    rollFactory: () => ({ total: 2 })
+  });
+  const roll = { total: 10, options: {} };
+  await service.applyDnd5eD20Roll([roll], { subject: actor }, "skill");
+  await service.applyDnd5eD20Roll([roll], { subject: actor }, "skill");
+  assert.equal(roll.total, 14);
+  assert.equal(first.deleted, true);
+  assert.equal(second.deleted, true);
+  assert.equal(expired.deleted, false);
+  assert.equal(declined.deleted, false);
+  assert.equal(labels.length, 3);
+});
+
+test("two concurrent rolls cannot spend the same effect twice", async () => {
+  const effect = makeD20BonusEffect({ formula: "1d4" });
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  effect.delete = async () => { effect.deleted = true; actor.effects.contents.splice(0, 1); };
+  let prompts = 0;
+  const service = new PerformerAutomationService({}, {
+    promptD20Bonus: async () => { prompts++; return true; }, rollFactory: () => ({ total: 3 })
+  });
+  const first = { total: 10 }, second = { total: 12 };
+  await Promise.all([service.applyDnd5eD20Roll([first], { subject: actor }, "skill"), service.applyDnd5eD20Roll([second], { subject: actor }, "skill")]);
+  assert.equal(prompts, 1);
+  assert.equal(first.total, 13);
+  assert.equal(second.total, 12);
+});
+
+test("refused effect deletion cannot change the roll total", async () => {
+  const effect = makeD20BonusEffect({ formula: "1d4" });
+  effect.delete = async () => { throw new Error("permission denied"); };
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  const service = new PerformerAutomationService({}, { promptD20Bonus: async () => true, rollFactory: () => ({ total: 3 }) });
+  const roll = { total: 10 };
+  await assert.rejects(service.applyDnd5eD20Roll([roll], { subject: actor }, "skill"), /permission denied/);
+  assert.equal(roll.total, 10);
+});
+
+for (const disappear of ["expired", "deleted"]) test(`effect ${disappear} during the prompt leaves the original roll usable`, async () => {
+  const effect = makeD20BonusEffect({ formula: "1d4" });
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  effect.duration = { startTime: game.time.worldTime, seconds: 600 };
+  const before = game.time.worldTime;
+  const service = new PerformerAutomationService({}, {
+    promptD20Bonus: async () => {
+      if (disappear === "expired") game.time.worldTime += 600;
+      else actor.effects.contents.splice(0, 1);
+      return true;
+    }, rollFactory: () => ({ total: 3 })
+  });
+  const roll = { total: 10 };
+  try { await service.applyDnd5eD20Roll([roll], { subject: actor }, "skill"); }
+  finally { game.time.worldTime = before; }
+  assert.equal(roll.total, 10);
+  assert.equal(effect.deleted, false);
+});
+
 test("generic d20 bonus active effect can be added voluntarily and then expires", async () => {
   const effect = makeD20BonusEffect({ formula: "1d4", mode: "add", label: "РџСЂРѕР±РЅС‹Р№ РґРѕР±СЂРѕСЃ" });
   const actor = new TestActor({ id: "target", effects: [effect] });

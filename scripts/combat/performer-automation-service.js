@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { appendD20Bonus, isAvailableD20BonusEffect, runD20BonusOperation } from "./d20-bonus-roll.js";
 import { createPerformerActivePerformanceActivity } from "../data/feats-compendium.js?v=1.5.22";
 import {
   cleanText,
@@ -257,6 +258,7 @@ export class PerformerAutomationService {
   constructor(moduleApi = {}, options = {}) {
     this.moduleApi = moduleApi;
     this._options = options;
+    this._d20Operations = new WeakMap();
   }
 
   async initialize() {
@@ -381,63 +383,87 @@ export class PerformerAutomationService {
     return true;
   }
 
-  async applyDnd5eD20Roll(rolls, context = {}, _kind = "") {
+  async applyNativeBuildPost(rolls, config = {}, _message = {}) {
+    if (config.evaluate === false) return true;
+    const names = (config.hookNames ?? []).map(name => String(name).toLowerCase());
+    if (names.includes("deathsave")) return true;
+    const kind = ["skill", "toolcheck", "abilitycheck", "savingthrow", "attack"].find(name => names.includes(name))
+      ?? (config.subject?.hasAttack ? "attack" : "");
+    if (!kind) return true;
+    return this.applyDnd5eD20Roll(rolls, { subject: config.subject, workflow: config.workflow }, kind);
+  }
+
+  async applyDnd5eD20Roll(rolls, context = {}, kind = "") {
+    const roll = collectionValues(rolls)[0] ?? rolls ?? null;
+    if (!roll) return true;
+    const existing = this._d20Operations.get(roll);
+    if (existing) return existing;
+    const actor = resolveActorFromSubject(context?.subject ?? context?.actor);
+    if (!isActorDocument(actor)) return true;
+    const pending = runD20BonusOperation(actor, () => this.#applyD20Bonuses(roll, context, kind)).catch(error => {
+      this._d20Operations.delete(roll);
+      throw error;
+    });
+    this._d20Operations.set(roll, pending);
+    return pending;
+  }
+
+  async #applyD20Bonuses(roll, context, _kind) {
     const actor = resolveActorFromSubject(context?.subject ?? context?.actor);
     if (!isActorDocument(actor)) {
       return true;
     }
 
-    const effect = this.#findD20BonusEffect(actor);
-    const automation = this.#effectAutomation(effect);
-    const formula = cleanText(automation?.formula);
-    if (!effect || !formula) {
-      return true;
-    }
-
-    const roll = collectionValues(rolls)[0] ?? rolls ?? null;
-    if (!roll) {
-      return true;
-    }
-
-    const mode = cleanText(automation.mode, "add");
-    if (mode !== "subtract") {
-      if (isAttackD20Test(_kind, context, roll)) {
-        return true;
+    for (const effect of this.#d20BonusEffects(actor)) {
+      const automation = this.#effectAutomation(effect);
+      const formula = cleanText(automation?.formula);
+      if (!effect || !formula) {
+        continue;
       }
 
-      const confirmed = await this.promptD20Bonus({
-        actor,
-        effect,
+      const mode = cleanText(automation.mode, "add");
+      if (mode !== "subtract") {
+        if (isAttackD20Test(_kind, context, roll)) {
+          continue;
+        }
+
+        const confirmed = await this.promptD20Bonus({
+          actor,
+          effect,
+          label: cleanText(automation.label, effect?.name ?? "Доброс"),
+          formula,
+          displayFormula: formatFormulaForDisplay(formula),
+          kind: cleanText(_kind, "d20"),
+          roll,
+          total: toNumber(roll.total, NaN)
+        });
+        if (!confirmed) {
+          continue;
+        }
+      }
+
+      const available = () => isAvailableD20BonusEffect(effect) && collectionValues(actor.effects).includes(effect);
+      if (!available()) continue;
+      const bonusRoll = await this.#rollFormula(formula, actor);
+      if (!available()) continue;
+      const bonusTotal = Math.max(0, Math.floor(toNumber(bonusRoll?.total, 0)));
+      const currentTotal = toNumber(roll.total, 0);
+      if (typeof effect?.delete === "function" && automation.deleteOnUse !== false) {
+        try { await effect.delete(); }
+        catch (error) { if (!available()) continue; throw error; }
+      }
+      appendD20Bonus(roll, bonusRoll, { sign: mode === "subtract" ? -1 : 1 });
+      const nextTotal = roll.total;
+      await this.#postD20BonusMessage(actor, {
+        mode,
         label: cleanText(automation.label, effect?.name ?? "Доброс"),
         formula,
-        displayFormula: formatFormulaForDisplay(formula),
+        bonusTotal,
+        previousTotal: currentTotal,
+        nextTotal,
         kind: cleanText(_kind, "d20"),
-        roll,
-        total: toNumber(roll.total, NaN)
+        bonusRoll
       });
-      if (!confirmed) {
-        return true;
-      }
-    }
-
-    const bonusRoll = await this.#rollFormula(formula, actor);
-    const bonusTotal = Math.max(0, Math.floor(toNumber(bonusRoll?.total, 0)));
-    const signedTotal = mode === "subtract" ? -bonusTotal : bonusTotal;
-    const currentTotal = toNumber(roll.total, 0);
-    const nextTotal = currentTotal + signedTotal;
-    this.#setRollTotal(roll, nextTotal);
-    await this.#postD20BonusMessage(actor, {
-      mode,
-      label: cleanText(automation.label, effect?.name ?? "Доброс"),
-      formula,
-      bonusTotal,
-      previousTotal: currentTotal,
-      nextTotal,
-      kind: cleanText(_kind, "d20"),
-      bonusRoll
-    });
-    if (typeof effect?.delete === "function") {
-      await effect.delete();
     }
     return true;
   }
@@ -715,12 +741,11 @@ export class PerformerAutomationService {
     };
   }
 
-  #findD20BonusEffect(actor) {
-    return collectionValues(actor?.effects).find((effect) => (
-      effect?.disabled !== true
-      && effect?.transfer !== true
+  #d20BonusEffects(actor) {
+    return collectionValues(actor?.effects).filter((effect) => (
+      isAvailableD20BonusEffect(effect)
       && cleanText(this.#effectAutomation(effect)?.formula)
-    )) ?? null;
+    ));
   }
 
   #effectAutomation(effect) {
@@ -766,21 +791,6 @@ export class PerformerAutomationService {
       return roll.roll({ async: true });
     }
     return roll;
-  }
-
-  #setRollTotal(roll, total) {
-    try {
-      roll._total = total;
-    }
-    catch (_error) {
-      // Some roll implementations expose totals as read-only.
-    }
-    try {
-      roll.total = total;
-    }
-    catch (_error) {
-      // Some roll implementations expose totals as read-only.
-    }
   }
 
   async #postD20BonusMessage(actor, { mode, label, formula, bonusTotal, previousTotal, nextTotal, kind, bonusRoll }) {

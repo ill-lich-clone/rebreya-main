@@ -7,12 +7,12 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.5.40`.
+- Версия: `1.5.41`.
 - Черта «Мастер огнестрельного оружия» добавляет количество мест обвесов по текущему бонусу мастерства владельца; дополнительные места показаны сеткой под чертежом. Уже установленные обвесы сохраняются при потере черты или снижении бонуса.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.5.40` загружает только тонкий `scripts/main-1.5.40.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
+- Manifest версии `1.5.41` загружает только тонкий `scripts/main-1.5.41.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
 - `scripts/main.js` — единственный composition root. Ранее опубликованные versioned entrypoint-файлы, включая `scripts/main-1.4.*.js`, сохранены как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Узкий API регистрации panel tools публикуется в `game.modules.get("rebreya-main")?.api` уже на `init`, до первой сборки Scene Controls. Полный runtime API на `ready` публикуется как `game.rebreyaMain` и заменяет module API.
 
@@ -21,6 +21,10 @@ Versioned entrypoint обязан оставаться минимальным ca
 ## Текущий выпуск 1.5.16
 
 Перевязка ран доступна конструктам и пациентам с 0 HP; при отсутствии комплекта целителя галочка разрешает провести её без расхода.
+
+### Изменения 1.5.41 — вдохновение Laaru и доброс d20
+
+Автоматизирована выдача вдохновения Laaru и добровольное применение к d20. Доброс ожидает решения игрока, сохраняет итог в Roll/chat и использует общий бюджет источников; гонка fallback/MIDI, повторная выдача и истечение во время диалога защищены регрессионными тестами.
 
 ### Изменения 1.5.40 — раскрытие кубиков и кнопка отмены осечки
 
@@ -365,10 +369,15 @@ Versioned entrypoint обязан оставаться минимальным ca
 | `PaladinAutomationService` | item/actor updates, post-use, rest, `midi-qol.preDamageRoll` | prepared spells, Lay on Hands, Divine Smite; class `paladin-rework-v01` | чужая цель Lay on Hands идёт active GM; socket sender должен владеть source Actor; smite once/turn, prepared spells — long rest | `paladin-automation-service.test.mjs` |
 | `RogueAutomationService` | `midi-qol.preDamageRoll`; class `rogue-rework-v00` | Sneak Attack и Cunning Strike: Hamstring, Disrupt Aim, Open Position, Trip, Break Tempo и данные sourceType `rogueCunningStrike` | один Sneak Attack на combat turn; добавляет damage config до roll, статусы/карточку — после выбора | `rogue-automation-service.test.mjs` |
 | `PerformerAutomationService` | pre/post activity, d20 attack/skill/tool/ability/save, rest; feat identifier `ispolnitel`, action `activePerformance` | Активное выступление: проверка, союзный `d5` bonus или hostile penalty; два последовательных провала блокируют черту | игрок отправляет `performer.activePerformance.apply`; active GM проверяет владение исполнителем и создаёт эффект на target; effect удаляется после выбранного d20, streak — long rest | `performer-automation-service.test.mjs` |
-| `BardicInspirationCompatService` | `dnd5e.postUseActivity`; magic item flag `restoreBardicInspiration`; Laaru source UUID | Барабан задающего ритм восстанавливает одну кость Бардовского вдохновения из `laaru-dnd5-hw` | уменьшает `system.uses.spent` у laaru-фичи и не переполняет ресурс | `bardic-inspiration-compat-service.test.mjs` |
+| `BardicInspirationCompatService` | Laaru source UUID, native activity «Дать вдохновение»; `dnd5e.preUseActivity` / `preActivityConsumption` / `postUseActivity` | выдаёт одну кость на 10 минут (d6/d8/d10/d12 от уровня барда, с приоритетом авторской scale-формулы); добровольный доброс к атаке/проверке/спасброску; барабан восстанавливает один заряд | штатный расход Laaru ровно один раз; чужой Actor через `bardic.inspiration.grant`, подтверждённое native message и persistent receipt; без переполнения ресурса | `bardic-inspiration-compat-service.test.mjs`, `bardic-inspiration-command.test.mjs`, `d20-bonus-native.test.mjs` |
 | `RaceAutomationService` | attack config, post-use, pre/post damage, d20 rolls, pre/rest, movement blocking, Midi RollComplete, combat turn | runtime actions из race feature flags: linked/custom effects, elemental/demonic choices, pack tactics, damage reduction, relentless endurance, lucky reroll, rest rules, Fury of the Small, Keen Eye, Surprise/Celestial damage и временное игнорирование hostile spaces | remote damage/effect/heal исполняет active GM; once-turn damage имеет turn key; rest features чистятся/восстанавливаются по long rest | `race-automation-service.test.mjs` |
 | `FeatChoiceAutomationService` | owned feat create/update/delete | `flags.rebreya-main.choiceConfig`; создаёт native dnd5e ItemChoice advancement, разрешает UUID options, зеркалит выбор и удаляет advancement children | работает только на текущем клиенте-владельце/GM; при отсутствующих options может синхронизировать feats pack | `feat-choice-automation.test.mjs` |
 | Mechanus | libWrapper Roll evaluation hooks | при включённом `cosmologyState.mechanusEnabled` усредняет eligible dice; d20 advantage/disadvantage переводит в flat modifier; d20/d100 не усредняет как обычные dice | world toggle — typed GM command; выключенный режим не меняет Roll | `cosmology-mechanus-rolls.test.mjs` |
+
+
+Бардовское вдохновение Laaru выдаётся существующей активностью **«Дать вдохновение (расходует заряд)»** выбранному другому существу. Кнопка **«Бросить кость БВ»** сохраняет прежнее назначение. У получателя может быть одна бардовская кость; кость «Исполнителя» остаётся отдельной и может применяться вместе с ней. Отказ/закрытие диалога сохраняет кость, использование удаляет выбранный эффект; через 10 минут кость недоступна даже без автоматического удаления эффектов. Слышимость проверяют участники; дистанция 60 футов проверяется автоматически при наличии токенов на одной сцене, иначе появляется напоминание о ручной проверке.
+
+Доброс атак сохраняет предложение только при исправимом промахе; натуральная 1 не исправляется. MIDI ожидает решения игрока и использует скорректированное попадание. Обычные проверки навыков/характеристик/инструментов и спасброски сохраняют итог с бонусом до продолжения обработки; произвольные броски, урон, инициатива и спасброски от смерти в автоматизацию вдохновения не входят. Авторские resource/recovery formulas Laaru и восстановление барабаном сохраняются.
 
 ### EffectMacro
 

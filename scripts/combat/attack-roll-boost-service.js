@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation, normalizeFighterAutomationKey } from "../data/fighter-automation.js";
+import { appendD20Bonus, isAvailableD20BonusEffect, runD20BonusOperation } from "./d20-bonus-roll.js";
 
 const ATTACK_ROLL_BOOST_FLAG = "attackRollBoosts";
 const D20_BONUS_FLAG = "d20Bonus";
@@ -260,6 +261,9 @@ export class AttackRollBoostService {
   constructor(moduleApi = {}, options = {}) {
     this.moduleApi = moduleApi;
     this._options = options;
+    this._pendingRolls = new WeakMap();
+    this._pendingWorkflows = new WeakMap();
+    this._midiRolls = new WeakSet();
   }
 
   async initialize() {
@@ -267,6 +271,25 @@ export class AttackRollBoostService {
   }
 
   async applyMidiHitsChecked(workflow, options = {}) {
+    if (!workflow) return true;
+    const pendingRoll = options.allowCheckedAttackRoll !== true && this._pendingRolls.get(workflow.attackRoll);
+    if (pendingRoll) await pendingRoll;
+    const existing = this._pendingWorkflows.get(workflow);
+    if (existing) return existing;
+    const actor = workflow.actor ?? workflow.activity?.actor ?? workflow.item?.actor;
+    const execute = () => this.#applyMidiHitsChecked(workflow, options);
+    const pending = (actor ? runD20BonusOperation(actor, execute) : execute()).catch(error => {
+      delete workflow[CHECKED_WORKFLOW_FLAG];
+      if (workflow.attackRoll) delete workflow.attackRoll[CHECKED_WORKFLOW_FLAG];
+      throw error;
+    }).finally(() => {
+      this._pendingWorkflows.delete(workflow);
+    });
+    this._pendingWorkflows.set(workflow, pending);
+    return pending;
+  }
+
+  async #applyMidiHitsChecked(workflow, options = {}) {
     const attackRollAlreadyChecked = workflow?.attackRoll?.[CHECKED_WORKFLOW_FLAG] && options.allowCheckedAttackRoll !== true;
     if (
       !workflow
@@ -336,7 +359,10 @@ export class AttackRollBoostService {
       return true;
     }
 
-    const selectedSources = sources.filter((source) => selectedIds.has(source.id));
+    const selectedSources = await this.#affordableSources(actor, sources.filter((source) => selectedIds.has(source.id)));
+    if (!selectedSources.length) return true;
+    // Dice evaluation can fail; no resource is spent until it succeeds.
+    const roll = await this.#rollSources(selectedSources, actor);
     const consumedSources = [];
     for (const source of selectedSources) {
       if ((await this.#consumeSource(actor, source)) === false) {
@@ -349,7 +375,6 @@ export class AttackRollBoostService {
       return true;
     }
 
-    const roll = await this.#rollSources(consumedSources, actor);
     const bonusTotal = Math.max(0, Math.floor(toNumber(roll?.total, 0)));
     const applied = consumedSources.map((source) => ({
       id: source.id,
@@ -364,6 +389,7 @@ export class AttackRollBoostService {
     await this.#postRollMessage(actor, consumedSources, roll, workflow);
 
     const newTotal = attackTotal + bonusTotal;
+    if (workflow.attackRoll) appendD20Bonus(workflow.attackRoll, roll);
     this.#setAttackTotal(workflow, newTotal);
     const hitTargets = this.#applyHitUpdates(workflow, missedTargets, newTotal);
     for (const entry of applied) {
@@ -374,12 +400,23 @@ export class AttackRollBoostService {
       newTotal,
       hitTargets
     });
+    await this.#refreshAttackDisplay(workflow);
     return true;
+  }
+
+  async applyNativeBuildPost(rolls, config = {}, _message = {}) {
+    if (config.evaluate === false || !config.subject?.hasAttack) return true;
+    if (config.workflow || config.midiOptions?.workflowId) {
+      for (const roll of collectionValues(rolls)) this._midiRolls.add(roll);
+      return true;
+    }
+    return this.applyDnd5eRollAttack(rolls, { subject: config.subject });
   }
 
   async applyDnd5eRollAttack(rolls, context = {}) {
     const attackRoll = collectionValues(rolls)[0] ?? rolls ?? null;
-    if (attackRoll?.options?.workflow || attackRoll?.options?.midiOptions || context?.workflow) {
+    if (this._pendingRolls.has(attackRoll)) return this._pendingRolls.get(attackRoll);
+    if (this._midiRolls.has(attackRoll) || attackRoll?.options?.workflow || attackRoll?.options?.midiOptions || context?.workflow) {
       return true;
     }
     if (attackRoll?.[CHECKED_WORKFLOW_FLAG]) {
@@ -400,7 +437,7 @@ export class AttackRollBoostService {
       return true;
     }
 
-    return this.applyMidiHitsChecked({
+    const pending = this.applyMidiHitsChecked({
       actor,
       item,
       activity: subject,
@@ -411,7 +448,9 @@ export class AttackRollBoostService {
       hitTargets: new Set(),
       hitTargetsEC: new Set(),
       hitDisplayData: {}
-    }, { allowCheckedAttackRoll: true });
+    }, { allowCheckedAttackRoll: true }).finally(() => this._pendingRolls.delete(attackRoll));
+    this._pendingRolls.set(attackRoll, pending);
+    return pending;
   }
 
   async promptAttackRollBoosts(details) {
@@ -516,7 +555,7 @@ export class AttackRollBoostService {
     return toNumber(workflow?.attackRoll?.total, NaN);
   }
 
-  #applyCheckedAttackRollToWorkflow(workflow) {
+  async #applyCheckedAttackRollToWorkflow(workflow) {
     const originalTotal = this.#attackTotal(workflow);
     const boostedTotal = this.#boostedAttackRollTotal(workflow);
     if (!Number.isFinite(boostedTotal)) {
@@ -542,7 +581,14 @@ export class AttackRollBoostService {
         hitTargets
       });
     }
+    await this.#refreshAttackDisplay(workflow);
     return true;
+  }
+
+  async #refreshAttackDisplay(workflow) {
+    // MIDI persists its own attackRoll flag and caches rendered HTML in setAttackRoll.
+    if (typeof workflow.setAttackRoll === "function") await workflow.setAttackRoll(workflow.attackRoll);
+    if (typeof workflow.displayAttackRoll === "function") await workflow.displayAttackRoll();
   }
 
   #missedTargets(workflow, attackTotal) {
@@ -710,8 +756,7 @@ export class AttackRollBoostService {
       const formula = cleanText(automation?.formula);
       const mode = cleanText(automation?.mode, "add");
       if (
-        effect?.disabled === true
-        || effect?.transfer === true
+        !isAvailableD20BonusEffect(effect)
         || !formula
         || mode !== "add"
         || automation?.prompt === false
@@ -1030,6 +1075,24 @@ export class AttackRollBoostService {
     const spent = Math.max(0, Math.floor(toNumber(item?.system?.uses?.spent, 0)));
     const max = await this.#resolveUsesMax(item, actor);
     return !Number.isFinite(max) || spent + amount <= max;
+  }
+
+  async #affordableSources(actor, sources) {
+    const reserved = new Map(), selected = [];
+    for (const source of sources) {
+      if (source.effect && (!isAvailableD20BonusEffect(source.effect) || !collectionValues(actor.effects).includes(source.effect))) continue;
+      if (source.consumption) {
+        if (source.consumption.type !== "itemUses") continue;
+        const item = this.#findConsumptionItem(actor, source.consumption.target);
+        if (!item) continue;
+        const amount = Math.max(1, Math.floor(toNumber(source.consumption.value, 1)));
+        const spent = toNumber(item.system?.uses?.spent, 0) + (reserved.get(item) ?? 0);
+        if (spent + amount > await this.#resolveUsesMax(item, actor)) continue;
+        reserved.set(item, (reserved.get(item) ?? 0) + amount);
+      }
+      selected.push(source);
+    }
+    return selected;
   }
 
   async #consumeSource(actor, source) {

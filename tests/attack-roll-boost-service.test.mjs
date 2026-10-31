@@ -239,6 +239,79 @@ function makeWeaponWorkflow({ actor, target, attackTotal = 18, attackRoll = null
   };
 }
 
+for (const accept of [true, false]) test(`MIDI waits for a pending fallback decision (${accept ? "accept" : "decline"})`, async () => {
+  const effect = makeD20BonusEffect({ formula: "1d6" });
+  const actor = makeActor([], [effect]);
+  const weapon = { type: "weapon", actor };
+  const target = makeTarget({ ac: 18 });
+  const attackRoll = { total: 15, _total: 15, options: {}, flags: {} };
+  let resolvePrompt;
+  let opened;
+  const promptOpened = new Promise(resolve => { opened = resolve; });
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async details => {
+      opened();
+      return new Promise(resolve => { resolvePrompt = () => resolve(accept ? details.options.map(option => option.id) : []); });
+    },
+    rollFactory: () => ({ total: 4 })
+  });
+  const fallback = service.applyDnd5eRollAttack([attackRoll], {
+    subject: { actor, item: weapon, hasAttack: true, actionType: "mwak" }, targets: [target]
+  });
+  await promptOpened;
+  const workflow = makeWeaponWorkflow({ actor, target, attackTotal: 15, attackRoll });
+  let completed = false;
+  const midi = service.applyMidiHitsChecked(workflow).then(() => { completed = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  const completedBeforeChoice = completed;
+  resolvePrompt();
+  await Promise.all([fallback, midi]);
+  assert.equal(completedBeforeChoice, false, "MIDI must not resolve before the player's choice");
+  assert.equal(workflow.attackTotal, accept ? 19 : 15);
+  assert.equal(workflow.hitTargets.has(target), accept);
+  assert.equal(effect.deleted, accept);
+});
+
+test("a failed bonus roll preserves the selected effect", async () => {
+  const effect = makeD20BonusEffect({ formula: "1d6" });
+  const actor = makeActor([], [effect]);
+  const workflow = makeWeaponWorkflow({ actor, target: makeTarget({ ac: 18 }), attackTotal: 15 });
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async details => details.options.map(option => option.id),
+    rollFactory: () => ({ async evaluate() { throw new Error("dice failed"); } })
+  });
+  await assert.rejects(service.applyMidiHitsChecked(workflow), /dice failed/);
+  assert.equal(effect.deleted, false);
+  assert.equal(workflow.attackTotal, 15);
+});
+
+test("selected sources sharing a limited pool never add an unpaid die", async () => {
+  const resource = makeItem({ id: "pool", uses: { spent: 0, max: "1" } });
+  const maneuver = makeItem({ id: "maneuver", boosts: [
+    { id: "first", formula: "1d4", consumption: { type: "itemUses", target: resource.id, value: 1 } },
+    { id: "second", formula: "1d4", consumption: { type: "itemUses", target: resource.id, value: 1 } }
+  ] });
+  const actor = makeActor([resource, maneuver]);
+  const workflow = makeWeaponWorkflow({ actor, target: makeTarget({ ac: 18 }), attackTotal: 15 });
+  const service = new AttackRollBoostService({}, { promptAttackRollBoosts: async details => details.options.map(option => option.id) });
+  TestRoll.queuedTotals = [];
+  await service.applyMidiHitsChecked(workflow);
+  assert.equal(workflow.attackTotal, 19);
+  assert.equal(resource.system.uses.spent, 1);
+});
+
+test("boost refreshes the native MIDI persisted roll and visible attack card", async () => {
+  const effect = makeD20BonusEffect({ formula: "4" });
+  const actor = makeActor([], [effect]);
+  const workflow = makeWeaponWorkflow({ actor, target: makeTarget({ ac: 18 }), attackTotal: 15 });
+  const card = { savedTotal: 15, displayedTotal: 15 };
+  workflow.setAttackRoll = async roll => { card.savedTotal = roll.total; };
+  workflow.displayAttackRoll = async () => { card.displayedTotal = card.savedTotal; };
+  const service = new AttackRollBoostService({}, { promptAttackRollBoosts: async details => details.options.map(option => option.id), rollFactory: () => ({ total: 4 }) });
+  await service.applyMidiHitsChecked(workflow);
+  assert.deepEqual(card, { savedTotal: 19, displayedTotal: 19 });
+});
+
 test("attack roll boosts show all sources whose combined maximum can turn a miss into a hit", async () => {
   const boosts = [
     { id: "small-1", label: "+1d3", formula: "1d3" },
