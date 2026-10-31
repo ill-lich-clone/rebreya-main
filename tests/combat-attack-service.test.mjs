@@ -3198,6 +3198,21 @@ test("firearm damage guard leaves unrelated successful workflows alone",()=>{
   assert.equal(new CombatAttackService({}).canRollFirearmDamage({attackRoll:{options:{}}}),true);
 });
 
+test("per-shot snapshots replace stale fields under native recursive JSON flag updates",async()=>{
+  const merge=(a,b)=>{const out=structuredClone(a??{});for(const[k,v]of Object.entries(b)){out[k]=v&&typeof v==='object'&&!Array.isArray(v)?merge(out[k],v):v;}return out;};
+  const path=`flags.${MODULE_ID}.firearmMisfire`,card={flags:{[MODULE_ID]:{keep:'authored',firearmMisfire:{stalePrevious:true,midiOriginal:{critical:{natural:false,forced:false,suppressed:false,override:false}}}}},async update(patch){
+    for(const[k,v]of Object.entries(patch)){
+      if(k===`flags.${MODULE_ID}.-=firearmMisfire`)delete this.flags[MODULE_ID].firearmMisfire;
+      else if(k===path)this.flags[MODULE_ID].firearmMisfire=merge(this.flags[MODULE_ID].firearmMisfire,JSON.parse(JSON.stringify(v)));
+    }
+  }};
+  const state={jammed:true,cancelled:false,rollOptions:{criticalSuccess:20,criticalFailure:1},dieOptions:{criticalSuccess:20,criticalFailure:1}},workflow={chatCard:card,rebreyaFirearmMisfire:state,attackRoll:{options:{},d20:{options:{}}},isCritical:true,isFumble:false,
+    attackRollModifierTracker:{critical:{get:{natural:true,forced:false,suppressed:false,override:undefined}},fumble:{get:{natural:false,forced:false,suppressed:false,override:undefined}}}};
+  await new CombatAttackService({}).applyMidiFirearmMisfire(workflow);
+  const saved=card.flags[MODULE_ID].firearmMisfire;
+  assert.equal(saved.stalePrevious,undefined);assert.equal(saved.midiOriginal.critical.override,undefined);assert.equal(saved.midiOriginal.critical.natural,true);assert.equal(card.flags[MODULE_ID].keep,'authored');
+});
+
 test("initialization binds actions to chat cards that were rendered before actors were ready",async()=>{
   const previous={document:globalThis.document,messages:game.messages},root={dataset:{messageId:"old-card"}},message={id:"old-card"};
   globalThis.document={querySelectorAll:()=>[root]};game.messages=new Map([[message.id,message]]);

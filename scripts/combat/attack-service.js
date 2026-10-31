@@ -1,5 +1,5 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
-import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire } from "./firearm-misfire.js?v=1.5.37";
+import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire } from "./firearm-misfire.js?v=1.5.38";
 import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
 import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.22";
 import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
@@ -1966,6 +1966,7 @@ export class CombatAttackService {
     const reloadTarget=foundry.utils.getProperty(options.messageConfig?.data,`flags.${MODULE_ID}.${FIREARM_RELOAD_CHAT_FLAG}`);
     const misfire=foundry.utils.getProperty(options.messageConfig?.data,`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`);
     const update = {
+      ...(misfire?{[`flags.${MODULE_ID}.-=${FIREARM_MISFIRE_CHAT_FLAG}`]:null}:{}),
       ...(options.ammunitionPatch??{}),
       ...(reloadTarget?{[`flags.${MODULE_ID}.${FIREARM_RELOAD_CHAT_FLAG}`]:reloadTarget}:{}),
       ...(misfire?{[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:misfire}:{}),
@@ -4828,6 +4829,7 @@ export class CombatAttackService {
           if(activity.attack?.type?.value!=="melee")startFirearmTuning(item,Number(game.time?.worldTime)).catch(error=>console.error(`${MODULE_ID} | Failed to start firearm tuning.`,error));
           const misfire=this.#rollFirearmMisfire(actor, item, {...firearmMessageOptions, firearmAmmo: ammo,firearmAttackRoll:firstRoll,firearmWorkflowId:midiWorkflow?.id??null});
           if(midiWorkflow)midiWorkflow.rebreyaFirearmMisfire=misfire.shot;
+          firearmMessageOptions.ammunitionPatch[`flags.${MODULE_ID}.-=${FIREARM_MISFIRE_CHAT_FLAG}`]=null;
           firearmMessageOptions.ammunitionPatch[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]=misfire.shot;
           if(!midiWorkflow&&message?.rolls?.includes?.(firstRoll)&&typeof firstRoll.toJSON==="function")firearmMessageOptions.ammunitionPatch.rolls=message.rolls.map(roll=>roll.toJSON());
         }
@@ -4883,7 +4885,7 @@ export class CombatAttackService {
       const tracker=workflow.attackRollModifierTracker;
       state.midiOriginal={isFumble:workflow.isFumble,isCritical:workflow.isCritical,
         ...(tracker?.critical?.get?{critical:structuredClone(tracker.critical.get),fumble:structuredClone(tracker.fumble.get)}:{})};
-      await workflow.chatCard?.update?.({[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:state});
+      await workflow.chatCard?.update?.({[`flags.${MODULE_ID}.-=${FIREARM_MISFIRE_CHAT_FLAG}`]:null,[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:state});
     }
     applyFirearmMisfireToRoll(workflow.attackRoll,state);
     workflow.isFumble=true;workflow.isCritical=false;
@@ -4910,7 +4912,7 @@ export class CombatAttackService {
     if(currentState && (currentState.jammedAt!==state.jammedAt||currentState.weaponId!==state.weaponId||currentState.actorUuid!==state.actorUuid))throw new Error("В этой карточке уже другой выстрел.");
     const next={...state,cancelled:true};
     const notes=(readDocumentFlag(message,MODULE_ID,FIREARM_CHAT_NOTES_FLAG)??[]).map(note=>note.replace("(заклинено)","(осечка отменена)").replace(/\s+\(клин\)/gu,""));
-    await message.update({[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:next,[`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`]:notes,content:this.#withFirearmChatCardNotes(message.content,notes)});
+    await message.update({[`flags.${MODULE_ID}.-=${FIREARM_MISFIRE_CHAT_FLAG}`]:null,[`flags.${MODULE_ID}.${FIREARM_MISFIRE_CHAT_FLAG}`]:next,[`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`]:notes,content:this.#withFirearmChatCardNotes(message.content,notes)});
     if(readDocumentFlag(weapon,MODULE_ID,FIREARM_JAMMED_FLAG)?.jammedAt===state.jammedAt){
       await weapon.update({[`flags.${MODULE_ID}.-=${FIREARM_JAMMED_FLAG}`]:null,name:stripFirearmJamSuffix(weapon.name)});
     }

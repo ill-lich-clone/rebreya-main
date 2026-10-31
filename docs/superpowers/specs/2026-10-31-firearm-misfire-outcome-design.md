@@ -29,3 +29,5 @@ Live disposable actors/tokens/scene: настоящая native MidiAttackActivit
 ## Граница сохранённого контекста
 
 В текущем мире MIDI SaveToChatCard=false. Настройка сохраняется. Кнопка отмены работает, когда исходный workflow ещё доступен; при утраченном контексте disabled с пояснением. Пользователь явно подтвердил: текущей сессии достаточно; реализация ограничена существующим контекстом MIDI. Native guards/snapshots и иконки сохраняются в сообщении. Новых persistence/recovery систем ради обхода этой настройки не добавлено.
+
+Снимок выстрела заменяет свой ChatMessage flag целиком через native deletion+set в одном update. Это необходимо из-за recursive merge Foundry: отсутствующие original critical options/override иначе сохранялись от предыдущего выстрела. Остальные flags сохраняются.
