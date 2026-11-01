@@ -42,6 +42,32 @@ test("authored source formula wins over level progression and resolves source da
   assert.equal(f.target.effects[0].flags["rebreya-main"].d20Bonus.formula, "2d6 + 4");
 });
 
+test("Laaru alternate bard uses its actual inspiration scale or level fallback", async () => {
+  const f = bardicFixture();
+  const alternate = { type: "class", system: { identifier: "bard-", levels: 10 },
+    flags: { core: { sourceId: "Compendium.laaru-dnd5-hw.classes.Item.vrPvEIDrd72klJBL" } } };
+  f.source.classes = { "bard-": alternate }; f.source.items.push(alternate);
+  f.source.getRollData = () => ({ scale: { bard: { inspiration: "" }, "bard-": { inspiration: "d12" } } });
+  const service = new BardicInspirationCompatService({});
+  const uses = structuredClone(f.item.system.uses);
+  await service.grantInspiration(f.payload, { sender: f.sender });
+  assert.equal(f.target.effects[0].flags["rebreya-main"].d20Bonus.formula, "1d12");
+  await f.target.effects[0].delete(); f.message("alternate-fallback");
+  f.source.getRollData = () => ({});
+  await service.grantInspiration({ ...f.payload, operationId: "alternate-fallback" }, { sender: f.sender });
+  assert.equal(f.target.effects[0].flags["rebreya-main"].d20Bonus.formula, "1d10");
+  await f.target.effects[0].delete(); f.message("unrelated-class");
+  alternate.flags.core.sourceId = "Compendium.other.classes.Item.unrelated";
+  f.source.getRollData = () => ({ scale: { "bard-": { inspiration: "d12" } } });
+  await service.grantInspiration({ ...f.payload, operationId: "unrelated-class" }, { sender: f.sender });
+  assert.equal(f.target.effects[0].flags["rebreya-main"].d20Bonus.formula, "1d6");
+  await f.target.effects[0].delete(); f.message("modern-source");
+  alternate._stats = { compendiumSource: "Compendium.laaru-dnd5-hw.classes.Item.vrPvEIDrd72klJBL" };
+  await service.grantInspiration({ ...f.payload, operationId: "modern-source" }, { sender: f.sender });
+  assert.equal(f.target.effects[0].flags["rebreya-main"].d20Bonus.formula, "1d12");
+  assert.deepEqual(f.item.system.uses, uses);
+});
+
 test("pre-use rejects self, missing/multiple targets and an existing bardic die without consuming uses", async () => {
   const f = bardicFixture();
   const service = new BardicInspirationCompatService({});

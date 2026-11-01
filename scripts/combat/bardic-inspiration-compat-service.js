@@ -5,6 +5,7 @@ import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { BARDIC_INSPIRATION_GRANT_COMMAND, isValidBardicInspirationGrant } from "../infrastructure/foundry/bardic-inspiration-command.js";
 
 export const LAARU_BARDIC_INSPIRATION_SOURCE_UUID = "Compendium.laaru-dnd5-hw.classfeatures.Item.hpLNiGq7y67d2EHA";
+const LAARU_ALTERNATE_BARD_SOURCE_UUID = "Compendium.laaru-dnd5-hw.classes.Item.vrPvEIDrd72klJBL";
 const GRANT_ACTIVITY_ID = "jADU6PX5XlK4kOq8";
 const BARDIC_KIND = "bardicInspiration";
 const RECEIPT = `flags.${MODULE_ID}.bardicInspirationGrant`;
@@ -122,13 +123,17 @@ function validateRecipient(actor, target, originToken) {
 function inspirationFormula(item) {
   const actor = item.actor ?? item.parent;
   const data = actor?.getRollData?.() ?? {};
+  const alternateBard = collectionValues(actor?.items).find(entry => entry.type === "class"
+    && [entry._stats?.compendiumSource, entry.flags?.core?.sourceId, entry.flags?.dnd5e?.sourceId].includes(LAARU_ALTERNATE_BARD_SOURCE_UUID));
   const level = Number(actor?.classes?.bard?.system?.levels
-    ?? collectionValues(actor?.items).find(entry => entry.type === "class" && entry.system?.identifier === "bard")?.system?.levels ?? 1);
+    ?? collectionValues(actor?.items).find(entry => entry.type === "class" && entry.system?.identifier === "bard")?.system?.levels
+    ?? alternateBard?.system?.levels ?? 1);
   const fallback = `d${level >= 15 ? 12 : level >= 10 ? 10 : level >= 5 ? 8 : 6}`;
   const rollActivity = item.system?.activities?.get?.("2Enk7AiD901iQmfz");
   const authored = cleanText(item.system?.formula || rollActivity?.roll?.formula, "1@scale.bard.inspiration");
   const formula = authored.replace(/@([A-Za-z0-9_.-]+)/gu, (_match, path) => {
-    const value = getProperty(data, path);
+    let value = getProperty(data, path);
+    if ((value == null || value === "") && path === "scale.bard.inspiration" && alternateBard) value = data?.scale?.["bard-"]?.inspiration;
     if (path === "scale.bard.inspiration" && (value == null || value === "")) return fallback;
     if (typeof value === "number" || typeof value === "string") return String(value);
     const die = value?.formula ?? value?.die ?? value?.denomination;
