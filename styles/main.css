@@ -14342,6 +14342,6 @@ summary:focus-visible {
 }
 
 #players-active .rm-has-heroic-inspiration::before { display: none; }
-#players-active .rm-player-heroic-inspiration { flex: 0 0 12px; width: 12px; min-width: 12px; height: 12px; padding: 0; border: 1px solid var(--player-border); border-radius: 50%; background: var(--player-color); box-shadow: none; }
+#players-active .rm-player-heroic-inspiration { flex: 0 0 12px; width: 12px; min-width: 12px; height: 12px; min-height: 12px; padding: 0; border: 1px solid var(--player-border); border-radius: 50%; background: var(--player-color); box-shadow: none; }
 #players-active .rm-player-heroic-inspiration:disabled { opacity: 1; }
 #players-active .rm-player-heroic-inspiration[aria-pressed="true"] { box-shadow: 0 0 5px 2px #ffd84d; }

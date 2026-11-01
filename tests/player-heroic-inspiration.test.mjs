@@ -68,6 +68,7 @@ test("GM without a character can toggle their own persistent inspiration", async
 test("inspiration control replaces the native circle and has yellow active glow", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   assert.match(css, /\.rm-has-heroic-inspiration::before\s*\{\s*display:\s*none/u);
+  assert.match(css, /\.rm-player-heroic-inspiration\s*\{[^}]*min-height:\s*12px/u);
   assert.match(css, /\.rm-player-heroic-inspiration\[aria-pressed="true"\][^{]*\{[^}]*box-shadow:[^}]*#/u);
   const { actor, viewer, owner } = fixture();
   let appended;
