@@ -658,7 +658,7 @@ test("cancelled and stale party filter plans keep the storage row and request a 
   }
 });
 
-test("Journal rows expose a read-only view model and no transfer controls", async () => {
+test("Journal rows expose read and transfer controls", async () => {
   const { app } = createApp({
     configure: true,
     getStorageSnapshot: async () => ({
@@ -681,8 +681,8 @@ test("Journal rows expose a read-only view model and no transfer controls", asyn
   const row = context.rows[0];
   assert.equal(row.isJournal, true);
   assert.equal(row.name, "Полевые заметки (прочитано)");
-  assert.equal(row.canDrag, false);
-  assert.equal(row.canClaim, false);
+  assert.equal(row.canDrag, true);
+  assert.equal(row.canClaim, true);
   assert.equal(row.canOpenSource, false);
   assert.equal(row.showQuantity, false);
   assert.equal(row.canDelete, true);
@@ -691,7 +691,9 @@ test("Journal rows expose a read-only view model and no transfer controls", asyn
   assert.match(template, /\{\{#if canDrag\}\}[\s\S]*?data-storage-row-drag[\s\S]*?\{\{\/if\}\}/u);
   assert.match(template, /\{\{#if activePopover\.isJournal\}\}[\s\S]*?data-action="storage-read-journal"[\s\S]*?\{\{\/if\}\}/u);
   const journalBranch = template.match(/\{\{#if activePopover\.isJournal\}\}([\s\S]*?)\{\{else\}\}/u)?.[1] ?? "";
-  assert.doesNotMatch(journalBranch, /storage-claim-self|storage-claim-party|data-storage-quantity|data-storage-row-drag/u);
+  assert.match(journalBranch, /storage-claim-self/u);
+  assert.match(journalBranch, /storage-claim-party/u);
+  assert.doesNotMatch(journalBranch, /data-storage-quantity/u);
 });
 
 test("storage row derives a visible broken suffix from the canonical persisted durability flag", async () => {

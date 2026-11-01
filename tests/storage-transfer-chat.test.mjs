@@ -363,7 +363,7 @@ test("claim messages escape presentation names and never expose source identifie
   assert.doesNotMatch(content, /Compendium\.secret|hidden-source|flags|sourceId/iu);
 });
 
-test("Journal rows remain unclaimable and never publish a receipt message", async () => {
+test("Journal receipt never exposes the source reference", async () => {
   const harness = await createHarness({
     rows: [{
       rowId: "journal-row",
@@ -376,13 +376,9 @@ test("Journal rows remain unclaimable and never publish a receipt message", asyn
     }]
   });
 
-  await assert.rejects(
-    harness.service.claimRow(rowClaimPayload(harness, {
-      rowId: "journal-row",
-      quantity: 1,
-      mutationId: "journal-claim"
-    }), { sender: harness.player }),
-    /журнал нельзя забрать/iu
-  );
-  assert.equal(harness.messages.length, 0);
+  await harness.service.claimRow(rowClaimPayload(harness, {
+    rowId: "journal-row", quantity: 1, mutationId: "journal-claim"
+  }), { sender: harness.player });
+  assert.equal(harness.messages.length, 1);
+  assert.doesNotMatch(harness.messages[0].content, /JournalEntry\.secret-source|sourceId|journalRecord/u);
 });

@@ -1,5 +1,5 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.5.19";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.5.48";
 import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { buildNarrativeItemRepairPatch, loadLootgenNarrativeCatalog } from "../data/lootgen-narrative-catalog.js?v=1.4.396";
@@ -175,7 +175,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = {
     main: {
       root: true,
-      template: `modules/${MODULE_ID}/templates/storage-app.hbs`
+      template: `modules/${MODULE_ID}/templates/storage-app.hbs?v=1.5.48`
     }
   };
 
@@ -305,8 +305,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         sourceType: clean(row.sourceType),
         sourceId: clean(row.sourceId),
         isJournal,
-        canDrag: !isJournal,
-        canClaim: !isJournal,
+        canDrag: true,
+        canClaim: true,
         canOpenSource: !isJournal && Boolean(clean(row.sourceId) || row.itemData?.type),
         isContainer,
         primaryAction: isContainer ? "storage-open-container" : "storage-toggle-row",
@@ -352,7 +352,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       hasBreadcrumbs: breadcrumbs.length > 1,
       hasRows: rows.length > 0,
       hasGridItems: gridItemCount > 0,
-      canClaimAll: !this.configure && (rows.some((row) => row.canClaim) || hasCoins),
+      canClaimAll: !this.configure && (rows.some((row) => row.canClaim && !row.isJournal) || hasCoins),
       claimAllPending: this.claimAllPending,
       gridColumns,
       coins,
@@ -579,7 +579,6 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #claimRow(rowId, destination) {
     const row = this.#rowById(rowId);
     if (!row) throw new Error("Предмет хранилища уже недоступен.");
-    if (row.rowKind === "journal") throw new Error("Записи журнала нельзя перемещать.");
     const available = isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1);
     const quantity = await promptStorageTransferQuantity(available, { material: isInventoryMaterialItemData(row.itemData) });
     if (quantity === null) return false;
@@ -827,7 +826,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const source = event.target?.closest?.("[data-storage-row-drag]");
     if (!source || !event.dataTransfer) return;
     const row = this.#rowById(clean(source.dataset.rowId));
-    if (!row || row.rowKind === "journal") return;
+    if (!row) return;
     const payload = buildStorageDragData({
       tokenUuid: this.tokenUuid,
       path: this.path,

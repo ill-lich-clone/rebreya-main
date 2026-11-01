@@ -3114,50 +3114,82 @@ test("Journal deposits are GM-only, quantity-one, re-resolved, and consumed only
   assert.deepEqual(readStorageState(harness.storageToken).manualRows, [journalSource.row]);
 });
 
-test("Journal rows are rejected before every claim materialization path while GM deletion remains available", async () => {
-  const materialized = [];
-  const harness = createHarness({
-    durabilityService: {
-      async getOrBuildDurability() { throw new Error("Journal durability must be skipped"); }
-    },
-    containerItemService: {
-      async materializeToActorOnce(...args) { materialized.push(args); }
-    }
-  });
-  await harness.storageService.configure(harness.storageToken, {
-    state: "opened",
-    manualRows: [{
-      rowKind: "journal",
-      rowId: "journal-row",
-      stackKey: "",
-      sourceId: "JournalEntry.notes",
-      sourceType: "journal",
-      name: "Полевые заметки",
-      img: "icons/book.webp",
-      quantity: 1
-    }]
-  });
+test("journal row transfer creates an openable reference and claims exactly once", async () => {
+  const harness = createHarness({ journalReader: { read: async () => ({ name: "Заметки", pages: [{ text: "содержимое" }] }) },
+    durabilityService: { async getOrBuildDurability() { throw new Error("Journal durability must be skipped"); } } });
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [{
+    rowKind: "journal", rowId: "journal-row", stackKey: "", sourceId: "JournalEntry.notes.JournalEntryPage.page-a",
+    sourceType: "journal", sourceDocumentName: "JournalEntryPage", name: "Полевые заметки", img: "icons/book.webp", quantity: 1
+  }] });
+  const request = { tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row", destination: "self", quantity: 1, target: null, mutationId: "journal-claim" };
+  await harness.service.claimRow(request, { sender: harness.player });
+  await harness.service.claimRow(request, { sender: harness.player });
+  assert.equal(harness.itemGrants.length, 1);
+  assert.deepEqual(harness.itemGrants[0].row.itemData.flags[MODULE_ID].journalRecord,
+    { version: 1, sourceUuid: "JournalEntry.notes.JournalEntryPage.page-a", documentName: "JournalEntryPage" });
+  assert.equal(harness.itemGrants[0].row.itemData.type, "loot");
+  const [record] = await harness.hero.createEmbeddedDocuments("Item", [harness.itemGrants[0].row.itemData]);
+  assert.deepEqual(await harness.service.readJournalRecord({ itemUuid: record.uuid }, { sender: harness.player }),
+    { name: "Заметки", pages: [{ text: "содержимое" }] });
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, ["journal-row"]);
+});
 
-  await assert.rejects(
-    harness.service.claimRow({
-      tokenUuid: harness.storageToken.uuid,
-      characterTokenUuid: harness.characterToken.uuid,
-      rowId: "journal-row",
-      destination: "self",
-      quantity: 1,
-      target: null,
-      mutationId: "journal-claim"
-    }, { sender: harness.player }),
-    /журнал.*нельзя забрать/iu
-  );
-  assert.deepEqual(harness.itemGrants, []);
-  assert.deepEqual(harness.groundCalls, []);
-  assert.deepEqual(materialized, []);
+test("journal row can move to a party folder through inventory ingress", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [{
+    rowKind: "journal", rowId: "journal-row", sourceId: "JournalEntry.notes", sourceType: "journal",
+    sourceDocumentName: "JournalEntry", name: "Заметки", quantity: 1
+  }] });
+  const request = { tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row", destination: "party", quantity: 1,
+    target: { groupActorId: harness.groupActor.id, folderId: "folder-a" }, mutationId: "journal-party" };
+  await harness.service.claimRow(request, { sender: harness.player });
+  assert.equal(harness.itemGrants.length, 1);
+  assert.deepEqual(harness.itemGrants[0].row.itemData.flags[MODULE_ID].journalRecord,
+    { version: 1, sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" });
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, ["journal-row"]);
+});
+
+test("journal row moves out of nested storage", async () => {
+  const harness = createHarness();
+  const bag = buildStorageContainerRow({ containerId: "notes-bag", storageKind: "bag", name: "Сумка", state: {
+    state: "opened", manualRows: [{ rowKind: "journal", rowId: "journal-row", sourceId: "JournalEntry.notes",
+      sourceType: "journal", sourceDocumentName: "JournalEntry", name: "Заметки", quantity: 1 }], generatedRows: []
+  } }, { rowId: "bag-row" });
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [bag] });
+  await harness.service.claimRow({ tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid,
+    path: ["bag-row"], rowId: "journal-row", destination: "self", quantity: 1, target: null, mutationId: "nested-journal" }, { sender: harness.player });
+  assert.deepEqual(harness.itemGrants[0].row.itemData.flags[MODULE_ID].journalRecord,
+    { version: 1, sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" });
+  assert.deepEqual(readStorageStateAtPath(harness.storageToken, ["bag-row"]).claimedRowIds, ["journal-row"]);
+});
+
+test("journal transfer after a lost debit response never duplicates the item", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [{
+    rowKind: "journal", rowId: "journal-row", sourceId: "JournalEntry.notes", sourceType: "journal",
+    sourceDocumentName: "JournalEntry", name: "Заметки", quantity: 1
+  }] });
+  const claim = harness.storageService.claim.bind(harness.storageService); let fail = true;
+  harness.storageService.claim = async (...args) => { const result = await claim(...args); if (fail) { fail = false; throw new Error("lost response"); } return result; };
+  const request = { tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row", destination: "self", quantity: 1, target: null, mutationId: "journal-retry" };
+  await assert.rejects(harness.service.claimRow(request, { sender: harness.player }), /lost response/u);
+  await harness.createCommandService().claimRow(request, { sender: harness.player });
+  assert.equal(harness.itemGrants.length, 1);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, ["journal-row"]);
+});
+
+test("journal grant failure leaves storage note untouched", async () => {
+  const harness = createHarness({ rejectItemGrant: true });
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [{
+    rowKind: "journal", rowId: "journal-row", sourceId: "JournalEntry.notes", sourceType: "journal",
+    sourceDocumentName: "JournalEntry", name: "Заметки", quantity: 1
+  }] });
+  await assert.rejects(harness.service.claimRow({ tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row", destination: "self", quantity: 1, target: null, mutationId: "journal-failed" }, { sender: harness.player }), /grant failed/u);
   assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, []);
-
-  const deleted = await harness.storageService.deleteRow(harness.storageToken, "journal-row");
-  assert.deepEqual(deleted.manualRows, []);
-  assert.equal(deleted.state, "empty");
 });
 
 test("RebreyaMainModule preserves the exact Journal source in an active-GM deposit", async () => {

@@ -1003,10 +1003,6 @@ export class StorageService {
     if (!row || current.claimedRowIds.includes(rowId)) {
       return { changed: false, row: null, state: clone(current) };
     }
-    if (isStorageJournalRow(row)) {
-      throw new Error("Ссылку на журнал нельзя забрать из хранилища.");
-    }
-
     const available = isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? row.itemData?.system?.quantity ?? 1)) || 1);
     const quantity = request?.quantity === undefined
       ? available

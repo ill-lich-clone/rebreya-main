@@ -818,7 +818,7 @@ test("GM quantity editing updates generated row and embedded item quantity", asy
   assert.equal(next.generatedRows[0].itemData.system.quantity, 4);
 });
 
-test("Journal reference rows cannot be claimed or quantity-edited", async () => {
+test("Journal reference rows can be claimed whole but cannot be quantity-edited", async () => {
   const service = new StorageService();
   const token = createStorageToken("journal-guards");
   await service.configure(token, {
@@ -836,16 +836,24 @@ test("Journal reference rows cannot be claimed or quantity-edited", async () => 
   });
 
   await assert.rejects(
-    service.claim(token, { kind: "row", rowId: "journal-row", quantity: 1 }),
-    /журнал.*нельзя забрать/iu
-  );
-  await assert.rejects(
     service.updateRowQuantity(token, "journal-row", 2),
     /журнал/iu
   );
   assert.deepEqual(readStorageState(token).claimedRowIds, []);
   assert.equal(readStorageState(token).manualRows[0].quantity, 1);
   assert.equal("itemData" in readStorageState(token).manualRows[0], false);
+  const claimed = await service.claim(token, { kind: "row", rowId: "journal-row", quantity: 1 });
+  assert.equal(claimed.changed, true);
+  assert.deepEqual(readStorageState(token).claimedRowIds, ["journal-row"]);
+});
+
+test("Journal reference remains deletable from storage", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("journal-delete");
+  await service.configure(token, { state: "opened", manualRows: [{ rowKind: "journal", rowId: "note", sourceId: "JournalEntry.notes", sourceType: "journal", name: "Заметки", quantity: 1 }] });
+  const state = await service.deleteRow(token, "note");
+  assert.deepEqual(state.manualRows, []);
+  assert.equal(state.state, "empty");
 });
 
 test("deleting the final generated row empties storage", async () => {

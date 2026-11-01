@@ -1,13 +1,13 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.5.19";
+import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.5.48";
 import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.392";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.5.19";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.5.23";
+} from "./storage-service.js?v=1.5.48";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.5.48";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
@@ -26,7 +26,7 @@ import {
   TriggerTargetCoordinator,
   createTriggerTargetRef
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
-import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.5.19";
+import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.5.48";
 import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 import {
   buildJournalRecordItemData,
@@ -1415,9 +1415,6 @@ export class StorageCommandService {
         const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
         return { changed: false, row: null, state, sourceDeleted: refresh.deleted === true };
       }
-      if (isStorageJournalRow(row)) {
-        throw new Error("Ссылку на журнал нельзя забрать из хранилища.");
-      }
       const available = isInventoryMaterialItemData(row.itemData) ? Number(row.quantity ?? readInventoryItemQuantity(row.itemData)) : Math.max(1, Math.trunc(Number(row.quantity ?? row.itemData?.system?.quantity ?? 1)) || 1);
       const quantity = coinReservation ? coinReservation.quantity : claimedForRecovery
         ? Number(plannedRow.quantity)
@@ -1434,6 +1431,7 @@ export class StorageCommandService {
       }
       const transferRow = clone(row);
       transferRow.quantity = quantity;
+      if (isStorageJournalRow(row)) transferRow.itemData = buildJournalRecordItemData(row);
       transferRow.itemData ??= {};
       transferRow.itemData.system ??= {};
       transferRow.itemData = withInventoryItemQuantity(transferRow.itemData, quantity);

@@ -287,6 +287,18 @@ test("owned group Journal drop dispatches locally without a custom GM socket", a
   } finally { f.restore(); }
 });
 
+test("dragging a nested storage journal keeps its path and folder", async () => {
+  const f = nativeFixture(); try {
+    const api = new RebreyaMainModule(); const snapshots = []; const claims = [];
+    api.getStorageSnapshot = async (uuid, options) => { snapshots.push({ uuid, options }); return { rows: [{ rowId: "note", rowKind: "journal" }] }; };
+    api.claimStorageRow = async (...args) => { claims.push(args); return { changed: true }; };
+    await api.importInventoryDrop({ type: "RebreyaStorageClaim", tokenUuid: "Scene.scene.Token.chest", path: ["bag"], rowId: "note", quantity: 1 }, { groupActorId: "g", folderId: "folder" });
+    assert.deepEqual(snapshots[0].options.path, ["bag"]);
+    assert.equal(claims[0][1], "note"); assert.equal(claims[0][2], "party");
+    assert.deepEqual(claims[0][4], { quantity: 1, target: { groupActorId: "g", folderId: "folder" }, path: ["bag"] });
+  } finally { f.restore(); }
+});
+
 test("native compendium copy works without a source Actor", async () => {
   const f = nativeFixture(); try {
     f.source.parent = null; Object.defineProperty(f.source, "uuid", { value: "Compendium.test.Item.rope" });

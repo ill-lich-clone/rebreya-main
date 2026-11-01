@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { isBrokenDurabilityItem } from "./durability-hooks.js?v=1.5.19";
+import { isBrokenDurabilityItem } from "./durability-hooks.js?v=1.5.48";
 import { getItemHeldHands } from "./held-items.js?v=1.5.29";
 
 const PATCH_MARKER = "__rebreyaHeldShieldArmorClassPatched";
