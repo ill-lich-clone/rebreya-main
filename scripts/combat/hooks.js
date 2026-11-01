@@ -22,6 +22,18 @@ function completeSorcererReactionCheckWhenNoSpellService(usageConfig = {}) {
   usageConfig.flags[MODULE_ID].reactionCheckComplete = true;
 }
 
+function canUseActivityFromLiveToken(activity) {
+  const actor = activity?.actor ?? activity?.item?.actor;
+  if (actor?.isToken !== true) return true;
+  const token = actor.token, scene = token?.parent;
+  if (!token?.id || scene?.documentName !== "Scene" || typeof scene.tokens?.get !== "function") return true;
+  let current;
+  try { current = scene.tokens.get(token.id); } catch { return true; }
+  if (current === token) return true;
+  globalThis.ui?.notifications?.warn?.("Исходный токен больше не находится на этой сцене. Откройте лист заново с актуального токена.");
+  return false;
+}
+
 function combatTurnChangeDirection(previous = {}, current = {}) {
   const previousRound = Number(previous?.round);
   const currentRound = Number(current?.round);
@@ -73,6 +85,8 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  Hooks.on("dnd5e.preUseActivity", canUseActivityFromLiveToken);
 
   if (hasAttackService) {
     Hooks.on("midi-qol.preCheckHits", workflow=>moduleApi.combatAttackService.applyMidiFirearmMisfire?.(workflow));

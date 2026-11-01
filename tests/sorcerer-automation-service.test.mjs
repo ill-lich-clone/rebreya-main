@@ -841,7 +841,7 @@ test("a synchronous dnd5e pre-use hook completes Sorcerer preflight before one p
       }
     };
     registerCombatHooks(moduleApi);
-    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const preUse = handlers.get("dnd5e.preUseActivity")?.find(callback => callback.name !== "canUseActivityFromLiveToken");
     const activity = makeSorcererSpell(actor);
     activity.use = async (...args) => {
       resumedUses.push(args);
@@ -904,7 +904,7 @@ test("a generic deferred cancellation happens after Sorcerer preflight but befor
       },
       combatAttackService: { applyDnd5ePreUseActivity: () => true }
     });
-    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const preUse = handlers.get("dnd5e.preUseActivity")?.find(callback => callback.name !== "canUseActivityFromLiveToken");
     const activity = makeSorcererSpell(actor);
     activity.use = async (...args) => {
       resumedUses += 1;
@@ -991,7 +991,7 @@ test("a generic deferred resume reaches one paid Sorcerer final cast after neutr
         }
       }
     });
-    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const preUse = handlers.get("dnd5e.preUseActivity")?.find(callback => callback.name !== "canUseActivityFromLiveToken");
     const activity = makeSorcererSpell(actor, { baseLevel: 3 });
     activity.use = async (...args) => {
       resumedUses.push(args);
@@ -1059,7 +1059,7 @@ test("RED: Sorcerer preflight does not reach native dnd5e usage when spell react
         }
       }
     });
-    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const preUse = handlers.get("dnd5e.preUseActivity")?.find(callback => callback.name !== "canUseActivityFromLiveToken");
     const activity = makeSorcererSpell(actor, { baseLevel: 3 });
     activity.use = async (usageConfig, ...rest) => {
       usageConfigs.push(usageConfig);

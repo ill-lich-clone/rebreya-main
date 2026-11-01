@@ -321,7 +321,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.49";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.52";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";

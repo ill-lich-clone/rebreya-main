@@ -974,7 +974,7 @@ test("combat hooks route dnd5e and MIDI pre-use events through spell automation"
 
   registerCombatHooks(moduleApi);
 
-  const dnd5eResult = handlers.get("dnd5e.preUseActivity")?.[0]({}, {}, {}, {});
+  const dnd5eResult = handlers.get("dnd5e.preUseActivity")?.find(callback => callback.name !== "canUseActivityFromLiveToken")({}, {}, {}, {});
   const midiResult = await handlers.get("midi-qol.preItemRoll")?.[0]({});
   assert.equal(dnd5eResult, false);
   assert.equal(midiResult, false);
