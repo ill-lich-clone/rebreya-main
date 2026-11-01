@@ -22,7 +22,7 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
 } from "./item-classification.js?v=1.5.29";
-import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.21";
+import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.49";
 import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.46";
 import { SPELLCASTING_ITEM_FAMILIES, getSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.30";
 import {
@@ -3740,7 +3740,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null, act
   const descriptionHtml = buildDescriptionHtml(item, classification);
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const systemData = buildSystemData(item, classification, descriptionHtml);
-  if (getSpellcastingItemDefinition(item.id)) systemData.attunement = "required";
+  if (getSpellcastingItemDefinition(item.id) || item.id === "меч-мести") systemData.attunement = "required";
   const armorProfile = classification.documentType === "equipment"
     ? resolveMagicArmorProfile(item, activityOptions.gear) : null;
   if (armorProfile) {
@@ -4072,6 +4072,18 @@ export class MagicItemsCompendiumService {
     if (runtime.action === "teleport-token") {
       return this.#applyTokenTeleport(activity?.item, runtime);
     }
+    return true;
+  }
+
+  async applyDnd5eApplyDamage(actor, amount) {
+    if (!actor?.uuid || !(Number(amount) > 0) || typeof actor.rollSavingThrow !== "function") return true;
+    const combats = collectionValues(this.gameProvider()?.combats);
+    const inCombat = combats.some(combat => combat?.started === true
+      && collectionValues(combat.combatants).some(combatant => combatant?.actor?.uuid === actor.uuid));
+    if (!inCombat || !collectionValues(actor.items).some(item => magicItemIdOf(item) === "меч-мести" && item?.system?.attuned === true)) return true;
+    await actor.rollSavingThrow({ ability: "wis", target: 15 }, {}, { data: {
+      flavor: "Меч мести: спасбросок Мудрости Сл 15. При провале атакуйте причинившее урон существо, пока один из вас не упадёт до 0 хитов или до него нельзя будет дотянуться."
+    } });
     return true;
   }
 

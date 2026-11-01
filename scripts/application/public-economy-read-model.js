@@ -1,4 +1,4 @@
-import { applyMarketPrice, getMaterialPriceModifier } from "../engine/trader-engine.js";
+import { applyMarketPrice, getMaterialPriceModifier } from "../engine/trader-engine.js?v=1.5.49";
 
 function clean(value) {
   return String(value ?? "").trim();

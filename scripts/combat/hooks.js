@@ -234,6 +234,12 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasMagicItemsCompendium) {
+    Hooks.on("dnd5e.applyDamage", (actor, amount, options) => {
+      moduleApi.magicItemsCompendium.applyDnd5eApplyDamage?.(actor, amount, options)?.catch((error) => {
+        console.error(`${MODULE_ID} | Failed to roll Sword of Vengeance save.`, error);
+      });
+      return true;
+    });
     Hooks.on("dnd5e.rollHitDie", (rolls, context) => {
       try {
         return moduleApi.magicItemsCompendium.applyDnd5eRollHitDie(rolls, context);

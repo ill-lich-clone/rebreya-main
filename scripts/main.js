@@ -26,7 +26,7 @@ import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.31";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
 import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.44";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.46";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.49";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.22";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
@@ -50,7 +50,7 @@ import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js?v=1.5.31";
-import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.327";
+import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.5.49";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
 import {
@@ -220,7 +220,7 @@ import { LootClaimService } from "./application/loot-claim-service.js?v=1.4.268"
 import {
   buildPublicCitySnapshot,
   buildPublicEconomySnapshot
-} from "./application/public-economy-read-model.js";
+} from "./application/public-economy-read-model.js?v=1.5.49";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js?v=1.4.377";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
@@ -321,7 +321,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.44";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.49";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -8097,7 +8097,7 @@ export class RebreyaMainModule {
 
   async openEconomyApp() {
     try {
-      const { EconomyApp } = await import("./ui/economy-app.js");
+      const { EconomyApp } = await import("./ui/economy-app.js?v=1.5.49");
 
       if (!this.economyApp) {
         this.economyApp = new EconomyApp(this);

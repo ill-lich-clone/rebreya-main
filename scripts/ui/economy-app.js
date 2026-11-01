@@ -10,7 +10,7 @@ import {
 import {
   buildPublicFilterOptions,
   selectPublicCityRows
-} from "../application/public-economy-read-model.js";
+} from "../application/public-economy-read-model.js?v=1.5.49";
 import { getAppElement } from "../ui.js";
 import {
   PendingTradeTransactions,

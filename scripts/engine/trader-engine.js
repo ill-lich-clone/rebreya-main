@@ -1,4 +1,4 @@
-﻿import { MAGIC_ITEMS } from "../../magicItem.js";
+﻿import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.49";
 
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 

@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.48");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.48.js"]);
+  assert.equal(manifest.version, "1.5.49");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.49.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.29/u);
@@ -65,11 +65,11 @@ test("current release reuses the catalog icon cache graph", async () => {
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    const cacheVersion = name === "feats-compendium" ? "1\\.5\\.22" : name === "gear-compendium" ? "1\\.5\\.31" : name === "magic-items-compendium" ? "1\\.5\\.46" : "1\\.4\\.330";
+    const cacheVersion = name === "feats-compendium" ? "1\\.5\\.22" : name === "gear-compendium" ? "1\\.5\\.31" : name === "magic-items-compendium" ? "1\\.5\\.49" : "1\\.4\\.330";
     assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=${cacheVersion}`, "u"));
   }
   assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.327/u);
-  assert.match(mainSource, /data\/trader-service\.js\?v=1\.4\.327/u);
+  assert.match(mainSource, /data\/trader-service\.js\?v=1\.5\.49/u);
   assert.equal(mainSource.match(/clearNamedIconCache\(\);/gu)?.length ?? 0, 1);
   assert.ok(mainSource.indexOf("clearNamedIconCache();") < mainSource.indexOf("await this.materialsCompendium.sync("));
   for (const source of cacheImporterSources) {
@@ -510,7 +510,7 @@ test("composition root exposes safe public city reads and GM-only presentation m
 
   assert.match(
     source,
-    /import\s+\{\s*buildPublicCitySnapshot,\s*buildPublicEconomySnapshot\s*\}\s+from\s+"\.\/application\/public-economy-read-model\.js";/u
+    /import\s+\{\s*buildPublicCitySnapshot,\s*buildPublicEconomySnapshot\s*\}\s+from\s+"\.\/application\/public-economy-read-model\.js\?v=1\.5\.49";/u
   );
   for (const methodName of [
     "getPublicCitySnapshot",

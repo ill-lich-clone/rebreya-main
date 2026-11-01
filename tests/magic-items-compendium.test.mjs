@@ -2225,3 +2225,33 @@ test("numeric attunement requirement is rendered as meaningful text", () => {
   const [item] = magicItemsCompendium.normalizeMagicItems([makeMagicItem({ attunement: "1" })]);
   assert.match(magicItemsCompendium.createMagicItemData(item, new Map()).system.description.value, /Настройка:<\/strong> Требуется/u);
 });
+
+ test("Sword of Vengeance prompts one Wisdom save for an attuned carrier damaged in combat", async () => {
+  const saves = [];
+  const actor = { uuid: "Scene.a.Token.new.Actor.npc", items: { contents: [
+    { flags: { "rebreya-main": { magicItemId: "меч-мести" } }, system: { attuned: true, equipped: false } },
+    { flags: { "rebreya-main": { magicItemId: "меч-мести" } }, system: { attuned: true, equipped: true } }
+  ] }, async rollSavingThrow(...args) { saves.push(args); return [{ total: 12 }]; } };
+  const combat = { started: true, combatants: { contents: [{ actor }] } };
+  const service = new magicItemsCompendium.MagicItemsCompendiumService({ gameProvider: () => ({ combats: { contents: [combat] } }) });
+  await service.applyDnd5eApplyDamage(actor, 4, {});
+  assert.equal(saves.length, 1); assert.equal(saves[0][0].ability, "wis"); assert.equal(saves[0][0].target, 15);
+  await service.applyDnd5eApplyDamage(actor, 3, {});
+  assert.equal(saves.length, 2);
+  await service.applyDnd5eApplyDamage(actor, 0, {});
+  await service.applyDnd5eApplyDamage(actor, -4, {});
+  assert.equal(saves.length, 2);
+  combat.started = false; await service.applyDnd5eApplyDamage(actor, 2, {});
+  combat.started = true; combat.combatants.contents = [{ actor: { uuid: "Scene.a.Token.old.Actor.npc" } }];
+  await service.applyDnd5eApplyDamage(actor, 2, {});
+  combat.combatants.contents = [{ actor }]; actor.items.contents.forEach(item => { item.system.attuned = false; });
+  await service.applyDnd5eApplyDamage(actor, 2, {}); assert.equal(saves.length, 2);
+});
+
+test("Sword of Vengeance requires attunement in its generated item", () => {
+  const original = MAGIC_ITEMS.find(item => item.id === "меч-мести");
+  const [item] = magicItemsCompendium.normalizeMagicItems([original]);
+  const data = magicItemsCompendium.createMagicItemData(item, new Map());
+  assert.equal(data.system.attunement, "required");
+  assert.match(data.system.description.value, /Настройка:<\/strong> Требуется/u);
+});

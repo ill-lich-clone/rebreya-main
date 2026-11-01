@@ -23,17 +23,20 @@ test("magic-item runtime hooks work when no Rune Knight service is installed", a
     const { registerCombatHooks } = await import(`../scripts/combat/hooks.js?magic-runtime=${Date.now()}`);
     registerCombatHooks({
       magicItemsCompendium: {
+        applyDnd5eApplyDamage: async () => calls.push("damage"),
         applyDnd5eRollHitDie: () => calls.push("hit-die"),
         applyDnd5ePostUseActivity: async () => calls.push("activity")
       }
     });
 
     assert.equal(typeof handlers.get("dnd5e.rollHitDie"), "function");
+    assert.equal(typeof handlers.get("dnd5e.applyDamage"), "function");
     assert.equal(typeof handlers.get("dnd5e.postUseActivity"), "function");
     handlers.get("dnd5e.rollHitDie")([], {});
+    handlers.get("dnd5e.applyDamage")({}, 1, {});
     handlers.get("dnd5e.postUseActivity")({}, {}, {});
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(calls, ["hit-die", "activity"]);
+    assert.deepEqual(calls, ["hit-die", "damage", "activity"]);
   }
   finally {
     globalThis.game = originalGame;
