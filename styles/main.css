@@ -14340,3 +14340,6 @@ summary:focus-visible {
  .rm-ammunition-magazine .rm-ammo-legacy>div{grid-template-columns:1fr;}
  .rm-ammunition-magazine .rm-ammo-legacy label{grid-column:1;grid-row:auto;}
 }
+
+#players-active .rm-player-heroic-inspiration { flex: 0 0 22px; width: 22px; min-width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--color-text-light-highlight, #eee); }
+#players-active .rm-player-heroic-inspiration[aria-pressed="true"] { color: #f2c14e; }

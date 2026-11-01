@@ -414,6 +414,20 @@ test("fury-small ignores larger ally targets", async () => {
   assert.equal(target.damageApplications.length, 0);
 });
 
+test("fury-small does not prompt or add damage when its uses are exhausted", async () => {
+  const feature = makeFuryFeature();
+  feature.system.uses.spent = 2;
+  const source = new TestActor({ id: "exhausted", size: "sm", disposition: 1, items: [feature] });
+  const target = new TestActor({ id: "large-target", size: "med", disposition: -1 });
+  let prompts = 0;
+  setConfirmHandler(async () => { prompts += 1; return false; });
+  const config = { rolls: [] };
+  await new RaceAutomationService({}).applyMidiPreDamageRoll(workflow({ source, target }), null, config);
+  assert.equal(prompts, 0);
+  assert.equal(feature.system.uses.spent, 2);
+  assert.deepEqual(config.rolls, []);
+});
+
 test("fury-small appends its damage to the triggering damage roll like Divine Smite", async () => {
   const feature = makeFuryFeature();
   const source = new TestActor({ id: "source", size: "sm", disposition: 1, items: [feature] });

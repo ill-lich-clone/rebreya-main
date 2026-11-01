@@ -21,10 +21,10 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.45");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.45.js"]);
+  assert.equal(manifest.version, "1.5.46");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.46.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.45.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.46.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -34,7 +34,7 @@ test("BG3 compatibility hook imports share the updated runtime cache key", async
     const source = await readFile(new URL(`../scripts/${file}`, import.meta.url), "utf8");
     const specifier = source.match(/from ["'](\.\/hooks\.js\?[^"']+)["']/u)?.[1];
     assert.ok(specifier, `${file} imports canonical hooks`);
-    assert.equal(new URL(specifier, "file:///scripts/").searchParams.get("v"), "1.5.19");
+    assert.equal(new URL(specifier, "file:///scripts/").searchParams.get("v"), "1.5.46");
   }
 });
 
@@ -144,8 +144,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.45");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.45.js"]);
+  assert.equal(manifest.version, "1.5.46");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.46.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -205,7 +205,7 @@ test("canonical entrypoint cache-busts the player-list inventory token launcher"
 
   assert.match(
     entrypointSource,
-    /from "\.\/hooks\.js\?v=1\.5\.19";/u
+    /from "\.\/hooks\.js\?v=1\.5\.46";/u
   );
   assert.match(
     entrypointSource,
@@ -259,7 +259,7 @@ test("production registers the hidden GiantTribe advancement before race compend
 
   assert.match(
     sheetSource,
-    /import \{ registerGiantTribeAdvancement \} from "\.\/giant-tribe-advancement\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2";/u
+    /import \{ registerGiantTribeAdvancement \} from "\.\/giant-tribe-advancement\.js\?v=1\.5\.46";/u
   );
   assert.match(
     sheetSource,
@@ -267,7 +267,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.44/u
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.46/u
   );
   assert.match(
     entrypointSource,
@@ -275,7 +275,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     advancementSource,
-    /race-automation-service\.js\?v=1\.5\.1/u
+    /race-automation-service\.js\?v=1\.5\.46/u
   );
   assert.match(
     automationSource,
@@ -356,7 +356,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.44/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.46/u
   );
   assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.5\.44/u);
 
@@ -450,7 +450,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.45.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.46.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -638,7 +638,7 @@ test("module entrypoint cache-busts the shared magic weapon icon graph", async (
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
   assert.match(
     entrypointSource,
-    /magic-weapon-template\.js\?v=1\.5\.42/u,
+    /magic-weapon-template\.js\?v=1\.5\.46/u,
   );
   assert.match(templateSource, /data\/gear-compendium\.js\?v=1\.5\.31/u);
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
@@ -664,11 +664,11 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.40(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.46(?=["'])/u,
   );
   assert.match(
     entrypointSource,
-    new RegExp(`environment-automation-service\\.js\\?v=${escapedVersion}-environment-stable-statuses`, "u"),
+    /environment-automation-service\.js\?v=1\.5\.46/u,
   );
   assert.match(
     entrypointSource,
@@ -745,7 +745,7 @@ test("owned race and Giant Tribe configuration is wired to create and sheet repa
     readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.5\.1/u);
+  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.5\.46/u);
   assert.match(
     hooksSource,
     /moduleApi\.raceAutomationService\.handleCreatedItem\(item, options, userId\)/u
@@ -762,11 +762,11 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.44/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.46/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.40(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.46(?=["'])/u,
   );
   assert.match(
     sheetSource,
@@ -787,7 +787,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.5\.30/u
+    /magic-items-compendium\.js\?v=1\.5\.46/u
   );
   assert.match(
     entrypointSource,

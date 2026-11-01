@@ -1180,3 +1180,14 @@ test("NPC sheet does not prompt for existing magical armor", async () => {
   assert.equal(calls, 0);
   assert.equal(item.updates.length, 0);
 });
+
+test("Elven Chain has a fixed base and never asks the owner to choose chain mail", async () => {
+  const item = new FakeItem({ name: "Эльфийская кольчуга", type: "equipment", flags: { "rebreya-main": {
+    sourceType: "magicItem", itemType: "Доспех", itemSubtype: "Кольчуга", magicItemId: "эльфийская-кольчуга"
+  } } });
+  let prompts = 0;
+  await handleCreatedMagicArmorItem(item, {}, "player-1", { getModel: async () => ({ gear: [makeArmor()] }) },
+    { prompt: async () => { prompts++; return null; } });
+  assert.equal(prompts, 0);
+  assert.equal(item.updates.length, 0);
+});

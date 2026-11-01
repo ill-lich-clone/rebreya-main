@@ -2440,12 +2440,17 @@ export class CombatAttackService {
       rku: resolveTraitValue("rku", "lchRku", parsedTextTraits.rku),
       deadly: resolveTraitValue("deadly", "lchDeadly", parsedTextTraits.deadly)
     };
+    const deadlyBase = this.#hasItemProperty(item, "lchDeadly")
+      ? normalizeTraitNumber(item.actor?.type === "npc"
+        ? item.actor?.system?.details?.cr
+        : item.actor?.system?.details?.level)
+      : 0;
 
     return {
       mku: Math.max(itemTraits.mku, normalizeTraitNumber(actorTraits?.mku)),
       mu: Math.max(itemTraits.mu, normalizeTraitNumber(actorTraits?.mu)),
       rku: Math.max(itemTraits.rku, normalizeTraitNumber(actorTraits?.rku)),
-      deadly: Math.max(itemTraits.deadly, normalizeTraitNumber(actorTraits?.deadly))
+      deadly: deadlyBase + itemTraits.deadly + normalizeTraitNumber(actorTraits?.deadly)
     };
   }
 

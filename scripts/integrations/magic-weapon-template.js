@@ -951,6 +951,7 @@ function getPromptableMagicArmorContext(
   }
 
   const source = getMagicItemTemplateSource(item);
+  if (source.magicItemId === "эльфийская-кольчуга") return null;
   const armorBonus = parseMagicArmorBonus(item);
   if (armorBonus) {
     return {

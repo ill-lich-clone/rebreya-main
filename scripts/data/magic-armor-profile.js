@@ -3,7 +3,9 @@ const normalize = value => String(value ?? "").trim().toLocaleLowerCase("ru-RU")
 /** Resolve only a proven concrete catalog base; category templates remain unresolved. */
 export function resolveMagicArmorProfile(item, gear = []) {
   const selectedId = item?.flags?.["rebreya-main"]?.magicEquipmentGearId;
-  const subtype = normalize(item?.itemSubtype);
+  const isElvenChain = item?.id === "эльфийская-кольчуга"
+    || item?.flags?.["rebreya-main"]?.magicItemId === "эльфийская-кольчуга";
+  const subtype = normalize(isElvenChain ? "Кольчужная рубаха" : item?.itemSubtype);
   const candidates = gear.filter(entry => entry?.armor && (selectedId
     ? entry.id === selectedId
     : subtype && normalize(entry.name) === subtype));

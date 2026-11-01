@@ -1501,6 +1501,9 @@ export class RaceAutomationService {
     }
 
     const feature = this.#findFeature(actor, "fury-small");
+    const uses = feature?.system?.uses;
+    const maxUses = uses ? await this.#evaluateFormula(uses.max, feature.actor) : 0;
+    if (maxUses && toNumber(uses.spent, 0) >= maxUses) return false;
     const confirmed = await this.#confirm(actor, "Ярость мелкого", `Добавить ${actorProficiency(actor) * 2} урона цели большего размера?`);
     if (!confirmed || !(await this.#consumeFeatureUse(feature))) {
       return false;

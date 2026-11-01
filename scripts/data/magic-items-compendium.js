@@ -23,7 +23,7 @@ import {
   normalizeHeroDollSlotGroup
 } from "./item-classification.js?v=1.5.29";
 import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.21";
-import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.29";
+import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.46";
 import { SPELLCASTING_ITEM_FAMILIES, getSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.30";
 import {
   escapeFoundryHtml as escapeHtml,
@@ -3554,7 +3554,9 @@ export function normalizeMagicItems(rawItems = MAGIC_ITEMS) {
           : normalizeMagicItemType(rawItem.itemType ?? rawItem.ItemType),
         itemSubtype: MAGIC_STAFF_WEAPON_IDS.has(id)
           ? "Боевой посох"
-          : normalizeOptionalMagicText(rawItem.itemSubtype),
+          : id === "эльфийская-кольчуга"
+            ? "Кольчужная рубаха"
+            : normalizeOptionalMagicText(rawItem.itemSubtype),
         itemSlot: normalizeOptionalMagicText(rawItem.itemSlot),
         source: String(rawItem.source ?? rawItem.itemSourse ?? "").trim(),
         rank: clampRank(rawItem.rank),

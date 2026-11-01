@@ -667,6 +667,36 @@ function makeWeaponItem({
   return item;
 }
 
+test("deadly uses current character level or monster challenge plus weapon and racial values", () => {
+  const weapon = makeWeaponItem({ properties: { lchDeadly: true }, lichWeaponPropertyValues: { deadly: 2 } });
+  const source = makeActor([weapon], { id: "deadly-source" });
+  source.type = "character";
+  source.system.details = { level: 5 };
+  source.flags[MODULE_ID].racialAttackTraits = { deadly: 1 };
+  const target = makeActor([], { id: "deadly-target" });
+  target.system.attributes.hp = { value: 8, max: 20 };
+  const oldFromUuid = globalThis.fromUuidSync;
+  globalThis.fromUuidSync = uuid => uuid === target.uuid ? target : null;
+  try {
+    const service = new CombatAttackService({});
+    const hit = id => ({ id, activity: { type: "attack", item: weapon }, damageList: [{ actorUuid: target.uuid, wasHit: true, hpDamage: 1 }] });
+    service.applyMidiRollComplete(hit("deadly-first"));
+    assert.equal(target.system.attributes.hp.value, 0);
+    source.type = "npc"; source.system.details = { cr: 3 };
+    target.system.attributes.hp.value = 6;
+    service.applyMidiRollComplete(hit("deadly-second"));
+    assert.equal(target.system.attributes.hp.value, 0);
+    source.type = "character"; source.system.details = { level: 7 };
+    target.system.attributes.hp.value = 10;
+    service.applyMidiRollComplete(hit("deadly-after-level-up"));
+    assert.equal(target.system.attributes.hp.value, 0);
+    weapon.system.properties = {};
+    target.system.attributes.hp.value = 4;
+    service.applyMidiRollComplete(hit("fixed-only"));
+    assert.equal(target.system.attributes.hp.value, 4);
+  } finally { globalThis.fromUuidSync = oldFromUuid; }
+});
+
 function addRepeatingShotEffect(item, { disabled = false, suppressed = false } = {}) {
   const effect = {
     name: "Повторный выстрел",

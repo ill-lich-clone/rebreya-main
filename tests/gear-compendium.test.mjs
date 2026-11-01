@@ -21,6 +21,16 @@ import {
 } from "../scripts/integrations/dnd5e-sheet-extensions.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
+test("small weapon damage dice survive conversion to native dnd5e damage", () => {
+  for (const faces of [2, 3]) {
+    const source = { id: `test-d${faces}`, name: "Кастет", equipmentType: "Оружие", priceGoldEquivalent: 1,
+      weight: 1, weapon: { damageFormula: `1d${faces}`, damageType: "bludgeoning", properties: [] } };
+    const item = createDnd5eItemData(source, new Map());
+    assert.equal(item.system.damage.base.number, 1);
+    assert.equal(item.system.damage.base.denomination, faces);
+    assert.deepEqual(item.system.damage.base.custom, { enabled: false, formula: "" });
+  }
+});
 test("real ointment catalog rows survive normalization and produce compatible typed ammunition", () => {
   const gear=JSON.parse(readFileSync(join(TESTS_DIR,"../data/gear.json"),"utf8"));
   const rows=gear.filter(row=>["avtomaticheskaya-vintovka","боеприпасы-с-огненной-мазью-20","боеприпасы-с-ледяной-мазью-20"].includes(row.id));

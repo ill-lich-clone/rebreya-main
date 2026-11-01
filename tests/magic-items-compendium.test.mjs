@@ -25,6 +25,17 @@ globalThis.CONST ??= {
 
 const magicItemsCompendium = await import("../scripts/data/magic-items-compendium.js");
 
+test("Elven Chain catalog projection records medium chain shirt consistently", () => {
+  const original = MAGIC_ITEMS.find(item => item.id === "эльфийская-кольчуга");
+  const [item] = magicItemsCompendium.normalizeMagicItems([original]);
+  const gear = [{ id: "shirt", name: "Кольчужная рубаха", armor: { type: "medium", baseItem: "chainshirt", value: 13, dex: 2 } }];
+  const created = magicItemsCompendium.createMagicItemData(item, new Map(), null, { gear });
+  assert.equal(created.system.type.value, "medium");
+  assert.equal(created.system.type.baseItem, "chainshirt");
+  assert.equal(created.flags["rebreya-main"].foundryBaseItem, "chainshirt");
+  assert.equal(created.flags["rebreya-main"].itemSubtype, "Кольчужная рубаха");
+});
+
 function makeMagicItem(overrides = {}) {
   return {
     name: "Щит +3",

@@ -167,6 +167,7 @@ function canThreatenTarget(sourceToken, targetToken, gridSize) {
 
   return areTokensHostile(sourceToken, targetToken)
     && !isTokenIncapacitated(sourceToken)
+    && !actorHasStatus(sourceToken.actor, REBREYA_SURROUNDED_STATUS_ID)
     && isTokenWithinThreatRange(sourceToken, targetToken, gridSize);
 }
 

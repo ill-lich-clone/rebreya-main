@@ -71,6 +71,19 @@ test("Rebreya environment detects a target surrounded by two opposite hostiles",
   }).surrounded, true);
 });
 
+test("an already surrounded creature cannot help surround another target", () => {
+  const target = createToken("target", 100, 100, 1);
+  const attacker = createToken("attacker", 0, 100, -1);
+  const ally = createToken("ally", 200, 100, -1, {
+    effects: [{ statuses: new Set(["rebreya-surrounded"]) }]
+  });
+  for (const tokens of [[target, attacker, ally], [ally, attacker, target]]) {
+    assert.equal(computeRebreyaSurrounding({ attackerToken: attacker, targetToken: target, tokens, gridSize: 100 }).surrounded, false);
+  }
+  ally.actor.effects = [];
+  assert.equal(computeRebreyaSurrounding({ attackerToken: attacker, targetToken: target, tokens: [target, attacker, ally], gridSize: 100 }).surrounded, true);
+});
+
 test("Rebreya environment applies surrounded and open-position statuses", async () => {
   const targetActor = { uuid: "Actor.target" };
   const target = createToken("target", 100, 100, 1, targetActor);

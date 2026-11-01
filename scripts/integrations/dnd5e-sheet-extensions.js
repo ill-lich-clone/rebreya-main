@@ -1,3 +1,4 @@
+import { registerExtendedDamageDice } from "./dnd5e-damage-dice.js?v=1.5.46";
 import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
 import { registerMagicItemSpellbookHook } from "./magic-item-spellbook.js?v=1.5.25";
 import {
@@ -59,7 +60,7 @@ import {
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js?v=1.4.317";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
-import { registerGiantTribeAdvancement } from "./giant-tribe-advancement.js?v=1.4.110-giant-tribe-cache-fixes-2";
+import { registerGiantTribeAdvancement } from "./giant-tribe-advancement.js?v=1.5.46";
 import {
   enhanceCraftsmanStandardClassCard,
   registerCraftsmanClassCardIntegration,
@@ -7321,6 +7322,7 @@ export function extendDnd5eItemTypes() {
     return false;
   }
 
+  registerExtendedDamageDice(CONFIG.DND5E);
   registerRebreyaWeaponBaseItemsFromGearPack().catch((error) => {
     console.warn(`${MODULE_ID} | Failed to register Rebreya weapon base items from gear pack.`, error);
   });
