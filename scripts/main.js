@@ -405,7 +405,7 @@ import {
   registerDurabilityHooks
 } from "./integrations/durability-hooks.js?v=1.5.19";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
-import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.43";
+import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.45";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.44";

@@ -31,6 +31,15 @@ test("CPR compatibility preserves valid actors and ignores empty action groups",
   setting.onChange(true); assert.deepEqual(run(), ["actor-1"]);
   installCprLegendaryActionCompat({ hooks, game }); assert.deepEqual(run(), ["actor-1"]);
 });
+test("CPR compatibility works when Foundry combatants is non-configurable and read-only", () => {
+  const { hooks, game } = fixture();
+  const combat = makeCombat([false, true]);
+  Object.defineProperty(combat, "combatants", { value: combat.combatants, writable: false, configurable: false });
+  const originalCombatants = combat.combatants;
+  assert.equal(installCprLegendaryActionCompat({ hooks, game }), true);
+  assert.deepEqual(hooks.events.preUpdateCombat[0].fn(combat, {}, { direction: 1 }), ["actor-1"]);
+  assert.equal(combat.combatants, originalCombatants);
+});
 test("CPR compatibility survives newer versions and renamed callback", () => {
   const renamed = function otherName(combat, data, options) {
     const marker = "legendaryActionsUsed resources.legact.value identifiedItems lastPrompt CHRISPREMADES.Combat.LegendaryActions.Prompt.Title togglePause() .nextTurn()";

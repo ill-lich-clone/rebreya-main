@@ -39,11 +39,11 @@ function patchEntries(hooks) {
         const value = Reflect.get(target, key, target);
         return typeof value === "function" ? value.bind(target) : value;
       } });
-      const safeCombat = new Proxy(combat, { get(target, key) {
+      const safeCombat = new Proxy(Object.create(Object.getPrototypeOf(combat)), { get(_target, key) {
         if (key === "combatants") return combatants;
-        const value = Reflect.get(target, key, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      } });
+        const value = Reflect.get(combat, key, combat);
+        return typeof value === "function" ? value.bind(combat) : value;
+      }, set(_target, key, value) { return Reflect.set(combat, key, value, combat); } });
       return original.call(this, safeCombat, ...args);
     };
     Object.defineProperty(wrapped, ORIGINAL, { value: original });
