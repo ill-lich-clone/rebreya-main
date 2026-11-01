@@ -6,6 +6,7 @@ const combatDirectory = new URL("../scripts/combat/", import.meta.url);
 const dialogPattern = /(?:\bnew\s+Dialog(?:V2)?\s*\(|\bDialog(?:V2)?\.wait\s*\()/u;
 const dialogAllowlist = new Set([
   "attack-roll-boost-service.js",
+  "bardic-inspiration-compat-service.js", // Attack-action, flourish selection and recovery, never reactions.
   "craftsman-constructor-service.js",
   "craftsman-gadget-service.js",
   "craftsman-vehicle-service.js",

@@ -321,7 +321,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.53";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.56";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -373,8 +373,8 @@ import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.5.22";
-import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.51";
-import { registerBardicInspirationCommand } from "./infrastructure/foundry/bardic-inspiration-command.js";
+import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.56";
+import { registerBardicInspirationCommand, registerBladeFlourishCommand, registerBladeFlourishSpeedCommand } from "./infrastructure/foundry/bardic-inspiration-command.js?v=1.5.56";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.46";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.15";
@@ -2911,6 +2911,8 @@ export class RebreyaMainModule {
       execute: (payload) => this.grappleAutomationService.twistedReleaseAndMove(payload)
     });
     registerBardicInspirationCommand(this.socketCommandBus, this.bardicInspirationCompatService);
+    registerBladeFlourishCommand(this.socketCommandBus, this.bardicInspirationCompatService);
+    registerBladeFlourishSpeedCommand(this.socketCommandBus, this.bardicInspirationCompatService);
     this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
       validate: isValidPerformerApplyResultPayload,
       authorize: (payload, { sender }) => traderActorIsOwnedByUser(

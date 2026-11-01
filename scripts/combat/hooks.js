@@ -1186,6 +1186,30 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasBardicInspirationCompatService) {
+    const bard = moduleApi.bardicInspirationCompatService;
+    const runFlourish = async (method, ...args) => {
+      try { return await bard[method]?.(...args) ?? true; }
+      catch (error) {
+        console.error(`${MODULE_ID} | Blade Flourish failed.`, error);
+        globalThis.ui?.notifications?.warn?.(error.message);
+        return true;
+      }
+    };
+    Hooks.on("midi-qol.preAttackRoll", workflow => runFlourish("applyMidiBladeFlourishPreAttack", workflow));
+    Hooks.on("midi-qol.DamageRollComplete", workflow => runFlourish("applyMidiBladeFlourishDamage", workflow));
+    Hooks.on("dnd5e.preCalculateDamage", (actor, damages, options) => bard.applyBladeFlourishPreCalculateDamage?.(actor, damages, options) ?? true);
+    Hooks.on("updateCombat", (combat, changes) => Object.hasOwn(changes ?? {}, "round") || Object.hasOwn(changes ?? {}, "turn")
+      ? runFlourish("handleBladeFlourishCombatTurn", combat) : true);
+    Hooks.on("deleteCombat", combat => runFlourish("handleBladeFlourishCombatEnd", combat));
+    Hooks.on("deleteCombatant", combatant => runFlourish("handleBladeFlourishCombatantRemoved", combatant));
+    const reconcileFlourish = scene => {
+      if (!isActiveGmClient(globalThis.game)) return true;
+      const actors = [...(globalThis.game?.actors?.contents ?? []), ...(scene?.tokens?.contents ?? []).map(token => token.actor)].filter(Boolean);
+      return runFlourish("reconcileBladeFlourishEffects", actors);
+    };
+    Hooks.on("canvasReady", canvas => reconcileFlourish(canvas?.scene ?? canvas));
+    Hooks.on("userConnected", () => reconcileFlourish(globalThis.canvas?.scene));
+    void reconcileFlourish(globalThis.canvas?.scene);
     for (const hook of ["dnd5e.preUseActivity", "dnd5e.preActivityConsumption"]) {
       Hooks.on(hook, (activity, usageConfig) => moduleApi.bardicInspirationCompatService.applyDnd5ePreUseActivity(activity, usageConfig));
     }
