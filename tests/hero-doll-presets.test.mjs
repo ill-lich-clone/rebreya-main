@@ -20,7 +20,7 @@ function setup(t,options={}) {
 
 function setupLootRing(t,options={}) {
   const fx=setup(t,options);fx.source.data.type='loot';fx.source.data.name='Кольцо-печатка';
-  delete fx.source.system.equipped;fx.source.flags['rebreya-main'].heroDollSlots=['ring1'];
+  delete fx.source.system.equipped;fx.source.flags['rebreya-main'].heroDollSlots=['ring1'];fx.source.flags['rebreya-main'].magical=true;
   fx.hero.flags['rebreya-main'].heroDoll.slots={ring1:{itemId:fx.source.id}};
   const update=fx.source.update.bind(fx.source);
   fx.source.update=async(patch,...args)=>{const supported={...patch};delete supported['system.equipped'];return update(supported,...args);};
@@ -33,6 +33,18 @@ function setupLootRing(t,options={}) {
   };
   return fx;
 }
+
+test('preset captures and restores the real two-handed grip', async t => {
+  const fx=setup(t,{itemFlags:{heroDollSlots:['leftHand','rightHand'],heldHands:['left','right'],handRequirement:2}});
+  fx.source.data.type='weapon';fx.hero.flags['rebreya-main'].heroDoll.slots={};
+  await fx.create();
+  const saved=fx.state().presets[0].slots;
+  assert.equal(saved.leftHand.itemId,fx.source.id);assert.equal(saved.rightHand.itemId,fx.source.id);
+  delete fx.source.flags['rebreya-main'].heldHands;
+  await fx.apply();
+  assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands'),['left','right']);
+  assert.equal(fx.source.system.quantity,1);
+});
 test('loot signet ring preset applies and clears without an unsupported equipped write',async t=>{
   const fx=setupLootRing(t);await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};
   const count=fx.calls.filter(([phase])=>phase==='equip').length;
@@ -133,7 +145,7 @@ test('save captures concrete IDs with name/image, independent Actor state and no
 });
 test('missing preset item becomes a mechanically empty ghost without substituting a same-name Item',async t=>{
   const fx=setup(t);await fx.create();fx.hero.items.contents=[];
-  await fx.hero.createEmbeddedDocuments('Item',[{_id:'lookalike',name:'Амулет',img:'copy.webp',type:'equipment',system:{quantity:1,equipped:false},flags:{'rebreya-main':{heroDollSlots:['neck']}}}]);
+  await fx.hero.createEmbeddedDocuments('Item',[{_id:'lookalike',name:'Амулет',img:'copy.webp',type:'equipment',system:{quantity:1,equipped:false},flags:{'rebreya-main':{heroDollSlots:['neck'],magical:true}}}]);
   await fx.apply();const count=fx.calls.length,snap=fx.service.getActorSnapshot(fx.hero),slot=snap.slots.find(s=>s.id==='neck');
   assert.equal(slot.ghost,true);assert.equal(slot.occupied,false);assert.equal(slot.itemId,'');assert.equal(slot.itemUuid,'');
   assert.equal(slot.itemImg,'amulet.webp');assert.match(slot.title,/Амулет.*предмет отсутствует/u);
@@ -155,13 +167,14 @@ test('saving a remaining ghost retains its reference and metadata; return does n
   assert.equal(fx.service.getActorSnapshot(fx.hero).slots.find(s=>s.id==='neck').ghost,true);assert.equal(fx.source.system.equipped,false);
   await fx.apply();assert.equal(fx.source.system.equipped,true);assert.deepEqual(fx.state().ghosts,{});
 });
-test('full set clears old slots, preserves real grip and independent equipped items',async t=>{
-  const fx=setup(t,{itemFlags:{heldHands:['right']}});await fx.create();
+test('presets restore and release the real grip while preserving independent equipped items',async t=>{
+  const fx=setup(t,{itemFlags:{heroDollSlots:['leftHand','rightHand'],heldHands:['right']}});fx.source.data.type='weapon';
+  fx.hero.flags['rebreya-main'].heroDoll.slots={};await fx.create();
   await fx.hero.createEmbeddedDocuments('Item',[{_id:'unrelated',name:'Одежда',type:'equipment',system:{quantity:1,equipped:true},flags:{'rebreya-main':{}}}]);
-  fx.hero.flags['rebreya-main'].heroDoll.slots={};await fx.create('Пусто','empty');
-  await fx.apply();await fx.apply('empty');
+  delete fx.source.flags['rebreya-main'].heldHands;await fx.create('Пусто','empty');
+  await fx.apply();assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands'),['right']);await fx.apply('empty');
   assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{});assert.equal(fx.source.system.equipped,true);
-  assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands'),['right']);assert.equal(fx.hero.items.get('unrelated').system.equipped,true);
+  assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands')??[],[]);assert.equal(fx.hero.items.get('unrelated').system.equipped,true);
 });
 test('empty set releases formerly doll-equipped Item while keeping saved set immutable',async t=>{
   const fx=setup(t);await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};await fx.create('Пусто','empty');
@@ -216,7 +229,7 @@ test('legacy stack apply keeps original equipped ID and creates only one unequip
   await fx.apply();assert.equal(fx.hero.items.contents.length,2);assert.equal(fx.total(),3);
 });
 test('complex legacy stack is rejected without modifying formulas, quantity, held state or upgrades',async t=>{
-  const fx=setup(t,{quantity:3,itemSystem:{uses:{max:'@prof + 2',spent:0}},itemFlags:{itemUpgrades:{installed:[{id:'upgrade'}]},heldHands:['right']}});
+  const fx=setup(t,{quantity:3,itemSystem:{uses:{max:'@prof + 2',spent:0}},itemFlags:{heroDollSlots:['neck','rightHand'],itemUpgrades:{installed:[{id:'upgrade'}]},heldHands:['right']}});
   await fx.create();const before=fx.source.toObject(),count=fx.calls.length;
   await assert.rejects(fx.apply(),e=>e.code==='complex-stack');assert.deepEqual(fx.source.toObject(),before);assert.equal(fx.calls.length,count);
 });

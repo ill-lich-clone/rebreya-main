@@ -1,3 +1,4 @@
+import { isMagicItem } from "../shared/magic-item-classification.js?v=1.5.47";
 import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
 import { isMechanizedClothing } from "./mechanized-clothing.js?v=1.5.29";
 import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.5.29";
@@ -9,7 +10,7 @@ import { normalizeHeroDollPresets, captureHeroDollPresetSlots, heroDollPresetMod
 import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.5.18";
 import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.5.18";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js?v=1.5.29";
+import { buildHeldItemWornUpdate, buildHeldItemHandUpdate, buildHeldItemReleaseHandUpdate, canHoldItemInTwoHands, getItemHeldHands, getOccupiedHandSlots } from "../integrations/held-items.js?v=1.5.29";
 import { readInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
 
 export const HERO_DOLL_ASSIGN_COMMAND = "hero-doll.assign";
@@ -27,9 +28,11 @@ export function isValidHeroDollPresetPayload(payload) {
     && (!fields.includes("expectedFingerprint") || (typeof payload.expectedFingerprint === "string" && payload.expectedFingerprint.length > 0 && payload.expectedFingerprint.length <= 100000)));
 }
 export function isValidHeroDollAssignPayload(payload) {
+  const actorUuid = /^(?:Actor\.[A-Za-z0-9_-]+|Scene\.[A-Za-z0-9_-]+\.Token\.[A-Za-z0-9_-]+\.Actor\.[A-Za-z0-9_-]+)$/;
+  const itemUuid = /^(?:Actor\.[A-Za-z0-9_-]+|Scene\.[A-Za-z0-9_-]+\.Token\.[A-Za-z0-9_-]+\.Actor\.[A-Za-z0-9_-]+)\.Item\.[A-Za-z0-9_-]+$/;
   return payload && Object.keys(payload).sort().join(",") === "actorUuid,operationId,slotId,sourceItemUuid"
-    && /^Actor\.[A-Za-z0-9_-]+$/.test(payload.actorUuid)
-    && /^Actor\.[A-Za-z0-9_-]+\.Item\.[A-Za-z0-9_-]+$/.test(payload.sourceItemUuid)
+    && actorUuid.test(payload.actorUuid)
+    && itemUuid.test(payload.sourceItemUuid)
     && HERO_DOLL_SLOTS.some(slot => slot.id === payload.slotId)
     && typeof payload.operationId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(payload.operationId);
 }
@@ -144,6 +147,21 @@ export class HeroDollService {
     return state;
   }
 
+  #effectiveDollState(actor) {
+    const state = this.#normalizeState(actor);
+    const held = getOccupiedHandSlots(actor);
+    const heldIds = new Set([held.get("left"), held.get("right")].filter(item => item instanceof Item).map(item => item.id));
+    for (const [slot, entry] of Object.entries(state.slots)) {
+      if (slot !== "leftHand" && slot !== "rightHand" && heldIds.has(entry.itemId)) delete state.slots[slot];
+    }
+    for (const [slot, hand] of [["leftHand", "left"], ["rightHand", "right"]]) {
+      delete state.slots[slot];
+      const item = held.get(hand);
+      if (item instanceof Item) state.slots[slot] = { itemId: item.id };
+    }
+    return state;
+  }
+
   #getItemAllowedSlots(item) {
     if (!(item instanceof Item)) {
       return [];
@@ -156,8 +174,10 @@ export class HeroDollService {
       ?? foundry.utils.getProperty(item, `flags.${MODULE_ID}.heroDoll.slots`)
       ?? foundry.utils.getProperty(item, "system.heroDollSlots")
     );
+    const nativeClothing = item.type === "equipment" && item.system?.type?.value === "clothing";
     if (explicit.length) {
       const compatible = new Set(explicit);
+      if (nativeClothing) compatible.add("clothing");
       if (compatible.has("ring1") && compatible.has("ring2")) compatible.add("ring3");
       const backSlots = getHeroDollBackSlots();
       if (backSlots.slice(0, 5).every((slotId) => compatible.has(slotId))) {
@@ -165,6 +185,7 @@ export class HeroDollService {
       }
       return [...compatible];
     }
+    if (nativeClothing) return ["clothing"];
 
     const itemTypeValue = String(foundry.utils.getProperty(item, "system.type.value") ?? "").trim().toLowerCase();
     const itemTypeLabel = String(item.system?.type?.label ?? item.labels?.itemType ?? item.type).trim().toLowerCase();
@@ -264,7 +285,7 @@ export class HeroDollService {
         }
 
         const allowedSlots = this.#getItemAllowedSlots(item);
-        if (!allowedSlots.length) {
+        if (!allowedSlots.length || (!isMagicItem(item) && !allowedSlots.includes("clothing"))) {
           return null;
         }
 
@@ -290,14 +311,17 @@ export class HeroDollService {
       return buildEmptySnapshot();
     }
 
-    const state = this.#normalizeState(actor);
+    const state = this.#effectiveDollState(actor);
     const presetState = normalizeHeroDollPresets(actor.getFlag(MODULE_ID, "heroDollPresets"));
-    const occupiedItemIds = Object.values(state.slots).map((slotState) => slotState.itemId);
-    const occupiedItemIdSet = new Set(occupiedItemIds);
     const occupiedSlotsByItemId = new Map();
+    const held = getOccupiedHandSlots(actor);
     const slots = HERO_DOLL_SLOTS.map((slot) => {
+      const hand = slot.id === "leftHand" ? "left" : slot.id === "rightHand" ? "right" : null;
       const itemId = state.slots[slot.id]?.itemId ?? "";
-      const item = itemId ? actor.items.get(itemId) ?? null : null;
+      const savedItem = itemId ? actor.items.get(itemId) ?? null : null;
+      const handItem = hand ? held.get(hand) : null;
+      const item = hand ? (handItem instanceof Item ? handItem : null)
+        : savedItem && (slot.id === "clothing" || isMagicItem(savedItem)) ? savedItem : null;
       const ghost = !item ? presetState.ghosts[slot.id] : null;
 
       if (item) {
@@ -327,22 +351,24 @@ export class HeroDollService {
       selectedPresetId: this.selectedPresets.get(actor.uuid) && presetState.presets.some(preset=>preset.id===this.selectedPresets.get(actor.uuid))
         ? this.selectedPresets.get(actor.uuid) : presetState.activePresetId,
       activePresetId: presetState.activePresetId,
-      presetModified: heroDollPresetModified(actor, actor.getFlag(MODULE_ID,"heroDoll") ?? state, presetState),
+      presetModified: heroDollPresetModified(actor, state, presetState),
       canEditPresets: actor.isOwner === true || game.user?.isGM === true,
       slots,
       inventoryItems,
       slotCount: HERO_DOLL_SLOTS.length,
-      hasItems: occupiedItemIds.length > 0,
+      hasItems: occupiedSlotsByItemId.size > 0,
       hasInventoryItems: inventoryItems.length > 0,
       inventoryCount: inventoryItems.length,
-      reservedCount: occupiedItemIdSet.size,
-      availableCount: Math.max(0, inventoryItems.length - occupiedItemIdSet.size)
+      reservedCount: occupiedSlotsByItemId.size,
+      availableCount: inventoryItems.length
     };
   }
 
   async clearSlot(actor, slotId) {
-    if (normalizeHeroDollPresets(actor.getFlag(MODULE_ID,"heroDollPresets")).ghosts[slotId]) return this.clearGhost(actor,slotId);
-    const itemId = this.#normalizeState(actor).slots[slotId]?.itemId;
+    const hand = slotId === "leftHand" ? "left" : slotId === "rightHand" ? "right" : null;
+    const held = hand ? getOccupiedHandSlots(actor).get(hand) : null;
+    if (!held && normalizeHeroDollPresets(actor.getFlag(MODULE_ID,"heroDollPresets")).ghosts[slotId]) return this.clearGhost(actor,slotId);
+    const itemId = (held instanceof Item ? held.id : null) ?? this.#normalizeState(actor).slots[slotId]?.itemId;
     if (!itemId) return false;
     await this.#submitAssignment(actor, slotId, {uuid:`${actor.uuid}.Item.${itemId}`}, "clear");
     return true;
@@ -408,8 +434,64 @@ export class HeroDollService {
       if (readInventoryItemQuantity(item.toObject()) !== 1) return null;
       const occupied = this.#normalizeState(actor).slots[payload.slotId]?.itemId;
       if (mode === "assign" && occupied && occupied !== item.id) return null;
+      const hand = payload.slotId === "leftHand" ? "left" : payload.slotId === "rightHand" ? "right" : null;
+      const heldOccupant = hand ? getOccupiedHandSlots(actor).get(hand) : null;
+      if (heldOccupant?.isHandReservation) throw new ItemInstanceError("invalid-slot", "Рука занята захватом.");
+      if (mode === "assign" && heldOccupant?.id && heldOccupant.id !== item.id) return null;
+      if (hand) return this.#writeOwnerHandAssignment(actor, item, payload.slotId, mode, hand);
       return this.#writeOwnerAssignment(actor, item, payload.slotId, mode);
     });
+  }
+
+  async #writeOwnerHandAssignment(actor, item, slotId, mode, hand) {
+    const root = `flags.${MODULE_ID}.heroDoll`, slots = actor.getFlag(MODULE_ID, "heroDoll")?.slots ?? {};
+    const changes = [], read = path => foundry.utils.getProperty(actor, path);
+    const change = (path, after) => changes.push({ path, before: foundry.utils.deepClone(read(path)), after });
+    for (const [slot, entry] of Object.entries(slots)) {
+      if (entry?.itemId === item.id && (mode === "clear" || slot !== slotId)) change(`${root}.slots.${slot}`, undefined);
+    }
+    if (mode === "assign") {
+      change(`${root}.slots.${slotId}`, { itemId: item.id });
+      const ghostPath = `flags.${MODULE_ID}.heroDollPresets.ghosts.${slotId}`;
+      if (read(ghostPath) !== undefined) change(ghostPath, undefined);
+    }
+    const update = mode === "assign" ? buildHeldItemHandUpdate([hand], item) : buildHeldItemReleaseHandUpdate(item, [hand]);
+    const fields = Object.entries(update).map(([path, value]) => ({
+      path: path.replace(".-=", "."), before: foundry.utils.deepClone(foundry.utils.getProperty(item, path.replace(".-=", "."))),
+      after: path.includes(".-=") ? undefined : foundry.utils.deepClone(value)
+    }));
+    const equal = (a, b) => itemInstanceFingerprint(a) === itemInstanceFingerprint(b);
+    const beforeItemSlots = Object.keys(slots).filter(slot => slots[slot]?.itemId === item.id).sort();
+    const afterItemSlots = mode === "assign" ? [slotId] : [];
+    const currentItemSlots = () => Object.entries(actor.getFlag(MODULE_ID, "heroDoll")?.slots ?? {})
+      .filter(([, entry]) => entry?.itemId === item.id).map(([slot]) => slot).sort();
+    const itemMatches = key => actor.items.get(item.id) === item && readInventoryItemQuantity(item.toObject()) === 1
+      && fields.every(field => equal(foundry.utils.getProperty(item, field.path), field[key]));
+    const matches = key => changes.every(entry => equal(read(entry.path), entry[key]))
+      && equal(currentItemSlots(), key === "before" ? beforeItemSlots : afterItemSlots);
+    const patch = entries => Object.fromEntries(entries.map(([path, value]) => value === undefined
+      ? [path.replace(/\.([^.]+)$/, ".-=$1"), null] : [path, value]));
+    const stale = () => new ItemInstanceError("stale-slot", "Предмет или рука изменились во время экипировки.");
+    try {
+      if (!itemMatches("before") || !matches("before")) throw stale();
+      await item.update({ ...update });
+      if (!itemMatches("after") || !matches("before")) throw stale();
+      const actorPatch = patch(changes.map(entry => [entry.path, entry.after]));
+      if (mode === "assign" && read(`${root}.version`) === undefined) actorPatch[`${root}.version`] = 1;
+      if (Object.keys(actorPatch).length) await actor.update(actorPatch);
+      if (!itemMatches("after") || !matches("after")) throw stale();
+      return item;
+    } catch (error) {
+      const itemKnown = itemMatches("before") || itemMatches("after");
+      const slotsKnown = matches("before") || matches("after");
+      if (!itemKnown || !slotsKnown) throw new ItemInstanceError("ambiguous-outcome", "Рука изменилась во время операции. Проверьте экипировку.");
+      try {
+        if (matches("after") && !matches("before")) await actor.update(patch(changes.map(entry => [entry.path, entry.before])));
+        if (itemMatches("after") && !itemMatches("before")) await item.update(patch(fields.map(field => [field.path, field.before])));
+        if (!itemMatches("before") || !matches("before")) throw stale();
+      } catch { throw new ItemInstanceError("ambiguous-outcome", "Не удалось подтвердить восстановление руки. Проверьте экипировку."); }
+      throw error;
+    }
   }
 
   async #writeOwnerAssignment(actor, item, slotId, mode) {
@@ -485,7 +567,10 @@ export class HeroDollService {
     }
     if (!sourceItem) return;
     if (intent.mode !== "assign") {
-      if (sourceActor.uuid !== targetActor.uuid || this.#normalizeState(targetActor).slots[intent.heroSlotId]?.itemId !== sourceItem.id
+      const hand = intent.heroSlotId === "leftHand" ? "left" : intent.heroSlotId === "rightHand" ? "right" : null;
+      const heldId = hand ? getOccupiedHandSlots(targetActor).get(hand)?.id : null;
+      if (sourceActor.uuid !== targetActor.uuid || (this.#normalizeState(targetActor).slots[intent.heroSlotId]?.itemId !== sourceItem.id
+        && (intent.mode !== "clear" || heldId !== sourceItem.id))
         || (intent.mode === "normalize" && sourceItem.system.quantity <= 1)) {
         throw new ItemInstanceError("stale-slot", "Содержимое слота изменилось. Обновите лист персонажа.");
       }
@@ -500,7 +585,11 @@ export class HeroDollService {
     const flag = `flags.${MODULE_ID}.heroDoll`;
     const state = this.#normalizeState(targetActor);
     const slots = [intent.heroSlotId];
+    const hand = intent.heroSlotId === "leftHand" ? "left" : intent.heroSlotId === "rightHand" ? "right" : null;
+    const heldOccupant = hand ? getOccupiedHandSlots(targetActor).get(hand) : null;
+    if (heldOccupant?.isHandReservation) throw new ItemInstanceError("invalid-slot", "Рука занята захватом.");
     const replaced = new Set(slots.map(slot => state.slots[slot]?.itemId).filter(id => id && id !== itemId));
+    if (heldOccupant?.id && heldOccupant.id !== itemId) replaced.add(heldOccupant.id);
     for (const [slot, entry] of Object.entries(state.slots)) {
       if (entry.itemId === itemId || replaced.has(entry.itemId)) delete state.slots[slot];
     }
@@ -512,12 +601,12 @@ export class HeroDollService {
     };
     const placement = [...replaced].map(id => {
       const item = targetActor.items.get(id);
-      return step(id, item.toObject(), buildHeroDollEquippedUpdate(item, false));
+      return step(id, item.toObject(), hand ? buildHeldItemReleaseHandUpdate(item, [hand]) : buildHeroDollEquippedUpdate(item, false));
     });
     const beforeAssignment = plan.kind === "move" && isInventoryGraphItem(sourceItem.parent, sourceItem)
       ? buildRuntimeGraphDocuments(captureRuntimeItemGraph(sourceItem.parent, sourceItem), "hero-placement-preview", sourceItem.toObject(), { actorId: targetActor.id }).documents[0]
       : sourceItem.toObject();
-    placement.push(step(itemId, beforeAssignment, buildHeroDollEquippedUpdate(sourceItem, true)));
+    placement.push(step(itemId, beforeAssignment, hand ? buildHeldItemHandUpdate([hand], sourceItem) : buildHeroDollEquippedUpdate(sourceItem, true)));
     placement.push({ actor:"target", before:{[flag]:targetActor.getFlag(MODULE_ID,"heroDoll") ?? null}, after:{[flag]:state} });
     const presetState = normalizeHeroDollPresets(targetActor.getFlag(MODULE_ID,"heroDollPresets"));
     if (presetState.ghosts[intent.heroSlotId]) {
@@ -584,7 +673,7 @@ export class HeroDollService {
     const {targetActor:actor} = actors, {intent} = operation, payload = intent.payload;
     const presetPath = `flags.${MODULE_ID}.heroDollPresets`, dollPath = `flags.${MODULE_ID}.heroDoll.slots`;
     const raw = actor.getFlag(MODULE_ID,"heroDollPresets") ?? null;
-    const state = normalizeHeroDollPresets(raw), doll = this.#normalizeState(actor);
+    const state = normalizeHeroDollPresets(raw), doll = this.#effectiveDollState(actor);
     const preset = state.presets.find(entry=>entry.id===payload.presetId);
     const steps = [], placement = [], actorBefore = {}, actorAfter = {};
     if (!["create","clear-ghost"].includes(payload.action) && !preset) throw new ItemInstanceError("preset-not-found","Комплект больше не существует.");
@@ -610,11 +699,19 @@ export class HeroDollService {
           throw new ItemInstanceError("invalid-preset","Комплект содержит некорректные слоты или ссылки на предметы.");
         }
         if (itemInstanceFingerprint(preset)!==payload.expectedFingerprint) throw new ItemInstanceError("stale-preset","Комплект изменился. Обновите лист и повторите переключение.");
-        const nextSlots = {}, ghosts = {}, seen = new Set();
+        const nextSlots = {}, ghosts = {}, seen = new Map();
         for (const [slotId,entry] of Object.entries(preset.slots)) {
-          if (seen.has(entry.itemId)) throw new ItemInstanceError("duplicate-instance","Один экземпляр нельзя назначить в несколько слотов комплекта.");
-          seen.add(entry.itemId);
           const item = actor.items.get(entry.itemId);
+          if (seen.has(entry.itemId)) {
+            const pair = new Set([seen.get(entry.itemId), slotId]);
+            if (pair.size !== 2 || !pair.has("leftHand") || !pair.has("rightHand") || (item && !canHoldItemInTwoHands(item))) {
+              throw new ItemInstanceError("duplicate-instance","Один экземпляр нельзя назначить в несколько слотов комплекта.");
+            }
+            if (!item) ghosts[slotId] = structuredClone(entry);
+            else nextSlots[slotId] = {itemId:item.id};
+            continue;
+          }
+          seen.set(entry.itemId, slotId);
           if (!item) {ghosts[slotId]=structuredClone(entry);continue;}
           if (!this.#getItemAllowedSlots(item).includes(slotId)) throw new ItemInstanceError("invalid-slot",`${item.name}: предмет больше не подходит этому слоту.`);
           const childIntent = {operationId:payload.operationId,mode:"normalize",sourceActorUuid:actor.uuid,destinationActorUuid:actor.uuid,
@@ -641,7 +738,12 @@ export class HeroDollService {
         const touched = new Set([...Object.values(doll.slots).map(entry=>entry.itemId),...equipped]);
         for (const itemId of touched) {
           const item=actor.items.get(itemId);if(!item)continue;
-          const after=buildHeroDollEquippedUpdate(item,equipped.has(itemId));
+          const hands = [["leftHand", "left"], ["rightHand", "right"]]
+            .filter(([slot]) => nextSlots[slot]?.itemId === itemId).map(([, hand]) => hand);
+          const priorHands = getItemHeldHands(item);
+          const patch = hands.length ? buildHeldItemHandUpdate(hands, item)
+            : priorHands.length ? buildHeldItemWornUpdate(true, item) : buildHeroDollEquippedUpdate(item,equipped.has(itemId));
+          const after=Object.fromEntries(Object.entries(patch).map(([path,value])=>[path.replace(".-=","."),value]));
           const before = Object.fromEntries(Object.keys(after).map(path=>[path,foundry.utils.getProperty(item.toObject(),path) ?? null]));
           placement.push({actor:"target",itemId,before,after});
         }
@@ -693,7 +795,8 @@ export class HeroDollService {
           const flag = `flags.${MODULE_ID}.heroDoll`;
           const state = this.#normalizeState(source.targetActor);
           for (const [slot,entry] of Object.entries(state.slots)) if (entry.itemId === source.sourceItem.id) delete state.slots[slot];
-          const patch = buildHeroDollEquippedUpdate(source.sourceItem, false);
+          const hand = intent.heroSlotId === "leftHand" ? "left" : intent.heroSlotId === "rightHand" ? "right" : null;
+          const patch = hand ? buildHeldItemReleaseHandUpdate(source.sourceItem, [hand]) : buildHeroDollEquippedUpdate(source.sourceItem, false);
           const after = Object.fromEntries(Object.entries(patch).map(([path,value])=>[path.replace(".-=","."),value]));
           const before = Object.fromEntries(Object.keys(after).map(path=>[path,foundry.utils.getProperty(source.data,path) ?? null]));
           return [{actor:"target",itemId:source.sourceItem.id,before,after},

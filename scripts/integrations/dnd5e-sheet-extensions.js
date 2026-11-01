@@ -1,6 +1,6 @@
 import { registerExtendedDamageDice } from "./dnd5e-damage-dice.js?v=1.5.46";
 import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
-import { registerMagicItemSpellbookHook } from "./magic-item-spellbook.js?v=1.5.25";
+import { registerMagicItemSpellbookHook } from "./magic-item-spellbook.js?v=1.5.47";
 import {
   DOWNTIME_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,

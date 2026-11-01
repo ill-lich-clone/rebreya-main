@@ -9,7 +9,7 @@ test("player sync owners share the released cache key at every runtime import", 
   const seen = new Set();
   for (const { path, source } of await readJavaScriptTree("../scripts/")) {
     for (const [, specifier, owner] of source.matchAll(/["']([^"'\n]*\/(hero-doll-service|socket-command-bus|socket-command-scheduling|privileged-mutation-gateway|ui-refresh-coordinator)\.js(?:\?[^"'\n]*)?)["']/gu)) {
-      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.29" : "1.5.3", `${path}: ${specifier}`);
+      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.47" : "1.5.3", `${path}: ${specifier}`);
       seen.add(owner);
     }
   }
@@ -21,10 +21,10 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.46");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.46.js"]);
+  assert.equal(manifest.version, "1.5.47");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.47.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.46.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.47.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -144,8 +144,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.46");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.46.js"]);
+  assert.equal(manifest.version, "1.5.47");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.47.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -267,7 +267,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.46/u
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.47/u
   );
   assert.match(
     entrypointSource,
@@ -356,7 +356,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.46/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.47/u
   );
   assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.5\.44/u);
 
@@ -450,7 +450,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.46.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.47.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -762,7 +762,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.46/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.47/u,
   );
   assert.match(
     entrypointSource,

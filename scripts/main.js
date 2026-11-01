@@ -116,7 +116,7 @@ import {
 } from "./application/inventory-ingress-planner.js?v=1.4.396";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.29";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.47";
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
@@ -394,7 +394,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.46";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.47";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.19";
 import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.30";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
