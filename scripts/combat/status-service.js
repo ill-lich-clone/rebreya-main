@@ -2506,7 +2506,7 @@ export class CombatStatusService {
     return true;
   }
 
-  async syncBloodiedForAllActors() {
+  async syncBloodiedForAllActors({ onActorChanged = null } = {}) {
     if (!game.user?.isGM) {
       return {
         scanned: 0,
@@ -2520,6 +2520,7 @@ export class CombatStatusService {
       const didChange = await this.syncBloodiedForActor(actor, { forceRemove: true });
       if (didChange) {
         changed += 1;
+        onActorChanged?.(actor);
       }
     }
 

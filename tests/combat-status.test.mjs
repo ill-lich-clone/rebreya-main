@@ -2043,3 +2043,15 @@ test("frightened update hook skips already canonical suppressed duplicates", asy
     globalThis.Actor = previousActor;
   }
 });
+
+test("bloodied bulk sync reports changed actors without changing its result", async () => {
+  const previous = globalThis.game;
+  globalThis.game = { user: { isGM: true }, actors: { contents: [{ id: "a" }, { id: "b" }] } };
+  try {
+    const service = new CombatStatusService({});
+    service.syncBloodiedForActor = async actor => actor.id === "a";
+    const seen = [];
+    assert.deepEqual(await service.syncBloodiedForAllActors({ onActorChanged: actor => seen.push(actor.id) }), { scanned: 2, changed: 1 });
+    assert.deepEqual(seen, ["a"]);
+  } finally { globalThis.game = previous; }
+});

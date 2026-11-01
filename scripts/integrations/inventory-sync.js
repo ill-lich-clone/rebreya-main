@@ -471,6 +471,16 @@ function isInventoryRelevantItem(item) {
   return actor?.type === "character" || actor?.type === "group";
 }
 
+function isReactionOnlyActorChange(change, path = "") {
+  const prefix = `flags.${MODULE_ID}.reactionState`;
+  if (path === prefix || path.startsWith(`${prefix}.`)) return true;
+  if (!change || typeof change !== "object" || Array.isArray(change)) return false;
+  const entries = Object.entries(change);
+  return entries.length > 0 && entries.every(([key, value]) => (
+    isReactionOnlyActorChange(value, path ? `${path}.${key}` : key)
+  ));
+}
+
 function isInventoryRelevantActor(actor) {
   return actor?.type === "character" || actor?.type === "group";
 }
@@ -482,13 +492,22 @@ function inventoryActorIdOf(document) {
   return cleanId(actor?.id);
 }
 
-async function refreshInventoryViews(moduleApi, actorIds = []) {
+function inventoryActorReference(document) {
+  const actor = document?.type === "character" || document?.type === "group"
+    ? document : document?.parent ?? document?.actor ?? null;
+  const uuid = String(actor?.uuid ?? "").trim();
+  return uuid.startsWith("Scene.")
+    ? { actorIds: [], actorUuids: [uuid] }
+    : { actorIds: [inventoryActorIdOf(document)], actorUuids: [] };
+}
+
+async function refreshInventoryViews(moduleApi, actorIds = [], actorUuids = []) {
   if (typeof moduleApi?.refreshInventoryViews === "function") {
-    await moduleApi.refreshInventoryViews({ actorIds });
+    await moduleApi.refreshInventoryViews(actorUuids.length ? { actorIds, actorUuids } : { actorIds });
   }
 }
 
-function scheduleInventoryRefresh(moduleApi, actorIds = [], debounceMs = DEFAULT_REFRESH_DEBOUNCE_MS) {
+function scheduleInventoryRefresh(moduleApi, actorIds = [], debounceMs = DEFAULT_REFRESH_DEBOUNCE_MS, actorUuids = []) {
   if (!moduleApi) {
     return Promise.resolve(false);
   }
@@ -497,6 +516,7 @@ function scheduleInventoryRefresh(moduleApi, actorIds = [], debounceMs = DEFAULT
   if (!schedule) {
     schedule = {
       actorIds: new Set(),
+      actorUuids: new Set(),
       timeout: null,
       waiters: []
     };
@@ -510,6 +530,7 @@ function scheduleInventoryRefresh(moduleApi, actorIds = [], debounceMs = DEFAULT
     }
   }
 
+  for (const uuid of actorUuids) if (uuid) schedule.actorUuids.add(uuid);
   const completion = new Promise((resolve, reject) => {
     schedule.waiters.push({ resolve, reject });
   });
@@ -520,10 +541,12 @@ function scheduleInventoryRefresh(moduleApi, actorIds = [], debounceMs = DEFAULT
   const flush = async () => {
     schedule.timeout = null;
     const pendingActorIds = Array.from(schedule.actorIds);
+    const pendingActorUuids = Array.from(schedule.actorUuids);
     const waiters = schedule.waiters.splice(0);
     schedule.actorIds.clear();
+    schedule.actorUuids.clear();
     try {
-      await refreshInventoryViews(moduleApi, pendingActorIds);
+      await refreshInventoryViews(moduleApi, pendingActorIds, pendingActorUuids);
       waiters.forEach(({ resolve }) => resolve(true));
     }
     catch (error) {
@@ -598,7 +621,8 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
       options
     }, userId, moduleApi);
     if (!handledTransfer && isInventoryRelevantItem(item)) {
-      await scheduleInventoryRefresh(moduleApi, [inventoryActorIdOf(item)], debounceMs);
+      const reference = inventoryActorReference(item);
+      await scheduleInventoryRefresh(moduleApi, reference.actorIds, debounceMs, reference.actorUuids);
     }
   };
   const onItemCreate = async (item, options = {}, userId = "") => {
@@ -610,13 +634,15 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
       await initializeDurabilityItem(item, moduleApi);
     }
     if (!handledTransfer && isInventoryRelevantItem(item)) {
-      await scheduleInventoryRefresh(moduleApi, [inventoryActorIdOf(item)], debounceMs);
+      const reference = inventoryActorReference(item);
+      await scheduleInventoryRefresh(moduleApi, reference.actorIds, debounceMs, reference.actorUuids);
     }
     return handledTransfer;
   };
   const onActorChange = async (actor) => {
     if (isInventoryRelevantActor(actor)) {
-      await scheduleInventoryRefresh(moduleApi, [inventoryActorIdOf(actor)], debounceMs);
+      const reference = inventoryActorReference(actor);
+      await scheduleInventoryRefresh(moduleApi, reference.actorIds, debounceMs, reference.actorUuids);
     }
   };
 
@@ -644,7 +670,8 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
         console.error(`${MODULE_ID} | Failed to refresh inventory after item deletion.`, error);
       });
   });
-  Hooks.on("updateActor", (actor) => {
+  Hooks.on("updateActor", (actor, changes = {}) => {
+    if (isReactionOnlyActorChange(changes)) return;
     onActorChange(actor).catch((error) => {
       console.error(`${MODULE_ID} | Failed to refresh inventory after actor update.`, error);
     });

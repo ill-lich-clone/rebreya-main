@@ -235,7 +235,8 @@ test("inactive GM routes trader audit through the typed command and raw audit me
       rawAuditCalls += 1;
       return { id: "raw" };
     };
-    moduleApi.refreshOpenApps = async () => {
+    moduleApi.refreshScopedViews = async options => {
+      assert.deepEqual(options, { scope: "economy" });
       refreshCalls += 1;
     };
 

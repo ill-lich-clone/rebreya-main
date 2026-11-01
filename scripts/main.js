@@ -1,3 +1,4 @@
+import { deferRefreshUntilMaximized } from "./infrastructure/ui/deferred-window-refresh.js?v=1.5.44";
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "./data/inventory-material-quantity.js?v=1.4.377";
 import { resolveItemSource as resolveNativeItemSource } from "./infrastructure/foundry/item-source-resolver.js?v=1.4.377";
 import "./integrations/craftsman-gadget-bootstrap.js?v=1.4.327";
@@ -22,7 +23,7 @@ import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.31";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
-import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.14";
+import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.44";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.30";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.22";
@@ -319,7 +320,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.23";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.40";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.44";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -351,7 +352,7 @@ import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, DECAYING_DAMAGE_OVERTIME_LABEL, registerCombatStatusConfig } from "./combat/status-service.js?v=1.5.15";
+import { CombatStatusService, DECAYING_DAMAGE_OVERTIME_LABEL, registerCombatStatusConfig } from "./combat/status-service.js?v=1.5.44";
 import { DecayingRecoveryService } from "./combat/decaying-recovery-service.js";
 import { bindDecayingRecoveryChat, publishDecayingRecoveryPrompt, requestRecoveryOnce, runDecayingRecoveryMacro } from "./integrations/decaying-recovery-ui.js";
 import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service.js?v=1.5.15";
@@ -393,7 +394,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.25";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.44";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.19";
 import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.30";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
@@ -407,7 +408,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.43";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.19";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.44";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -759,7 +760,7 @@ function getOpenActorSheetApps() {
   ];
   const seen = new Set();
   return apps.filter((app) => {
-    if (!app || seen.has(app) || !app.rendered || isApplicationMinimized(app) || typeof app.render !== "function") {
+    if (!app || seen.has(app) || !app.rendered || typeof app.render !== "function") {
       return false;
     }
 
@@ -1385,6 +1386,12 @@ function normalizeDocumentId(documentOrId) {
   return String(documentOrId?.id ?? documentOrId?._id ?? "").trim();
 }
 
+function actorRefreshTarget(actorOrId) {
+  const uuid = typeof actorOrId === "object" ? String(actorOrId?.uuid ?? "") : "";
+  if (uuid.startsWith("Scene.")) return { actorUuids: [uuid] };
+  return { actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] };
+}
+
 function resolveActorById(actorId) {
   const normalizedActorId = String(actorId ?? "").trim();
   if (!normalizedActorId) {
@@ -1581,6 +1588,8 @@ export class RebreyaMainModule {
       refresh: (actorUuid) => this.refreshReputationViews(actorUuid)
     });
     this.inventoryRefreshActorIds = new Set();
+    this.inventoryRefreshActorUuids = new Set();
+    this.inventoryRefreshGroupIds = new Set();
     this.inventoryRefreshHoldCount = 0;
     this.inventoryRefreshTimer = null;
     this.inventoryRefreshWaiters = [];
@@ -1677,7 +1686,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.5.20"
+          "./ui/inventory-app.js?v=1.5.44"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -3369,7 +3378,7 @@ export class RebreyaMainModule {
       ? await resolveActorByUuid(payload.actorUuid)
       : resolveActorById(payload.actorId);
     const result = await this.combatStatusService.setStatus(actor, payload.statusId, payload.options);
-    await this.refreshOpenApps({ actorIds: [actor?.id] });
+    await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actor) });
     return this.combatStatusService.getStatus(actor, payload.statusId) ?? Boolean(result);
   }
 
@@ -4969,12 +4978,12 @@ export class RebreyaMainModule {
     const actor = typeof actorOrId === "string" ? resolveActorById(actorOrId) : actorOrId;
     if (this.#shouldRouteCombatStatus(actor, statusInput, options)) {
       const result = await this.#requestCombatStatusSet(actor, statusInput, options);
-      await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
+      await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
       return result;
     }
 
     const result = await this.combatStatusService.setStatus(actorOrId, statusInput, options);
-    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
+    await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
     return result;
   }
 
@@ -4986,30 +4995,31 @@ export class RebreyaMainModule {
     };
     if (this.#shouldRouteCombatStatus(actor, statusInput, routeOptions)) {
       const result = await this.#requestCombatStatusSet(actor, statusInput, routeOptions);
-      await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
+      await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
       return result;
     }
 
     const result = await this.combatStatusService.clearStatus(actorOrId, statusInput, options);
-    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
+    await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
     return result;
   }
 
   async setCombatStatusValue(actorOrId, statusInput, value, meta = undefined) {
     const result = await this.combatStatusService.setStatusValue(actorOrId, statusInput, value, meta);
-    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
+    await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
     return result;
   }
 
   async applyDecayingDamage(actorOrId, amount, options = {}) {
     const result = await this.combatStatusService.applyDecayingDamage(actorOrId, amount, options);
-    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
+    await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
     return result;
   }
 
   async syncBloodiedStatuses() {
-    const result = await this.combatStatusService.syncBloodiedForAllActors();
-    await this.refreshOpenApps();
+    const actorIds = [];
+    const result = await this.combatStatusService.syncBloodiedForAllActors({ onActorChanged: actor => actorIds.push(actor.id) });
+    await this.refreshScopedViews({ scope: "combat", actorIds });
     return result;
   }
 
@@ -5058,13 +5068,13 @@ export class RebreyaMainModule {
 
   async refreshReaction(actorOrId, options = {}) {
     const result = await this.combatAttackService.refreshReaction(actorOrId, options);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
     return result;
   }
 
   async consumeReaction(actorOrId, options = {}) {
     const result = await this.combatAttackService.consumeReaction(actorOrId, options);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "combat", ...actorRefreshTarget(actorOrId) });
     return result;
   }
 
@@ -5078,13 +5088,13 @@ export class RebreyaMainModule {
 
   async clearFirearmJam(actorOrItem, weaponOrId = null) {
     const result = await this.combatAttackService.clearFirearmJam(actorOrItem, weaponOrId);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "equipment", ...actorRefreshTarget(typeof actorOrItem === "string" || actorOrItem?.documentName === "Actor" ? actorOrItem : actorOrItem?.actor ?? actorOrItem?.parent ?? actorOrItem) });
     return result;
   }
 
   async maintainFirearm(actorOrItem, weaponOrId = null, options = {}) {
     const result = await this.combatAttackService.maintainFirearm(actorOrItem, weaponOrId, options);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "equipment", ...actorRefreshTarget(typeof actorOrItem === "string" || actorOrItem?.documentName === "Actor" ? actorOrItem : actorOrItem?.actor ?? actorOrItem?.parent ?? actorOrItem) });
     return result;
   }
 
@@ -5102,7 +5112,7 @@ export class RebreyaMainModule {
 
   async handleGlobalEventsConfigChange() {
     await this.repository.rebuildModel();
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return this.repository.model;
   }
 
@@ -5172,7 +5182,7 @@ export class RebreyaMainModule {
 
   async #dispatchGlobalEventsMutation(command, payload) {
     const result = await this.privilegedMutationGateway.mutate(command, payload);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return result;
   }
 
@@ -5272,7 +5282,7 @@ export class RebreyaMainModule {
   async prepareTradeRouteAnalytics({ rerender = false } = {}) {
     await this.repository.prepareTradeRouteAnalytics();
     if (rerender) {
-      await this.refreshOpenApps();
+      await this.refreshScopedViews({ scope: "economy" });
     }
 
     return this.repository.getTradeRoutes();
@@ -5288,25 +5298,25 @@ export class RebreyaMainModule {
 
   async setConnectionActive(connectionId, isActive) {
     await this.privilegedMutationGateway.mutate(ECONOMY_CONNECTION_SET_ACTIVE_COMMAND, { connectionId, isActive });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return this.repository.model;
   }
 
   async updateReferenceDescription(entryType, entryId, description) {
     await this.privilegedMutationGateway.mutate(ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND, { entryType, entryId, description });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return this.getReferenceEntrySnapshot(entryType, entryId);
   }
 
   async updateTradeRouteMetadata(connectionId, patch) {
     const route = await this.privilegedMutationGateway.mutate(ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND, { connectionId, patch });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return route;
   }
 
   async updateStatePolicy(stateId, patch) {
     const policy = await this.privilegedMutationGateway.mutate(ECONOMY_STATE_POLICY_UPDATE_COMMAND, { stateId, patch });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return policy;
   }
 
@@ -5316,7 +5326,7 @@ export class RebreyaMainModule {
       ui.notifications?.info(game.i18n.localize("REBREYA_MAIN.Notifications.DataRestored"));
     }
 
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return model;
   }
 
@@ -5419,7 +5429,7 @@ export class RebreyaMainModule {
     const record = await this.privilegedMutationGateway.mutate(TRADER_AUDIT_RECORD_COMMAND, {
       operation
     });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return record;
   }
 
@@ -5437,7 +5447,7 @@ export class RebreyaMainModule {
       rollbackTransactionId,
       requestedByUserId: String(globalThis.game.user.id ?? "")
     });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "trade", actorIds: [result?.actorId], cityId: result?.cityId ?? "", traderKey: result?.traderKey ?? "" });
     return result;
   }
 
@@ -5447,7 +5457,7 @@ export class RebreyaMainModule {
       traderKey,
       patch
     });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "economy" });
     return trader;
   }
 
@@ -6303,7 +6313,7 @@ export class RebreyaMainModule {
           sender: globalThis.game?.user
         })
       : await this.socketCommandBus.request(TRANSPORT_IMPORT_COMMAND, payload);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "transport", actorIds: [payload.groupActorId, result?.actorId] });
     return result;
   }
 
@@ -6313,7 +6323,7 @@ export class RebreyaMainModule {
           sender: globalThis.game?.user
         })
       : await this.socketCommandBus.request(TRANSPORT_UPDATE_STATE_COMMAND, payload);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "transport", actorIds: [payload.groupActorId, payload.actorId] });
     return result;
   }
 
@@ -6323,7 +6333,7 @@ export class RebreyaMainModule {
           sender: globalThis.game?.user
         })
       : await this.socketCommandBus.request(TRANSPORT_SELECT_FUEL_COMMAND, payload);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "transport", actorIds: [payload.groupActorId, payload.actorId] });
     return result;
   }
 
@@ -6333,7 +6343,7 @@ export class RebreyaMainModule {
           sender: globalThis.game?.user
         })
       : await this.socketCommandBus.request(TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND, payload);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "transport", actorIds: [payload.groupActorId, payload.actorId] });
     return result;
   }
 
@@ -6363,7 +6373,7 @@ export class RebreyaMainModule {
       context,
       transportState: committedState
     });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "transport", actorIds: [groupActorId] });
     return snapshot;
   }
 
@@ -6573,7 +6583,7 @@ export class RebreyaMainModule {
     const result = await this.privilegedMutationGateway.mutate(GROUP_REGISTRY_REGISTER_COMMAND, {
       groupActorId
     });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "group", actorIds: [groupActorId] });
     return result;
   }
 
@@ -6587,7 +6597,7 @@ export class RebreyaMainModule {
     const result = await this.privilegedMutationGateway.mutate(GROUP_REGISTRY_ACTIVATE_COMMAND, {
       groupActorId
     });
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "group", actorIds: [groupActorId] });
     await syncSmallTimeToCalendarTime(this);
     return result;
   }
@@ -6671,7 +6681,9 @@ export class RebreyaMainModule {
 
   async setTravelSpeedMultiplier(speedMultiplier = 1) {
     const result = await this.travelService.setSpeedMultiplier(speedMultiplier);
-    await this.refreshOpenApps();
+    let groupId = "";
+    try { groupId = this.groupContextService.resolveReferenceForCurrentUser()?.groupId ?? ""; } catch {}
+    await this.refreshScopedViews({ scope: "transport", actorIds: [groupId] });
     return result;
   }
 
@@ -7248,18 +7260,18 @@ export class RebreyaMainModule {
   async installItemUpgrade(hostItem, upgradeItem, options = {}) {
     const result = await this.itemUpgradeService.installItemUpgrade(hostItem, upgradeItem, options);
     await this.curseUpgradeAutomationService.requestSync(hostItem.actor ?? hostItem.parent);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "equipment", ...actorRefreshTarget(hostItem.actor ?? hostItem.parent) });
     return result;
   }
 
   async installWeaponAttachment(payload) {
     const result=await this.privilegedMutationGateway.mutate("item-mod.attachment.install",payload,{operationId:payload.operationId});
-    await this.refreshOpenApps();return result;
+    await this.refreshScopedViews({ scope: "equipment", actorUuids: [payload.actorUuid] });return result;
   }
 
   async removeWeaponAttachment(payload) {
     const result=await this.privilegedMutationGateway.mutate("item-mod.attachment.remove",payload,{operationId:payload.operationId});
-    await this.refreshOpenApps();return result;
+    await this.refreshScopedViews({ scope: "equipment", actorUuids: [payload.actorUuid] });return result;
   }
 
   async approveWeaponModernization(payload) {
@@ -7268,12 +7280,12 @@ export class RebreyaMainModule {
 
   async installWeaponModernization(payload) {
     const result=await this.privilegedMutationGateway.mutate("item-mod.modernization.install",payload,{operationId:payload.operationId});
-    await this.refreshOpenApps();return result;
+    await this.refreshScopedViews({ scope: "equipment", actorUuids: [payload.actorUuid] });return result;
   }
 
   async useWeaponModActivity(payload) {
     const result=await this.privilegedMutationGateway.mutate("item-mod.activity.use",payload,{operationId:payload.operationId});
-    await this.refreshOpenApps();return result;
+    await this.refreshScopedViews({ scope: "equipment", actorUuids: [payload.actorUuid] });return result;
   }
 
   async resolveCurseUpgradeSave(actorOrUuid, { saved, death = false, eventId = globalThis.crypto.randomUUID() } = {}) {
@@ -7285,13 +7297,13 @@ export class RebreyaMainModule {
   async removeItemUpgrade(hostItem, upgradeItemOrId) {
     const result = await this.itemUpgradeService.removeItemUpgrade(hostItem, upgradeItemOrId);
     await this.curseUpgradeAutomationService.requestSync(hostItem.actor ?? hostItem.parent);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "equipment", ...actorRefreshTarget(hostItem.actor ?? hostItem.parent) });
     return result;
   }
 
   async setItemUpgradeCapacity(hostItem, capacity) {
     const result = await this.itemUpgradeService.setItemUpgradeCapacity(hostItem, capacity);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "equipment", ...actorRefreshTarget(hostItem.actor ?? hostItem.parent) });
     return result;
   }
 
@@ -7329,12 +7341,14 @@ export class RebreyaMainModule {
   }
 
   async setCalendarTimeOfDay(seconds, options = {}) {
+    let groupId = "";
+    try { groupId = this.groupContextService.resolveReferenceForCurrentUser()?.groupId ?? ""; } catch {}
     const result = await this.calendarService.setTimeOfDaySeconds(seconds);
     const shouldRefreshApps = options.refreshApps !== false && options.reason !== "smalltime-world-time";
     const shouldRefreshSmallTime = options.refreshSmallTime !== false && options.reason !== "smalltime-world-time";
 
     if (shouldRefreshApps) {
-      await this.refreshOpenApps();
+      await this.refreshScopedViews({ scope: "clock", groupIds: [groupId] });
     }
     if (shouldRefreshSmallTime) {
       await refreshSmallTimeDateDisplay();
@@ -7467,7 +7481,7 @@ export class RebreyaMainModule {
   async #refreshAppsByCalendarTransition(executionContext = {}) {
     const guard = executionContext.guard ?? executionContext.assertExecutionContext;
     guard?.();
-    const result = await this.refreshOpenApps();
+    const result = await this.refreshScopedViews({ scope: "calendar", groupIds: [executionContext.groupId] });
     guard?.();
     return result;
   }
@@ -7686,7 +7700,7 @@ export class RebreyaMainModule {
 
   async openTraderV2(cityId, traderKey, options = {}) {
     try {
-      const { TraderAppV2 } = await import("./ui/trader-app-v2.js");
+      const { TraderAppV2 } = await import("./ui/trader-app-v2.js?v=1.5.44");
       const appKey = `${cityId}::${traderKey}`;
 
       let app = this.traderV2Apps.get(appKey);
@@ -7735,23 +7749,23 @@ export class RebreyaMainModule {
     } = options;
     const canRefreshInventorySnapshot = refreshInventorySnapshot
       && typeof app?.refreshInventorySnapshot === "function";
-    if (!app?.rendered || isApplicationMinimized(app) || (!canRefreshInventorySnapshot && typeof app.render !== "function")) {
+    if (!app?.rendered || (!canRefreshInventorySnapshot && typeof app.render !== "function")) return null;
+    const run = () => canRefreshInventorySnapshot
+      ? app.refreshInventorySnapshot(renderOptions)
+      : rerenderApp(app, { ...renderOptions, focus: false });
+    if (isApplicationMinimized(app)) {
+      deferRefreshUntilMaximized(app, () => this.uiRefreshCoordinator.request([{ key: app, run }]));
       return null;
     }
-
-    return {
-      key: app,
-      run: () => canRefreshInventorySnapshot
-        ? app.refreshInventorySnapshot(renderOptions)
-        : rerenderApp(app, { ...renderOptions, focus: false })
-    };
+    return { key: app, run };
   }
 
-  #actorSheetRefreshTasks(actorIds = [], { allWhenEmpty = true } = {}) {
+  #actorSheetRefreshTasks(actorIds = [], { allWhenEmpty = true, actorUuids = [] } = {}) {
     const normalizedActorIds = new Set(
       Array.from(actorIds ?? [], (actorId) => String(actorId ?? "").trim()).filter(Boolean)
     );
-    const refreshAllActorSheets = normalizedActorIds.size === 0;
+    const normalizedActorUuids = new Set(Array.from(actorUuids ?? [], uuid => String(uuid ?? "").trim()).filter(Boolean));
+    const refreshAllActorSheets = normalizedActorIds.size === 0 && normalizedActorUuids.size === 0;
 
     if (refreshAllActorSheets && !allWhenEmpty) {
       return [];
@@ -7760,7 +7774,8 @@ export class RebreyaMainModule {
     return getOpenActorSheetApps()
       .filter((app) => {
         const actorId = String(app.actor?.id ?? app.document?.id ?? "").trim();
-        return refreshAllActorSheets || normalizedActorIds.has(actorId);
+        const actorUuid = String(app.actor?.uuid ?? app.document?.uuid ?? "").trim();
+        return refreshAllActorSheets || normalizedActorIds.has(actorId) || normalizedActorUuids.has(actorUuid);
       })
       .map((app) => this.#appRefreshTask(app))
       .filter(Boolean);
@@ -7783,10 +7798,15 @@ export class RebreyaMainModule {
 
   async #flushInventoryViews() {
     const actorIds = Array.from(this.inventoryRefreshActorIds);
+    const actorUuids = Array.from(this.inventoryRefreshActorUuids);
+    const groupIds = Array.from(this.inventoryRefreshGroupIds);
     const waiters = this.inventoryRefreshWaiters.splice(0);
     this.inventoryRefreshActorIds.clear();
+    this.inventoryRefreshActorUuids.clear();
+    this.inventoryRefreshGroupIds.clear();
 
-    const targetActorIds = new Set(actorIds);
+    const targetActorIds = new Set([...actorIds, ...actorUuids.map(uuid => String(uuid).split(".").at(-1))]);
+    const targetGroupIds = new Set(groupIds);
     const inventoryViews = [
       this.inventoryApp,
       ...this.inventoryFolderApps.values()
@@ -7795,13 +7815,17 @@ export class RebreyaMainModule {
       ...inventoryViews
         .filter((app) => {
           const inventoryActorId = String(app.inventoryActorId ?? app.groupActorId ?? "").trim();
-          return targetActorIds.size === 0 || !inventoryActorId || targetActorIds.has(inventoryActorId);
+          if ((targetActorIds.size === 0 && targetGroupIds.size === 0) || !inventoryActorId || targetActorIds.has(inventoryActorId) || targetGroupIds.has(inventoryActorId)) return true;
+          try {
+            const members = this.groupContextService.resolveReferenceForGroup(inventoryActorId)?.memberActorIds;
+            return Array.isArray(members) && members.some(id => targetActorIds.has(String(id)));
+          } catch { return false; }
         })
         .map((app) => this.#appRefreshTask(app, {
           preserveScroll: true,
           refreshInventorySnapshot: true
         })),
-      ...this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false })
+      ...this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false, actorUuids })
     ].filter(Boolean);
 
     try {
@@ -7817,7 +7841,7 @@ export class RebreyaMainModule {
     }
   }
 
-  refreshInventoryViews({ actorIds = [] } = {}) {
+  refreshInventoryViews({ actorIds = [], actorUuids = [], groupIds = [] } = {}) {
     for (const actorId of actorIds ?? []) {
       const normalizedActorId = String(actorId ?? "").trim();
       if (normalizedActorId) {
@@ -7825,6 +7849,14 @@ export class RebreyaMainModule {
       }
     }
 
+    for (const uuid of actorUuids ?? []) {
+      const normalizedUuid = String(uuid ?? "").trim();
+      if (normalizedUuid) this.inventoryRefreshActorUuids.add(normalizedUuid);
+    }
+    for (const id of groupIds ?? []) {
+      const normalizedId = String(id ?? "").trim();
+      if (normalizedId) this.inventoryRefreshGroupIds.add(normalizedId);
+    }
     const completion = new Promise((resolve, reject) => {
       this.inventoryRefreshWaiters.push({ resolve, reject });
     });
@@ -7976,6 +8008,61 @@ export class RebreyaMainModule {
       : [...this.cityApps.values()];
     const tasks = apps.map((app) => this.#appRefreshTask(app)).filter(Boolean);
     await this.uiRefreshCoordinator.request(tasks);
+  }
+
+  async refreshScopedViews({ scope, actorIds = [], actorUuids = [], groupIds = [], cityId = "", traderKey = "" } = {}) {
+    const inventoryScheduled = ["equipment", "trade", "transport", "clock", "calendar", "group"].includes(scope);
+    const actorTasks = inventoryScheduled ? [] : this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false, actorUuids });
+    const economyApps = [this.economyApp, this.worldTradeRoutesApp, this.statesApp, this.globalEventsApp,
+      ...this.cityApps.values(), ...this.traderV2Apps.values(), ...this.tradeRouteApps.values(), ...this.referenceApps.values()];
+    const inventoryApps = [this.inventoryApp, ...this.inventoryFolderApps.values()].filter(Boolean);
+    const actorIdSet = new Set([...actorIds, ...actorUuids.map(uuid => String(uuid ?? "").split(".").at(-1))].map(id => String(id ?? "").trim()).filter(Boolean));
+    const affectsGroup = value => {
+      const groupId = String(value ?? "").trim();
+      if (!actorIdSet.size || !groupId || actorIdSet.has(groupId)) return true;
+      try {
+        const members = this.groupContextService.resolveReferenceForGroup(groupId)?.memberActorIds;
+        return !Array.isArray(members) || members.some(id => actorIdSet.has(String(id)));
+      } catch { return true; }
+    };
+    const affectedInventoryApps = ["equipment", "transport", "trade"].includes(scope)
+      ? inventoryApps.filter(app => affectsGroup(app.inventoryActorId ?? app.groupActorId)) : [];
+    const targetGroups = new Set(groupIds.map(id => String(id ?? "").trim()).filter(Boolean));
+    const calendarInventoryApps = targetGroups.size ? inventoryApps.filter(app => {
+      const id = String(app.inventoryActorId ?? app.groupActorId ?? "").trim();
+      return !id || targetGroups.has(id);
+    }) : inventoryApps;
+    const affectedTraders = ["equipment", "trade"].includes(scope) ? [...this.traderV2Apps.values()].filter(app => (
+      actorIdSet.has(String(app.selectedActorId ?? "")) || actorIdSet.has(String(app.saleSellerActorId ?? ""))
+      || (app.partyInventoryActorId && affectsGroup(app.partyInventoryActorId))
+    )) : [];
+    let apps;
+    switch (scope) {
+      case "combat": apps = []; break;
+      case "catalog": apps = [...this.lootgenApps.values()]; break;
+      case "equipment": apps = affectedTraders; break;
+      case "transport": apps = []; break;
+      case "economy": apps = economyApps; break;
+      case "group": apps = [this.groupsApp, ...this.traderV2Apps.values()]; break;
+      case "clock": apps = []; break;
+      case "calendar": apps = economyApps.filter(app => ![...this.referenceApps.values()].includes(app)); break;
+      case "trade":
+        apps = [this.economyApp,
+          ...[...this.cityApps.values()].filter(app => !cityId || app.cityId === cityId),
+          ...[...this.traderV2Apps.values()].filter(app => ((!cityId || app.cityId === cityId) && (!traderKey || app.traderKey === traderKey))
+            || affectedTraders.includes(app))];
+        break;
+      default: throw new TypeError(`Unknown refresh scope: ${scope}`);
+    }
+    const uniqueApps = [...new Set(apps.filter(Boolean))];
+    const tasks = uniqueApps.map(app => this.#appRefreshTask(app, inventoryApps.includes(app)
+      ? { preserveScroll: true, refreshInventorySnapshot: true } : {})).filter(Boolean);
+    if (inventoryScheduled) {
+      const inventoryTargets = scope === "group" ? inventoryApps : ["clock", "calendar"].includes(scope) ? calendarInventoryApps : affectedInventoryApps;
+      await Promise.all([this.refreshInventoryViews({ actorIds, actorUuids, groupIds: [...groupIds, ...inventoryTargets.map(app => app.inventoryActorId ?? app.groupActorId)] }), this.uiRefreshCoordinator.request(tasks)]);
+    } else {
+      await this.uiRefreshCoordinator.request([...tasks, ...actorTasks]);
+    }
   }
 
   async refreshOpenApps({ actorIds = null } = {}) {
@@ -8185,7 +8272,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.20");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.44");
 
       const secondary = options?.newWindow === true;
       const viewKey = "full:secondary";
@@ -8242,7 +8329,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.20");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.44");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,
@@ -8373,7 +8460,7 @@ export class RebreyaMainModule {
 
   async syncFeatsFromWorldCompendium(options = {}) {
     const result = await this.featsCompendium.syncFromWorldCompendium(options);
-    await this.refreshOpenApps();
+    await this.refreshScopedViews({ scope: "catalog" });
     return result;
   }
 

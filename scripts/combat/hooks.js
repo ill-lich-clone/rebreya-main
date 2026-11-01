@@ -121,7 +121,7 @@ export function registerCombatHooks(moduleApi) {
       service.handleMidiAbort(workflow).catch(report);
       return true;
     });
-    Hooks.on("updateWorldTime", () => service.refreshOpenSheets());
+    Hooks.on("updateWorldTime", (worldTime, deltaSeconds) => service.refreshOpenSheets(worldTime, deltaSeconds));
   }
 
   if (hasAttackService) {

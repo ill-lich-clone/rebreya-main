@@ -1190,7 +1190,8 @@ test("an inactive GM routes economy writes through the typed command without a l
   try {
     const moduleApi = new RebreyaMainModule();
     let refreshCount = 0;
-    moduleApi.refreshOpenApps = async () => {
+    moduleApi.refreshScopedViews = async options => {
+      assert.deepEqual(options, { scope: "economy" });
       refreshCount += 1;
     };
 
@@ -1241,7 +1242,7 @@ test("combat.status.set lets a character owner apply environment statuses throug
     fixture.actors.push(sourceActor, enemyActor);
     const moduleApi = new RebreyaMainModule();
     const refreshScopes = [];
-    moduleApi.refreshOpenApps = async options => { refreshScopes.push(options); };
+    moduleApi.refreshScopedViews = async options => { refreshScopes.push(options); };
     const request = commandRequest(
       "combat.status.set",
       fixture.users.playerA.id,
@@ -1264,7 +1265,7 @@ test("combat.status.set lets a character owner apply environment statuses throug
     await moduleApi.handleSocketMessage(request);
     await flushCommands();
 
-    assert.deepEqual(refreshScopes, [{ actorIds: [enemyActor.id] }]);
+    assert.deepEqual(refreshScopes, [{ scope: "combat", actorIds: [enemyActor.id] }]);
     const effect = enemyActor.effects.contents[0];
     assert.equal(effect.flags["rebreya-main"].statusId, "rebreya-surrounded");
     assert.deepEqual(resultFor(fixture, request.requestId), {
@@ -2754,7 +2755,8 @@ test("player setCombatStatus routes environment status changes for unowned actor
     fixture.actors.push(sourceActor, enemyActor);
     const moduleApi = new RebreyaMainModule();
     let refreshCount = 0;
-    moduleApi.refreshOpenApps = async () => {
+    moduleApi.refreshScopedViews = async options => {
+      assert.deepEqual(options, { scope: "combat", actorIds: [enemyActor.id] });
       refreshCount += 1;
     };
 

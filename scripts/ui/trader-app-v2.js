@@ -645,7 +645,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     ui.notifications?.info(
       `${result.actorName} продаёт «${result.itemName}» (${result.sellQuantity} шт.) и получает ${result.netPayoutLabel}.`
     );
-    await this.moduleApi.refreshOpenApps();
+    await this.moduleApi.refreshScopedViews({ scope: "trade", cityId: this.cityId, traderKey: this.traderKey, actorIds: [preview.actorId] });
     bringAppToFront(this);
   }
 
@@ -698,7 +698,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       throw error;
     }
     ui.notifications?.info(`${result.actorName} покупает «${result.itemName}» за ${result.totalPriceLabel}.`);
-    await this.moduleApi.refreshOpenApps();
+    await this.moduleApi.refreshScopedViews({ scope: "trade", cityId: this.cityId, traderKey: this.traderKey, actorIds: [this.selectedActorId] });
     bringAppToFront(this);
   }
 
@@ -1023,7 +1023,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         `Продано ${committedSummary.count} поз. на ${formatCopper(committedSummary.netCopper)}.`
       );
     }
-    await this.moduleApi.refreshOpenApps();
+    await this.moduleApi.refreshScopedViews({ scope: "trade", cityId: this.cityId, traderKey: this.traderKey, actorIds: outcome.committedEntries.map(({ entry }) => entry.preview.actorId) });
     bringAppToFront(this);
   }
 

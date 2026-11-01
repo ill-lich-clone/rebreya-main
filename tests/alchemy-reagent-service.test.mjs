@@ -527,3 +527,42 @@ test("a request waits briefly for the GM to persist the observed consumption", a
   await service.applyRecordedUse(message, { sender });
   assert.equal(target.effects.contents.length, 1);
 });
+
+test("world-time refresh skips unchanged reagent sheets and refreshes expiration and rewind", () => {
+  const previous = { ui: globalThis.ui, foundry: globalThis.foundry };
+  const actor = { effects: { contents: [effect(2, 160)] } };
+  const calls = [];
+  const app = { actor, rendered: true, render(options) { calls.push(options); } };
+  globalThis.ui = { windows: {} }; globalThis.foundry = { applications: { instances: new Map([["sheet", app]]) } };
+  try {
+    const service = new AlchemyReagentService({ game: { time: { worldTime: 100 } } });
+    service.refreshOpenSheets(110, 10); assert.equal(calls.length, 0);
+    service.refreshOpenSheets(160, 50); assert.equal(calls.length, 1);
+    service.refreshOpenSheets(100, -60); assert.equal(calls.length, 2);
+  } finally { globalThis.ui = previous.ui; globalThis.foundry = previous.foundry; }
+});
+test("world-time refresh updates an open reagent popover without rerendering the sheet", () => {
+  const previous = { ui: globalThis.ui, foundry: globalThis.foundry };
+  const actor = { effects: { contents: [effect(2, 160)] } }; const calls = [];
+  const detail = { dataset: { reagentLevel: "2", reagentExpiresAt: "160" }, textContent: "" };
+  const popover = { querySelectorAll: () => [detail] };
+  const root = { querySelector: () => ({ getAttribute: () => "rm-potion-popover-1" }), ownerDocument: { getElementById: () => popover } };
+  const app = { actor, element: root, render: options => calls.push(options) };
+  globalThis.ui = { windows: {} }; globalThis.foundry = { applications: { instances: new Map([["sheet", app]]) } };
+  try {
+    new AlchemyReagentService({ game: { time: { worldTime: 110 } } }).refreshOpenSheets(110, 10);
+    assert.equal(calls.length, 0); assert.equal(detail.textContent, "Реагенты: 2 · Осталось: 50 с");
+  } finally { globalThis.ui = previous.ui; globalThis.foundry = previous.foundry; }
+});
+
+test("minimized reagent sheet updates once after restoration", async () => {
+  const previous = { ui: globalThis.ui, foundry: globalThis.foundry };
+  const actor = { effects: { contents: [effect(2, 160)] } }; const calls = [];
+  const app = { actor, rendered: true, minimized: true, async maximize() { this.minimized = false; }, render: options => calls.push(options) };
+  globalThis.ui = { windows: {} }; globalThis.foundry = { applications: { instances: new Map([["sheet", app]]) } };
+  try {
+    const service = new AlchemyReagentService({ game: { time: { worldTime: 160 } } });
+    service.refreshOpenSheets(160, 60); service.refreshOpenSheets(170, 10);
+    assert.equal(calls.length, 0); await app.maximize(); assert.equal(calls.length, 1);
+  } finally { globalThis.ui = previous.ui; globalThis.foundry = previous.foundry; }
+});

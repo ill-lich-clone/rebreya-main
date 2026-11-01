@@ -1,6 +1,7 @@
+import { formatReagentTime } from "../shared/reagent-time.js?v=1.5.44";
 import { MODULE_ID } from "../constants.js";
 import { getAlchemyInventoryEntries } from "../data/alchemy-tracker.js?v=1.5.14";
-import { getActiveAlchemyReagentEffects } from "../data/alchemy-reagent-service.js?v=1.5.14";
+import { getActiveAlchemyReagentEffects } from "../data/alchemy-reagent-service.js?v=1.5.44";
 import { AnchoredOverlay } from "../ui/anchored-overlay.js?v=1.4.392";
 
 const LABELS = { healing: "Лечебные зелья", utility: "Алхимические расходники", reagents: "Действующие зелья" };
@@ -18,16 +19,6 @@ function appendText(parent, tag, className, text) {
   node.textContent = String(text);
   parent.append(node);
   return node;
-}
-
-function remainingTime(seconds) {
-  let remaining = Math.max(0, Math.ceil(seconds));
-  const hours = Math.floor(remaining / 3600);
-  remaining %= 3600;
-  const minutes = Math.floor(remaining / 60);
-  const secondsPart = remaining % 60;
-  return [hours && `${hours} ч`, minutes && `${minutes} мин`, secondsPart && `${secondsPart} с`]
-    .filter(Boolean).join(" ") || "0 с";
 }
 
 function trackerSettings(actor, kind) {
@@ -70,7 +61,9 @@ function buildContent(doc, actor, kind, state) {
       const row = doc.createElement("div");
       row.className = "rm-potion-popover__row";
       appendText(row, "strong", "rm-potion-popover__name", effect.name ?? "Зелье");
-      appendText(row, "span", "rm-potion-popover__detail", `Реагенты: ${data.level} · Осталось: ${remainingTime(data.expiresAt - now)}`);
+      const detail = appendText(row, "span", "rm-potion-popover__detail", `Реагенты: ${data.level} · Осталось: ${formatReagentTime(data.expiresAt - now)}`);
+      detail.dataset.reagentLevel = String(data.level);
+      detail.dataset.reagentExpiresAt = String(data.expiresAt);
       const description = appendText(row, "p", "rm-potion-popover__description", "");
       descriptions.push({ node: description, productId: data.productId });
       content.append(row);

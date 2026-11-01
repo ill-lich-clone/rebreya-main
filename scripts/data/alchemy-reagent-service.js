@@ -1,3 +1,5 @@
+import { formatReagentTime } from "../shared/reagent-time.js?v=1.5.44";
+import { deferRefreshUntilMaximized } from "../infrastructure/ui/deferred-window-refresh.js?v=1.5.44";
 import { MODULE_ID } from "../constants.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { buildAlchemyActivities } from "./alchemy-automation.js?v=1.5.11";
@@ -550,15 +552,41 @@ export class AlchemyReagentService {
     return { status: existing ? "recovered" : "applied" };
   }
 
-  refreshOpenSheets() {
+  refreshOpenSheets(worldTime, deltaSeconds) {
     const v2Apps = new Set(collectionValues(globalThis.foundry?.applications?.instances));
     const apps = new Set([...Object.values(globalThis.ui?.windows ?? {}), ...v2Apps]);
     for (const app of apps) {
+      if (app?.rendered === false) continue;
       const actor = app?.actor ?? (app?.document?.documentName === "Actor" ? app.document : null);
       if (!actor || !collectionValues(actor.effects).some((effect) => effect?.flags?.[MODULE_ID]?.[EFFECT_FLAG])) continue;
+      const root = app.element?.querySelector ? app.element : app.element?.[0];
+      const anchor = root?.querySelector?.('[data-potion-tracker="reagents"] [aria-describedby*="rm-potion-popover-"]');
+      if (Number.isFinite(worldTime) && Number.isFinite(deltaSeconds)) {
+        const before = getActiveAlchemyReagentEffects(actor, worldTime - deltaSeconds);
+        const after = getActiveAlchemyReagentEffects(actor, worldTime);
+        if (before.length === after.length && before.every((effect, index) => effect === after[index])) {
+          if (!anchor) continue;
+          const popoverId = String(anchor.getAttribute?.("aria-describedby") ?? "").split(/\s+/u).find(id => id.startsWith("rm-potion-popover-"));
+          const popover = popoverId && root.ownerDocument?.getElementById?.(popoverId);
+          if (popover?.querySelectorAll) {
+            const details = Array.from(popover.querySelectorAll("[data-reagent-expires-at]"));
+            if (details.length === after.length && details.every(detail => Number.isFinite(Number(detail.dataset.reagentExpiresAt)))) {
+              for (const detail of details) {
+                detail.textContent = `Реагенты: ${detail.dataset.reagentLevel} · Осталось: ${formatReagentTime(Number(detail.dataset.reagentExpiresAt) - worldTime)}`;
+              }
+              continue;
+            }
+          }
+        }
+      }
+      const refresh = () => Promise.resolve(app.render?.(v2Apps.has(app) ? { force: false } : false))
+        .catch((error) => this.notify(error?.message ?? "Не удалось обновить счётчик реагентов."));
+      if (app.minimized === true || app._minimized === true) {
+        deferRefreshUntilMaximized(app, refresh);
+        continue;
+      }
       try {
-        Promise.resolve(app.render?.(v2Apps.has(app) ? { force: false } : false))
-          .catch((error) => this.notify(error?.message ?? "Не удалось обновить счётчик реагентов."));
+        refresh();
       }
       catch (error) {
         this.notify(error?.message ?? "Не удалось обновить счётчик реагентов.");

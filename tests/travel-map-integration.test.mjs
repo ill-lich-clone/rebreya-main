@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-test("RebreyaMainModule saves the shared travel speed multiplier and refreshes open apps", async () => {
+test("RebreyaMainModule saves the shared travel speed multiplier and refreshes the relevant transport views", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -21,14 +21,15 @@ test("RebreyaMainModule saves the shared travel speed multiplier and refreshes o
       calls.push(["setSpeedMultiplier", value]);
       return snapshot;
     };
-    moduleApi.refreshOpenApps = async () => {
-      calls.push(["refreshOpenApps"]);
+    moduleApi.groupContextService.resolveReferenceForCurrentUser = () => ({ groupId: "group-a" });
+    moduleApi.refreshScopedViews = async (options) => {
+      calls.push(["refreshScopedViews", options]);
     };
 
     const result = await moduleApi.setTravelSpeedMultiplier(2);
 
     assert.equal(result, snapshot);
-    assert.deepEqual(calls, [["setSpeedMultiplier", 2], ["refreshOpenApps"]]);
+    assert.deepEqual(calls, [["setSpeedMultiplier", 2], ["refreshScopedViews", { scope: "transport", actorIds: ["group-a"] }]]);
   }
   finally {
     globalThis.Hooks = previousHooks;

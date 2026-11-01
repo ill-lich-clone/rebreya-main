@@ -733,13 +733,361 @@ for (const route of ["accepted-item", "socket-request", "socket-result"]) {
     finally { fixture.restore(); }
   });
 }
-test("combat status refresh preserves application views without rendering unrelated actor sheets", async () => {
+test("combat status refresh leaves unrelated windows and sheets untouched", async () => {
   const fixture = installUiFixture();
   try {
     fixture.moduleApi.economyApp = fixture.createApp("economy");
     globalThis.ui.windows = { affected: fixture.createApp("actor-a", "actor-a"), unrelated: fixture.createApp("actor-b", "actor-b") };
     fixture.moduleApi.combatStatusService.setStatus = async () => true;
     await fixture.moduleApi.setCombatStatus({ id: "actor-a", type: "npc" }, "test", {});
-    assert.deepEqual(fixture.calls.map(call => call.name).sort(), ["actor-a", "economy"]);
+    assert.deepEqual(fixture.calls.map(call => call.name), ["actor-a"]);
   } finally { fixture.restore(); }
+});
+
+test("scoped combat refresh updates only the affected actor sheet", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.inventoryApp = f.createApp("inventory");
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a"), b: f.createApp("b", "actor-b") };
+    await f.moduleApi.refreshScopedViews({ scope: "combat", actorIds: ["actor-a"] });
+    assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
+});
+
+test("scoped economy refresh updates economy surfaces without actor sheets or group UI", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.groupsApp = f.createApp("group");
+    f.moduleApi.cityApps.set("city-a", f.createApp("city")); f.moduleApi.cosmologyApp = f.createApp("cosmology");
+    globalThis.ui.windows = { b: f.createApp("b", "actor-b") };
+    await f.moduleApi.refreshScopedViews({ scope: "economy" });
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["city", "economy"]);
+  } finally { f.restore(); }
+});
+
+
+test("reaction and firearm maintenance refresh only the affected actor", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy");
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a"), b: f.createApp("b", "actor-b") };
+    const actor = { id: "actor-a", type: "character" };
+    f.moduleApi.combatAttackService.consumeReaction = async () => ({ consumed: true });
+    f.moduleApi.combatAttackService.maintainFirearm = async () => ({ maintained: true });
+    await f.moduleApi.consumeReaction(actor); await f.moduleApi.maintainFirearm({ actor });
+    assert.deepEqual(f.calls.map(c => c.name), ["a", "a"]);
+  } finally { f.restore(); }
+});
+test("equipment refresh updates only inventories containing the affected actor", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    f.moduleApi.inventoryFolderApps.set("b", { ...f.createApp("inventory-b"), inventoryActorId: "group-b" });
+    f.moduleApi.groupContextService.resolveReferenceForGroup = id => ({ memberActorIds: id === "group-a" ? ["actor-a"] : ["actor-b"] });
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a"), b: f.createApp("b", "actor-b") };
+    await f.moduleApi.refreshScopedViews({ scope: "equipment", actorIds: ["actor-a"] });
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "inventory-a"]);
+  } finally { f.restore(); }
+});
+test("weapon modification activity refreshes only its actor and relevant inventory", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy");
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    f.moduleApi.inventoryFolderApps.set("b", { ...f.createApp("inventory-b"), inventoryActorId: "group-b" });
+    f.moduleApi.groupContextService.resolveReferenceForGroup = id => ({ memberActorIds: id === "group-a" ? ["actor-a"] : ["actor-b"] });
+    f.moduleApi.privilegedMutationGateway.mutate = async () => ({ ok: true });
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a"), b: f.createApp("b", "actor-b") };
+    globalThis.ui.windows.a.actor.uuid = "Actor.actor-a";
+    await f.moduleApi.useWeaponModActivity({ actorUuid: "Actor.actor-a", operationId: "operation" });
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "inventory-a"]);
+  } finally { f.restore(); }
+});
+test("trade refresh keeps the active trader and other views of the buyer current", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.cosmologyApp = f.createApp("cosmology");
+    f.moduleApi.cityApps.set("city-a", { ...f.createApp("city-a"), cityId: "city-a" });
+    f.moduleApi.cityApps.set("city-b", { ...f.createApp("city-b"), cityId: "city-b" });
+    f.moduleApi.traderV2Apps.set("a", { ...f.createApp("shop-a"), cityId: "city-a", traderKey: "a" });
+    f.moduleApi.traderV2Apps.set("buyer", { ...f.createApp("shop-buyer"), cityId: "city-b", traderKey: "b", selectedActorId: "actor-a" });
+    f.moduleApi.traderV2Apps.set("other", { ...f.createApp("shop-other"), cityId: "city-b", traderKey: "c", selectedActorId: "actor-b" });
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a"), b: f.createApp("b", "actor-b") };
+    await f.moduleApi.refreshScopedViews({ scope: "trade", actorIds: ["actor-a"], cityId: "city-a", traderKey: "a" });
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "city-a", "economy", "shop-a", "shop-buyer"]);
+  } finally { f.restore(); }
+});
+test("transport refresh updates the affected group inventory and vehicle only", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    f.moduleApi.inventoryFolderApps.set("b", { ...f.createApp("inventory-b"), inventoryActorId: "group-b" });
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.groupsApp = f.createApp("groups");
+    f.moduleApi.groupContextService.resolveReferenceForGroup = id => ({ memberActorIds: id === "group-a" ? ["vehicle-a"] : ["vehicle-b"] });
+    globalThis.ui.windows = { a: f.createApp("a", "vehicle-a"), b: f.createApp("b", "vehicle-b") };
+    await f.moduleApi.refreshScopedViews({ scope: "transport", actorIds: ["group-a", "vehicle-a"] });
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "inventory-a"]);
+  } finally { f.restore(); }
+});
+test("bloodied synchronization refreshes only actors reported changed", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy");
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a"), b: f.createApp("b", "actor-b") };
+    f.moduleApi.combatStatusService.syncBloodiedForAllActors = async ({ onActorChanged } = {}) => { onActorChanged?.({ id: "actor-a" }); return { scanned: 2, changed: 1 }; };
+    const result = await f.moduleApi.syncBloodiedStatuses();
+    assert.deepEqual(result, { scanned: 2, changed: 1 });
+    assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
+});
+test("global event configuration refreshes economy data without unrelated sheets", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.groupsApp = f.createApp("groups");
+    f.moduleApi.cityApps.set("city-a", f.createApp("city"));
+    f.moduleApi.repository.rebuildModel = async () => {};
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    await f.moduleApi.handleGlobalEventsConfigChange();
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["city", "economy"]);
+  } finally { f.restore(); }
+});
+test("time of day updates the calendar views and leaves unrelated sheets and cosmology idle", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.calendarService.setTimeOfDaySeconds = async () => ({ seconds: 7200 });
+    f.moduleApi.inventoryApp = f.createApp("inventory"); f.moduleApi.economyApp = f.createApp("economy");
+    f.moduleApi.cosmologyApp = f.createApp("cosmology");
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    const result = await f.moduleApi.setCalendarTimeOfDay(7200, { refreshSmallTime: false });
+    assert.deepEqual(result, { seconds: 7200 });
+    assert.deepEqual(f.calls.map(c => c.name), ["inventory"]);
+  } finally { f.restore(); }
+});
+test("trade rollback refreshes only the affected actor and trade views", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.cosmologyApp = f.createApp("cosmology");
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a"), b: f.createApp("b", "actor-b") };
+    globalThis.game.user.active = true;
+    globalThis.game.users = { contents: [globalThis.game.user] };
+    f.moduleApi.traderService.rollbackTradeAuditEntry = async () => ({ actorId: "actor-a" });
+    f.moduleApi.traderService.getTradeAuditLog = () => [];
+    await f.moduleApi.rollbackTraderAuditEntry("purchase", { rollbackTransactionId: "rollback" });
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "economy"]);
+  } finally { f.restore(); }
+});
+test("synthetic actor refresh uses UUID and leaves another token of the same actor untouched", async () => {
+  const f = installUiFixture();
+  try {
+    const a = f.createApp("a", "shared"), b = f.createApp("b", "shared");
+    a.actor.uuid = "Scene.scene.Token.one.Actor.shared"; b.actor.uuid = "Scene.scene.Token.two.Actor.shared";
+    globalThis.ui.windows = { a, b };
+    await f.moduleApi.refreshScopedViews({ scope: "combat", actorUuids: [a.actor.uuid] });
+    assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
+});
+test("status on a synthetic token refreshes only its own sheet", async () => {
+  const f = installUiFixture();
+  try {
+    const a = f.createApp("a", "shared"), b = f.createApp("b", "shared");
+    a.actor.uuid = "Scene.scene.Token.one.Actor.shared"; b.actor.uuid = "Scene.scene.Token.two.Actor.shared";
+    globalThis.ui.windows = { a, b }; f.moduleApi.combatStatusService.setStatus = async () => true;
+    await f.moduleApi.setCombatStatus(a.actor, "test");
+    assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
+});
+test("a purchase refreshes a second shop displaying the buyer's group funds", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.groupContextService.resolveReferenceForGroup = id => ({ memberActorIds: id === "group-a" ? ["actor-a"] : ["actor-b"] });
+    f.moduleApi.traderV2Apps.set("buyer", { ...f.createApp("group-shop"), cityId: "city-b", traderKey: "b", partyInventoryActorId: "group-a" });
+    f.moduleApi.traderV2Apps.set("other", { ...f.createApp("other-shop"), cityId: "city-b", traderKey: "c", partyInventoryActorId: "group-b" });
+    await f.moduleApi.refreshScopedViews({ scope: "trade", actorIds: ["actor-a"], cityId: "city-a", traderKey: "a" });
+    assert.deepEqual(f.calls.map(c => c.name), ["group-shop"]);
+  } finally { f.restore(); }
+});
+test("feat compendium synchronization does not rerender unrelated windows", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.lootgenApps.set("loot", f.createApp("loot"));
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    f.moduleApi.featsCompendium.syncFromWorldCompendium = async () => ({ itemCount: 3 });
+    assert.deepEqual(await f.moduleApi.syncFeatsFromWorldCompendium(), { itemCount: 3 });
+    assert.deepEqual(f.calls.map(c => c.name), ["loot"]);
+  } finally { f.restore(); }
+});
+test("economy reset does not rerender unrelated actor sheets", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.economyApp = f.createApp("economy"); f.moduleApi.cosmologyApp = f.createApp("cosmology");
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    f.moduleApi.privilegedMutationGateway.mutate = async () => ({ ok: true });
+    await f.moduleApi.resetWorldData();
+    assert.deepEqual(f.calls.map(c => c.name), ["economy"]);
+  } finally { f.restore(); }
+});
+test("equipment changes refresh a trader showing that actor's sale items", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.traderV2Apps.set("mine", { ...f.createApp("mine"), saleSellerActorId: "actor-a" });
+    f.moduleApi.traderV2Apps.set("other", { ...f.createApp("other"), saleSellerActorId: "actor-b" });
+    await f.moduleApi.refreshScopedViews({ scope: "equipment", actorIds: ["actor-a"] });
+    assert.deepEqual(f.calls.map(c => c.name), ["mine"]);
+  } finally { f.restore(); }
+});
+test("time change refreshes only the captured group's calendar inventory", async () => {
+  const f = installUiFixture();
+  try {
+    f.moduleApi.inventoryApp = { ...f.createApp("a"), inventoryActorId: "group-a" };
+    f.moduleApi.inventoryFolderApps.set("b", { ...f.createApp("b"), inventoryActorId: "group-b" });
+    f.moduleApi.groupContextService.resolveReferenceForCurrentUser = () => ({ groupId: "group-a" });
+    f.moduleApi.calendarService.setTimeOfDaySeconds = async () => ({ seconds: 2 });
+    await f.moduleApi.setCalendarTimeOfDay(2, { refreshSmallTime: false });
+    assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
+});
+test("a minimized affected sheet refreshes once when restored", async () => {
+  const f = installUiFixture();
+  try {
+    const app = { ...f.createApp("a", "actor-a"), minimized: true, async maximize() { this.minimized = false; } };
+    globalThis.ui.windows = { a: app };
+    await f.moduleApi.refreshScopedViews({ scope: "combat", actorIds: ["actor-a"] });
+    await f.moduleApi.refreshScopedViews({ scope: "combat", actorIds: ["actor-a"] });
+    assert.deepEqual(f.calls, []);
+    await app.maximize();
+    assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
+});
+test("item hook and equipment operation coalesce one actor and group render", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "actor-a", type: "character" };
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    f.moduleApi.groupContextService.resolveReferenceForGroup = () => ({ memberActorIds: ["actor-a"] });
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateItem")({ parent: actor }, {}, {}, "gm");
+    await f.moduleApi.refreshScopedViews({ scope: "equipment", actorIds: ["actor-a"] });
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "inventory-a"]);
+  } finally { f.restore(); }
+});
+test("synthetic item hook coalesces with equipment refresh without touching another token", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const a = f.createApp("a", "shared"), b = f.createApp("b", "shared");
+    a.actor.uuid = "Scene.scene.Token.one.Actor.shared"; b.actor.uuid = "Scene.scene.Token.two.Actor.shared";
+    a.actor.isToken = true; b.actor.isToken = true; globalThis.ui.windows = { a, b };
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateItem")({ parent: a.actor }, {}, {}, "gm");
+    await f.moduleApi.refreshScopedViews({ scope: "equipment", actorUuids: [a.actor.uuid] });
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
+});
+test("item hook and trade operation coalesce one actor and group render", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "actor-a", type: "character" };
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    f.moduleApi.groupContextService.resolveReferenceForGroup = () => ({ memberActorIds: ["actor-a"] });
+    globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateItem")({ parent: actor }, {}, {}, "gm");
+    await f.moduleApi.refreshScopedViews({ scope: "trade", cityId: "city-a", traderKey: "a", actorIds: ["actor-a"] });
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "inventory-a"]);
+  } finally { f.restore(); }
+});
+test("group hook and transport operation coalesce one group inventory render", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "group-a", type: "group" };
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateActor")(actor);
+    await f.moduleApi.refreshScopedViews({ scope: "transport", actorIds: ["group-a"] });
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.deepEqual(f.calls.map(c => c.name), ["inventory-a"]);
+  } finally { f.restore(); }
+});
+test("group hook and calendar clock refresh coalesce the inventory view", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "group-a", type: "group" };
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    f.moduleApi.groupContextService.resolveReferenceForCurrentUser = () => ({ groupId: "group-a" });
+    f.moduleApi.calendarService.setTimeOfDaySeconds = async () => ({ seconds: 2 });
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateActor")(actor);
+    await f.moduleApi.setCalendarTimeOfDay(2, { refreshSmallTime: false });
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.deepEqual(f.calls.map(c => c.name), ["inventory-a"]);
+  } finally { f.restore(); }
+});
+test("group hook and group operation coalesce the inventory view", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "group-a", type: "group" };
+    f.moduleApi.inventoryApp = { ...f.createApp("inventory-a"), inventoryActorId: "group-a" };
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateActor")(actor);
+    await f.moduleApi.refreshScopedViews({ scope: "group", actorIds: ["group-a"] });
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.deepEqual(f.calls.map(c => c.name), ["inventory-a"]);
+  } finally { f.restore(); }
+});
+test("a minimized inventory invalidates its snapshot once when restored", async () => {
+  const f = installUiFixture();
+  try {
+    const app = { rendered: true, minimized: true, inventoryActorId: "group-a", async maximize() { this.minimized = false; }, async refreshInventorySnapshot(options) { f.calls.push({ name: "inventory", options }); } };
+    f.moduleApi.inventoryApp = app;
+    await f.moduleApi.refreshScopedViews({ scope: "clock", groupIds: ["group-a"] });
+    assert.deepEqual(f.calls, []); await app.maximize();
+    assert.deepEqual(f.calls, [{ name: "inventory", options: { preserveScroll: true } }]);
+  } finally { f.restore(); }
+});
+test("reaction-only actor updates do not refresh inventory or other actor sheets", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "actor-a", type: "character" };
+    f.moduleApi.inventoryApp = f.createApp("inventory"); globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateActor")(actor, { flags: { "rebreya-main": { reactionState: { usesRemaining: 0 } } } });
+    handlers.get("updateActor")(actor, { "flags.rebreya-main.reactionState.usesRemaining": 0 });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.deepEqual(f.calls, []);
+  } finally { f.restore(); }
+});
+test("reaction updates combined with another actor change still refresh inventory", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "actor-a", type: "character" };
+    f.moduleApi.inventoryApp = f.createApp("inventory");
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    handlers.get("updateActor")(actor, { flags: { "rebreya-main": { reactionState: { usesRemaining: 0 }, other: true } } });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.deepEqual(f.calls.map(c => c.name), ["inventory"]);
+  } finally { f.restore(); }
+});
+test("firearm maintenance coalesces item updates with the affected views", async () => {
+  const f = installUiFixture(); const handlers = new Map();
+  try {
+    const actor = { id: "actor-a", type: "character" };
+    f.moduleApi.inventoryApp = f.createApp("inventory"); globalThis.ui.windows = { a: f.createApp("a", "actor-a") };
+    registerInventorySyncHooks(f.moduleApi, { force: true, Hooks: { on(name, fn) { handlers.set(name, fn); } } });
+    f.moduleApi.combatAttackService.clearFirearmJam = async () => { handlers.get("updateItem")({ parent: actor }, {}, {}, "gm"); return {}; };
+    await f.moduleApi.clearFirearmJam({ actor }); await new Promise(resolve => setTimeout(resolve, 140));
+    assert.deepEqual(f.calls.map(c => c.name).sort(), ["a", "inventory"]);
+  } finally { f.restore(); }
+});
+test("firearm maintenance accepts a synthetic Actor without selecting its token parent as actor", async () => {
+  const f = installUiFixture();
+  try {
+    const a = f.createApp("a", "shared"), b = f.createApp("b", "shared");
+    a.actor.uuid = "Scene.scene.Token.one.Actor.shared"; a.actor.documentName = "Actor"; a.actor.parent = { id: "one", uuid: "Scene.scene.Token.one" };
+    b.actor.uuid = "Scene.scene.Token.two.Actor.shared";
+    globalThis.ui.windows = { a, b }; f.moduleApi.combatAttackService.maintainFirearm = async () => ({ success: true });
+    await f.moduleApi.maintainFirearm(a.actor); assert.deepEqual(f.calls.map(c => c.name), ["a"]);
+  } finally { f.restore(); }
 });
