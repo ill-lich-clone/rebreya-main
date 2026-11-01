@@ -1,15 +1,18 @@
 const SELECTOR = "[data-rebreya-heroic-inspiration]";
+const FLAG_SCOPE = "rebreya-main";
+const GM_FLAG = "heroicInspiration";
 const registeredHooks = new WeakSet();
 
 function canToggle(player, viewer) {
   const actor = player?.character;
-  return Boolean(player?.active && actor && viewer && (viewer.isGM
-    || (viewer.id === player.id && actor.testUserPermission?.(viewer, "OWNER") === true)));
+  return Boolean(player?.active && viewer && ((viewer.isGM && (actor || player.isGM))
+    || (actor && viewer.id === player.id && actor.testUserPermission?.(viewer, "OWNER") === true)));
 }
 
 export function updateHeroicInspirationButton(button, player, viewer) {
-  if (!button || !player?.active || !player.character) return false;
-  const active = player.character.system?.attributes?.inspiration === true;
+  if (!button || !player?.active || (!player.character && !player.isGM)) return false;
+  const active = player.character ? player.character.system?.attributes?.inspiration === true
+    : player.getFlag?.(FLAG_SCOPE, GM_FLAG) === true;
   button.disabled = !canToggle(player, viewer);
   button.setAttribute("aria-pressed", String(active));
   button.setAttribute("aria-label", active ? "Героическое вдохновение: есть" : "Героическое вдохновение: нет");
@@ -20,7 +23,8 @@ export function updateHeroicInspirationButton(button, player, viewer) {
 export async function toggleHeroicInspiration(player, viewer) {
   if (!canToggle(player, viewer)) return false;
   const actor = player.character;
-  await actor.update({ "system.attributes.inspiration": actor.system?.attributes?.inspiration !== true });
+  if (actor) await actor.update({ "system.attributes.inspiration": actor.system?.attributes?.inspiration !== true });
+  else await player.setFlag(FLAG_SCOPE, GM_FLAG, player.getFlag?.(FLAG_SCOPE, GM_FLAG) !== true);
   return true;
 }
 
@@ -30,12 +34,14 @@ export function refreshPlayerHeroicInspiration(root, game = globalThis.game, cha
     const player = game.users?.get?.(row.dataset.userId);
     if (changedActor && player?.character?.uuid !== changedActor.uuid) continue;
     let button = row.querySelector(SELECTOR);
-    if (!player?.active || !player.character) { button?.remove(); continue; }
+    if (!player?.active || (!player.character && !player.isGM)) {
+      button?.remove(); row.classList?.remove("rm-has-heroic-inspiration"); continue;
+    }
     if (!button) {
       button = row.ownerDocument.createElement("button");
       button.type = "button";
       button.dataset.rebreyaHeroicInspiration = "true";
-      button.className = "rm-player-heroic-inspiration fa-solid fa-star";
+      button.className = "rm-player-heroic-inspiration";
       button.addEventListener("click", async event => {
         event.preventDefault();
         event.stopPropagation();
@@ -47,6 +53,7 @@ export function refreshPlayerHeroicInspiration(root, game = globalThis.game, cha
       });
       row.prepend(button);
     }
+    row.classList?.add("rm-has-heroic-inspiration");
     updateHeroicInspirationButton(button, player, game.user);
   }
 }

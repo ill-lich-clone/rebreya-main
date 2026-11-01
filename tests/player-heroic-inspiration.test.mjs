@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { updateHeroicInspirationButton, toggleHeroicInspiration, registerPlayerHeroicInspirationHooks } from "../scripts/integrations/player-heroic-inspiration.js";
 
 function fixture({ gm = false, viewerId = "player", ownerId = "player", enabled = false, allowed = true } = {}) {
@@ -41,6 +42,43 @@ test("inactive players and players without characters have no actionable button"
   assert.equal(await toggleHeroicInspiration(owner, viewer), false);
   owner.active = true; owner.character = null;
   assert.equal(updateHeroicInspirationButton(button, owner, viewer), false);
+});
+
+test("GM without a character can toggle their own persistent inspiration", async () => {
+  const { button } = fixture();
+  const gm = { id: "gm", isGM: true, active: true, character: null, flags: {},
+    getFlag(scope, key) { return this.flags[scope]?.[key]; },
+    async setFlag(scope, key, value) { (this.flags[scope] ??= {})[key] = value; } };
+  assert.equal(updateHeroicInspirationButton(button, gm, gm), true);
+  assert.equal(button["aria-pressed"], "false");
+  assert.equal(await toggleHeroicInspiration(gm, gm), true);
+  updateHeroicInspirationButton(button, gm, gm);
+  assert.equal(button["aria-pressed"], "true");
+  assert.equal(await toggleHeroicInspiration(gm, { id: "other", isGM: false }), false);
+  const classes = new Set(); let circle;
+  const row = { dataset: { userId: gm.id }, classList: { add(name) { classes.add(name); } },
+    ownerDocument: { createElement() { return { dataset: {}, setAttribute() {}, addEventListener() {} }; } },
+    querySelector() { return null; }, prepend(value) { circle = value; } };
+  const hooks = { on(name, fn) { if (name === "renderPlayers") this.render = fn; } };
+  registerPlayerHeroicInspirationHooks(hooks, { system: { id: "dnd5e" }, user: gm, users: new Map([[gm.id, gm]]) });
+  hooks.render({ element: { querySelectorAll() { return [row]; } } });
+  assert.ok(circle); assert.ok(classes.has("rm-has-heroic-inspiration"));
+});
+
+test("inspiration control replaces the native circle and has yellow active glow", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  assert.match(css, /\.rm-has-heroic-inspiration::before\s*\{\s*display:\s*none/u);
+  assert.match(css, /\.rm-player-heroic-inspiration\[aria-pressed="true"\][^{]*\{[^}]*box-shadow:[^}]*#/u);
+  const { actor, viewer, owner } = fixture();
+  let appended;
+  const row = { dataset: { userId: owner.id }, classList: { add() {} },
+    ownerDocument: { createElement() { return { dataset: {}, setAttribute() {}, addEventListener() {} }; } },
+    querySelector() { return null; }, prepend(button) { appended = button; } };
+  const hooks = { on(name, fn) { if (name === "renderPlayers") this.render = fn; } };
+  registerPlayerHeroicInspirationHooks(hooks, { system: { id: "dnd5e" }, user: viewer, users: new Map([[owner.id, owner]]) });
+  hooks.render({ element: { querySelectorAll() { return [row]; } } });
+  assert.equal(appended.className, "rm-player-heroic-inspiration");
+  assert.equal(actor.system.attributes.inspiration, false);
 });
 
 test("player list renders one button and only inspiration updates refresh it", async () => {

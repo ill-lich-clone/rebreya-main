@@ -390,7 +390,7 @@ import {
   refreshPlayerInventoryQuickButton,
   registerSceneControlsHook,
   unregisterExternalPanelTool
-} from "./hooks.js?v=1.5.46";
+} from "./hooks.js?v=1.5.54";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
@@ -456,7 +456,7 @@ import {
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
-} from "./settings.js?v=1.5.46";
+} from "./settings.js?v=1.5.54";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.396";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";

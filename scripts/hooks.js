@@ -1,5 +1,5 @@
-﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
-import { registerPlayerHeroicInspirationHooks } from "./integrations/player-heroic-inspiration.js?v=1.5.46";
+import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
+import { registerPlayerHeroicInspirationHooks } from "./integrations/player-heroic-inspiration.js?v=1.5.54";
 
 import { isNativeStorageObject } from "./data/storage-object-kind.js?v=1.5.19";
 import { PanelToolRegistry } from "./ui/panel-tool-registry.js";
