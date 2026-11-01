@@ -4009,6 +4009,7 @@ export class MagicItemsCompendiumService {
     this.placementPreview = placementPreview;
     this.gearProvider = gearProvider;
     this.gear = [];
+    this._damageObservations = new WeakMap();
   }
 
   registerLongRestSteps(pipeline) {
@@ -4075,8 +4076,33 @@ export class MagicItemsCompendiumService {
     return true;
   }
 
-  async applyDnd5eApplyDamage(actor, amount) {
-    if (!actor?.uuid || !(Number(amount) > 0) || typeof actor.rollSavingThrow !== "function") return true;
+  captureDnd5ePreApplyDamage(actor, _amount, updates, options) {
+    if (!actor?.uuid || !options || typeof options !== "object" || !updates || typeof updates !== "object") return true;
+    const hp = actor.system?.attributes?.hp;
+    const readUpdate = path => Object.hasOwn(updates, path) ? updates[path]
+      : path.split(".").reduce((value, key) => value?.[key], updates);
+    const before = [hp?.value, hp?.temp].map(Number);
+    const proposed = ["system.attributes.hp.value", "system.attributes.hp.temp"].map((path, index) => {
+      const value = readUpdate(path);
+      return value == null ? before[index] : Number(value);
+    });
+    if (!before.every(Number.isFinite) || !proposed.every(Number.isFinite)) return true;
+    const loss = before.some((value, index) => proposed[index] < value);
+    const gain = before.some((value, index) => proposed[index] > value);
+    const midiAmount = Number(options?.midi?.amount);
+    const isHealing = options?.midi?.amount != null && Number.isFinite(midiAmount) && midiAmount < 0;
+    let entries = this._damageObservations.get(options);
+    if (!entries) { entries = new Map(); this._damageObservations.set(options, entries); }
+    entries.set(actor.uuid, isHealing ? false : loss ? true : gain ? false : null);
+    return true;
+  }
+
+  async applyDnd5eApplyDamage(actor, amount, options = {}) {
+    if (!actor?.uuid || typeof actor.rollSavingThrow !== "function") return true;
+    const entries = options && typeof options === "object" ? this._damageObservations.get(options) : null;
+    const observed = entries?.get(actor.uuid);
+    entries?.delete(actor.uuid);
+    if (observed === false || (observed !== true && !(Number(amount) > 0))) return true;
     const combats = collectionValues(this.gameProvider()?.combats);
     const inCombat = combats.some(combat => combat?.started === true
       && collectionValues(combat.combatants).some(combatant => combatant?.actor?.uuid === actor.uuid));

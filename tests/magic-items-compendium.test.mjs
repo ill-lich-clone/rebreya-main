@@ -2255,3 +2255,36 @@ test("Sword of Vengeance requires attunement in its generated item", () => {
   assert.equal(data.system.attunement, "required");
   assert.match(data.system.description.value, /Настройка:<\/strong> Требуется/u);
 });
+
+test("Sword of Vengeance distinguishes Midi negative damage from positive healing/undo", async () => {
+  const saves = [];
+  const actor = {
+    uuid: "Actor.sword-owner",
+    system: { attributes: { hp: { value: 20, temp: 0 } } },
+    items: { contents: [{ flags: { "rebreya-main": { magicItemId: "меч-мести" } }, system: { attuned: true } }] },
+    async rollSavingThrow(...args) { saves.push(args); }
+  };
+  const combat = { started: true, combatants: { contents: [{ actor }] } };
+  const service = new magicItemsCompendium.MagicItemsCompendiumService({ gameProvider: () => ({ combats: { contents: [combat] } }) });
+  const damageOptions = {};
+  service.captureDnd5ePreApplyDamage(actor, -5, { "system.attributes.hp.value": 15 }, damageOptions);
+  actor.system.attributes.hp.value = 15;
+  await service.applyDnd5eApplyDamage(actor, -5, damageOptions);
+  assert.equal(saves.length, 1);
+  const healOptions = {};
+  service.captureDnd5ePreApplyDamage(actor, 5, { system: { attributes: { hp: { value: 20 } } } }, healOptions);
+  actor.system.attributes.hp.value = 20;
+  await service.applyDnd5eApplyDamage(actor, 5, healOptions);
+  assert.equal(saves.length, 1);
+  const undoHealOptions = { midi: { amount: -5 } };
+  service.captureDnd5ePreApplyDamage(actor, 5, { "system.attributes.hp.value": 15 }, undoHealOptions);
+  actor.system.attributes.hp.value = 15;
+  await service.applyDnd5eApplyDamage(actor, 5, undoHealOptions);
+  assert.equal(saves.length, 1);
+  const tempDamageOptions = {};
+  actor.system.attributes.hp.temp = 4;
+  service.captureDnd5ePreApplyDamage(actor, 3, { "system.attributes.hp.temp": 1 }, tempDamageOptions);
+  actor.system.attributes.hp.temp = 1;
+  await service.applyDnd5eApplyDamage(actor, 3, tempDamageOptions);
+  assert.equal(saves.length, 2);
+});
