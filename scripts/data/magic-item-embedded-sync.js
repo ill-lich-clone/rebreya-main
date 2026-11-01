@@ -568,14 +568,23 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   const armorProfile = resolution.armorProfile ?? projection?.armorProfile;
   const selectedGearId = getModuleFlags(itemSource).magicEquipmentGearId;
   const currentBase = cleanText(itemSource?.system?.type?.baseItem);
-  const armorChanged = itemType === "equipment"
+  const legacyElvenChain = itemType === "equipment"
+    && resolution.magicItemId === "эльфийская-кольчуга" && !selectedGearId
+    && currentBase === "chainmail" && itemSource?.system?.type?.value === "heavy"
+    && Number(itemSource?.system?.armor?.value) === 16
+    && [0, 13].includes(Number(itemSource?.system?.strength ?? 0))
+    && [0, null, undefined].includes(itemSource?.system?.armor?.dex)
+    && armorProfile?.type === "medium" && armorProfile?.baseItem === "chainshirt" && armorProfile?.armor?.value === 13;
+  const armorChanged = legacyElvenChain || (itemType === "equipment"
     && Number(itemSource?.system?.armor?.value ?? 0) === 0
     && armorProfile?.armor?.value > 0
     && (!selectedGearId || selectedGearId === armorProfile.gearId)
-    && (!currentBase || currentBase === armorProfile.baseItem || selectedGearId === armorProfile.gearId);
+    && (!currentBase || currentBase === armorProfile.baseItem || selectedGearId === armorProfile.gearId));
   if (armorChanged) {
-    system.armor = cloneValue(armorProfile.armor);
-    system.type = { value: armorProfile.type, baseItem: armorProfile.baseItem ?? currentBase };
+    system.armor = legacyElvenChain
+      ? { ...cloneValue(itemSource?.system?.armor ?? {}), ...cloneValue(armorProfile.armor) }
+      : cloneValue(armorProfile.armor);
+    system.type = { ...(legacyElvenChain ? cloneValue(itemSource?.system?.type ?? {}) : {}), value: armorProfile.type, baseItem: armorProfile.baseItem ?? currentBase };
     system.strength = armorProfile.strength;
     system.properties = [...new Set([...(itemSource?.system?.properties ?? []), ...armorProfile.properties])];
   }
@@ -598,6 +607,10 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     signature: cleanText(projection?.signature),
     magicItemAutomation: cloneValue(projection?.automationDefinition ?? null)
   };
+  if (legacyElvenChain) {
+    if (flags[MODULE_ID].foundryBaseItem === "chainmail") flags[MODULE_ID].foundryBaseItem = "chainshirt";
+    if (flags[MODULE_ID].itemSubtype === "Кольчуга") flags[MODULE_ID].itemSubtype = "Кольчужная рубаха";
+  }
   if (resolution.reason !== "managed-pack" && Object.hasOwn(projection ?? {}, "catalogAttunement")) {
     flags[MODULE_ID].catalogAttunement = cleanText(projection.catalogAttunement);
   }

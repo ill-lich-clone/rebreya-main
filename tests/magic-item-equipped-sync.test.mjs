@@ -1194,3 +1194,28 @@ test("owned sync projects and refreshes catalog attunement without overwriting t
   const cleared = embeddedSync.buildEmbeddedMagicItemPatch(applied, { ...projection, catalogAttunement: "" }, resolution);
   assert.equal(cleared.update.flags[MODULE_ID].catalogAttunement, "");
 });
+
+test("legacy Elven Chain receives the correct shirt profile without losing custom armor fields", () => {
+  const item = { _id: "elven", type: "equipment", name: "Эльфийская кольчуга", effects: [],
+    system: { type: { value: "heavy", baseItem: "chainmail" }, armor: { value: 16, dex: 0, magicalBonus: 1, custom: "keep" }, strength: 13, properties: ["mgc"], activities: {} },
+    flags: moduleFlags({ sourceType: "magicItem", magicItemId: "эльфийская-кольчуга", foundryBaseItem: "chainmail", itemSubtype: "Кольчуга" }) };
+  const profile = { gearId: "shirt", type: "medium", baseItem: "chainshirt", armor: { value: 13, dex: 2 }, strength: 0, properties: [] };
+  const projection = { magicItemId: "эльфийская-кольчуга", signature: "new", effects: [], activities: {}, armorProfile: profile };
+  const resolution = { status: "resolved", magicItemId: "эльфийская-кольчуга", identityPatch: {} };
+  const patch = embeddedSync.buildEmbeddedMagicItemPatch(item, projection, resolution);
+  assert.equal(patch.update.system.type.value, "medium"); assert.equal(patch.update.system.type.baseItem, "chainshirt");
+  assert.deepEqual(patch.update.system.armor, { value: 13, dex: 2, magicalBonus: 1, custom: "keep" });
+  assert.equal(patch.update.system.strength, 0);
+  assert.equal(patch.update.flags[MODULE_ID].foundryBaseItem, "chainshirt");
+  assert.equal(patch.update.flags[MODULE_ID].itemSubtype, "Кольчужная рубаха");
+  const applied = { ...item, system: { ...item.system, ...patch.update.system }, flags: patch.update.flags, effects: patch.update.effects };
+  assert.equal(embeddedSync.buildEmbeddedMagicItemPatch(applied, projection, resolution).status, "unchanged");
+  const chosen = structuredClone(item); chosen.flags[MODULE_ID].magicEquipmentGearId = "mail";
+  const chosenPatch = embeddedSync.buildEmbeddedMagicItemPatch(chosen, projection, resolution);
+  assert.equal(Object.hasOwn(chosenPatch.update.system, "armor"), false);
+  const customized = structuredClone(item); customized.system.armor.value = 17;
+  const customPatch = embeddedSync.buildEmbeddedMagicItemPatch(customized, projection, resolution);
+  assert.equal(Object.hasOwn(customPatch.update.system, "armor"), false);
+  const customStrength = structuredClone(item); customStrength.system.strength = 18;
+  assert.equal(Object.hasOwn(embeddedSync.buildEmbeddedMagicItemPatch(customStrength, projection, resolution).update.system, "armor"), false);
+});
