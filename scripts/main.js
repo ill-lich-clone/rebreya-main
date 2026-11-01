@@ -404,13 +404,14 @@ import {
   registerDurabilityHooks
 } from "./integrations/durability-hooks.js?v=1.5.19";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
+import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.42";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.19";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.29";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.42";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.19";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.2";
@@ -3368,7 +3369,7 @@ export class RebreyaMainModule {
       ? await resolveActorByUuid(payload.actorUuid)
       : resolveActorById(payload.actorId);
     const result = await this.combatStatusService.setStatus(actor, payload.statusId, payload.options);
-    await this.refreshOpenApps();
+    await this.refreshOpenApps({ actorIds: [actor?.id] });
     return this.combatStatusService.getStatus(actor, payload.statusId) ?? Boolean(result);
   }
 
@@ -4968,12 +4969,12 @@ export class RebreyaMainModule {
     const actor = typeof actorOrId === "string" ? resolveActorById(actorOrId) : actorOrId;
     if (this.#shouldRouteCombatStatus(actor, statusInput, options)) {
       const result = await this.#requestCombatStatusSet(actor, statusInput, options);
-      await this.refreshOpenApps();
+      await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
       return result;
     }
 
     const result = await this.combatStatusService.setStatus(actorOrId, statusInput, options);
-    await this.refreshOpenApps();
+    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
     return result;
   }
 
@@ -4985,24 +4986,24 @@ export class RebreyaMainModule {
     };
     if (this.#shouldRouteCombatStatus(actor, statusInput, routeOptions)) {
       const result = await this.#requestCombatStatusSet(actor, statusInput, routeOptions);
-      await this.refreshOpenApps();
+      await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
       return result;
     }
 
     const result = await this.combatStatusService.clearStatus(actorOrId, statusInput, options);
-    await this.refreshOpenApps();
+    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
     return result;
   }
 
   async setCombatStatusValue(actorOrId, statusInput, value, meta = undefined) {
     const result = await this.combatStatusService.setStatusValue(actorOrId, statusInput, value, meta);
-    await this.refreshOpenApps();
+    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
     return result;
   }
 
   async applyDecayingDamage(actorOrId, amount, options = {}) {
     const result = await this.combatStatusService.applyDecayingDamage(actorOrId, amount, options);
-    await this.refreshOpenApps();
+    await this.refreshOpenApps({ actorIds: [typeof actorOrId === "string" ? actorOrId : actorOrId?.id] });
     return result;
   }
 
@@ -7977,7 +7978,7 @@ export class RebreyaMainModule {
     await this.uiRefreshCoordinator.request(tasks);
   }
 
-  async refreshOpenApps() {
+  async refreshOpenApps({ actorIds = null } = {}) {
     const standardApps = [
       this.economyApp,
       this.worldTradeRoutesApp,
@@ -7990,11 +7991,12 @@ export class RebreyaMainModule {
       ...this.traderV2Apps.values(),
       ...this.tradeRouteApps.values(),
       ...this.referenceApps.values(),
-      ...getOpenActorSheetApps()
+      ...(actorIds === null ? getOpenActorSheetApps() : [])
     ];
     const tasks = standardApps
       .map((app) => this.#appRefreshTask(app))
       .filter(Boolean);
+    if (actorIds !== null) tasks.push(...this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false }));
     const inventoryTask = this.#appRefreshTask(this.inventoryApp, { preserveScroll: true });
     if (inventoryTask) {
       tasks.push(inventoryTask);
@@ -8520,6 +8522,10 @@ if (Hooks.on instanceof Function) {
 }
 
 Hooks.once("ready", async () => {
+  queueMicrotask(() => {
+    try { installCprLegendaryActionCompat(); }
+    catch (error) { console.warn(`${MODULE_ID} | CPR legendary-action compatibility failed.`, error); }
+  });
   try {
     patchDnd5eTooltipRaceGuard();
     patchDnd5eInventoryResizeGuard();

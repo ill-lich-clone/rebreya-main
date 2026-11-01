@@ -1683,7 +1683,7 @@ export async function handleActorRenderMagicWeapons(
     ammunitionPrompt = promptMagicAmmunitionTemplate,
   } = {},
 ) {
-  if (!["character", "npc"].includes(actor?.type) || !canPromptForActor(actor)) {
+  if (actor?.type !== "character" || !canPromptForActor(actor)) {
     return false;
   }
 

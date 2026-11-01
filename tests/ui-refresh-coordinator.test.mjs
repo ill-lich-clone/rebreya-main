@@ -733,3 +733,13 @@ for (const route of ["accepted-item", "socket-request", "socket-result"]) {
     finally { fixture.restore(); }
   });
 }
+test("combat status refresh preserves application views without rendering unrelated actor sheets", async () => {
+  const fixture = installUiFixture();
+  try {
+    fixture.moduleApi.economyApp = fixture.createApp("economy");
+    globalThis.ui.windows = { affected: fixture.createApp("actor-a", "actor-a"), unrelated: fixture.createApp("actor-b", "actor-b") };
+    fixture.moduleApi.combatStatusService.setStatus = async () => true;
+    await fixture.moduleApi.setCombatStatus({ id: "actor-a", type: "npc" }, "test", {});
+    assert.deepEqual(fixture.calls.map(call => call.name).sort(), ["actor-a", "economy"]);
+  } finally { fixture.restore(); }
+});

@@ -1240,6 +1240,8 @@ test("combat.status.set lets a character owner apply environment statuses throug
     });
     fixture.actors.push(sourceActor, enemyActor);
     const moduleApi = new RebreyaMainModule();
+    const refreshScopes = [];
+    moduleApi.refreshOpenApps = async options => { refreshScopes.push(options); };
     const request = commandRequest(
       "combat.status.set",
       fixture.users.playerA.id,
@@ -1262,6 +1264,7 @@ test("combat.status.set lets a character owner apply environment statuses throug
     await moduleApi.handleSocketMessage(request);
     await flushCommands();
 
+    assert.deepEqual(refreshScopes, [{ actorIds: [enemyActor.id] }]);
     const effect = enemyActor.effects.contents[0];
     assert.equal(effect.flags["rebreya-main"].statusId, "rebreya-surrounded");
     assert.deepEqual(resultFor(fixture, request.requestId), {

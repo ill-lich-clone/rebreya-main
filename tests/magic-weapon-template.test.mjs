@@ -852,7 +852,7 @@ test("handleCreatedMagicWeaponItem ignores other users and unsupported actor typ
   assert.equal(npcItem.updates.length, 0);
 });
 
-test("NPC weapons use the same creation and sheet fallback adapters with ownership guards", async () => {
+test("NPC creation still prompts but sheet rendering never prompts for existing equipment", async () => {
   const moduleApi = { getModel: async () => ({ gear: [makeLongsword()] }) };
   for (const bonus of [1, 2, 3]) {
     const item = new FakeItem({ actorType: "npc", name: `Оружие +${bonus}` });
@@ -863,8 +863,8 @@ test("NPC weapons use the same creation and sheet fallback adapters with ownersh
   const item = new FakeItem({ actorType: "npc" });
   const actor = new FakeActor({ type: "npc", items: [item] });
   actor.isToken = true;
-  assert.equal(await handleActorRenderMagicWeapons(actor, moduleApi, { prompt: async () => "longsword" }), true);
-  assert.equal(item.updates.length, 1);
+  assert.equal(await handleActorRenderMagicWeapons(actor, moduleApi, { prompt: async () => "longsword" }), false);
+  assert.equal(item.updates.length, 0);
   item.flags["rebreya-main"] = { magicWeaponTemplate: true };
   assert.equal(await handleActorRenderMagicWeapons(actor, moduleApi, { prompt: async () => { throw new Error("already templated"); } }), false);
   const cancelled = new FakeItem({ actorType: "npc" });
@@ -1168,4 +1168,15 @@ test("handleActorRenderMagicWeapons skips fallback prompts for active player-own
   finally {
     globalThis.game = previousGame;
   }
+});
+
+
+test("NPC sheet does not prompt for existing magical armor", async () => {
+  const item = new FakeItem({ actorType: "npc", name: "Эльфийская кольчуга", type: "equipment" });
+  item.flags = { "rebreya-main": { sourceType: "magicItem", itemType: "Доспех", itemSubtype: "Кольчуга", magicItemId: "elf-chain" } };
+  const actor = new FakeActor({ type: "npc", items: [item] });
+  let calls = 0;
+  for (let i = 0; i < 2; i++) assert.equal(await handleActorRenderMagicWeapons(actor, { getModel: async () => ({ gear: [makeChefArmor()] }) }, { armorPrompt: async () => { calls++; return null; } }), false);
+  assert.equal(calls, 0);
+  assert.equal(item.updates.length, 0);
 });
