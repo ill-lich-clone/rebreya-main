@@ -188,6 +188,60 @@ function shieldCase({ total = 12, ac = 10, critical = false, resourceErrors = fa
   return { actor, item, activity, target, workflow, midi };
 }
 
+test("saved CPR Shield activities can answer a native Magic Missile with default MIDI restrictions and keep custom conditions", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  const h = shieldCase();
+  delete h.item.flags["rebreya-main"];
+  h.item.flags["chris-premades"] = { info: { identifier: "shield" } };
+  h.item.system.identifier = "shield";
+  const custom = { useConditionText:"custom rule",type:"utility" };
+  h.activity.type = "utility";
+  h.item.system.activities = [h.activity,custom];
+  h.actor.items = [h.item];
+  h.workflow.item = {type:"spell",system:{identifier:"magic-missile"}};
+  const adapter = new MidiReactionAdapter({}, {midiProvider:()=>h.midi});
+  adapter.prepareMagicMissileReactions(h.workflow);
+  assert.match(h.activity.useConditionText,/isDamaged/);
+  assert.equal(custom.useConditionText,"custom rule");
+  const ids=[h.activity.uuid];
+  await adapter.filterReactions([h.activity],{workflow:h.workflow},"reactiondamage",ids);
+  assert.deepEqual(ids,[h.activity.uuid]);
+  h.workflow.workflowOptions={rebreyaMissileShieldPrompt:false};
+  await adapter.filterReactions([h.activity],{workflow:h.workflow},"reactiondamage",ids);
+  assert.deepEqual(ids,[]);
+});
+
+test("native Magic Missile offers the exact target Shield without CPR and blocks damage only while Shield is active", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  const h = shieldCase();
+  const missile = { type: "spell", system: { identifier: "magic-missile" } };
+  h.workflow.item = missile;
+  delete h.workflow.attackRoll;
+  const queue = { resolveManagedReaction: () => ({ name: "queued" }) };
+  const adapter = new MidiReactionAdapter({ reactionQueueService: queue }, { midiProvider: () => h.midi,
+    resolver: uuid => uuid === h.activity.uuid ? h.activity : h.target });
+  const options = { workflow: h.workflow };
+  const ids = [h.activity.uuid];
+  await adapter.filterReactions([h.activity], options, "reactiondamage", ids);
+  assert.deepEqual(ids, [h.activity.uuid]);
+  const packet = { triggerType: "reactiondamage", reactionActivityList: ids, options: { ...options, workflow: undefined } };
+  assert.deepEqual(await adapter.choose({ ...packet, tokenUuid: h.target.document.uuid }), { name: "queued" });
+  assert.deepEqual(await adapter.choose({ ...packet, tokenUuid: "Token.other" }), { name: "None" });
+  const damages = () => Object.assign([{ value: 8, type: "force" }, { value: 3, type: "force" }], { amount: 11 });
+  const protectedDamage = damages();
+  const message = { getAssociatedItem: () => missile };
+  adapter.applyMagicMissileShield(h.actor, protectedDamage, { originatingMessage: message });
+  assert.equal(protectedDamage.amount, 11);
+  h.actor.effects.push({ flags: { "rebreya-main": { shieldReaction: { version: 1 } } } });
+  adapter.applyMagicMissileShield(h.actor, protectedDamage, { originatingMessage: message });
+  assert.equal(protectedDamage.amount, 0);
+  assert.deepEqual(protectedDamage.map(damage => damage.value), [0, 0]);
+  const unrelated = damages();
+  adapter.applyMagicMissileShield(h.actor, unrelated, { originatingMessage: { getAssociatedItem: () => h.item } });
+  assert.equal(unrelated.amount, 11);
+  assert.deepEqual(await adapter.choose({ ...packet, tokenUuid: h.target.document.uuid }), { name: "None" });
+});
+
 test("managed Shield filter offers only ordinary hits that +5 actually cancels and preserves other reactions", async () => {
   const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
   for (const [total, want] of [[9, false], [10, true], [14, true], [15, false], [20, false]]) {

@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { grappleReachOriginRect } from "./grapple-geometry.js";
-import { createReachBoundaryOverlay } from "./grapple-placement-preview.js?v=1.4.356";
+import { createReachBoundaryOverlay } from "./grapple-placement-preview.js?v=1.5.59";
 
 const BOMB_TOKEN_SIZE = 0.5;
 export const BOMB_THROW_RANGE_FEET = 60;

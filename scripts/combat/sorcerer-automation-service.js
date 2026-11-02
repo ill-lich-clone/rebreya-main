@@ -1064,6 +1064,15 @@ function metamagicOptions(actor) {
     });
   }
 
+  // Older actors may own only the CPR feat. It grants the same choice and never counts as a second copy.
+  if (!byId.has("quickened-spell")) {
+    const legacy = collectionValues(actor?.items).find(item => item.type === "feat"
+      && item.flags?.["chris-premades"]?.info?.identifier === "quickenedSpell");
+    if (legacy) byId.set("quickened-spell", {
+      id: "quickened-spell", label: legacy.name, detail: metamagicDescription(legacy), item: legacy,
+      cost: 2, costMode: "fixed", minCost: 2, maxCost: 2, stacking: "base", ownedCount: 1
+    });
+  }
   return Array.from(byId.values()).map((option) => {
     if (hasTranscendence && option.ownedCount > 1) {
       return {

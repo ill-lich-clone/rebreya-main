@@ -2,23 +2,17 @@
 
 ## Основной источник: компендиум Ребреи
 
-`data/rebreya-spells-v01.json` включает `{id:"shield-rebreya",sourceIdentifier:"shield",sourcePack:"chris-premades.CPRSpells"}`. Стандартный `SpellsCompendiumService.sync()` создаёт карточку в **«Заклинания Rebreya (D&D 5e 2014)»**, `world.rebreya-spells`, вместе с Counterspell и Melf; отдельный ручной world import для получения карточки не нужен.
+Штатная синхронизация активного GM в `SpellsCompendiumService.sync()` использует запись `{id:"shield-rebreya",sourceIdentifier:"shield"}` и системный пакет `dnd5e.spells` (SRD 2014). `normalizedSourceDefinition(entry)` принимает точный маршрут Shield. `buildManagedSpellEntry(definition,source,options)` сохраняет существующий `spellId` и подписывает в том числе effects и img. Канонический сверщик обновляет ранее созданную карточку в `world.rebreya-spells` по этому ID, сохраняет её UUID и удаляет корневые флаги прежних исполнителей CPR/CAT. Штатные запуск и `reloadData()` сначала синхронизируют заклинания, затем использующие их магические предметы.
 
-В `scripts/data/spells-compendium.js` private `normalizedSourceDefinition(entry)` валидирует точный Shield route с per-entry CPR pack, сохраняя прежний Counterspell route. `buildManagedSpellEntry(definition,source=null,options={})` для Shield делегирует `buildShieldSpellItem(source,options)`, добавляет managed `spellId`/signature; signature Shield включает effects/img, а прежние signatures других spells не меняются. `sync()` разрешает `definition.sourcePack ?? sourcePack`, при пустом Shield description берёт текст одноимённого official SRD source и передаёт существующему builder. Валидация source и список entries готовятся до записи managed документов. Канонический sync сохраняет idempotence и существующие маршруты/документы.
+## Карточка и GM import
 
-Data flow: shipped spell catalog → source pack/document → source-preserving Shield builder + SRD text → managed entry/signature → existing `syncFlaggedManagedDocuments` → Rebreya spell compendium → actor copy с маркером очереди. Focused tests: `tests/spells-compendium.test.mjs`, `tests/shield-spell-item.test.mjs`.
+- `buildShieldSpellItem(sourceData,{description=""}={})` из `scripts/data/shield-spell-item.js` находит связанную utility activity и эффект +5 КД в исходной SRD-карточке. Копирует действие, embedded IDs, формулы, ресурсы, источник с лицензией и описание. Активирует эффект, маркирует его и карточку флагом `rebreya-main.shieldReaction.version = 1`. Условия MIDI допускают полезное попадание или урон Magic Missile. В v14 срок задаёт нативный `targetStart`, в v13 `expireV13ShieldAtTurnStart(actor)` удаляет только такие эффекты входящего в ход Actor по прямому `combatTurnChange` на активном GM.
+- `isManagedShield(item)` распознаёт маркер на заклинании. `hasShieldEffect(actor)` проверяет действующий эффект с маркером Rebreya, соблюдая disabled/suppressed/expired, и распознаёт ранее применённые эффекты с идентификаторами CPR/CAT.
+- `ensureWorldShieldSpell({game,coordinator,resolveUuid,itemClass}) -> Promise<Item>` сохраняет GM API `importShieldSpell()`. При отсутствии ранее созданного отмеченного мирового Item разрешает `Compendium.dnd5e.spells.Item.z1mx84ONwkXKUZd7`. Существующий мировой Item сохраняет внесённые GM изменения. Синхронизация компендиума не заменяет карточки на листах персонажей.
 
-## Владельцы и контракты
+Карточка использует установленный SRD 2014 системы dnd5e. System Reference Document 5.1, Wizards of the Coast LLC, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Исходное описание и метаданные берутся из системы при синхронизации. [Исходник Shield в dnd5e 6.0.6](https://github.com/foundryvtt/dnd5e/blob/release-6.0.6/packs/_source/spells/1st-level/shield.yml)
 
-`scripts/data/shield-spell-item.js` владеет исходной мировой копией:
-
-- `isManagedShield(item) -> boolean` распознаёт spell по `flags.rebreya-main.shieldReaction.version === 1`, независимо от имени.
-- `hasShieldEffect(actor) -> boolean` проверяет неотключённый/неподавленный/неистёкший effect с CPR identifier `shield` либо module marker.
-- `buildShieldSpellItem(sourceData,{description=""}={}) -> ItemData` проверяет source Shield/+5 effect references, глубоко копирует весь source, удаляет root `_id`/folder, добавляет имя/marker и только недостающее описание. Embedded IDs и references, resources/scaling/formulas, source metadata и flags сохраняются.
-- `ensureWorldShieldSpell({game,coordinator,resolveUuid,itemClass}) -> Promise<Item>` разрешает только active GM и сериализует поиск/create через coordinator key `shield-world-item`. Источник — CPRSpells `RpVLINL74RjPDkC4`, description fallback — dnd5e.spells `z1mx84ONwkXKUZd7`. Существующий marked Item возвращается без update; нет startup миграции всех Actor.
-- Composition `importShieldSpell() -> Promise<Item>` в `scripts/main.js` внедряет game/coordinator/fromUuid/Item; публикуется обычным runtime API `game.rebreyaMain` и module API. Это GM API, не player command.
-
-Focused tests: `tests/shield-spell-item.test.mjs`.
+Профильные проверки находятся в `tests/spells-compendium.test.mjs`, `tests/shield-spell-item.test.mjs` и `tests/shield-reaction-hooks.test.mjs`.
 
 ## Обычные атаки
 
@@ -34,7 +28,11 @@ Data flow: source MIDI hit → ReactionFilter/snapshot → exact Token native ch
 
 Focused tests: `tests/midi-reaction-adapter.test.mjs`, `tests/shield-reaction-hooks.test.mjs`; соседние contracts — `tests/managed-reaction-session.test.mjs`, `tests/reaction-chat-lifecycle.test.mjs`.
 
-## CPR Magic Missile
+## Волшебная стрела SRD
+
+Для spell с точным `system.identifier === "magic-missile"` штатная фаза MIDI `reactiondamage` входит в тот же `filterReactions` и точный Token snapshot. `choose()` повторно проверяет ресурс, реакцию и активный «Щит» перед передачей в штатный диалог. Число стрел, броски и адресатов определяет вызывающая activity. Для старых карточек `isShieldReactionItem(item)` также распознаёт CPR identifier shield. `prepareMagicMissileReactions(workflow)` дополняет стандартное условие их подготовленной activity до выбора MIDI, сохраняя авторские условия и данные на диске. Когда карточка распределяет несколько стрел, флаг `workflowOptions.rebreyaMissileShieldPrompt` разрешает окно только на первой стреле каждой цели. Метод `MidiReactionAdapter.applyMagicMissileShield(actor,damages,options)` вызывается из `dnd5e.calculateDamage`, сопоставляет системную карточку урона через `originatingMessage` или `options.midi.itemCardUuid` и обнуляет урон только для владельца действующего эффекта до записи HP. Ручная передача числового урона без источника сохраняется.
+
+## Совместимость с ранее установленным CPR Magic Missile
 
 `CprShieldReactionAdapter` в `scripts/integrations/cpr-shield-reaction-adapter.js` — optional compatibility boundary CPR 1.5.44 / MIDI 13.0.61:
 

@@ -1,0 +1,35 @@
+import { itemUtils } from "../../../lib/utilities/itemUtils.js";
+import { animationUtils } from "../../../lib/utilities/animationUtils.js";
+import { workflowUtils } from "../../../lib/utilities/workflowUtils.js";
+import { Teleport } from "../../../lib/teleport.js";
+export async function use({trigger, workflow}) {
+    let animation = itemUtils.getConfig(workflow.item, 'playAnimation') ? (animationUtils.jb2aCheck() === 'patreon' ? 'vortexWarp' : 'mistyStep') : 'none';
+    if (!workflow.failedSaves.size) return;
+    let range = 90 + (30 * (workflowUtils.getCastLevel(workflow) - 2));
+    for (let i of workflow.failedSaves) {
+        await Teleport.target([i], workflow.token, {range: range, animation: animation, workflow});
+    }
+}
+export const vortexWarp = {
+    name: 'Vortex Warp',
+    version: '1.5.44',
+    hasAnimation: true,
+    midi: {
+        item: [
+            {
+                pass: 'rollFinished',
+                macro: use,
+                priority: 50
+            }
+        ]
+    },
+    config: [
+        {
+            value: 'playAnimation',
+            label: 'CHRISPREMADES.Config.PlayAnimation',
+            type: 'checkbox',
+            default: true,
+            category: 'animation'
+        }
+    ]
+};

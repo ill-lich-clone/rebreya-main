@@ -2,14 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { GroupedCombatRepository } from "../scripts/infrastructure/foundry/grouped-combat-repository.js";
 import { buildPhaseStepKey } from "../scripts/combat/turn-group-rules.js";
 
 const appRoot = process.env.REBREYA_FOUNDRY_APP_ROOT ?? "D:/FoundryVTT/Foundry Virtual Tabletop/resources/app";
 const { expandObject, mergeObject } = await import(pathToFileURL(join(appRoot, "common/utils/helpers.mjs")).href);
+const generation = JSON.parse(await readFile(join(appRoot, "package.json"), "utf8")).release.generation;
+const mergeOptions = generation >= 14 ? { applyOperators: true } : { performDeletions: true };
+if (generation >= 14) {
+  const { ForcedReplacement } = await import(pathToFileURL(join(appRoot, "common/data/operators.mjs")).href);
+  globalThis._replace = ForcedReplacement.create;
+}
 
 test("combat state survives native Foundry expansion/merge and removes completed transient fields", async () => {
-  const combat = { id: "fight", flags: {}, async update(data) { mergeObject(this, expandObject(data), { performDeletions: true }); } };
+  const combat = { id: "fight", flags: {}, async update(data) { mergeObject(this, expandObject(data), mergeOptions); } };
   const repository = new GroupedCombatRepository();
   const key = buildPhaseStepKey("fight", { kind: "turn-start", round: 1, groupId: "g" }, "a", "dae", "Actor.a.ActiveEffect.effect");
   const state = { version: 1, revision: 0, receipts: { [key]: { status: "running" } }, executionPosition: { round: 1, groupId: "g" }, pendingTransition: { operationId: "op" } };
@@ -29,7 +36,7 @@ test("persistent step keys cannot become dotted Foundry paths or special update 
 });
 
 test("receipt patches preserve native flags/CAS and their size does not grow with completed history", async () => {
-  const updates = [], combat = { id: "fight", flags: {}, async update(data, options) { updates.push({ data, options }); mergeObject(this, expandObject(data), { performDeletions: true }); } };
+  const updates = [], combat = { id: "fight", flags: {}, async update(data, options) { updates.push({ data, options }); mergeObject(this, expandObject(data), mergeOptions); } };
   const repository = new GroupedCombatRepository(), key = buildPhaseStepKey("fight", { round: 1, groupId: "g", kind: "turn-start" }, "a", "dae", "Actor.a.ActiveEffect.active");
   const state = { version: 1, mode: "active", revision: 0, groups: [], receipts: {}, pendingTransition: { operationId: "op" }, durationAnchors: { old: { round: 1 } } };
   for (let i = 0; i < 1000; i++) state.receipts[`old${i}`] = { status: "done", operationId: `old-operation-${i}` };

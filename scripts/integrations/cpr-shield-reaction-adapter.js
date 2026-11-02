@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { isManagedShield, hasShieldEffect } from "../data/shield-spell-item.js?v=1.5.8";
+import { isManagedShield, hasShieldEffect } from "../data/shield-spell-item.js?v=1.5.59";
 
 const WRAPPED = Symbol.for(`${MODULE_ID}.cprShieldReactionAdapter`);
 const CONTENT = "CHRISPREMADES.Macros.MagicMissile.Shield";

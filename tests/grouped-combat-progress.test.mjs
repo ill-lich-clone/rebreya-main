@@ -7,8 +7,8 @@ import { registerGroupedCombatRuntime } from "../scripts/integrations/grouped-co
 
 const appRoot = process.env.REBREYA_FOUNDRY_APP_ROOT ?? "D:/FoundryVTT/Foundry Virtual Tabletop/resources/app";
 const dataRoot = process.env.REBREYA_FOUNDRY_DATA_ROOT ?? "D:/FoundryVTT/Data";
-const core = await readFile(join(appRoot, "client/documents/combat.mjs"), "utf8");
-const dnd = await readFile(join(dataRoot, "systems/dnd5e/dnd5e.mjs"), "utf8");
+const core = (await readFile(join(appRoot, "client/documents/combat.mjs"), "utf8")).replaceAll("\r\n", "\n");
+const dnd = (await readFile(join(dataRoot, "systems/dnd5e/dnd5e.mjs"), "utf8")).replaceAll("\r\n", "\n");
 const method = (source, name, from = 0) => {
   const start = source.indexOf(`  ${name}(`, from), end = source.indexOf("\n  }\n", start);
   if (start < 0 || end < 0) throw new Error(`Installed combat method missing: ${name}`);
@@ -18,7 +18,12 @@ const method = (source, name, from = 0) => {
 function fixture() {
   let sheets = 0, rings = 0, bookkeeping = 0;
   class Base { _onUpdate() { bookkeeping++; } _getCurrentState() { return this.current; } }
-  const Core = vm.runInNewContext(`(class Combat extends Base { #recordPreviousState() { return false; } ${method(core, "_onUpdate")} ${method(core, "updateCombatantActors")} })`, { Base, foundry: { utils: { deepClone: structuredClone } } });
+  // Hold the previous/current combatants apart so dnd5e attempts both ring refreshes on every update.
+  const Core = vm.runInNewContext(`(class Combat extends Base {
+    #recordPreviousState() { return false; }
+    #recordStateChange() { return { turnChange: false, stateChange: false }; }
+    ${method(core, "_onUpdate")} ${method(core, "updateCombatantActors")}
+  })`, { Base, foundry: { utils: { deepClone: structuredClone } } });
   const Combat = vm.runInNewContext(`(class Combat5e extends Core { ${method(dnd, "_onUpdate", dnd.indexOf("class Combat5e extends Combat"))} })`, { Core });
   class Combatant { refreshDynamicRing() { rings++; } }
   class Combatants extends Map { [Symbol.iterator]() { return this.values(); } }

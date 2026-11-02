@@ -1,3 +1,4 @@
+import { Crosshairs as CardCrosshairs } from "../integrations/world-card-automations/selected/lib/crosshairs.js?v=1.5.59";
 import {
   grapplePlacementDistanceFeet,
   grappleReachOriginRect,
@@ -100,7 +101,7 @@ export class GrapplePlacementPreview {
   #wait;
 
   constructor({
-    crosshairsProvider = () => globalThis.chrisPremades?.Crosshairs,
+    crosshairsProvider = () => CardCrosshairs,
     overlayFactory = createReachBoundaryOverlay,
     gridProvider = defaultGrid,
     sceneRectProvider = defaultSceneRect,
@@ -118,7 +119,7 @@ export class GrapplePlacementPreview {
   async choose({ sourceToken, targetToken, reachFeet, checkCollision = true } = {}) {
     const Crosshairs = this.#crosshairsProvider();
     if (typeof Crosshairs?.showCrosshairs !== "function") {
-      throw codedError("crosshairs-unavailable", "CPR Crosshairs is unavailable");
+      throw codedError("crosshairs-unavailable", "Crosshairs unavailable");
     }
     const grid = this.#gridProvider();
     const target = tokenFootprint(targetToken);
@@ -160,6 +161,7 @@ export class GrapplePlacementPreview {
         x: target.x + ((target.width * Number(grid?.size)) / 2),
         y: target.y + ((target.height * Number(grid?.size)) / 2),
         size: (Number(grid?.distance) * Math.max(target.width, target.height)) / 2,
+        actor: sourceToken.actor ?? sourceToken.object?.actor,
         icon: targetTexture(targetToken),
         drawIcon: true,
         drawOutline: true,

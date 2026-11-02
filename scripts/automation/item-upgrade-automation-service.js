@@ -242,8 +242,8 @@ export class ItemUpgradeAutomationService {
   }
   restoreWeaponModActivityRange(activity){
     const prior=this.weaponModActivityRanges.get(activity);this.weaponModActivityRanges.delete(activity);
-    if(prior?.range!==activity.range)return;
-    for(const field of ["value","long"])if(activity.range[field]===prior.effective[field])activity.range[field]=prior.base[field];
+    if(!prior || prior.range!==activity.range)return;
+    for(const field of Object.keys(prior.effective))if(activity.range[field]===prior.effective[field])activity.range[field]=prior.original[field];
   }
   projectWeaponModActivityRange(activity){
     this.restoreWeaponModActivityRange(activity);
@@ -253,13 +253,17 @@ export class ItemUpgradeAutomationService {
     const contributions=this.project(actor,item).contributions,conditions=this.moduleApi.combatAttackService?.getWeaponModAttackConditions?.(activity,null,{})??{},
       result=evaluateWeaponModAttack({host:{id:item.id},attack:{type:"ranged"},contributions,conditions});
     if(!result.allowed || result.rangeMultiplier===1 || result.needsDecision.some(row=>["movedFeet","underwater"].includes(row.field)))return;
-    const base={value:activity.range.value,long:activity.range.long},effective={...base};
+    const original={value:activity.range.value,long:activity.range.long};
+    // MIDI 14 reads inherited normal/long ranges from the weapon. dnd5e may already have folded long into activity.range.value.
+    const inherited=activity.range.override===false && globalThis.MidiQOL?.activityRanges?.(activity);
+    const base=inherited?{value:inherited.normal,long:inherited.long}:original,effective={...base};
     for(const field of ["value","long"])if(Number.isFinite(base[field]))effective[field]=base[field]*result.rangeMultiplier;
-    Object.assign(activity.range,effective);this.weaponModActivityRanges.set(activity,{range:activity.range,base,effective});
+    if(inherited){original.override=false;effective.override=true;}
+    Object.assign(activity.range,effective);this.weaponModActivityRanges.set(activity,{range:activity.range,original,base,effective});
   }
   getWeaponModActivityRangeState(activity){
     const prior=this.weaponModActivityRanges.get(activity);
-    return prior?.range===activity.range && ["value","long"].every(field=>activity.range[field]===prior.effective[field])?{...prior.base,units:activity.range.units}:null;
+    return prior && prior.range===activity.range && Object.keys(prior.effective).every(field=>activity.range[field]===prior.effective[field])?{...prior.base,units:activity.range.units}:null;
   }
   applyWeaponModActivityRuntime(item){
     for(const activity of values(item.system?.activities)){

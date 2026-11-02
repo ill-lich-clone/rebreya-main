@@ -5,6 +5,13 @@ export const GROUPED_NATIVE_WRITES = new WeakSet();
 const stateOf = combat => combat?.getFlag?.(MODULE_ID, GROUPED_COMBAT_FLAG) ?? combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG] ?? null;
 const progressOptions = state => ({ render: false, turnEvents: false, [MODULE_ID]: { groupedCombatProgress: state?.mode === "active" && Boolean(state.pendingTransition) } });
 
+function replaceField(parentPath, key, value) {
+  const copy = structuredClone(value);
+  return globalThis._replace
+    ? { [`${parentPath}.${key}`]: globalThis._replace(copy) }
+    : { [`${parentPath}.==${key}`]: copy };
+}
+
 export function isGroupedCombatProgressUpdate(combat, changed, options = {}) {
   if (options[MODULE_ID]?.groupedCombatProgress !== true || options.render !== false || options.turnEvents !== false) return false;
   const state = stateOf(combat), flags = changed?.flags, own = flags?.[MODULE_ID];
@@ -33,7 +40,7 @@ export class GroupedCombatRepository {
   async writeState(combat, state, { expectedRevision = 0 } = {}) {
     if ((stateOf(combat)?.revision ?? 0) !== expectedRevision) throw new Error("stale-combat");
     state.revision = expectedRevision + 1;
-    await combat.update({ [`flags.${MODULE_ID}.==${GROUPED_COMBAT_FLAG}`]: structuredClone(state) }, progressOptions(state));
+    await combat.update(replaceField(`flags.${MODULE_ID}`, GROUPED_COMBAT_FLAG, state), progressOptions(state));
     return state;
   }
   async writeReceipt(combat, state, key, { expectedRevision = 0 } = {}) {
@@ -42,7 +49,7 @@ export class GroupedCombatRepository {
     if (!live?.pendingTransition || !state.receipts[key]) throw new Error("missing-combat-checkpoint");
     state.revision = expectedRevision + 1;
     const path = `flags.${MODULE_ID}.${GROUPED_COMBAT_FLAG}`;
-    await combat.update({ [`${path}.revision`]: state.revision, [`${path}.receipts.==${key}`]: structuredClone(state.receipts[key]) }, progressOptions(state));
+    await combat.update({ [`${path}.revision`]: state.revision, ...replaceField(`${path}.receipts`, key, state.receipts[key]) }, progressOptions(state));
     return state;
   }
   async createMissingCombatants(combat, tokens) {

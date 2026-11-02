@@ -16,3 +16,26 @@ test("combat hook registers Shield filter once and preserves all original hook a
     assert.deepEqual(received, [args]);
   } finally { globalThis.game = oldGame; globalThis.Hooks = oldHooks; }
 });
+
+test("v13 forward turn boundary expires only active Rebreya Shield effects on the entering defender", async () => {
+  const old = { game: globalThis.game, Hooks: globalThis.Hooks };
+  const gm = { id: "gm", active: true, isGM: true };
+  const handlers = new Map();
+  const deleted = [];
+  const actor = { effects: [
+    { id: "shield", flags: { "rebreya-main": { shieldReaction: { version: 1 } } } },
+    { id: "other", flags: {} }
+  ], deleteEmbeddedDocuments: async (type, ids) => deleted.push([type, ids]) };
+  globalThis.game = { release: { generation: 13 }, users: { activeGM: gm }, user: gm };
+  globalThis.Hooks = { on: (name, callback) => handlers.set(name, [...handlers.get(name) ?? [], callback]) };
+  try {
+    registerCombatHooks({ midiReactionAdapter: {} });
+    const event = async (from, to) => {
+      for (const fn of handlers.get("combatTurnChange") ?? []) await fn({ combatant: { actor } }, { round: 1, turn: from }, { round: 1, turn: to });
+    };
+    await event(2, 1);
+    assert.deepEqual(deleted, []);
+    await event(1, 2);
+    assert.deepEqual(deleted, [["ActiveEffect", ["shield"]]]);
+  } finally { Object.assign(globalThis, old); }
+});

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {optionalModule,required,makeCatalog,makeCandidate,getHost,makeAttackCase,makeWeaponModMutationFixture,makeItem} from "./helpers/weapon-mod-fixture.mjs";
-import {readFile} from "node:fs/promises";
+import {loadInstalledFunction} from "./helpers/installed-combat-providers.mjs";
 import {CombatAttackService} from "../scripts/combat/attack-service.js";
 import {ItemUpgradeAutomationService} from "../scripts/automation/item-upgrade-automation-service.js";
 import {buildActorInventoryWeightSnapshot} from "../scripts/data/inventory-weight.js";
@@ -60,26 +60,48 @@ test("scope projects the native activity before MIDI range checks and restores a
   const fx=fixture();fx.install("opticheskiy-pritsel","scope",0,["top"]);
   const base=makeAttackCase("opticheskiy-pritsel"),combat=new CombatAttackService({itemUpgradeAutomationService:fx.service});fx.service.moduleApi.combatAttackService=combat;
   combat.getWeaponModAttackConditions=()=>base.conditions;
-  let preparedRange={value:60,long:180,units:"ft"};
+  let preparedRange={value:60,long:180,units:"ft",override:true};
   const authored={value:"@range",long:"3 * @range",units:"ft",override:true},activity={type:"attack",actionType:"rwak",item:fx.host,actor:fx.actor,_source:{range:structuredClone(authored)},
     range:{...preparedRange},prepareFinalData(){this.range={...preparedRange};}};
   fx.host.system.activities=new Map([["attack",activity]]);fx.service.applyWeaponModActivityRuntime(fx.host);activity.prepareFinalData();
-  assert.deepEqual(activity.range,{value:120,long:360,units:"ft"});activity.prepareFinalData();assert.equal(activity.range.long,360);
+  assert.deepEqual(activity.range,{value:120,long:360,units:"ft",override:true});activity.prepareFinalData();assert.equal(activity.range.long,360);
   assert.deepEqual(activity._source.range,authored);assert.deepEqual(fx.host.system.range,{value:60,long:180,units:"ft"});
   const grid={size:100,distance:5,type:1,units:"ft"};fx.actor.token={x:0,y:0,width:1,height:1,parent:{grid}};
   const target={x:6000,y:0,width:1,height:1,parent:{grid}};
   assert.equal(combat.getWeaponModRangeResolution(activity,target,2).long,360);
-  let source;try{source=await readFile(new URL("../../midi-qol/midi-qol.js",import.meta.url),"utf8");}catch(error){if(error.code!=="ENOENT")throw error;t.diagnostic("Installed MIDI source unavailable; native range values were verified.");}
-  if(source){
-    const start=source.indexOf("  const checkRangeFunction = ",source.indexOf("function checkActivityRange(")),terminator='}, "checkRangeFunction");',end=source.indexOf(terminator,start)+terminator.length;
-    assert.ok(start>0 && end>start);let distance=300;
-    const checkRange=new Function("canvas","game","configSettings","MODULE_ID","allAttackTypes","getDistance","checkMechanic","__name","debugEnabled","log",`${source.slice(start,end)}; return checkRangeFunction;`)
-      ({scene:{grid:{units:"ft"}}},{settings:{get:()=>false}},{optionalRules:{wallsBlockRange:"none"}},"midi-qol",["rwak"],()=>distance,()=>"fail",fn=>fn,0,()=>{});
-    const nativeActor={name:"Shooter",system:{},flags:{}},token={actor:nativeActor},midiTarget={name:"Target",actor:{}},midiItem={actor:nativeActor,labels:{properties:[]}},
-      nativeActivity={actor:nativeActor,item:midiItem,actionType:"rwak",range:activity.range,target:{affects:{type:"creature"}}};
-    assert.equal(checkRange(nativeActivity,token,[midiTarget]).result,"dis");distance=100;assert.equal(checkRange(nativeActivity,token,[midiTarget]).result,"normal");
+  let distance=300;
+  const provider="midi-qol/midi-qol.js", globals={
+    canvas:{scene:{grid:{units:"ft"}},tokens:{}},game:{settings:{get:()=>false}},configSettings:{optionalRules:{wallsBlockRange:"none"}},
+    MODULE_ID:"midi-qol",allAttackTypes:["rwak"],getToken:token=>token,getDistance:()=>distance,checkMechanic:()=>"fail",__name:fn=>fn,debugEnabled:0,log:()=>{}
+  };
+  let checkRange;
+  try{checkRange=await loadInstalledFunction(provider,"checkActivityRange",globals);}
+  catch(error){if(error.code!=="ENOENT")throw error;t.diagnostic("Installed MIDI source unavailable; native range values were verified.");}
+  if(checkRange){
+    fx.host.labels={properties:[]};activity.target={affects:{type:"creature"}};
+    const nativeResult=()=>checkRange(activity,{actor:fx.actor},[{name:"Target",actor:{}}],false).result;
+    if(String(checkRange).includes("activityRanges(")){
+      globals.activityRanges=await loadInstalledFunction(provider,"activityRanges");
+      const prior=Object.getOwnPropertyDescriptor(globalThis,"MidiQOL");
+      globalThis.MidiQOL={activityRanges:globals.activityRanges};
+      t.after(()=>{if(prior)Object.defineProperty(globalThis,"MidiQOL",prior);else delete globalThis.MidiQOL;});
+      // dnd5e 6 prepares value at the longest distance when inheriting from a weapon.
+      activity._source.range={override:false};
+      preparedRange={value:180,long:180,units:"ft",override:false};
+      activity.prepareFinalData();
+      assert.equal(nativeResult(),"dis");
+      distance=150;assert.equal(nativeResult(),"dis");
+      assert.equal(combat.getWeaponModRangeResolution(activity,target,2).normal,120);
+      fx.service.restoreWeaponModActivityRange(activity);
+      assert.deepEqual(activity.range,preparedRange);
+      assert.deepEqual(activity._source.range,{override:false});
+      assert.deepEqual(fx.host.system.range,{value:60,long:180,units:"ft"});
+      distance=300;assert.equal(nativeResult(),"fail");
+      activity._source.range=structuredClone(authored);preparedRange={value:60,long:180,units:"ft",override:true};activity.prepareFinalData();
+    }
+    distance=300;assert.equal(nativeResult(),"dis");distance=100;assert.equal(nativeResult(),"normal");
   }
-  preparedRange={value:90,long:270,units:"ft"};activity.prepareFinalData();assert.deepEqual(activity.range,{value:180,long:540,units:"ft"});
+  preparedRange={value:90,long:270,units:"ft",override:true};activity.prepareFinalData();assert.deepEqual(activity.range,{value:180,long:540,units:"ft",override:true});
   assert.equal(combat.getWeaponModRangeResolution(activity,target,2).long,540);
   base.conditions.aimMode=null;activity.prepareFinalData();assert.equal(activity.range.long,270);
   assert.deepEqual(activity._source.range,authored);

@@ -27,7 +27,9 @@ export function registerEquipmentBonusPatches({ CONFIG = globalThis.CONFIG, game
     const original = model.prepareDerivedData;
     model.prepareDerivedData = function (...args) {
       const bonus = getMechanizedClothingBonuses(this.parent);
-      addPreparedBonus(this.abilities?.str?.bonuses, "check", bonus.strengthCheckBonus);
+      const strength = this.abilities?.str;
+      if (strength?.check?.roll) addPreparedBonus(strength.check.roll, "bonus", bonus.strengthCheckBonus);
+      else addPreparedBonus(strength?.bonuses, "check", bonus.strengthCheckBonus);
       setPreparedContribution(this.attributes?.encumbrance?.multipliers, "maximum", bonus.capacityMultiplierBonus,
         before => `(${before || "1"}) + (1 / 15)`);
       return original.apply(this, args);

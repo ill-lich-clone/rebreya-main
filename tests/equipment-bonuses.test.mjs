@@ -152,3 +152,18 @@ test("native clothing preparation adds one STR check bonus and preserves flat ca
   assert.equal(model.abilities.str.value, 10);
   assert.deepEqual(model._source, source);
 });
+
+test("dnd5e 6 clothing composes the native STR check roll bonus without writing the legacy getter", () => {
+  const { actor, slot } = clothingFixture();
+  const roll = { bonus: "@prof" };
+  const legacy = { get check() { return roll.bonus; } };
+  class Character {
+    prepareDerivedData() { return this.abilities.str.check.roll.bonus; }
+  }
+  const model = Object.assign(new Character(), { parent: actor, abilities: { str: { check: { roll }, bonuses: legacy } } });
+  equipment.registerEquipmentBonusPatches({ CONFIG: { Actor: { dataModels: { character: Character } } }, game: { system: { id: "dnd5e" } } });
+  assert.equal(model.prepareDerivedData(), "(@prof) + 1");
+  assert.equal(model.prepareDerivedData(), "(@prof) + 1");
+  delete slot.itemId;
+  assert.equal(model.prepareDerivedData(), "@prof");
+});

@@ -2,6 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.2";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js";
+import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";
 import { ignoreProneFireDisadvantage } from "./prone-fire.js?v=1.5.22";
 import { canApplyFirearmTuning, allowMagicalFirearmTuning, startTuningForAreaFire } from "./firearm-tuning.js?v=1.5.22";
 
@@ -164,6 +165,15 @@ export function registerCombatHooks(moduleApi) {
   if (moduleApi.midiReactionAdapter) {
     Hooks.on("midi-qol.midiReady", () => moduleApi.midiReactionAdapter.initialize());
     Hooks.on("midi-qol.ReactionFilter", (...args) => moduleApi.midiReactionAdapter.filterReactions(...args));
+    Hooks.on("midi-qol.preDamageRollComplete", workflow => moduleApi.midiReactionAdapter.prepareMagicMissileReactions(workflow));
+    Hooks.on("dnd5e.calculateDamage", (actor, damages, options) => moduleApi.midiReactionAdapter.applyMagicMissileShield(actor, damages, options));
+    if (globalThis.game?.release?.generation === 13) {
+      Hooks.on("combatTurnChange", (combat, previous, current) => {
+        if (isActiveGmClient(globalThis.game) && combatTurnChangeDirection(previous, current) > 0) {
+          return expireV13ShieldAtTurnStart(combat.combatant?.actor);
+        }
+      });
+    }
   }
   if (moduleApi.reactionQueueService) {
     Hooks.on("userConnected", () => moduleApi.reactionQueueService.recoverExpiredReactionMessages());

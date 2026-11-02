@@ -8,12 +8,16 @@
     },
     {
       "id": "shield-rebreya",
-      "sourceIdentifier": "shield",
-      "sourcePack": "chris-premades.CPRSpells"
+      "sourceIdentifier": "shield"
     },
     {
       "id": "melfs-minute-meteors-rebreya",
       "builder": "melfs-minute-meteors",
+      "version": 1
+    },
+    {
+      "id": "antagonize-rebreya",
+      "builder": "antagonize",
       "version": 1
     }
   ]

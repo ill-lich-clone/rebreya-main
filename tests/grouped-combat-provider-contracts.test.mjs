@@ -79,14 +79,29 @@ test("installed native D20Roll normalization stays shareable and all native sema
 test("installed MIDI ActivityOverTime route awaits its registered handler and preserves private active/offline ownership", async () => {
   const calls = [], actor = { uuid: "Actor.a" }, e = effect("activity", {}, [{ key: "flags.midi-qol.ActivityOverTime.a", value: "Item.activity" }]);
   let owner = { id: "player", active: true };
+  const provider = "midi-qol/midi-qol.js";
+  const route = await loadInstalledFunction(provider, "doActivityOverTimeEffect");
+  const globals = { MODULE_ID: "midi-qol" };
+  if (String(route).includes("toMessageMode(")) {
+    e.system = { changes: e.changes };
+    globals.toMessageMode = await loadInstalledFunction(provider, "toMessageMode", {
+      rollModeToMessageMode: await loadInstalledFunction(provider, "rollModeToMessageMode")
+    });
+  }
+  let rollMode = "selfroll";
   const fn = await loadInstalledFunction("midi-qol/midi-qol.js", "doActivityOverTimeEffect", {
+    ...globals,
     CONST: { DICE_ROLL_MODES: { PRIVATE: "gmroll", SELF: "selfroll" } }, game: { user: { id: "gm" } },
-    playerForActor: () => owner, getOvertimeActivity: async () => ({ midiProperties: { rollMode: "selfroll" } }),
-    localActivityOverTimeEffect: async () => calls.push("local"), socketlibSocket: { executeAsUser: async (_handler, id) => { await Promise.resolve(); calls.push(id); } }
+    playerForActor: () => owner, getOvertimeActivity: async () => ({ midiProperties: { rollMode } }),
+    localActivityOverTimeEffect: async () => calls.push("local"), socketlibSocket: { executeAsUser: async (handler, id, payload) => {
+      assert.equal(handler, "localActivityOverTimeEffect"); assert.equal(payload.actorUuid, actor.uuid); assert.equal(payload.effectUuid, e.uuid);
+      await Promise.resolve(); calls.push(id);
+    } }
   });
   await fn(actor, e, true); assert.deepEqual(calls, ["player"]);
   owner.active = false; await fn(actor, e, true); assert.deepEqual(calls, ["player", "local"]);
-  e.disabled = true; await fn(actor, e, true); assert.equal(calls.length, 2);
+  owner.active = true; rollMode = "publicroll"; await fn(actor, e, true); assert.deepEqual(calls, ["player", "local", "local"]);
+  e.disabled = true; await fn(actor, e, true); assert.equal(calls.length, 3);
 });
 
 test("the grouped MIDI adapter awaits each member's native legacy/activity workflow and preserves owner routing", async () => {

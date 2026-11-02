@@ -1688,71 +1688,40 @@ test("rogue mantle exposes shadow-step as a native teleport activity", () => {
   assert.doesNotMatch(activity.description.chatFlavor, /свободн/iu);
 });
 
-test("active CPR Antagonize resolves to its compendium UUID", async () => {
-  const pack = {
-    collection: "chris-premades.CPRSpells",
-    getIndex: async () => [{
-      _id: "bJRgW6qhbNU3KgoR",
-      name: "Враждебность / Antagonize",
-      system: { identifier: "antagonize" },
-      flags: {
-        "chris-premades": { info: { identifier: "antagonize", name: "Antagonize" } },
-        babele: { originalName: "Antagonize" }
-      }
-    }]
-  };
-  const game = {
-    modules: new Map([["chris-premades", { active: true }]]),
-    packs: new Map([["chris-premades.CPRSpells", pack]])
-  };
-
-  assert.equal(
-    await magicItemsCompendium.resolveOptionalCprSpellUuid(game, "Antagonize"),
-    "Compendium.chris-premades.CPRSpells.Item.bJRgW6qhbNU3KgoR"
-  );
-});
-
-test("inactive CPR does not read its spell pack", async () => {
-  let indexReads = 0;
-  const game = {
-    modules: new Map([["chris-premades", { active: false }]]),
-    packs: new Map([["chris-premades.CPRSpells", {
-      async getIndex() {
-        indexReads += 1;
-        return [{ _id: "bJRgW6qhbNU3KgoR", name: "Antagonize" }];
-      }
-    }]])
-  };
-
-  assert.equal(await magicItemsCompendium.resolveOptionalCprSpellUuid(game, "Antagonize"), "");
-  assert.equal(indexReads, 0);
-});
-
-test("rogue mantle omits Antagonize when CPR is unavailable", async () => {
+test("rogue mantle casts the local Antagonize with its original identity, DC and daily budget", () => {
   const source = MAGIC_ITEMS.find((item) => item.id === "мантия-плута");
   const [item] = magicItemsCompendium.normalizeMagicItems([source]);
-  const withoutCpr = magicItemsCompendium.createMagicItemData(item, new Map());
-  const withCpr = magicItemsCompendium.createMagicItemData(item, new Map(), null, {
-    cprAntagonizeUuid: "Compendium.chris-premades.CPRSpells.Item.cpr-antagonize"
-  });
-  const withoutNames = Object.values(withoutCpr.system.activities ?? {}).map((entry) => entry.name);
-  const antagonist = Object.values(withCpr.system.activities ?? {})
-    .find((entry) => entry.name === "Antagonize");
-
-  assert.equal(withoutNames.includes("Antagonize"), false);
-  assert.equal(antagonist.spell.uuid, "Compendium.chris-premades.CPRSpells.Item.cpr-antagonize");
+  const localUuid = "Compendium.world.rebreya-spells.Item.rbrAntagonize001";
+  const result = magicItemsCompendium.createMagicItemData(item, new Map());
+  const casts = Object.values(result.system.activities).filter(entry => entry.type === "cast");
+  assert.equal(casts.length, 1);
+  const [antagonist] = casts;
+  assert.equal(antagonist._id, "r4dqh51772ngy000");
+  assert.equal(antagonist.spell.uuid, localUuid);
   assert.deepEqual(antagonist.spell.challenge, { attack: null, save: 15, override: true });
+  assert.equal(antagonist.spell.level, 3);
+  assert.equal(antagonist.consumption.spellSlot, false);
   assert.deepEqual(antagonist.consumption.targets, [{ type: "activityUses", value: "1" }]);
   assert.equal(antagonist.uses.max, "1");
-  assert.deepEqual(antagonist.uses.recovery, [{
-    period: "dawn",
-    type: "recoverAll",
-    formula: ""
-  }]);
-  assert.notEqual(
-    withoutCpr.flags["rebreya-main"].signature,
-    withCpr.flags["rebreya-main"].signature
-  );
+  assert.deepEqual(antagonist.uses.recovery, [{ period: "dawn", type: "recoverAll", formula: "" }]);
+});
+
+test("local Antagonize is a usable native save spell with the existing world spell rules", async () => {
+  const { buildAntagonizeSpellItem } = await import("../scripts/data/antagonize-spell-item.js");
+  const item = buildAntagonizeSpellItem(), [save] = Object.values(item.system.activities);
+  assert.equal(item._id, "rbrAntagonize001");
+  assert.equal(item.system.level, 3);
+  assert.equal(item.system.school, "enc");
+  assert.equal(item.system.range.value, "30");
+  assert.deepEqual(item.system.properties, ["vocal", "somatic", "material"]);
+  assert.equal(save.type, "save");
+  assert.deepEqual(save.save.ability, ["wis"]);
+  assert.equal(save.damage.onSave, "half");
+  assert.equal(save.damage.parts[0].number, 4);
+  assert.equal(save.damage.parts[0].denomination, 4);
+  assert.deepEqual(save.damage.parts[0].types, ["psychic"]);
+  assert.equal(save.damage.parts[0].scaling.number, 1);
+  assert.deepEqual(item.flags["chris-premades"].macros.midi.item, ["antagonize"]);
 });
 
 test("second-pass passive automation keeps only unconditional bonuses across rarities", () => {

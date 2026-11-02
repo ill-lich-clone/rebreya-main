@@ -1,3 +1,4 @@
+import { ANTAGONIZE_UUID, prepareAntagonizeCastMigration } from "./antagonize-spell-item.js?v=1.5.59";
 import { MAGIC_ITEMS_COMPENDIUM_LABEL, MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import {
   buildNamedIconLookup,
@@ -588,46 +589,11 @@ const CHARGED_MAGIC_ITEM_SPELLS = {
   }
 };
 
-const CPR_MODULE_ID = "chris-premades";
-const CPR_SPELLS_PACK_ID = `${CPR_MODULE_ID}.CPRSpells`;
-
-export async function resolveOptionalCprSpellUuid(game, spellName) {
-  try {
-    if (game?.modules?.get?.(CPR_MODULE_ID)?.active !== true) return "";
-    const pack = game?.packs?.get?.(CPR_SPELLS_PACK_ID);
-    if (!pack || typeof pack.getIndex !== "function") return "";
-    const expectedName = String(spellName ?? "").trim().toLocaleLowerCase("en");
-    if (!expectedName) return "";
-    const expectedIdentifier = expectedName.replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
-    const index = await pack.getIndex({
-      fields: [
-        "name",
-        "system.identifier",
-        `flags.${CPR_MODULE_ID}.info.identifier`,
-        `flags.${CPR_MODULE_ID}.info.name`,
-        "flags.babele.originalName"
-      ]
-    });
-    const match = Array.from(index ?? []).find((entry) => {
-      const identifiers = [
-        entry?.system?.identifier,
-        entry?.flags?.[CPR_MODULE_ID]?.info?.identifier
-      ].map((value) => String(value ?? "").trim().toLocaleLowerCase("en"));
-      const names = [
-        entry?.name,
-        entry?.flags?.[CPR_MODULE_ID]?.info?.name,
-        entry?.flags?.babele?.originalName
-      ].map((value) => String(value ?? "").trim().toLocaleLowerCase("en"));
-      return identifiers.includes(expectedIdentifier) || names.includes(expectedName);
-    });
-    const documentId = String(match?._id ?? match?.id ?? "").trim();
-    if (!documentId) return "";
-    return String(match?.uuid ?? "").trim()
-      || `Compendium.${CPR_SPELLS_PACK_ID}.Item.${documentId}`;
-  }
-  catch {
-    return "";
-  }
+async function resolveAntagonizeUuid(game) {
+  const pack = game.packs?.get?.("world.rebreya-spells");
+  const index = await pack?.getIndex?.({ fields: ["flags.rebreya-main.spellId"] });
+  const spell = Array.from(index ?? []).find(entry => entry.flags?.[MODULE_ID]?.spellId === "antagonize-rebreya");
+  return spell ? `Compendium.${pack.collection}.Item.${spell._id}` : ANTAGONIZE_UUID;
 }
 const MAGIC_ITEM_UTILITY_DEFINITIONS = {
   "амулет-пьяницы": {
@@ -2518,7 +2484,7 @@ for (const [itemId, note] of [
   ["корона-несущего-гнев", "Fear со Сл 15 раз в рассвет автоматизирован; трата Кости Хитов для дополнительного психического урона и отсутствие концентрации у минутного заклинания остаются ручными."],
   ["мантия-звезд", "Бонус +1 к спасброскам, шесть невосстанавливаемых в системе звёзд, Magic Missile 5-го уровня и астральные действия автоматизированы; восстановление 1к6 звёзд на закате и фактический планарный переход остаются ручными."],
   ["мантия-мистраля", "Сопротивление холоду, Sleet Storm со Сл 14 и спасбросок ветра с уроном 1к6 автоматизированы; prone, ограничение раз за ход и особые преимущества владельца внутри метели остаются ручными."],
-  ["мантия-плута", "Добавочные 60 футов тёмного зрения и бонусная телепортация на 30 футов без проверки освещения автоматизированы; Antagonize раз в рассвет добавляется из активного CPR, а преимущество первой рукопашной атаки остаётся ручным."],
+  ["мантия-плута", "Добавочные 60 футов тёмного зрения и бонусная телепортация на 30 футов без проверки освещения автоматизированы; Враждебность со Сл 15 доступна раз в рассвет из компендиума заклинаний Ребреи, а преимущество первой рукопашной атаки остаётся ручным."],
   ["морозный-клинок", "Сопротивление огню автоматизировано; дополнительный урон 1к6 холодом только этим оружием, температурный свет и тушение немагического огня раз в час остаются ручными."],
   ["перчатки-воровства", "Безусловный бонус +5 к Ловкости рук автоматизирован; отдельный бонус +5 только к проверкам Ловкости для вскрытия замков остаётся ручным."],
   ["плащ-летучей-мыши", "Преимущество Скрытности и Polymorph раз в рассвет автоматизированы; условия тусклого света, занятые руки, скорость полёта 40 футов и ограничение формы летучей мышью остаются ручными."],
@@ -2824,7 +2790,7 @@ function buildPoisonDaggerSaveActivity(item) {
   }];
 }
 
-function buildMagicItemActivities(item, { cprAntagonizeUuid = "" } = {}) {
+function buildMagicItemActivities(item, { antagonizeUuid = ANTAGONIZE_UUID } = {}) {
   const itemId = String(item?.id ?? "").trim();
   const instrumentSpells = resolveNativeInstrumentSpellDefinition(item);
   const chargedDefinition = CHARGED_MAGIC_ITEM_SPELLS[itemId] ?? null;
@@ -2890,7 +2856,7 @@ function buildMagicItemActivities(item, { cprAntagonizeUuid = "" } = {}) {
       ? buildAttackActivity(item, definition)
       : buildUtilityActivity(item, definition));
   }
-  if (itemId === "мантия-плута" && String(cprAntagonizeUuid).trim()) {
+  if (itemId === "мантия-плута") {
     const activityId = stableHashId(
       `magic-item:${item.id}:external-spell:antagonize`,
       "magic-item-activity"
@@ -2912,7 +2878,7 @@ function buildMagicItemActivities(item, { cprAntagonizeUuid = "" } = {}) {
         level: 3,
         properties: ["vocal", "somatic", "material"],
         spellbook: true,
-        uuid: String(cprAntagonizeUuid).trim()
+        uuid: antagonizeUuid
       },
       flags: { [MODULE_ID]: { magicItemAutomation: true } }
     }]);
@@ -4324,7 +4290,7 @@ export class MagicItemsCompendiumService {
     this.gear = await this.gearProvider();
     const activityOptions = {
       gear: this.gear,
-      cprAntagonizeUuid: await resolveOptionalCprSpellUuid(game, "Antagonize")
+      antagonizeUuid: await resolveAntagonizeUuid(game)
     };
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
@@ -4499,6 +4465,7 @@ export class MagicItemsCompendiumService {
         }
         updates.push({
           item,
+          magicItemId: resolution.magicItemId,
           update: merge.update,
           effectIdsToDelete: merge.effectIdsToDelete
         });
@@ -4516,6 +4483,9 @@ export class MagicItemsCompendiumService {
         const plannedRow = plannedRows[index];
         const plan = updates[index];
         try {
+          if (plan.magicItemId === "мантия-плута") {
+            await prepareAntagonizeCastMigration(actor, plan.item, plan.update);
+          }
           if (plan.effectIdsToDelete.length > 0) {
             await plan.item.deleteEmbeddedDocuments("ActiveEffect", plan.effectIdsToDelete);
           }

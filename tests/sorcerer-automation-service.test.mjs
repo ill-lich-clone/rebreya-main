@@ -4000,3 +4000,37 @@ test("failed final Twinned cast leaves the native target selection alone while r
     globalThis.game = previousGame;
   }
 });
+
+test("saved Quickened feat uses two points from the existing Sorcerer resource and only the selected native slot; abort refunds", async () => {
+  for (const cancelled of [false,true]) {
+    const actor=levelActor(5,{includePoints:true});
+    const points=pointsItem(actor);
+    const formula="@scale.sorcerer-rework-v011.sorcery-points";
+    points._source={system:{uses:{max:formula,recovery:[{period:"lr",type:"recoverAll",formula:""}]}}};
+    points.system.uses.max=32;
+    actor.system.spells={spell1:{value:4},spell2:{value:3}};
+    actor.items.contents.push(makeItemFromData(actor,{type:"feat",name:"Метамагия: Быстрое заклинание",
+      system:{identifier:"metamagic-quickened-spell"},flags:{"chris-premades":{info:{identifier:"quickenedSpell"}}}},"oldQuickened"));
+    const service=new SorcererAutomationService({});
+    const activity=makeSorcererSpell(actor,{baseLevel:1,system:{activation:{type:"action",value:1}}});
+    let preflight,final;
+    activity.use=async usage=>{
+      if(!preflight){preflight=usage;return {};}
+      final=usage;
+      if(cancelled)return undefined;
+      if(usage.consume.spellSlot)actor.system.spells[usage.spell.slot].value--;
+      return {message:{}};
+    };
+    const usage={spell:{slot:"spell2"},consume:{spellSlot:true},sorcererVirtualSpellLevel:{spellLevel:2,castingMode:"normal",metamagic:{ids:["quickened-spell"]}}};
+    service.deferDnd5ePreUseActivity(activity,usage,{},{});
+    await waitForDeferredActivityUse();assert.ok(preflight);
+    service.finalizeDnd5ePreUseActivity(activity,completeReactionCheck(preflight),{},{});
+    await waitForDeferredActivityUse();
+    assert.deepEqual(final.activation,{type:"bonus",value:1});
+    assert.equal(points.system.uses.spent,cancelled?0:2);
+    assert.equal(actor.system.spells.spell2.value,cancelled?3:2);
+    assert.equal(actor.system.spells.spell1.value,4);
+    assert.equal(points._source.system.uses.max,formula);
+    assert.ok(points.updates.every(patch=>Object.keys(patch).every(path=>path==="system.uses.spent")));
+  }
+});

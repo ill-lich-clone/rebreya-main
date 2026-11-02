@@ -5,7 +5,8 @@ import {
 } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildCounterspellActivity } from "./counterspell-activity.js";
-import { buildShieldSpellItem } from "./shield-spell-item.js?v=1.5.8";
+import { buildShieldSpellItem } from "./shield-spell-item.js?v=1.5.59";
+import { buildAntagonizeSpellItem } from "./antagonize-spell-item.js?v=1.5.59";
 import { ensurePackSidebarFolder } from "./compendium-utils.js?v=1.4.327";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {
@@ -21,6 +22,10 @@ const REBREYA_SOURCE_LABEL = "Rebreya";
 const SPELLS_DATA_PATH = `modules/${MODULE_ID}/data/rebreya-spells-v01.json`;
 const COUNTERSPELL_ID = "counterspell-rebreya";
 const SHIELD_ID = "shield-rebreya";
+const SPELL_BUILDERS = new Map([
+  [MELFS_MINUTE_METEORS_RECIPE, { id: MELFS_MINUTE_METEORS_ID, version: MELFS_MINUTE_METEORS_VERSION, build: buildMelfsMinuteMeteorsItem }],
+  ["antagonize", { id: "antagonize-rebreya", version: 1, build: buildAntagonizeSpellItem }]
+]);
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -113,9 +118,9 @@ function normalizedSourceDefinition(entry) {
   if (id === COUNTERSPELL_ID && sourceIdentifier && !cleanString(entry?.builder) && entry?.version == null) {
     return { id, sourceIdentifier };
   }
-  if (id === SHIELD_ID && sourceIdentifier === "shield" && entry?.sourcePack === "chris-premades.CPRSpells"
+  if (id === SHIELD_ID && sourceIdentifier === "shield" && !entry?.sourcePack
     && !cleanString(entry?.builder) && entry?.version == null) {
-    return { id, sourceIdentifier, sourcePack: entry.sourcePack };
+    return { id, sourceIdentifier };
   }
   return null;
 }
@@ -124,10 +129,8 @@ function normalizedBuilderDefinition(entry) {
   const id = cleanString(entry?.id);
   const builder = cleanString(entry?.builder);
   const version = Number(entry?.version);
-  if (id === MELFS_MINUTE_METEORS_ID
-    && builder === MELFS_MINUTE_METEORS_RECIPE
-    && version === MELFS_MINUTE_METEORS_VERSION
-    && !cleanString(entry?.sourceIdentifier)) {
+  const recipe = SPELL_BUILDERS.get(builder);
+  if (recipe && id === recipe.id && version === recipe.version && !cleanString(entry?.sourceIdentifier)) {
     return { id, builder, version };
   }
   return null;
@@ -221,8 +224,9 @@ export function buildRebreyaSpellItem(source) {
 }
 
 export function buildManagedSpellEntry(definition, source = null, options = {}) {
-  const data = definition?.builder === MELFS_MINUTE_METEORS_RECIPE
-    ? buildMelfsMinuteMeteorsItem()
+  const recipe = SPELL_BUILDERS.get(definition?.builder);
+  const data = recipe
+    ? recipe.build()
     : definition?.id === SHIELD_ID ? buildShieldSpellItem(source, options) : buildRebreyaSpellItem(source);
   data.flags ??= {};
   data.flags[MODULE_ID] = {
@@ -270,29 +274,34 @@ export class SpellsCompendiumService {
     const entries = [];
     for (const definition of spells) {
       if (definition.sourceIdentifier) {
-        const sourceDocument = await resolveSourceSpell(definition.sourcePack ?? sourcePack, definition.sourceIdentifier);
+        const sourceDocument = await resolveSourceSpell(sourcePack, definition.sourceIdentifier);
         if (!sourceDocument) {
           throw new Error(`Unable to load dnd5e spell '${definition.sourceIdentifier}'.`);
         }
-        const sourceData = getSpellSource(sourceDocument);
-        let description = "";
-        if (definition.id === SHIELD_ID && !sourceData.system?.description?.value) {
-          description = getSpellSource(await resolveSourceSpell(sourcePack, "shield"))?.system?.description?.value ?? "";
-        }
-        entries.push(buildManagedSpellEntry(definition, sourceData, { description }));
+        entries.push(buildManagedSpellEntry(definition, getSpellSource(sourceDocument)));
       }
       else {
         entries.push(buildManagedSpellEntry(definition));
       }
     }
 
+    const documents = await getPackDocuments(pack);
+    const existingShield = documents.find(document => document.getFlag?.(MODULE_ID, "managed")
+      && document.getFlag(MODULE_ID, "spellId") === SHIELD_ID);
     const sync = await syncFlaggedManagedDocuments({
       pack,
       entries,
-      documents: await getPackDocuments(pack),
+      documents,
       moduleId: MODULE_ID,
       sourceIdFlag: "spellId",
-      buildData: (entry) => entry.data
+      buildData: entry => {
+        if (entry.spellId !== SHIELD_ID) return entry.data;
+        const flags = { ...entry.data.flags };
+        for (const scope of ["chris-premades", "cat"]) {
+          if (existingShield?.flags?.[scope]) flags[`-=${scope}`] = null;
+        }
+        return { ...entry.data, flags };
+      }
     });
     return { pack: game.packs.get(PACK_ID) ?? pack, sync };
   }
