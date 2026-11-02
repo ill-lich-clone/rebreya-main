@@ -11,6 +11,7 @@ export const TREAT_WOUNDS_MACRO_SOURCE_ID = "treat-wounds-macro";
 export const CREATURE_SIZE_MACRO_SOURCE_ID = "resize-creature-macro";
 export const START_COMBAT_MACRO_SOURCE_ID = "start-combat-macro";
 export const DECAYING_RECOVERY_MACRO_SOURCE_ID = "decaying-recovery-macro";
+export const MOUNTED_MACRO_SOURCE_ID = "mounted-toggle-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -137,6 +138,11 @@ export function buildDecayingRecoveryMacroData(folderId, options = {}) {
     sourceId: DECAYING_RECOVERY_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
 }
 
+export function buildMountedMacroData(folderId, options = {}) {
+  return macroData({ name: "Верхом", command: "await game.rebreyaMain?.toggleMounted?.();",
+    sourceId: MOUNTED_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function macroSnapshot(macro) {
   return {
     name: macro?.name,
@@ -207,6 +213,9 @@ export class GrappleMacroService {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, CREATURE_SIZE_MACRO_SOURCE_ID, buildCreatureSizeMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
+      await this.#syncMacro(game, MOUNTED_MACRO_SOURCE_ID, buildMountedMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, START_COMBAT_MACRO_SOURCE_ID, buildStartCombatMacroData(folderId, {

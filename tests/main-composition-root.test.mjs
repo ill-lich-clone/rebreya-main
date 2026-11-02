@@ -10,7 +10,7 @@ import { TransportCompendiumService } from "../scripts/data/transport-compendium
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.5.48";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
-import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.5.15";
+import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.5.58";
 import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.4.356";
 import {
   COMMAND_REQUEST_TYPE,
@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.57");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.57.js"]);
+  assert.equal(manifest.version, "1.5.58");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.58.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.29/u);
@@ -327,6 +327,22 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.ok(moduleApi.grappleMacroService instanceof GrappleMacroService);
     assert.ok(moduleApi.grapplePlacementPreview instanceof GrapplePlacementPreview);
     assert.equal(typeof moduleApi.toggleGrapple, "function");
+    assert.equal(typeof moduleApi.toggleMounted, "function");
+    const previousCanvas = globalThis.canvas, previousTargets = game.user.targets, previousToggle = moduleApi.combatAttackService.toggleMounted;
+    const rider = { uuid: "Scene.scene.Token.rider", flags: { "rebreya-main": {} } }, mount = { uuid: "Scene.scene.Token.mount" };
+    const mountedRequests = [];
+    globalThis.canvas = { tokens: { controlled: [{ document: rider }] } };
+    game.user.targets = new Set([{ document: mount }]);
+    moduleApi.combatAttackService.toggleMounted = async (payload, context) => { mountedRequests.push({ payload, context }); return { mounted: payload.action === "mount" }; };
+    try {
+      await moduleApi.toggleMounted();
+      rider.flags["rebreya-main"].mountedOn = mount.uuid; game.user.targets = new Set();
+      await moduleApi.toggleMounted();
+      assert.deepEqual(mountedRequests.map(entry => [entry.payload.action, entry.payload.riderTokenUuid, entry.payload.mountTokenUuid]), [
+        ["mount", rider.uuid, mount.uuid], ["dismount", rider.uuid, mount.uuid]
+      ]);
+      assert.ok(mountedRequests.every(entry => entry.context.sender === activeGm));
+    } finally { globalThis.canvas = previousCanvas; game.user.targets = previousTargets; moduleApi.combatAttackService.toggleMounted = previousToggle; }
     assert.equal(typeof moduleApi.moveGrappled, "function");
     assert.equal(typeof moduleApi.applyTwisted, "function");
     const mutateBeforeDisarmCheck = moduleApi.privilegedMutationGateway.mutate;

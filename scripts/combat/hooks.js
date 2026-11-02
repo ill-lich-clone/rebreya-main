@@ -89,6 +89,12 @@ export function registerCombatHooks(moduleApi) {
   Hooks.on("dnd5e.preUseActivity", canUseActivityFromLiveToken);
 
   if (hasAttackService) {
+    Hooks.on("midi-qol.DamageRollComplete", workflow => moduleApi.combatAttackService.applyMidiMountedChargeDamage?.(workflow).catch(error => {
+      console.error(`${MODULE_ID} | Mounted weapon damage failed.`, error);
+      globalThis.ui?.notifications?.warn?.(error.message);
+      return true;
+    }));
+    Hooks.on("dnd5e.preCalculateDamage", (actor, damages, options) => moduleApi.combatAttackService.applyMountedChargePreCalculateDamage?.(actor, damages, options) ?? true);
     Hooks.on("midi-qol.preCheckHits", workflow=>moduleApi.combatAttackService.applyMidiFirearmMisfire?.(workflow));
     Hooks.on("midi-qol.hitsChecked", workflow=>moduleApi.combatAttackService.applyMidiFirearmMisfire?.(workflow,{afterHits:true}));
     Hooks.on("midi-qol.preDamageRoll", workflow=>moduleApi.combatAttackService.canRollFirearmDamage?.(workflow));
@@ -353,6 +359,7 @@ export function registerCombatHooks(moduleApi) {
     });
     Hooks.on("updateToken", (tokenDocument,changed,options) => {
       index.refreshToken(tokenDocument);
+      moduleApi.combatAttackService?.noteChargeMovement?.(tokenDocument, changed);
       moduleApi.combatAttackService?.handleWeaponModTokenMove?.(tokenDocument,changed,options)?.catch(error=>console.error(`${MODULE_ID} | Weapon mod movement failed.`,error));
       if(["x","y","rotation","elevation","actorId","actorLink"].some(key=>Object.hasOwn(changed??{},key)))simpleUpgrades?.requestSync?.(tokenDocument?.actor,"token-light")?.catch(error=>console.error(`${MODULE_ID} | Weapon mod light sync failed.`,error));
     });

@@ -321,14 +321,14 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.56";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.58";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.2";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.2";
 import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.2";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.46";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.58";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
@@ -375,9 +375,10 @@ import {
 } from "./combat/performer-automation-service.js?v=1.5.22";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.57";
 import { registerBardicInspirationCommand, registerBladeFlourishCommand, registerBladeFlourishSpeedCommand } from "./infrastructure/foundry/bardic-inspiration-command.js?v=1.5.56";
+import { MOUNTED_TOGGLE_COMMAND, registerMountedToggleCommand, registerMountedChargeDamageCommand } from "./infrastructure/foundry/mounted-charge-command.js?v=1.5.58";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.46";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.15";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.58";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
 import { getActorHandReservations } from "./integrations/held-items.js?v=1.5.29";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
@@ -2337,6 +2338,28 @@ export class RebreyaMainModule {
     }
   }
 
+  async toggleMounted() {
+    try {
+      const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+      if (controlled.length !== 1) throw new Error("Выберите одного всадника.");
+      const rider = controlled[0]?.document ?? controlled[0];
+      const mountedOn = rider?.flags?.[MODULE_ID]?.mountedOn;
+      const targets = Array.from(globalThis.game?.user?.targets ?? []);
+      if (!mountedOn && targets.length !== 1) throw new Error("Выберите одного скакуна целью.");
+      const target = targets[0]?.document ?? targets[0];
+      const payload = { operationId: createSocketRequestId("mounted"), riderTokenUuid: rider?.uuid,
+        mountTokenUuid: mountedOn || target?.uuid, action: mountedOn ? "dismount" : "mount" };
+      const result = await (isActiveGmClient(globalThis.game)
+        ? this.combatAttackService.toggleMounted(payload, { sender: globalThis.game.user })
+        : this.socketCommandBus.request(MOUNTED_TOGGLE_COMMAND, payload, { requestId: payload.operationId }));
+      globalThis.ui?.notifications?.info?.(result?.mounted ? "Всадник верхом." : "Всадник спешился.");
+      return result;
+    } catch (error) {
+      globalThis.ui?.notifications?.warn?.(error.message);
+      return null;
+    }
+  }
+
   async moveGrappled() {
     try {
       const controlled = globalThis.canvas?.tokens?.controlled ?? [];
@@ -2913,6 +2936,8 @@ export class RebreyaMainModule {
     registerBardicInspirationCommand(this.socketCommandBus, this.bardicInspirationCompatService);
     registerBladeFlourishCommand(this.socketCommandBus, this.bardicInspirationCompatService);
     registerBladeFlourishSpeedCommand(this.socketCommandBus, this.bardicInspirationCompatService);
+    registerMountedToggleCommand(this.socketCommandBus, this.combatAttackService);
+    registerMountedChargeDamageCommand(this.socketCommandBus, this.combatAttackService);
     this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
       validate: isValidPerformerApplyResultPayload,
       authorize: (payload, { sender }) => traderActorIsOwnedByUser(

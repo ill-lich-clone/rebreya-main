@@ -8,7 +8,9 @@ import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignatur
 import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.5.23";
 import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
-import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { MOUNTED_CHARGE_DAMAGE_COMMAND, isValidMountedToggle, isValidMountedChargeDamage } from "../infrastructure/foundry/mounted-charge-command.js?v=1.5.58";
+import { chargeMovement, mountedDamage } from "./mounted-charge-rules.js?v=1.5.58";
 import { measureStorageTokenDistance, storageTokenFootprintCenters, measureStorageGridDistance } from "../data/storage-access.js";
 import { inferRebreyaAmmunitionSubtype, inferRebreyaWeaponAmmunitionSubtype } from "../data/ammunition-types.js";
 import {
@@ -914,6 +916,289 @@ export class CombatAttackService {
     this._weaponModDamageWarnings=new WeakSet();
     this._ammunitionShots = new WeakMap();
     this._magazineEditors = new Map();
+    this.chargeMovementRecords = new Map();
+    this._chargeTokenMoves = new Map();
+    this._chargeMovementIds = new Map();
+    this._chargeMoveSequence = 0;
+    this._mountedChargeWorkflows = new WeakMap();
+  }
+
+  async applyMidiMountedChargeDamage(workflow) {
+    if (!workflow || typeof workflow !== "object") return true;
+    if (this._mountedChargeWorkflows.has(workflow)) return this._mountedChargeWorkflows.get(workflow);
+    const item = workflow.item, properties = item?.system?.properties;
+    const has = key => properties?.has?.(key) || properties?.includes?.(key);
+    const hits = [...new Map([...Array.from(workflow.hitTargets ?? []), ...Array.from(workflow.hitTargetsEC ?? [])]
+      .map(value => value?.document ?? value).filter(value => value?.uuid).map(value => [value.uuid, value])).values()];
+    if (item?.type !== "weapon" || (!has("lchDash") && !has("lchMounted")) || !hits.length) return true;
+    const rider = workflow.token?.document ?? workflow.token, message = workflow.chatCard;
+    const combat = globalThis.game?.combat, active = Boolean(combat?.started);
+    const potentialMount = Boolean(has("lchMounted") && rider?.flags?.[MODULE_ID]?.mountedOn);
+    const potentialCharge = Boolean(has("lchDash") && active && Array.isArray(rider?.movementHistory) && rider.movementHistory.length > 1);
+    if (!potentialMount && !potentialCharge) return true;
+    if (hits.length !== 1) {
+      globalThis.ui?.notifications?.warn?.("Верховой бой и наскок при атаке по нескольким целям разрешите вручную.");
+      return true;
+    }
+    if (workflow.isCritical === true && workflow.damageRolls?.[0]?.options?.isCritical !== true) {
+      globalThis.ui?.notifications?.warn?.("Верховой бой и наскок: критический урон не подтверждён, проверьте бонус вручную.");
+      return true;
+    }
+    if (!getActiveGm(globalThis.game)) {
+      globalThis.ui?.notifications?.warn?.("Верховой бой и наскок: активный мастер недоступен, проверьте бонус вручную.");
+      return true;
+    }
+    const target = hits[0];
+    const payload = { operationId: message?.id, riderTokenUuid: rider?.uuid, targetTokenUuid: target.uuid, weaponItemUuid: item.uuid,
+      combatId: active ? combat.id : "", round: active ? combat.round : 0, turn: active ? combat.turn : 0 };
+    if (!isValidMountedChargeDamage(payload) || typeof workflow.performThrottledUpdate !== "function"
+      || typeof workflow.setDamageRolls !== "function"
+      || (!isActiveGmClient(globalThis.game) && !this.moduleApi?.socketCommandBus?.request)) return true;
+    const pending = (async () => {
+      await workflow.performThrottledUpdate(message, {}, true);
+      const midi = message.flags?.["midi-qol"], saved = message.flags?.[MODULE_ID]?.weaponPropertyHit;
+      const recorded = [...(midi?.hitTargetUuids ?? []), ...(midi?.hitECTargetUuids ?? [])].includes(target.uuid)
+        || (saved?.riderTokenUuid === rider.uuid && saved?.targetTokenUuid === target.uuid);
+      if (!recorded) {
+        if (typeof message.update !== "function") throw new Error("Свойства оружия: попадание не подтверждено.");
+        await message.update({ [`flags.${MODULE_ID}.weaponPropertyHit`]: { riderTokenUuid: rider.uuid, targetTokenUuid: target.uuid } });
+      }
+      const result = await (isActiveGmClient(globalThis.game)
+        ? this.reserveMountedChargeDamage(payload, { sender: globalThis.game.user })
+        : this.moduleApi.socketCommandBus.request(MOUNTED_CHARGE_DAMAGE_COMMAND, payload));
+      if (result?.manualCharge) globalThis.ui?.notifications?.warn?.("Наскок: история движения не подтверждена; проверьте бонус вручную.");
+      if (!result?.roll) return true;
+      const existing = [...(workflow.damageRolls ?? [])];
+      const matching = [...existing, ...(workflow.bonusDamageRolls ?? [])].filter(roll => roll?.options?.rebreyaWeaponPropertyOperationId === payload.operationId);
+      const originalProperties = workflow.damageRolls?.[0]?.options?.properties;
+      if ((!Array.isArray(originalProperties) && !(originalProperties instanceof Set)) || !result.targetActorUuid) {
+        throw new Error("Свойства оружия: исходный урон не подтверждён.");
+      }
+      const marker = `rebreya-weapon:${payload.operationId}:${target.uuid}:${result.targetActorUuid}`;
+      const expected = [...new Set([...originalProperties, marker])].sort();
+      if (matching.length) {
+        const actual = matching[0]?.options?.properties;
+        if (matching.length !== 1 || Number(matching[0].total) !== Number(result.roll.total)
+          || matching[0].options?.type !== result.roll.options?.type || (!Array.isArray(actual) && !(actual instanceof Set))
+          || JSON.stringify([...new Set(actual)].sort()) !== JSON.stringify(expected)) throw new Error("Свойства оружия: сохранённый бросок изменился.");
+      } else {
+        const roll = globalThis.Roll?.fromJSON?.(JSON.stringify(result.roll));
+        if (!roll?._evaluated || Number(roll.total) !== Number(result.roll.total)) throw new Error("Свойства оружия: сохранённый бросок недоступен.");
+        roll.options ??= {}; roll.options.properties = expected; roll.options.rebreyaWeaponPropertyOperationId = payload.operationId;
+        const previousProperties = existing.map(entry => ({ entry, had: Object.hasOwn(entry.options ?? {}, "properties"),
+          value: Array.isArray(entry.options?.properties) ? [...entry.options.properties]
+            : entry.options?.properties instanceof Set ? new Set(entry.options.properties) : entry.options?.properties }));
+        for (const entry of previousProperties) if (entry.entry.options?.properties instanceof Set) entry.entry.options.properties = [...entry.entry.options.properties];
+        try { await workflow.setDamageRolls([...existing, roll]); }
+        finally {
+          for (const previous of previousProperties) {
+            if (!previous.entry.options) continue;
+            if (previous.had) previous.entry.options.properties = previous.value;
+            else delete previous.entry.options.properties;
+          }
+          roll.options.properties = expected;
+        }
+        workflow.damageRolls = workflow.damageRolls;
+      }
+      await workflow.performThrottledUpdate(message, {}, true);
+      return true;
+    })().catch(error => {
+      workflow.aborted = true;
+      globalThis.ui?.notifications?.warn?.("Урон остановлен: результат свойств оружия не подтверждён; мастер должен проверить карточку атаки.");
+      throw error;
+    });
+    this._mountedChargeWorkflows.set(workflow, pending);
+    return pending;
+  }
+
+  applyMountedChargePreCalculateDamage(actor, damages, options = {}) {
+    if (!Array.isArray(damages)) return true;
+    for (let index = damages.length - 1; index >= 0; index--) {
+      const current = damages[index], properties = current?.properties;
+      if (!Array.isArray(properties) && !(properties instanceof Set)) continue;
+      const markers = [...properties].filter(value => typeof value === "string" && value.startsWith("rebreya-weapon:"));
+      if (!markers.length) continue;
+      const parts = markers.length === 1 ? markers[0].split(":") : [], targetUuid = options?.midi?.targetUuid;
+      if (parts.length !== 4 || !parts[1] || !parts[2] || !parts[3]
+        || (targetUuid ? targetUuid !== parts[2] : actor?.uuid !== parts[3])) { damages.splice(index, 1); continue; }
+      const remaining = [...properties].filter(value => value !== markers[0]), key = JSON.stringify([...new Set(remaining)].sort());
+      const base = damages.find((entry, otherIndex) => {
+        const other = entry?.properties;
+        return otherIndex !== index && entry?.type === current?.type && (Array.isArray(other) || other instanceof Set)
+          && ![...other].some(value => typeof value === "string" && value.startsWith("rebreya-weapon:"))
+          && JSON.stringify([...new Set(other)].sort()) === key;
+      });
+      if (base && Number.isFinite(Number(base.value)) && Number.isFinite(Number(current.value))) {
+        base.value = Number(base.value) + Number(current.value);
+        if (Object.hasOwn(base, "damage")) base.damage = base.value;
+        if (current.formula) base.formula = [base.formula, current.formula].filter(Boolean).join(" + ");
+        damages.splice(index, 1);
+      } else current.properties = properties instanceof Set ? new Set(remaining) : remaining;
+    }
+    return true;
+  }
+
+  noteChargeMovement(token, changed = {}) {
+    const combat = globalThis.game?.combat;
+    if (!isActiveGmClient(globalThis.game) || !combat?.started || !token?.uuid
+      || !["x", "y", "elevation"].some(key => Object.hasOwn(changed, key))) return;
+    if (this._chargeTokenMoves.size >= 512 || this._chargeMovementIds.size >= 2048) {
+      this.chargeMovementRecords.clear(); this._chargeTokenMoves.clear(); this._chargeMovementIds.clear();
+    }
+    const sequence = ++this._chargeMoveSequence, turnKey = `${combat.id}:${combat.round}:${combat.turn}`;
+    this._chargeTokenMoves.set(token.uuid, { turnKey, sequence });
+    const movementId = token.movement?.id;
+    if (movementId) this._chargeMovementIds.set(`${token.uuid}:${movementId}`, { turnKey, sequence });
+    const items = token.actor?.items?.contents ?? token.actor?.items ?? [];
+    if (!Array.from(items).some(item => item?.type === "weapon" && (item.system?.properties?.has?.("lchDash")
+      || item.system?.properties?.includes?.("lchDash")))) return;
+    if (!movementId) { this.chargeMovementRecords.delete(token.uuid); return; }
+    const previous = this.chargeMovementRecords.get(token.uuid);
+    if (previous?.combatId === combat.id && previous.round === combat.round && previous.turn === combat.turn) return;
+    this.chargeMovementRecords.set(token.uuid, { combatId: combat.id, round: combat.round, turn: combat.turn, firstMovementId: movementId });
+    if (this.chargeMovementRecords.size > 512) this.chargeMovementRecords.delete(this.chargeMovementRecords.keys().next().value);
+  }
+
+  async canReserveMountedChargeDamage(payload, { sender } = {}) {
+    if (!isValidMountedChargeDamage(payload) || !sender) return false;
+    const rider = await globalThis.fromUuid?.(payload.riderTokenUuid);
+    return Boolean(rider?.actor && (sender.isGM || rider.actor.testUserPermission?.(sender, "OWNER") === true));
+  }
+
+  async reserveMountedChargeDamage(payload, { sender } = {}) {
+    if (!isValidMountedChargeDamage(payload) || !isActiveGmClient(globalThis.game)) throw new Error("Свойства оружия: неверный запрос или нет мастера.");
+    if (!await this.canReserveMountedChargeDamage(payload, { sender })) throw new Error("Свойства оружия: требуются права владельца.");
+    const coordinator = this.moduleApi?.worldMutationCoordinator;
+    if (!coordinator?.run) throw new Error("Свойства оружия: очередь операций недоступна.");
+    const lockActorUuid = (await globalThis.fromUuid?.(payload.riderTokenUuid))?.actor?.uuid;
+    if (!lockActorUuid) throw new Error("Свойства оружия: всадник недоступен.");
+    return coordinator.run(`weapon-charge:${lockActorUuid}`, async () => {
+      const rider = await globalThis.fromUuid?.(payload.riderTokenUuid), target = await globalThis.fromUuid?.(payload.targetTokenUuid);
+      const item = await globalThis.fromUuid?.(payload.weaponItemUuid), actor = rider?.actor;
+      const combat = globalThis.game?.combat, message = globalThis.game?.messages?.get?.(payload.operationId);
+      const midi = message?.flags?.["midi-qol"], native = message?.flags?.dnd5e, recorded = message?.flags?.[MODULE_ID]?.weaponPropertyHit;
+      const author = message?.author?.id ?? message?.user?.id ?? message?.user;
+      const hits = [...(midi?.hitTargetUuids ?? []), ...(midi?.hitECTargetUuids ?? [])];
+      if (!isActiveGmClient(globalThis.game) || !actor || actor.uuid !== lockActorUuid || !(sender?.isGM || actor.testUserPermission?.(sender, "OWNER") === true)
+        || rider.uuid !== payload.riderTokenUuid || rider.parent?.tokens?.get?.(rider.id) !== rider || !target?.actor
+        || target.uuid !== payload.targetTokenUuid || target.parent !== rider.parent || target.parent?.tokens?.get?.(target.id) !== target
+        || item?.type !== "weapon" || (item.actor ?? item.parent)?.uuid !== actor.uuid
+        || !message || (!sender.isGM && author !== sender.id) || native?.messageType !== "usage"
+        || native?.item?.uuid !== item.uuid || native?.activity?.type !== "attack"
+        || message.speaker?.scene !== rider.parent.id || message.speaker?.token !== rider.id
+        || !(hits.includes(target.uuid) || (recorded?.riderTokenUuid === rider.uuid && recorded?.targetTokenUuid === target.uuid))) {
+        throw new Error("Свойства оружия: попадание, токены или права не подтверждены.");
+      }
+      if (payload.combatId && (!combat?.started || combat.id !== payload.combatId || combat.round !== payload.round || combat.turn !== payload.turn)) {
+        throw new Error("Свойства оружия: ход боя изменился.");
+      }
+      let original = midi?.damageRolls?.[0];
+      if (typeof original === "string") { try { original = JSON.parse(original); } catch { original = null; } }
+      const type = original?.options?.type, properties = original?.options?.properties;
+      if (typeof type !== "string" || !/^[a-z][a-z0-9-]{0,31}$/u.test(type)
+        || (!Array.isArray(properties) && !(properties instanceof Set)) || ![...properties].every(entry => typeof entry === "string")) {
+        throw new Error("Свойства оружия: свойства исходного урона не подтверждены.");
+      }
+      const turnKey = payload.combatId ? `${payload.combatId}:${payload.round}:${payload.turn}` : "";
+      const damageFingerprint = JSON.stringify({ type, properties: [...new Set(properties)].sort(), isCritical: original.options?.isCritical === true,
+        critical: original.options?.critical ?? {} });
+      const receipt = actor.flags?.[MODULE_ID]?.weaponCharge;
+      if (turnKey && receipt?.turnKey === turnKey && receipt.operationId === payload.operationId) {
+        if (receipt.weaponItemUuid !== item.uuid || receipt.targetTokenUuid !== target.uuid || receipt.targetActorUuid !== target.actor.uuid
+          || receipt.riderTokenUuid !== rider.uuid) throw new Error("Наскок: операция уже использована.");
+        if (receipt.damageFingerprint !== damageFingerprint) throw new Error("Наскок: исходный урон изменился.");
+        return { roll: structuredClone(receipt.roll), targetActorUuid: target.actor.uuid, replayed: true };
+      }
+      const itemProperties = item.system?.properties;
+      const has = key => itemProperties?.has?.(key) || itemProperties?.includes?.(key);
+      const mounted = has("lchMounted") ? mountedDamage(rider, target) : 0;
+      const marker = this.chargeMovementRecords.get(rider.uuid), history = rider.movementHistory ?? [];
+      let index = marker?.firstMovementId ? history.findIndex(point => point.movementId === marker.firstMovementId) : -1;
+      const sameTurn = marker?.combatId === payload.combatId && marker?.round === payload.round && marker?.turn === payload.turn;
+      let manualCharge = Boolean(has("lchDash") && turnKey && receipt?.turnKey !== turnKey && history.length > 1
+        && (!marker || (sameTurn && index < 0)));
+      const targetMotion = this._chargeTokenMoves.get(target.uuid);
+      if (index >= 0 && targetMotion?.turnKey === turnKey) {
+        const next = history.findIndex((point, i) => i >= index && this._chargeMovementIds.get(`${rider.uuid}:${point.movementId}`)?.turnKey === turnKey
+          && this._chargeMovementIds.get(`${rider.uuid}:${point.movementId}`).sequence > targetMotion.sequence);
+        index = next;
+      }
+      const currentMove = turnKey && sameTurn && index >= 0;
+      const movement = has("lchDash") && currentMove && receipt?.turnKey !== turnKey
+        ? chargeMovement(rider, target, { history: history.slice(Math.max(0, index - 1)) }) : false;
+      if (movement === null) manualCharge = true;
+      const canCharge = movement === true;
+      const authored = item.flags?.[MODULE_ID]?.lichWeaponPropertyValues?.dashDice;
+      const chargeFormula = canCharge && typeof authored === "string" ? authored.trim().replace(/к/giu, "d") : "";
+      if (canCharge && (!chargeFormula || (globalThis.Roll?.validate && !Roll.validate(chargeFormula)))) throw new Error("Наскок: некорректная формула кости.");
+      if (!mounted && !chargeFormula) return { applied: false, manualCharge };
+      const formula = [chargeFormula, mounted ? String(mounted) : ""].filter(Boolean).join(" + ");
+      const RollClass = globalThis.CONFIG?.Dice?.DamageRoll;
+      if (typeof RollClass !== "function") throw new Error("Свойства оружия: бросок урона недоступен.");
+      const critical = { ...(original.options?.critical ?? {}) }; delete critical.bonusDice;
+      const positions = [rider.x, rider.y, target.x, target.y];
+      const fingerprint = JSON.stringify({ properties: [...itemProperties], authored, mount: rider.flags?.[MODULE_ID]?.mountedOn,
+        mounted, targetActor: target.actor.uuid, original, history: canCharge ? history : null, marker: canCharge ? marker : null,
+        targetMotion: canCharge ? targetMotion : null });
+      const roll = new RollClass(`${formula}[${type}]`, item.getRollData?.() ?? actor.getRollData?.() ?? {}, { type, isCritical: Boolean(chargeFormula && original.options.isCritical), critical });
+      if (!roll._evaluated) await roll.evaluate();
+      const data = roll.toJSON?.() ?? roll, serialized = typeof data === "string" ? JSON.parse(data) : JSON.parse(JSON.stringify(data));
+      if (!Number.isFinite(Number(serialized?.total))) throw new Error("Свойства оружия: бросок не подтверждён.");
+      if (!isActiveGmClient(globalThis.game) || positions.some((value, i) => value !== [rider.x, rider.y, target.x, target.y][i])
+        || !(sender?.isGM || actor.testUserPermission?.(sender, "OWNER") === true)
+        || await globalThis.fromUuid?.(payload.riderTokenUuid) !== rider || await globalThis.fromUuid?.(payload.targetTokenUuid) !== target
+        || await globalThis.fromUuid?.(payload.weaponItemUuid) !== item || rider.parent?.tokens?.get?.(rider.id) !== rider
+        || target.parent?.tokens?.get?.(target.id) !== target || target.parent !== rider.parent
+        || JSON.stringify({ properties: [...item.system.properties], authored: item.flags?.[MODULE_ID]?.lichWeaponPropertyValues?.dashDice,
+          mount: rider.flags?.[MODULE_ID]?.mountedOn, mounted: has("lchMounted") ? mountedDamage(rider, target) : 0,
+          targetActor: target.actor.uuid, original: typeof midi?.damageRolls?.[0] === "string" ? JSON.parse(midi.damageRolls[0]) : midi?.damageRolls?.[0],
+          history: canCharge ? rider.movementHistory : null, marker: canCharge ? this.chargeMovementRecords.get(rider.uuid) : null,
+          targetMotion: canCharge ? this._chargeTokenMoves.get(target.uuid) : null }) !== fingerprint
+        || (turnKey && (game.combat !== combat || combat.round !== payload.round || combat.turn !== payload.turn))
+        || actor.flags?.[MODULE_ID]?.weaponCharge !== receipt) throw new Error("Свойства оружия: состояние изменилось.");
+      if (chargeFormula) await actor.update({ [`flags.${MODULE_ID}.==weaponCharge`]: { turnKey, operationId: payload.operationId,
+        weaponItemUuid: item.uuid, riderTokenUuid: rider.uuid, targetTokenUuid: target.uuid, targetActorUuid: target.actor.uuid, damageFingerprint, roll: serialized } });
+      return { roll: serialized, targetActorUuid: target.actor.uuid, replayed: false, manualCharge };
+    });
+  }
+
+  async canToggleMounted(payload, { sender } = {}) {
+    if (!isValidMountedToggle(payload) || !sender) return false;
+    const rider = await globalThis.fromUuid?.(payload.riderTokenUuid);
+    return Boolean(rider?.actor && (sender.isGM || rider.actor.testUserPermission?.(sender, "OWNER") === true));
+  }
+
+  async toggleMounted(payload, { sender } = {}) {
+    if (!isValidMountedToggle(payload) || !isActiveGmClient(globalThis.game)) throw new Error("Верхом: неверный запрос или нет активного мастера.");
+    if (!await this.canToggleMounted(payload, { sender })) throw new Error("Верхом: требуются права владельца всадника.");
+    const coordinator = this.moduleApi?.worldMutationCoordinator;
+    if (!coordinator?.run) throw new Error("Верхом: очередь операций недоступна.");
+    return coordinator.run(`mounted:${payload.riderTokenUuid}`, async () => {
+      const rider = await globalThis.fromUuid?.(payload.riderTokenUuid);
+      const flags = rider?.flags?.[MODULE_ID] ?? {};
+      const receipts = Array.isArray(flags.mountedOperations) ? flags.mountedOperations : [];
+      const previous = receipts.find(entry => entry?.operationId === payload.operationId);
+      if (!isActiveGmClient(globalThis.game) || !rider?.actor || rider.uuid !== payload.riderTokenUuid
+        || rider.parent?.tokens?.get?.(rider.id) !== rider || !(sender?.isGM || rider.actor.testUserPermission?.(sender, "OWNER") === true)) {
+        throw new Error("Верхом: всадник или права изменились.");
+      }
+      if (previous?.operationId === payload.operationId) {
+        if (previous.action !== payload.action || previous.mountTokenUuid !== payload.mountTokenUuid) throw new Error("Верхом: операция уже использована.");
+        return { mounted: payload.action === "mount", replayed: true };
+      }
+      if (payload.action === "mount") {
+        const mount = await globalThis.fromUuid?.(payload.mountTokenUuid);
+        if (flags.mountedOn || !mount?.actor || mount.uuid !== payload.mountTokenUuid || mount.parent !== rider.parent
+          || mount.parent?.tokens?.get?.(mount.id) !== mount) throw new Error("Верхом: скакун или связь токенов недоступны.");
+      } else if (flags.mountedOn !== payload.mountTokenUuid) throw new Error("Верхом: связь со скакуном уже изменилась.");
+      if (!isActiveGmClient(globalThis.game) || !(sender?.isGM || rider.actor.testUserPermission?.(sender, "OWNER") === true)
+        || rider.parent?.tokens?.get?.(rider.id) !== rider) throw new Error("Верхом: права или активный мастер изменились.");
+      await rider.update({
+        ...(payload.action === "mount" ? { [`flags.${MODULE_ID}.mountedOn`]: payload.mountTokenUuid } : { [`flags.${MODULE_ID}.-=mountedOn`]: null }),
+        [`flags.${MODULE_ID}.mountedOperations`]: [...receipts, { operationId: payload.operationId, action: payload.action, mountTokenUuid: payload.mountTokenUuid }].slice(-64)
+      });
+      return { mounted: payload.action === "mount", replayed: false };
+    });
   }
 
   getWeaponModAttackConditions(activity,target,config={}) {
