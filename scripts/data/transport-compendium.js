@@ -86,17 +86,18 @@ export async function repairTransportInstanceSpeeds(actors, actorDataBySourceId)
       patch.img = sourceArtwork;
     }
     const sourceMovement = firstPositiveEntry(
-      sourceData.system?.attributes?.movement,
+      sourceData.system?.attributes?.movement?.speeds ?? sourceData.system?.attributes?.movement,
       ["walk", "swim", "fly", "climb", "burrow"]
     );
     if (sourceMovement) {
       const [mode, value] = sourceMovement;
+      const movement = actor.system?.attributes?.movement;
       if (shouldRepairNativeSpeed(
-        actor.system?.attributes?.movement?.[mode],
+        (movement?.speeds ?? movement)?.[mode],
         transport.combatSpeed,
         "primaryFt"
       )) {
-        patch[`system.attributes.movement.${mode}`] = value;
+        patch[`system.attributes.movement.${movement?.speeds ? "speeds." : ""}${mode}`] = value;
       }
       patchMissingNestedValues(
         patch,

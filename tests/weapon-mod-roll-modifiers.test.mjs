@@ -182,6 +182,11 @@ test("native use stores decisions on its own originating card, never on the shar
     const card={id:"card",getFlag:(scope,key)=>scope==="dnd5e"?activity.uuid:stored};game.messages={get:id=>id==="card"?card:null};
     const config={subject:activity};service.hydrateWeaponModAttackConditions(config,{data:{"flags.dnd5e.originatingMessage":"card"}});
     assert.equal(service.getWeaponModAttackConditions(activity,{uuid:"Token.a"},config).targetVisible,true);
+    card.system = { activity: { uuid: activity.uuid } };
+    card.getFlag = scope => scope === "rebreya-main" ? stored : null;
+    const native = {subject: activity};
+    service.hydrateWeaponModAttackConditions(native, {data:{system:{origin:"card"}}});
+    assert.equal(service.getWeaponModAttackConditions(activity,{uuid:"Token.a"},native).targetVisible,true);
     const other={subject:{...activity,uuid:"Activity.other"}};service.hydrateWeaponModAttackConditions(other,{data:{"flags.dnd5e.originatingMessage":"card"}});assert.equal(other.rebreyaWeaponModDecisions,undefined);
     assert.equal(service.getWeaponModAttackConditions(activity,{uuid:"Token.a"},{}).targetVisible,null);
   }finally{fx.restore();}

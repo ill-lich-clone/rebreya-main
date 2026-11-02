@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
+import { getCharacterSizeRule } from "./size-automation-service.js?v=1.5.61";
 
 function collectionValues(collection) {
   if (Array.isArray(collection)) return collection;

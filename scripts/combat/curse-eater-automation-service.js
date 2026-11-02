@@ -1,3 +1,4 @@
+import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
 import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.23";
 
@@ -345,7 +346,7 @@ function isManagedCurseEaterEffect(effect) {
 
 function effectSignature(effect) {
   return JSON.stringify({
-    changes: Array.isArray(effect?.changes) ? effect.changes : [],
+    changes: comparableEffectChanges(effect),
     disabled: effect?.disabled === true,
     flags: readModuleFlag(effect, "curseEater") ?? {},
     name: String(effect?.name ?? "")
@@ -516,13 +517,13 @@ export class CurseEaterAutomationService {
     }
 
     if (!primary) {
-      await actor.createEmbeddedDocuments("ActiveEffect", [desired], {
+      await actor.createEmbeddedDocuments("ActiveEffect", [nativeEffectUpdate(desired)], {
         rebreyaCurseEaterSync: true,
         render: false
       });
     }
     else if (effectSignature(primary) !== effectSignature(desired)) {
-      await primary.update(desired, {
+      await primary.update(nativeEffectUpdate(desired, primary), {
         rebreyaCurseEaterSync: true,
         render: false
       });

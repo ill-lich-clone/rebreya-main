@@ -1,3 +1,4 @@
+import { originatingCardId } from "../integrations/midi-usage-card.js?v=1.5.61";
 import { MODULE_ID, SUBCLASSES_COMPENDIUM_NAME } from "../constants.js";
 
 const SORCERER_ADVANCEMENT_ROOT = "sorcerer-rework-v011";
@@ -1179,8 +1180,7 @@ function rollConfigMessageId(rollConfig = {}) {
   const messageIdFromElement = (element) => optionalText(element?.dataset?.messageId)
     ?? optionalText(element?.closest?.("[data-message-id]")?.dataset?.messageId);
   const event = rollConfig?.event ?? {};
-  const originatingMessage = rollConfig?.message?.getFlag?.("dnd5e", "originatingMessage")
-    ?? getProperty(rollConfig?.message, "flags.dnd5e.originatingMessage", undefined);
+  const originatingMessage = originatingCardId(rollConfig?.message);
   return cleanText(
     messageIdFromElement(event.target)
       ?? messageIdFromElement(event.currentTarget)
@@ -1200,8 +1200,7 @@ function rollConfigMessageId(rollConfig = {}) {
 
 function messageOriginatingMessageId(message) {
   return cleanText(
-    message?.getFlag?.("dnd5e", "originatingMessage")
-      ?? getProperty(message, "flags.dnd5e.originatingMessage", undefined)
+    originatingCardId(message)
   );
 }
 
@@ -3399,7 +3398,7 @@ export class SorcererAutomationService {
       }
       const usageMessageId = this.#rollUsageMessageId(safeRolls);
       const rerolled = await activity.rollAttack({}, {}, usageMessageId
-        ? { data: { "flags.dnd5e.originatingMessage": usageMessageId } }
+        ? { data: { system: { origin: usageMessageId }, "flags.dnd5e.originatingMessage": usageMessageId } }
         : {});
       if (!rerolled && cost > 0) {
         await updateDocument(points, { "system.uses.spent": spent });

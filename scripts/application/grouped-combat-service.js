@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { buildCombatTurnGroups, planGroupTransition, buildPhaseStepKey, combatantsOf } from "../combat/turn-group-rules.js";
-import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.2";
+import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.61";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js";
 
@@ -10,6 +10,10 @@ export class GroupedCombatService {
     isAuthority = () => isActiveGmClient(gameProvider()), isStorageActor = actor => actor?.getFlag?.(MODULE_ID, "storage")?.enabled === true } = {}) {
     Object.assign(this, { repository, effects, coordinator, resolveToken, gameProvider, isAuthority, isStorageActor });
     this.tickets = new Map();
+  }
+  holdUntilReady() {
+    if (!this.ready) this.ready = new Promise(resolve => { this.releaseReady = error => resolve(!error); });
+    return this.releaseReady;
   }
   isManaged(combat) { return Boolean(this.repository.readState(combat)); }
   async save(combat, state, { receiptKey = null } = {}) {
@@ -34,19 +38,22 @@ export class GroupedCombatService {
       && actor.system?.details?.type?.value !== "object";
   }
   async start(request, { sender } = {}) {
+    if (this.ready && !await this.ready) return rejection("combat-not-ready");
     if (!sender?.isGM || !this.isAuthority()) return rejection("forbidden");
     if (!isValidGroupedCombatStartPayload(request)) return rejection("invalid-combat-request");
     return this.coordinator.runIdempotent(`grouped-scene:${request.sceneId}`, request.operationId, async () => {
       if (!sender?.isGM || !this.isAuthority()) return rejection("forbidden");
-      const support = this.effects.inspect();
-      if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
       const tokens = [];
       for (const uuid of new Set(request.tokenUuids ?? [])) {
         const resolved = await this.resolveToken(uuid), token = resolved?.document ?? resolved;
         if (this.eligible(token, request.sceneId)) tokens.push(token);
       }
       if (!tokens.length) return rejection("no-creatures");
-      const combat = this.repository.getActiveCombat(request.sceneId) ?? await this.repository.createCombat(request.sceneId);
+      const existing = this.repository.getActiveCombat(request.sceneId);
+      const actors = [...tokens.map(t => t.actor), ...combatantsOf(existing).map(c => c.actor)];
+      const support = this.effects.inspect(tokens[0].parent, actors);
+      if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
+      const combat = existing ?? await this.repository.createCombat(request.sceneId);
       return this.coordinator.run(`grouped-combat:${combat.id}`, async () => {
         if (!this.isAuthority()) return rejection("forbidden");
         let state = this.repository.readState(combat);
@@ -103,6 +110,7 @@ export class GroupedCombatService {
     });
   }
   async transition(request, { sender } = {}) {
+    if (this.ready && !await this.ready) return rejection("combat-not-ready");
     const combat = this.repository.getCombat(request.combatId);
     if (!combat || !this.isAuthority()) return rejection("forbidden");
     if (!isValidGroupedCombatTransitionPayload(request)) return rejection("invalid-combat-request");
@@ -117,7 +125,7 @@ export class GroupedCombatService {
       if (state.revision !== request.expectedRevision) return rejection("stale-combat");
       if (state.pendingTransition) return this.recoverPending(combat, state);
       if (state.mode === "blocked") return rejection("combat-blocked", { combatId: combat.id, state });
-      const support = this.effects.inspect();
+      const support = this.effects.inspect(combat.scene, combatantsOf(combat).map(c => c.actor));
       if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
       const target = { round: request.targetRound, groupId: request.targetGroupId };
       if (!Number.isSafeInteger(target.round) || target.round < 1 || !state.groups.some(g => g.id === target.groupId)) return rejection("invalid-combat-target");
@@ -234,10 +242,13 @@ export class GroupedCombatService {
     for (const receipt of Object.values(state.receipts)) if (receipt.status === "running") { receipt.status = "uncertain"; changed = true; }
     if (changed) { state.mode = "blocked"; await this.save(combat, state); }
     if (state.mode === "blocked") return rejection("combat-blocked", { combatId: combat.id, state });
+    const support = this.effects.inspect(combat.scene, combatantsOf(combat).map(c => c.actor));
+    if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
     const pending = state.pendingTransition;
     return this.runPipeline(combat, state, pending.phases, pending.target, pending.operationId);
   }
   async reconcile(combat) {
+    if (this.ready && !await this.ready) return rejection("combat-not-ready");
     return this.coordinator.run(`grouped-combat:${combat.id}`, async () => {
       const state = this.repository.readState(combat);
       if (!state || !this.isAuthority()) return;
@@ -245,6 +256,7 @@ export class GroupedCombatService {
     });
   }
   async resolveUncertainStep(request, { sender } = {}) {
+    if (this.ready && !await this.ready) return rejection("combat-not-ready");
     if (!sender?.isGM || !this.isAuthority()) return rejection("forbidden");
     if (!isValidGroupedCombatResolvePayload(request)) return rejection("invalid-combat-request");
     const combat = this.repository.getCombat(request.combatId);
@@ -253,6 +265,8 @@ export class GroupedCombatService {
       const state = this.repository.readState(combat);
       if (state?.revision !== request.expectedRevision) return rejection("stale-combat");
       if (state.receipts[request.stepKey]?.status !== "uncertain" || !["completed", "retry"].includes(request.resolution)) return rejection("invalid-combat-step");
+      const support = this.effects.inspect(combat.scene, combatantsOf(combat).map(c => c.actor));
+      if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
       if (request.resolution === "completed") state.receipts[request.stepKey].status = "done"; else delete state.receipts[request.stepKey];
       if (Object.values(state.receipts).some(r => r.status === "uncertain")) { await this.save(combat, state); return rejection("combat-blocked", { combatId: combat.id, state }); }
       state.mode = "active";

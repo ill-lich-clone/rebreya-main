@@ -1,4 +1,4 @@
-import { registerCprCardHandlers } from "./hooks.js";
+import { registerCprCardHandlers } from "./hooks.js?v=1.5.61";
 import { definitions } from "./registry.js";
 import { registerSteedLifecycle, summonCardSteed } from "./selected/lib/summons.js";
 import { moveCardToken } from "./selected/lib/teleport.js";

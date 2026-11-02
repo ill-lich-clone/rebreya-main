@@ -556,3 +556,14 @@ test("combat hooks route actor, item, and save activity events to Curse Eater", 
     globalThis.Hooks = previousHooks;
   }
 });
+test("v14 normalized Curse Eater rows do not trigger an update on every sync",async()=>{
+ const feat=makeItem("feat",{type:"feat",identifier:"pozhiratel-proklyatiy"});
+ const crown=makeItem("crown",{rarity:"uncommon",description:"<p>Проклятье: шёпот.</p>"});
+ const actor=makeActor([feat,crown],{head:{itemId:"crown"}}),service=new CurseEaterAutomationService();
+ await service.syncActor(actor);
+ const [effect]=managedEffects(actor);
+ effect.system={changes:effect.changes.map(c=>({key:c.key,type:"add",value:c.value==="1"?1:c.value,priority:c.priority,
+   _id:"row1",phase:"initial",conditions:"{}",replacement:""}))};delete effect.changes;
+ effect.update=()=>assert.fail("native row defaults cannot cause a persistent rewrite");
+ await service.syncActor(actor);
+});

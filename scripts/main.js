@@ -27,14 +27,14 @@ import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11"
 import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.60";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.60";
-import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.22";
+import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.61";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
 import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.330";
 import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.330";
 import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.4.330";
 import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js?v=1.4.330";
-import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.4.330";
+import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.5.61";
 import {
   TRANSPORT_IMPORT_COMMAND,
   TRANSPORT_SELECT_FUEL_COMMAND,
@@ -123,7 +123,7 @@ import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.23";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.23";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.59";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.61";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.16";
@@ -132,7 +132,7 @@ import { TreatWoundsDocuments } from "./infrastructure/foundry/treat-wounds-docu
 import { TREAT_WOUNDS_ACTIONS, isValidTreatWoundsPayload, authorizeTreatWoundsSender } from "./infrastructure/foundry/treat-wounds-command-contract.js?v=1.5.16";
 import { resolveTreatWoundsSelection, promptTreatWounds, buildTreatWoundsChatContent, bindTreatWoundsChat } from "./ui/treat-wounds-dialog.js?v=1.5.16";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.384";
-import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.384";
+import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.5.61";
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
 import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.281";
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
@@ -321,16 +321,16 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.60";
-import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.61";
+import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.61";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
-import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.2";
-import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.59";
+import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.61";
+import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.61";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.60";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.61";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
-import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
+import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.5.61";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
 import { registerEquipmentSizeCommands } from "./application/equipment-size-commands.js?v=1.4.393";
 import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.4.393";
@@ -341,10 +341,10 @@ import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.7
 import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.59";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.1";
-import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.23";
-import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.23";
+import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.61";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.61";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js?v=1.5.60";
-import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
+import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.5.61";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "./combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "./combat/summon-lifecycle-runtime.js";
@@ -353,7 +353,7 @@ import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, DECAYING_DAMAGE_OVERTIME_LABEL, registerCombatStatusConfig } from "./combat/status-service.js?v=1.5.44";
+import { CombatStatusService, DECAYING_DAMAGE_OVERTIME_LABEL, registerCombatStatusConfig } from "./combat/status-service.js?v=1.5.61";
 import { DecayingRecoveryService } from "./combat/decaying-recovery-service.js";
 import { bindDecayingRecoveryChat, publishDecayingRecoveryPrompt, requestRecoveryOnce, runDecayingRecoveryMacro } from "./integrations/decaying-recovery-ui.js";
 import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service.js?v=1.5.59";
@@ -361,22 +361,22 @@ import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.5.46";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.5.60";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.5.59";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.5.61";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
-} from "./combat/paladin-automation-service.js?v=1.5.1";
+} from "./combat/paladin-automation-service.js?v=1.5.61";
 import { PaladinDogmaAutomationService } from "./combat/paladin-dogma-automation-service.js?v=1.4.111-paladin-dogmas";
 import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.5.1";
 import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
-} from "./combat/performer-automation-service.js?v=1.5.60";
+} from "./combat/performer-automation-service.js?v=1.5.61";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.60";
 import { registerBardicInspirationCommand, registerBladeFlourishCommand, registerBladeFlourishSpeedCommand } from "./infrastructure/foundry/bardic-inspiration-command.js?v=1.5.56";
 import { MOUNTED_TOGGLE_COMMAND, registerMountedToggleCommand, registerMountedChargeDamageCommand } from "./infrastructure/foundry/mounted-charge-command.js?v=1.5.58";
-import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.46";
+import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.61";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.58";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.5.59";
@@ -396,7 +396,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.60";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.61";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.48";
 import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.59";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
@@ -417,14 +417,14 @@ import { registerRationFoodConversionHook } from "./integrations/ration-food-con
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.46";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.48";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
-import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.60";
+import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.61";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js?v=1.5.60";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
 import {
   registerImplantDataModelPatch,
   registerImplantHooks
 } from "./integrations/implant-hooks.js";
-import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.5.2";
+import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.5.61";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerAntagonizeCommand } from "./combat/antagonize.js?v=1.5.59";
@@ -8663,9 +8663,11 @@ Hooks.once("ready", async () => {
     console.warn(`${MODULE_ID} | Failed to patch transform-cleanup actor update hook.`, error);
   }
 
-  let moduleApi;
+  let moduleApi, releaseGroupedCombat;
   try {
     moduleApi = new RebreyaMainModule();
+    releaseGroupedCombat = moduleApi.groupedCombatService.holdUntilReady();
+    registerGroupedCombatRuntime(moduleApi);
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to construct module API.`, error);
@@ -8684,9 +8686,10 @@ Hooks.once("ready", async () => {
 
   if (game.system?.id === "dnd5e" && game.modules?.get("midi-qol")?.active && !game.modules?.get("chris-premades")?.active) {
     try {
-      const { registerWorldCardAutomations } = await import("./integrations/world-card-automations/setup.js?v=1.5.59");
+      const { registerWorldCardAutomations } = await import("./integrations/world-card-automations/setup.js?v=1.5.61");
       registerWorldCardAutomations({ Hooks, game });
     } catch (error) {
+      releaseGroupedCombat(error);
       console.error(`${MODULE_ID} | Не удалось подключить автоматизации карточек мира.`, error);
     }
   }
@@ -8762,10 +8765,11 @@ Hooks.once("ready", async () => {
   try {
     registerCombatHooks(moduleApi);
     registerImplantAutomationHooks(moduleApi);
-    registerGroupedCombatRuntime(moduleApi);
+    releaseGroupedCombat();
     for (const combat of game.combats?.contents ?? []) await moduleApi.groupedCombatService.reconcile(combat);
   }
   catch (error) {
+    releaseGroupedCombat(error);
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);
   }
 

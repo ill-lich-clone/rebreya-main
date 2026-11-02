@@ -1,3 +1,4 @@
+import { activeEffectChanges, comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
@@ -554,8 +555,10 @@ export function buildDiscreetSpeedChanges(value) {
 }
 
 function getActorMovementValue(actor, movementKey) {
-  const sourceValue = getProperty(actor, `_source.system.attributes.movement.${movementKey}`);
-  const preparedValue = getProperty(actor, `system.attributes.movement.${movementKey}`);
+  const sourceValue = getProperty(actor, `_source.system.attributes.movement.speeds.${movementKey}`)
+    ?? getProperty(actor, `_source.system.attributes.movement.${movementKey}`);
+  const preparedValue = getProperty(actor, `system.attributes.movement.speeds.${movementKey}`)
+    ?? getProperty(actor, `system.attributes.movement.${movementKey}`);
   const numericValue = Number(sourceValue ?? preparedValue ?? 0);
   return Number.isFinite(numericValue) ? Math.max(0, numericValue) : 0;
 }
@@ -627,7 +630,7 @@ function buildFrightenedChanges(value, context = {}) {
 }
 
 function getEffectChanges(effect) {
-  return Array.isArray(effect?.changes) ? effect.changes : [];
+  return activeEffectChanges(effect);
 }
 
 function cloneEffectChange(change) {
@@ -792,9 +795,11 @@ function filterMeaningfulEffectUpdates(effects = [], updates = []) {
         return false;
       }
 
-      return !areEquivalentPatchedEffectValues(readPatchedEffectValue(effect, key), value);
+      if (key === "changes") return !areEquivalentPatchedEffectValues(comparableEffectChanges(effect), comparableEffectChanges(update));
+      const current = key === "icon" ? effect.img ?? effect.icon : readPatchedEffectValue(effect, key);
+      return !areEquivalentPatchedEffectValues(current, value);
     });
-  });
+  }).map(update => nativeEffectUpdate(update, effectById.get(String(update._id))));
 }
 
 function resolveManagedStatusIdFromEffect(effect, fallback = "") {
@@ -1154,11 +1159,9 @@ function buildDynamicStatusChanges(statusId, value, meta = {}, effect = null) {
   }
 
   if (statusId === DECAYING_DAMAGE_STATUS_ID) {
-    const preservedChanges = Array.isArray(effect?.changes)
-      ? effect.changes
-        .filter((change) => String(change?.key ?? "") !== DECAYING_DAMAGE_OVERTIME_KEY)
-        .map(cloneData)
-      : [];
+    const preservedChanges = getEffectChanges(effect)
+      .filter((change) => String(change?.key ?? "") !== DECAYING_DAMAGE_OVERTIME_KEY)
+      .map(cloneData);
     try {
       return [...preservedChanges, buildDecayingDamageChange(value, meta, {
         effectId: getEffectDocumentId(effect)
@@ -1952,7 +1955,7 @@ export class CombatStatusService {
       patch[`flags.${MODULE_ID}.${STATUS_META_FLAG}`] = cloneData(options.meta ?? {});
     }
 
-    await effect.update(patch);
+    await effect.update(nativeEffectUpdate(patch, effect));
   }
 
   async setStatus(actorOrId, statusInput, options = {}) {
@@ -2042,13 +2045,13 @@ export class CombatStatusService {
 
       if (!effect) {
         const [created] = await this.#withPendingManagedStatusCreate(actor, statusId, () => actor.createEmbeddedDocuments("ActiveEffect", [
-          this.#buildFallbackEffectData(statusId, {
+          nativeEffectUpdate(this.#buildFallbackEffectData(statusId, {
             durationRounds,
             value: Object.hasOwn(statusOptions, "value") ? statusOptions.value : null,
             meta: statusOptions.meta ?? {},
             actor,
             sourceActor: statusOptions.sourceActor ?? null
-          })
+          }))
         ]));
         effect = created ?? null;
       }
@@ -2220,10 +2223,10 @@ export class CombatStatusService {
 
   async #createDiscreetStatus(actor, { value = 1, durationRounds = DEFAULT_DURATION_ROUNDS, meta = {} } = {}) {
     const [created] = await this.#withPendingManagedStatusCreate(actor, REBREYA_DISCREET_STATUS_ID, () => actor.createEmbeddedDocuments("ActiveEffect", [
-      buildDiscreetStatusEffectData(value, {
+      nativeEffectUpdate(buildDiscreetStatusEffectData(value, {
         durationRounds,
         meta
-      })
+      }))
     ]));
 
     await this.#syncDiscreetStatusEffects(actor);

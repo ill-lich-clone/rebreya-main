@@ -288,3 +288,15 @@ test("damage-card metadata never resets an existing MIDI workflow's checked hit 
   assert.doesNotThrow(() => f.service.prepareWhirlwindDamageCard({ subject: f.activity, workflow }, {}));
   assert.equal(workflow.hitTargets.size, 1);
 });
+
+test("v6 whirlwind damage stores only the original hit tokens in the native target list", () => {
+  const f = useFixture();
+  globalThis.game.release = {generation:14};
+  try {
+    globalThis.fromUuidSync = uuid => uuid === f.ally.uuid ? f.ally : null;
+    globalThis.game.messages = {get: id => id === "usage" ? {getFlag: () => ({hitTokenUuids:[f.ally.uuid]})} : null};
+    const message = {data:{system:{origin:"usage"}}};
+    f.service.prepareWhirlwindDamageCard({subject:f.activity},message);
+    assert.deepEqual(message.data.system.targets.map(t=>[t.actor,t.token]),[[f.ally.actor.uuid,f.ally.uuid]]);
+  } finally { delete globalThis.game.release; }
+});

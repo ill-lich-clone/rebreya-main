@@ -1,7 +1,7 @@
 import { DisarmError, calculateDisarmDropCell, evaluateDisarmRules } from "../../combat/disarm-rules.js?v=1.4.252";
 import { buildDisarmRollPlan } from "../../integrations/disarm-roll-adapter.js?v=1.4.384";
 import { getItemHeldHands, isItemEquipped, canUseHeldItemForHandRequirement } from "../../integrations/held-items.js?v=1.5.29";
-import { getNaturalReachFeet } from "../../combat/natural-reach.js";
+import { getNaturalReachFeet } from "../../combat/natural-reach.js?v=1.5.61";
 import { measureStorageTokenDistance } from "../../data/storage-access.js";
 import { itemInstanceFingerprint } from "../../application/item-instance-workflow.js?v=1.5.17";
 

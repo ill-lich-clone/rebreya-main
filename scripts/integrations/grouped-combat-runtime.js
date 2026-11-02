@@ -1,6 +1,6 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
 import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.2";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.61";
 import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
@@ -8,6 +8,7 @@ const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
 const operationId = () => globalThis.crypto?.randomUUID?.() ?? `combat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const escape = value => String(value ?? "").replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const messages = {
+  "combat-not-ready": "Не удалось запустить обработчики группового боя. Перезагрузите клиент после проверки ошибки.",
   "forbidden": "Недостаточно прав для этого действия в бою.", "no-creatures": "Выделите существ текущей сцены. Хранилища и объекты не участвуют.",
   "stale-combat": "Положение боя уже изменилось. Повторите действие.", "unsupported-combat-effects": "Общий ход недоступен: проверьте совместимость активных модулей эффектов.",
   "combat-phase-failed": "Обработка эффекта прервана. Запустите «Начать сражение» для проверки незавершённого шага.",

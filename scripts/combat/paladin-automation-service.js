@@ -1401,6 +1401,15 @@ export class PaladinAutomationService {
       };
     }
 
+    if (typeof target?.rollSavingThrow === "function") {
+      const rolls = await target.rollSavingThrow(
+        { ability, target: dc, rolls: [{ options: { disadvantage } }] },
+        { configure: false }, { data: { flavor } }
+      );
+      const total = rolls?.[0]?.total;
+      return { success: !Number.isFinite(total) || total >= dc, total: total ?? 0, dc };
+    }
+
     if (typeof target?.rollAbilitySave !== "function") {
       return { success: true, total: 0, dc };
     }

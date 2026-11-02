@@ -466,3 +466,16 @@ test("transport speed repair merges malformed primary values without replacing v
     [`flags.${MODULE_ID}.transport.travelSpeed.value`]: 10
   }]);
 });
+
+test("transport repair writes the v6 speed field and preserves a custom vehicle speed", async () => {
+  const row = catalog.find(entry => entry.name === "Автомобиль «Кипятильник»");
+  const source = buildTransportActorData(row);
+  const writes = [];
+  const makeActor = walk => ({
+    type:"vehicle", img:source.img, flags:{[MODULE_ID]:{transport:{...source.flags[MODULE_ID].transport,sourceId:row.sourceId,instance:true}}},
+    system:{attributes:{movement:{speeds:{walk}}, travel:source.system.attributes.travel}},
+    update: async patch=>writes.push(patch)
+  });
+  await repairTransportInstanceSpeeds([makeActor(""),makeActor("120")],new Map([[row.sourceId,source]]));
+  assert.deepEqual(writes,[{"system.attributes.movement.speeds.walk":100}]);
+});

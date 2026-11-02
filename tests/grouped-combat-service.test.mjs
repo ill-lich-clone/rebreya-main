@@ -242,3 +242,42 @@ test("a member removed during another member's awaited workflow is never process
   assert.equal((await operation).ok, true);
   assert.equal(e.calls.includes("turn-end:b"), false); assert.equal(e.calls.includes("turn-end:c"), true);
 });
+
+test("pending group recovery refuses provider drift without replaying a single phase", async () => {
+  const e = setup();
+  await e.start("start");
+  const state = e.repository.readState(), before = e.calls.length;
+  state.pendingTransition = {phases:[],target:state.current,operationId:"previous",committedPositions:[JSON.stringify(state.current)]};
+  await e.repository.writeState(e.combat,state,{expectedRevision:state.revision});
+  e.service.effects.inspect = () => ({supported:false,issues:["unsupported-provider:dae:custom"]});
+  assert.equal((await e.service.reconcile(e.combat)).code,"unsupported-combat-effects");
+  assert.equal(e.repository.readState().revision,state.revision);
+  state.mode="blocked";state.receipts.interrupted={status:"uncertain"};
+  await e.repository.writeState(e.combat,state,{expectedRevision:state.revision});
+  const result=await e.service.resolveUncertainStep({combatId:"fight",expectedRevision:state.revision,
+    stepKey:"interrupted",resolution:"retry",operationId:"confirm"},{sender:{isGM:true}});
+  assert.equal(result.code,"unsupported-combat-effects");
+  assert.equal(e.repository.readState().receipts.interrupted.status,"uncertain");
+  assert.equal(e.calls.length,before);
+});
+
+test("startup holds existing combat navigation and command ingress until handlers are installed", async () => {
+  const e = setup(); await e.start("earlier-session");
+  const state = e.repository.readState();
+  const before = e.positions.length;
+  const release = e.service.holdUntilReady();
+  const next = e.service.transition({ combatId:"fight", expectedRevision:state.revision, targetRound:1,
+    targetGroupId:state.groups[1].id, operationId:"early-click" }, { sender:{isGM:true} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(e.positions.length, before);
+  assert.equal(e.repository.readState().revision,state.revision);
+  release();
+  assert.equal((await next).ok,true);
+  assert.equal(e.positions.length,before+1);
+  const cold = setup();
+  const fail = cold.service.holdUntilReady(), start = cold.start("before-publish");
+  fail(new Error("provider registration failed"));
+  assert.equal((await start).code,"combat-not-ready");
+  assert.equal((await cold.start("retry")).code,"combat-not-ready");
+  assert.deepEqual(cold.combat.flags,{});
+});

@@ -2055,3 +2055,9 @@ test("bloodied bulk sync reports changed actors without changing its result", as
     assert.deepEqual(seen, ["a"]);
   } finally { globalThis.game = previous; }
 });
+test("unvalued Discreet uses dnd5e 6 source speeds, even after its prepared walking speed was halved",()=>{
+ const actor={_source:{system:{attributes:{movement:{speeds:{walk:30,fly:60}}}}},
+  system:{attributes:{movement:{walk:15,fly:30,speeds:{walk:15,fly:30}}}}};
+ const [row]=buildDiscreetStatusSyncUpdates([{id:"source",name:"Сдержанный",flags:{"rebreya-main":{statusId:"rebreya-discreet",statusValue:null}}}],{actor});
+ assert.deepEqual(row.changes.map(c=>c.value),["-15","-30"]);
+});

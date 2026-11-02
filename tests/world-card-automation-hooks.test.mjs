@@ -268,3 +268,43 @@ test("an editable player effect cannot execute a selected document callback as G
   await fire("deleteActiveEffect", child, {});
   assert.equal(count, 1);
 });
+
+test("grouped turn-end delegates the non-representative's card only to its confirmed owner and deduplicates socket retries", async t => {
+  const {buildPhaseStepKey} = await import("../scripts/combat/turn-group-rules.js");
+  const gm = { id: "gm", isGM: true, active: true }, player = { id: "player", isGM: false, active: true };
+  const users = new Map([[gm.id, gm], [player.id, player]]);
+  users.contents = [gm, player]; users.activeGM = gm;
+  const actor = { uuid: "Actor.hero", hasPlayerOwner: true, testUserPermission: u => u === player };
+  player.character = actor;
+  const item = { documentName: "Item", name: "selected", actor, system: {}, flags: { "chris-premades": { macros: {combat:["selected"]} } } };
+  actor.items = [item];
+  const member = { id:"b", token: { id:"token-b", actor, object: {} } };
+  const phase = { kind: "turn-end", groupId: "first", round: 1, memberIds:["a", "b"] };
+  const state = { mode: "active", pendingTransition: { phases:[phase] }, receipts: {} };
+  const combat = { id: "fight", combatants:new Map([["b",member]]), turns:[{},member], started:true, isActive:true,
+    flags:{"rebreya-main":{groupedCombat:state}} };
+  const game = { version:"14.369", user:gm, users, combats:new Map([[combat.id,combat]]),
+    modules:new Map([["midi-qol",{active:true}]]) };
+  const hooks = new Map(); let planner, handler, payload; const calls = [];
+  const transport = { register(name, callback) {assert.equal(name,"groupedWorldCard");handler=callback;},
+    async executeAsUser(name,user,request) { assert.equal(name,"groupedWorldCard");assert.equal(user,"player");
+      payload=request; game.user=player;return handler.call({socketdata:{userId:"gm"}},request); }};
+  const oldSocket = globalThis.socketlib; globalThis.socketlib={registerModule:()=>transport};
+  t.after(()=>{if(oldSocket === undefined) delete globalThis.socketlib;else globalThis.socketlib=oldSocket;});
+  game.rebreyaMain={groupedCombatService:{effects:{setWorldCardPhase:fn=>planner=fn}}};
+  registerCprCardHandlers({Hooks:{on:(name,callback)=>hooks.set(name,callback)},game,
+    definitions:{legacy:{selected:{combat:[{pass:"turnEnd",macro:({trigger})=>{calls.push([game.user.id,trigger.entity]);}}]}}}});
+  const steps=[]; planner(combat,phase,member,(provider,c,id,run)=>steps.push({provider,c,id,run}));
+  assert.equal(steps.length,1);
+  const [step]=steps;
+  const key=buildPhaseStepKey(combat.id,phase,member.id,step.provider,step.id);
+  state.receipts[key]={status:"running",provider:step.provider,phase:phase.kind,combatantId:member.id,operationId:"advance"};
+  await hooks.get("updateCombat")(combat,{turn:1});
+  assert.deepEqual(calls,[]);
+  assert.equal(await step.run(),true);
+  assert.equal(await handler.call({socketdata:{userId:"other"}},payload),false);
+  assert.equal(await handler.call({socketdata:{userId:"gm"}},payload),true);
+  assert.deepEqual(calls,[[player.id,item]]);
+  state.receipts[key].status="done";
+  assert.equal(await handler.call({socketdata:{userId:"gm"}},payload),false);
+});

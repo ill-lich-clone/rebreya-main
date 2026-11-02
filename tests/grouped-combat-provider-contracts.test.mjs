@@ -63,7 +63,7 @@ test("installed native D20Roll normalization stays shareable and all native sema
   }
   const D20Roll = await loadInstalledClass("../systems/dnd5e/dnd5e.mjs", "D20Roll", { BasicRoll, D20RollConfigurationDialog: class {}, CONFIG: { Dice: { D20Die: Die } }, foundry: { dice: { terms: { Die } } } });
   const profile = options => {
-    const roll = new D20Roll("1d20 + 2 + 0.13", {}, { advantage: false, disadvantage: false, halflingLucky: false, maximum: Infinity, minimum: -Infinity, ...options });
+    const roll = new D20Roll("1d20 + 2 + 0.13", {}, { advantage: false, disadvantage: false, halflingLucky: false, ability: "dex", maximum: Infinity, minimum: -Infinity, ...options });
     assert.equal(roll.options.configured, true);
     assert.equal(typeof roll.options.advantageMode, "number");
     return describeInitiative({ getInitiativeRoll: () => roll });
@@ -71,7 +71,7 @@ test("installed native D20Roll normalization stays shareable and all native sema
   const normal = profile({});
   assert.equal(normal.canShare, true);
   assert.equal(normal.key, profile({ flavor: "Другой тролль" }).key);
-  for (const options of [{ advantageMode: 1 }, { advantageMode: -1 }, { criticalSuccess: 19 }, { criticalFailure: 2 }, { target: 15 }]) {
+  for (const options of [{ ability: "con" }, { advantageMode: 1 }, { advantageMode: -1 }, { criticalSuccess: 19 }, { criticalFailure: 2 }, { target: 15 }]) {
     const changed = profile(options); assert.equal(changed.canShare, true); assert.notEqual(changed.key, normal.key);
   }
   assert.equal(profile({ customRule: true }).canShare, false);

@@ -1,3 +1,4 @@
+import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
 import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.23";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
@@ -53,10 +54,10 @@ export function buildCurseUpgradeEffect(source, actor, state = {}) {
     for (const kind of ["walk", "burrow", "climb", "fly", "swim"]) {
       // dnd5e fills an absent/empty actor speed from its species before applying effects.
       // Read that unmodified source, not the already reduced derived speed.
-      const raw = baseMovement[kind] || movement.fromSpecies?.[kind];
+      const raw = (baseMovement.speeds ?? baseMovement)[kind] || movement.fromSpecies?.[kind];
       const speed = Number(raw);
       if (Number.isFinite(speed) && speed > 0) changes.push(change(`system.attributes.movement.${kind}`, -Math.min(10, speed)));
-      else if (raw && Number(actor.system?.attributes?.movement?.[kind]) > 0) changes.push(change(`system.attributes.movement.${kind}`, -10));
+      else if (raw && Number((movement.speeds ?? movement)[kind]) > 0) changes.push(change(`system.attributes.movement.${kind}`, -10));
     }
   }
   if (source.key === "obsidian" && state.ac) changes.push(change("system.attributes.ac.bonus", state.ac));
@@ -179,12 +180,16 @@ export class CurseUpgradeAutomationService {
         if (!data) { remove.push(effect.id); continue; }
         desired.delete(own.sourceId);
         const current = effect.toObject?.() ?? effect;
-        if (Object.keys(data).some(key => JSON.stringify(key === "flags" ? current.flags?.[MODULE_ID]?.[FLAG] : current[key])
-          !== JSON.stringify(key === "flags" ? data.flags[MODULE_ID][FLAG] : data[key]))) update.push({ _id: effect.id, ...data });
+        const changed = Object.keys(data).some(key => {
+          if (key === "changes") return JSON.stringify(comparableEffectChanges(current)) !== JSON.stringify(comparableEffectChanges(data));
+          if (key === "flags") return JSON.stringify(current.flags?.[MODULE_ID]?.[FLAG]) !== JSON.stringify(data.flags[MODULE_ID][FLAG]);
+          return JSON.stringify(current[key]) !== JSON.stringify(data[key]);
+        });
+        if (changed) update.push({ _id: effect.id, ...nativeEffectUpdate(data, current) });
       }
       if (remove.length) await actor.deleteEmbeddedDocuments("ActiveEffect", remove, syncOptions());
       if (update.length) await actor.updateEmbeddedDocuments("ActiveEffect", update, syncOptions());
-      if (desired.size) await actor.createEmbeddedDocuments("ActiveEffect", [...desired.values()], syncOptions());
+      if (desired.size) await actor.createEmbeddedDocuments("ActiveEffect", Array.from(desired.values(), data => nativeEffectUpdate(data)), syncOptions());
     });
   }
   handleChanged(document, options = {}) {

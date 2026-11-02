@@ -1963,3 +1963,45 @@ test("paladin divine smite automation hooks into midi pre-damage roll", async ()
     globalThis.game = previousGame;
   }
 });
+
+test("accusation smite uses the target's native dnd5e save", async () => {
+  const actor = magistratePaladinWithSmiteVariant("magistrate-accusation-smite");
+  const target = new TestActor({id: "native-target", items: []});
+  let saves = 0;
+  target.rollSavingThrow = async (config, dialog) => {
+    saves++;
+    assert.equal(config.ability, "cha");
+    assert.ok(config.target > 1);
+    assert.equal(dialog.configure, false);
+    return [{total: 1}];
+  };
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => ({slotLevel: 1, variantIds: ["magistrate-accusation-smite"]})
+  });
+  const workflow = makeWeaponWorkflow({actor, target});
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, makeDamageConfig());
+  assert.equal(saves, 1);
+  assert.ok(target.effects.contents.some(e => e.flags["rebreya-main"].paladinAutomation?.effect === "accusationNoAdvantage"));
+});
+
+test("v14 ordinary turn effects use the committed combatant on round rollover and only the active GM writes", () => {
+  const previousGame = globalThis.game, previousHooks = globalThis.Hooks;
+  const gm = {id:"authority",active:true,isGM:true}, calls = [], listeners = new Map();
+  globalThis.game = {user:gm,users:{activeGM:gm},release:{generation:14}};
+  globalThis.Hooks = {on(name, callback) {listeners.set(name,[...(listeners.get(name) ?? []),callback]);}};
+  try {
+    registerCombatHooks({paladinAutomationService:{async handleCombatTurnChange(combat, update) {
+      calls.push([combat.combatant.id,update.round,update.turn]);
+    }}});
+    const prev={round:1,turn:2,combatantId:"last"}, next={round:2,turn:0,combatantId:"first"};
+    const combat={combatant:{id:"first"}};
+    const fire=(event,...args)=>(listeners.get(event) ?? []).forEach(handler=>handler(combat,...args));
+    fire("combatTurn", next, {direction:1});
+    assert.deepEqual(calls,[]);
+    fire("combatTurnChange", prev, next);
+    fire("combatTurnChange", next, prev);
+    globalThis.game.user={id:"second-gm",active:true,isGM:true};
+    fire("combatTurnChange", prev, next);
+    assert.deepEqual(calls,[["first",2,0]]);
+  } finally {globalThis.game=previousGame;globalThis.Hooks=previousHooks;}
+});

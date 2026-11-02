@@ -1,3 +1,4 @@
+import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
 import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
 
@@ -128,12 +129,7 @@ function comparableEffectData(effect) {
     img: String(effect?.img ?? ""),
     disabled: effect?.disabled === true,
     transfer: effect?.transfer === true,
-    changes: collectionContents(effect?.changes).map((change) => ({
-      key: String(change?.key ?? ""),
-      mode: Number(change?.mode ?? 0),
-      value: String(change?.value ?? ""),
-      priority: Number(change?.priority ?? 0)
-    })),
+    changes: comparableEffectChanges(effect),
     sizeAutomation: {
       managed: effect?.flags?.[MODULE_ID]?.sizeAutomation?.managed === true,
       size: String(effect?.flags?.[MODULE_ID]?.sizeAutomation?.size ?? "")
@@ -256,13 +252,13 @@ export class SizeAutomationService {
     const [primary, ...duplicates] = managed;
     let changed = false;
     if (!primary) {
-      await actor.createEmbeddedDocuments("ActiveEffect", [desired], mutationOptions);
+      await actor.createEmbeddedDocuments("ActiveEffect", [nativeEffectUpdate(desired)], mutationOptions);
       changed = true;
     }
     else if (!effectDataMatches(primary, desired)) {
       await actor.updateEmbeddedDocuments("ActiveEffect", [{
         _id: primary.id ?? primary._id,
-        ...desired
+        ...nativeEffectUpdate(desired, primary)
       }], mutationOptions);
       changed = true;
     }

@@ -291,15 +291,22 @@ function normalizeChoice(choice, fallbackLevel) {
   };
 }
 
+async function rollSpellAbilityCheck(actor, item, dc) {
+  const ability = abilityKey(actor, item);
+  if (typeof actor?.rollAbilityCheck === "function") {
+    const rolls = await actor.rollAbilityCheck({ ability, target: dc }, { configure: false });
+    return toNumber(rolls?.[0]?.total, NaN);
+  }
+  const roll = await actor?.rollAbilityTest?.(ability, { fastForward: true, targetValue: dc });
+  return toNumber(roll?.total ?? roll, NaN);
+}
+
 function abilityKey(actor, item) {
-  return cleanText(
-    item?.system?.ability
-    ?? item?.system?.ability?.value
-    ?? actor?.system?.attributes?.spellcasting
-    ?? actor?.system?.details?.spellcasting
-    ?? "int",
-    "int"
-  );
+  const authored = item?.system?.ability;
+  return cleanText(typeof authored === "string" ? authored : authored?.value)
+    || item?.system?.availableAbilities?.values?.().next().value
+    || actor?.spellcastingAbility || actor?.system?.attributes?.spellcasting
+    || actor?.system?.details?.spellcasting || "int";
 }
 
 /**
@@ -1150,14 +1157,7 @@ export class SpellAutomationService {
       return toNumber(await this._options.rollAbilityCheck(attempt, dc, parent), NaN);
     }
 
-    const actor = attempt.actor;
-    const ability = abilityKey(actor, attempt.item);
-    if (typeof actor?.rollAbilityTest === "function") {
-      const roll = await actor.rollAbilityTest(ability, { fastForward: true, targetValue: dc });
-      return toNumber(roll?.total ?? roll, NaN);
-    }
-
-    return Number.NaN;
+    return rollSpellAbilityCheck(attempt.actor, attempt.item, dc);
   }
 
   async #rollSpellShatterCheck(parent, dc, attempt) {
@@ -1169,14 +1169,7 @@ export class SpellAutomationService {
       return toNumber(await this._options.rollAbilityCheck(attempt, dc, parent), NaN);
     }
 
-    const actor = parent.actor;
-    const ability = abilityKey(actor, parent.item);
-    if (typeof actor?.rollAbilityTest === "function") {
-      const roll = await actor.rollAbilityTest(ability, { fastForward: true, targetValue: dc });
-      return toNumber(roll?.total ?? roll, NaN);
-    }
-
-    return Number.NaN;
+    return rollSpellAbilityCheck(parent.actor, parent.item, dc);
   }
 
   async #restoreSpellShatterRefund(attempt) {

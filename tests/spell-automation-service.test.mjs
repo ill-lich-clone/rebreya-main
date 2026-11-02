@@ -1029,3 +1029,22 @@ test("module API composes the Counterspell runtime and managed spell pack", asyn
     globalThis.Hooks = previousHooks;
   }
 });
+
+test("Counterspell checks use the native dnd5e ability roll and keep its bonuses", async () => {
+  const candidate = counterspellCandidate({ selectedLevel: 3 });
+  candidate.item.system.ability = "";
+  candidate.item.system.availableAbilities = new Set(["cha"]);
+  let checks = 0;
+  candidate.actor.rollAbilityCheck = async ({ability, target}, dialog) => {
+    checks++;
+    assert.equal(target, 15);
+    assert.equal(ability, "cha");
+    assert.equal(dialog.configure, false);
+    return [{total: 16}];
+  };
+  const service = makeService({ candidates: [candidate] });
+  delete service._options.rollAbilityCheck;
+  const result = await service.resolveCast(rootCast({spellLevel: 5}));
+  assert.equal(checks, 1);
+  assert.equal(result.cancelled, true);
+});

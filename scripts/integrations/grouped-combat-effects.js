@@ -1,13 +1,18 @@
+import { installV14EffectGuards, planV14Expiry, planV14MidiOptionals, planV14RegionEvents } from "./grouped-combat-v14.js";
 import { MODULE_ID } from "../constants.js";
 import { buildPhaseStepKey, combatFlagKey, combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js";
 
 const GUARDED = Symbol.for("rebreya-main.groupedCombatProviderGuard");
 const KNOWN = { dae: "13.0.27", "times-up": "13.1.9", "midi-qol": "13.0.61", effectmacro: "13.0.4" };
-const entries = Hooks => (Hooks?.events ?? Hooks?._hooks)?.updateCombat ?? [];
+const KNOWN_V14 = { dae: "14.6.6", "midi-qol": "14.6.8", effectmacro: "14.0.1" };
+const isV14 = game => game?.version === "14.369" && game.system?.version === "6.0.6" && game.system.id === "dnd5e";
+const entries = (Hooks, name) => (Hooks?.events ?? Hooks?._hooks)?.[name] ?? [];
 const callback = entry => typeof entry === "function" ? entry : entry.fn;
 const providerOf = fn => {
   if (fn?.[GUARDED]) return fn[GUARDED];
   const source = String(fn);
+  if (fn?.name === "expirePerTurnBonusActions") return "midi-qol";
+  if (source.includes("processMacroRepeats(")) return "dae";
   if (source.includes("_processOverTime(") && source.includes("_processActivityOverTime(")) return "midi-qol";
   if (source.includes("turnStartSource") && (source.includes("timesUpEnabled") || source.includes("effectsToExpire"))) return "times-up";
   if (fn?.__rebreyaEffectMacroCombatCompatPatched || fn?.name === "rebreyaEffectMacroUpdateCombatCompat" || (fn?.name === "updateCombat" && source.includes("_executeAppliedEffects"))) return "effectmacro";
@@ -17,13 +22,15 @@ export const hasGroupedCombatPhases = combat => ["active", "blocked"].includes(c
 
 export function inspectGroupedCombatSupport({ game = globalThis.game, Hooks = globalThis.Hooks } = {}) {
   const issues = [], providers = {};
-  if (game?.system?.id !== "dnd5e" || game.system.version !== "5.2.5" || game.version !== "13.351") issues.push("unsupported-foundry-system");
-  for (const [id, version] of Object.entries(KNOWN)) {
+  const modern = isV14(game);
+  if (!modern && (game?.system?.id !== "dnd5e" || game.system.version !== "5.2.5" || game.version !== "13.351")) issues.push("unsupported-foundry-system");
+  for (const id of Object.keys(KNOWN)) {
     const module = game?.modules?.get?.(id);
     if (!module?.active) continue;
     providers[id] = module.version;
-    if (module.version !== version) issues.push(`unsupported-provider:${id}:${module.version}`);
-    if (id !== "dae" && !entries(Hooks).some(entry => providerOf(callback(entry)) === id)) issues.push(`missing-provider-hook:${id}`);
+    if (module.version !== (modern ? KNOWN_V14 : KNOWN)[id]) issues.push(`unsupported-provider:${id}:${module.version}`);
+    const hooks = modern && id === "midi-qol" ? ["combatTurn", "combatRound"] : !modern && id === "dae" ? [] : ["updateCombat"];
+    if (hooks.some(name => !entries(Hooks, name).some(entry => providerOf(callback(entry)) === id))) issues.push(`missing-provider-hook:${id}`);
   }
   return { supported: issues.length === 0, issues, providers };
 }
@@ -32,7 +39,7 @@ export function describeInitiative(actor) {
   const roll = actor?.getInitiativeRoll?.();
   if (!roll) return { key: null, canShare: false };
   const options = roll.options ?? {};
-  const semantic = ["advantage", "disadvantage", "advantageMode", "fixed", "minimum", "maximum", "halflingLucky", "reliableTalent", "elvenAccuracy", "critical", "criticalSuccess", "fumble", "criticalFailure", "target", "targetValue", "rollMode", "flavor", "configured", "preRollClassHook", "evaluate"];
+  const semantic = ["ability", "advantage", "disadvantage", "advantageMode", "fixed", "minimum", "maximum", "halflingLucky", "reliableTalent", "elvenAccuracy", "critical", "criticalSuccess", "fumble", "criticalFailure", "target", "targetValue", "rollMode", "flavor", "configured", "preRollClassHook", "evaluate"];
   if (Object.keys(options).some(key => !semantic.includes(key))) return { key: null, canShare: false };
   const rules = Object.fromEntries(Object.entries(options).filter(([key]) => !["flavor", "rollMode", "configured", "evaluate", "preRollClassHook"].includes(key)));
   // Native formula already resolves referenced actor data; unrelated HP/name never enter the key.
@@ -72,7 +79,11 @@ export function createGroupedCombatEffects(dependencies = {}) {
   const getMidi = () => dependencies.MidiQOL ?? globalThis.MidiQOL;
   const getEffectMacro = () => dependencies.effectmacro ?? globalThis.effectmacro;
   const runRebreyaPhase = dependencies.runRebreyaPhase ?? (async () => {});
+  const registry = () => dependencies.effectRegistry?.() ?? globalThis.CONFIG?.ActiveEffect?.documentClass?.registry;
+  const modern = () => isV14(gameProvider());
   let ownerSocket;
+  let worldCardPhase;
+  let effectGuardsReady;
   const ensureOwnerSocket = () => {
     if (ownerSocket) return ownerSocket;
     const socketlib = dependencies.socketlib ?? globalThis.socketlib;
@@ -98,16 +109,19 @@ export function createGroupedCombatEffects(dependencies = {}) {
 
   const installNativeGuards = () => {
     ensureOwnerSocket();
-    const list = entries(Hooks);
-    for (let i = 0; i < list.length; i++) {
-      const original = callback(list[i]), provider = providerOf(original);
-      if (!provider || original[GUARDED]) continue;
-      const wrapped = function (...args) {
-        if (hasGroupedCombatPhases(args[0])) return;
-        return original.apply(this, args);
-      };
-      Object.defineProperty(wrapped, GUARDED, { value: provider });
-      if (typeof list[i] === "function") list[i] = wrapped; else list[i].fn = wrapped;
+    if (modern()) effectGuardsReady = installV14EffectGuards(dependencies.EffectClass ?? globalThis.CONFIG?.ActiveEffect?.documentClass, dependencies.libWrapper ?? globalThis.libWrapper);
+    for (const name of modern() ? ["updateCombat", "combatTurn", "combatRound"] : ["updateCombat"]) {
+      const list = entries(Hooks, name);
+      for (let i = 0; i < list.length; i++) {
+        const original = callback(list[i]), provider = providerOf(original);
+        if (!provider || original[GUARDED]) continue;
+        const wrapped = function (...args) {
+          if (hasGroupedCombatPhases(args[0])) return;
+          return original.apply(this, args);
+        };
+        Object.defineProperty(wrapped, GUARDED, { value: provider });
+        if (typeof list[i] === "function") list[i] = wrapped; else list[i].fn = wrapped;
+      }
     }
   };
 
@@ -115,16 +129,17 @@ export function createGroupedCombatEffects(dependencies = {}) {
     if (effect.disabled || effect.isSuppressed || (effect.flags?.ActiveAuras?.isAura && effect.flags.ActiveAuras.ignoreSelf)) return;
     const midi = getMidi(), owner = midi.playerForActor(actor), game = gameProvider();
     let privateExecution = false;
-    for (const change of effect.changes ?? []) {
+    for (const change of (modern() ? effect.system?.changes : effect.changes) ?? []) {
       if (!change.key.startsWith("flags.midi-qol.ActivityOverTime")) continue;
       let activity = await (dependencies.fromUuid ?? globalThis.fromUuid)?.(String(change.value ?? ""));
       if (!activity && effect.transfer) activity = effect.parent?.system?.activities?.find(a => a.identifier === String(change.value));
       if (!activity && effect.origin) activity = midi.getItemFromEffectOrigin(effect.origin)?.system?.activities?.find(a => a.identifier === String(change.value));
+      if (modern() && !activity) continue;
       if (!activity) throw new Error(`ActivityOverTime activity not found: ${effect.uuid}`);
       const choice = activity.overTimeProperties?.turnChoice ?? "start";
       if ((choice === "start" && !startTurn) || (choice === "end" && startTurn)) continue;
       const modes = globalThis.CONST?.DICE_ROLL_MODES ?? { PRIVATE: "gmroll", SELF: "selfroll" };
-      if ([modes.PRIVATE, modes.SELF].includes(activity.midiProperties?.rollMode)) privateExecution = owner !== undefined;
+      if (["gm", "self", "gmroll", "selfroll", modes.PRIVATE, modes.SELF].filter(Boolean).includes(activity.midiProperties?.rollMode)) privateExecution = owner !== undefined;
     }
     const executorId = privateExecution && owner?.active && owner !== game.user ? owner.id : game.user.id;
     return midi.socket().executeAsUser("localActivityOverTimeEffect", executorId, {
@@ -145,7 +160,7 @@ export function createGroupedCombatEffects(dependencies = {}) {
     });
     const start = phase.kind === "turn-start", end = phase.kind === "turn-end";
     const expiring = new Set();
-    if (start || end) {
+    if (!modern() && (start || end)) {
       for (const target of combatants) for (const effect of applicableEffects(target.actor)) {
         const special = effect.flags?.dae?.specialDuration ?? [];
         const own = selected.some(c => c.id === target.id);
@@ -164,13 +179,15 @@ export function createGroupedCombatEffects(dependencies = {}) {
     }
     for (const c of selected) {
       if (!c.actor) continue;
-      const periods = { "turn-start": ["turnStart"], "turn-end": ["turnEnd"], "each-turn": ["turn"] }[phase.kind];
+      const periods = { "round-start": modern() ? ["round"] : null, "turn-start": ["turnStart"], "turn-end": ["turnEnd"], "each-turn": ["turn"] }[phase.kind];
       if (periods && !c.isDefeated) add("dnd5e", c, "recovery", () => c.recoverCombatUses?.(periods));
       if (start && combat.clearMovementHistories) add("foundry", c, "movement-history", () => combat.clearMovementHistories([c]));
       if (start && getMidi()?.removeActionUsed) add("midi-qol", c, "action-state", () => getMidi().removeActionUsed(c.actor));
-      if (start && getMidi()?.socket && !gameProvider().modules?.get?.("times-up")?.active) add("midi-qol", c, "reaction-state", () => getMidi().socket().executeAsGM("removeActionBonusReaction", { actorUuid: c.actor.uuid }));
+      if (modern() && getMidi()) planV14MidiOptionals(c.actor, c, phase, add);
+      if (!modern() && start && getMidi()?.socket && !gameProvider().modules?.get?.("times-up")?.active) add("midi-qol", c, "reaction-state", () => getMidi().socket().executeAsGM("removeActionBonusReaction", { actorUuid: c.actor.uuid }));
+      const midiEffects = modern() && (start || end) ? new Set(c.actor.appliedEffects ?? []) : null;
       if (start || end) for (const effect of applicableEffects(c.actor)) {
-        if (expiring.has(effect.uuid)) continue;
+        if (expiring.has(effect.uuid) || (modern() && effect.duration?.expired)) continue;
         const repeat = effect.flags?.dae?.macroRepeat ?? "";
         if (getDAE()?.daeMacro && ((start && /^(?:startEveryTurn|startEndEveryTurn)(?:Any)?$/u.test(repeat)) || (end && /^(?:endEveryTurn|startEndEveryTurn)(?:Any)?$/u.test(repeat)))) {
           if (repeat.endsWith("Any") || (!effect.disabled && !effect.isSuppressed)) add("dae", c, `repeat:${effect.uuid}`, () => getDAE().daeMacro("each", c.actor, effect, {
@@ -178,8 +195,10 @@ export function createGroupedCombatEffects(dependencies = {}) {
           }), effect);
         }
         const midi = getMidi();
-        if (midi?.doOverTimeEffect && effect.changes?.some(change => change.key.startsWith("flags.midi-qol.OverTime"))) add("midi-qol", c, `overtime:${effect.uuid}`, () => midi.doOverTimeEffect(c.actor, effect, start), effect);
-        if (midi?.socket && effect.changes?.some(change => change.key.startsWith("flags.midi-qol.ActivityOverTime"))) add("midi-qol", c, `activity:${effect.uuid}`, () => activityOverTime(c.actor, effect, start), effect);
+        if (midiEffects && !midiEffects.has(effect)) continue;
+        const changes = modern() ? effect.system?.changes : effect.changes;
+        if (midi?.doOverTimeEffect && changes?.some(change => change.key.startsWith("flags.midi-qol.OverTime"))) add("midi-qol", c, `overtime:${effect.uuid}`, () => midi.doOverTimeEffect(c.actor, effect, start), effect);
+        if (midi?.socket && changes?.some(change => change.key.startsWith("flags.midi-qol.ActivityOverTime"))) add("midi-qol", c, `activity:${effect.uuid}`, () => activityOverTime(c.actor, effect, start), effect);
       }
       const hook = { "turn-start": "onTurnStart", "turn-end": "onTurnEnd", "each-turn": "onEachTurn", "round-start": "onRoundStart", "round-end": "onRoundEnd", "combat-start": "onCombatStart", "combat-end": "onCombatEnd" }[phase.kind];
       const effectmacro = getEffectMacro();
@@ -200,18 +219,28 @@ export function createGroupedCombatEffects(dependencies = {}) {
         }
       }
     }
+    if (modern()) {
+      planV14Expiry(combat, phase, state, registry(), add);
+      planV14RegionEvents(combat, phase, selected, add);
+      if (worldCardPhase) for (const member of selected) worldCardPhase(combat, phase, member, add);
+    }
     if (dependencies.planRebreyaPhase) {
       for (const step of dependencies.planRebreyaPhase(combat, phase)) add("rebreya", combatants.find(c => c.id === step.combatantId), step.id, step.run);
     } else add("rebreya", null, "automation", () => runRebreyaPhase(combat, phase));
     return steps;
   }
-  return { plan, installNativeGuards, inspect: () => {
+  return { plan, installNativeGuards, setWorldCardPhase(handler) { worldCardPhase = handler; }, inspect: (scene = null, actors = []) => {
     installNativeGuards();
     const game = gameProvider(), support = inspectGroupedCombatSupport({ game, Hooks });
     const needs = { dae: () => getDAE()?.daeMacro, "times-up": () => getTimesUp()?.expireEffect,
       "midi-qol": () => getMidi()?.doOverTimeEffect && getMidi()?.socket && getMidi()?.playerForActor,
       effectmacro: () => getEffectMacro()?.utils?.callMacro && getEffectMacro()?.utils?.getExecutor && ensureOwnerSocket() };
     for (const [id, available] of Object.entries(needs)) if (game.modules?.get?.(id)?.active && !available()) support.issues.push(`missing-provider-api:${id}`);
+    if (modern() && (!effectGuardsReady || !registry()?.refresh)) support.issues.push("missing-foundry-effect-registry");
+    // Midi moves these regions on the individual caster’s turn on the owning client.
+    if (modern() && game.modules?.get("midi-qol")?.active && scene && Array.from(scene.regions ?? []).some(region => !region.attachment?.token && Array.from(region.behaviors ?? []).some(
+      b => !b.disabled && b.type === "midi-qol.regionActivity" && b.system?.moveDistance > 0 && actors.some(actor => actor?.uuid === b.system.sourceActorUuid)
+    ))) support.issues.push("midi-moving-region");
     const midiConfig = getMidi()?.currentConfigSettings;
     // ponytail: individual round rerolls require a grouped reroll coordinator; preserve the setting and refuse conversion until supported.
     if (game.modules?.get?.("midi-qol")?.active && !midiConfig?.toggleOptionalRules && midiConfig?.optionalRules?.autoRerollInitiative) support.issues.push("midi-auto-reroll-initiative");

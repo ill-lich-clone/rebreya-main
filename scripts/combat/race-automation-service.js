@@ -1,3 +1,4 @@
+import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
 import { whirlwindEffectTargets, isWhirlwindActivity } from "./whirlwind-attack.js?v=1.5.1";
 import {
@@ -358,12 +359,7 @@ function racePenaltyEffectMatches(effect, desired) {
     img: cleanText(entry?.img),
     disabled: entry?.disabled === true,
     transfer: entry?.transfer === true,
-    changes: normalizeCollection(entry?.changes).map((change) => ({
-      key: cleanText(change?.key),
-      mode: Number(change?.mode ?? 0),
-      value: cleanText(change?.value),
-      priority: Number(change?.priority ?? 0)
-    })),
+    changes: comparableEffectChanges(entry),
     managed: entry?.flags?.[MODULE_ID]?.raceAbilityPenalty ?? null
   });
   return JSON.stringify(normalized(effect)) === JSON.stringify(normalized(desired));
@@ -497,12 +493,7 @@ function effectComparable(effect) {
     img: cleanText(effect?.img),
     disabled: effect?.disabled === true,
     transfer: effect?.transfer === true,
-    changes: normalizeCollection(effect?.changes).map((change) => ({
-      key: cleanText(change?.key),
-      mode: Number(change?.mode ?? 0),
-      value: cleanText(change?.value),
-      priority: Number(change?.priority ?? 0)
-    })),
+    changes: comparableEffectChanges(effect),
     giantTribe: effect?.flags?.[MODULE_ID]?.giantTribe ?? null
   };
 }
@@ -963,13 +954,13 @@ export class RaceAutomationService {
     const [primary, ...duplicates] = managed;
     let changed = false;
     if (!primary) {
-      await item.createEmbeddedDocuments("ActiveEffect", [desired], options);
+      await item.createEmbeddedDocuments("ActiveEffect", [nativeEffectUpdate(desired)], options);
       changed = true;
     }
     else if (!racePenaltyEffectMatches(primary, desired)) {
       await item.updateEmbeddedDocuments("ActiveEffect", [{
         _id: primary.id ?? primary._id,
-        ...desired
+        ...nativeEffectUpdate(desired, primary)
       }], options);
       changed = true;
     }
@@ -1041,7 +1032,7 @@ export class RaceAutomationService {
     if (desired.length > 0) {
       await item.createEmbeddedDocuments(
         "ActiveEffect",
-        foundry.utils.deepClone(desired),
+        desired.map(data => nativeEffectUpdate(foundry.utils.deepClone(data))),
         racePenaltyUpdateOptions()
       );
     }
@@ -2076,7 +2067,7 @@ export class RaceAutomationService {
 
     const data = foundry.utils.deepClone(effectData);
     delete data._id;
-    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+    await actor.createEmbeddedDocuments("ActiveEffect", [nativeEffectUpdate(data)]);
     return true;
   }
 

@@ -45,6 +45,20 @@ test("existing tuning can enchant a magical firearm without removing unrelated r
  const old=globalThis.game;globalThis.game={i18n:{localize:()=>"magic forbidden"}};
  try{const errors=[new Error("magic forbidden"),new Error("wrong type")];allowMagicalFirearmTuning(activity,item,errors);assert.deepEqual(errors.map(e=>e.message),["wrong type"]);}finally{globalThis.game=old;}
 });
+test("native v14 enchantment drops only its redundant +1, keeps custom rows, and resets the actual duration",async()=>{
+ const {item,effect,writes}=fixture(),activity={flags:{"rebreya-main":{firearmTuning:true}}};
+ const add={key:"activities[attack].attack.bonus",type:"add",value:1,phase:"initial",conditions:"{}",replacement:""};
+ const custom={...add,value:"@mod"},conditional={...add,conditions:'{"test":true}'};
+ item.effects.contents=[];
+ const data={system:{changes:[add,custom,conditional]},duration:{value:60,units:"seconds",expired:true},start:{time:10}};
+ assert.equal(canApplyFirearmTuning(item,activity,data),true);
+ assert.deepEqual(data.system.changes,[custom,conditional]);assert.equal(data.duration.value,null);assert.equal(data.duration.expired,false);assert.equal(data.start,null);
+ item.effects.contents=[effect];effect.duration={value:null,units:"seconds"};
+ await startFirearmTuning(item,100);
+ assert.equal(writes[0]["start.time"],100);assert.equal(writes[0]["duration.value"],60);
+ canApplyFirearmTuning(item,activity);await Promise.resolve();
+ assert.equal(writes[1]["duration.value"],null);assert.equal(writes[1]["duration.expired"],false);assert.equal(writes[1].start,null);
+});
 test("only completed automatic or semi-automatic activities start tuning",async()=>{
  const {item,effect}=fixture();await startTuningForAreaFire({item,flags:{"rebreya-main":{automation:"firearm-reload"}}},50);
  assert.equal(effect.flags["rebreya-main"].firearmTuning.startedAt,null);

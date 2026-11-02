@@ -50,3 +50,14 @@ test("native damage resolves one exact originating attack; multiple or unrelated
   associated = [attack, attack]; assert.equal(resolveSimpleUpgradeAttackRoll(config, message, game), null);
   associated = [attack]; config.subject.uuid = "activity-b"; assert.equal(resolveSimpleUpgradeAttackRoll(config, message, game), null);
 });
+
+test("native originating card restores only the matching attack for upgrade damage", () => {
+  const roll = {options: {advantageMode: 1}};
+  const attack = {type: "attack", system: {activity: {uuid: "activity-a"}}, rolls: [roll]};
+  const origin = {type:"usage", getAssociatedRolls: () => [attack]};
+  const config = {subject: {uuid: "activity-a"}}, message = {data: {system: {origin: "usage"}}};
+  const game = {messages: new Map([["usage", origin]])};
+  assert.equal(resolveSimpleUpgradeAttackRoll(config, message, game), roll);
+  attack.system.activity.uuid = "another";
+  assert.equal(resolveSimpleUpgradeAttackRoll(config, message, game), null);
+});

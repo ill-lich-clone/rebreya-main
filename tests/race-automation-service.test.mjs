@@ -805,3 +805,14 @@ test("repair migrates a saved legacy tribe into the owned race advancement value
   assert.equal(advancement.value.size, "frost");
   assert.equal(feature.effects.contents[0].changes[0].key, "system.traits.dr.value");
 });
+test("v14 Giant Tribe repair does not delete and recreate the existing normalized effect", async()=>{
+  const item=makeGiantTribeFeature({selected:"frost"}), actor=new TestActor({id:"half-giant",items:[item]});
+  const service=new RaceAutomationService({});
+  await service.repairActor(actor);
+  const [effect]=item.effects.contents;
+  effect.system={...effect.system,changes:effect.changes.map(c=>({key:c.key,type:["custom","multiply","add","downgrade","upgrade","override"][c.mode],
+    value:c.value,priority:c.priority,phase:"initial",replacement:"",conditions:"{}",_id:"change1"}))};
+  delete effect.changes;
+  assert.equal(await service.repairActor(actor),false);
+  assert.equal(item.effects.contents[0],effect);
+});

@@ -88,3 +88,22 @@ test("lightning reaction is blocked in round one only, without consuming resourc
   assert.equal(service.blocksReaction(actor, combat), true);
   combat.round = 2; assert.equal(service.blocksReaction(actor, combat), false);
 });
+
+test("burden reads authored dnd5e 6 speeds before its own penalty", () => {
+  const { actor } = fixture("tyazhesti-zhizni");
+  actor.system.attributes.hp.temp = 3;
+  actor._source = {system:{attributes:{movement:{speeds:{walk:"5",fly:"30"}}}}};
+  actor.system.attributes.movement = {speeds:{walk:0,fly:20}};
+  const effect = buildCurseUpgradeEffect(collectCurseUpgradeSources(actor)[0],actor,{burdenActive:true});
+  assert.deepEqual(effect.changes.map(c=>c.value),["-5","-10"]);
+});
+test("v14 curse upgrade leaves native effect and row IDs alone on repeat", async () => {
+ const {actor}=fixture();const service=new CurseUpgradeAutomationService({},{isAuthority:()=>true});
+ await service.syncActor(actor);
+ const effect=[...actor.effects.values()][0], raw={...effect};
+ raw.system={changes:raw.changes.map((c,i)=>({key:c.key,type:["custom","multiply","add","downgrade","upgrade","override"][c.mode],
+   value: /^-?\d+$/.test(c.value)?Number(c.value):c.value,priority:c.priority,_id:"row"+i,phase:"initial",conditions:"{}",replacement:""}))};
+ delete raw.changes;effect.toObject=()=>raw;
+ actor.updateEmbeddedDocuments=()=>assert.fail("unchanged native curse was rewritten");
+ await service.syncActor(actor);
+});

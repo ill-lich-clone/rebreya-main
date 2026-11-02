@@ -170,3 +170,17 @@ test("removing a managed size effect is idempotent when another client already d
   const service = new SizeAutomationService({}, { canManageActor: () => true });
   assert.equal(await service.syncActor(actor), true);
 });
+test("v14 size sync preserves the existing effect on repeat and repairs a changed bonus in native system.changes", async () => {
+  const actor=makeActor({size:"lg"}), service=new SizeAutomationService({});
+  const desired=buildCharacterSizeEffectData("lg"), effect={...desired,id:"stable",system:{changes:desired.changes.map((c,index)=>({
+    _id:"change"+index,key:c.key,type:"add",value:Number(c.value),priority:c.priority,phase:"initial",replacement:"",conditions:"{}"
+  }))}};
+  delete effect.changes; actor.effects.contents=[effect];
+  assert.equal(await service._syncActorNow(actor),false);
+  effect.system.changes[0].value=77;
+  assert.equal(await service._syncActorNow(actor),true);
+  assert.equal(effect.system.changes[0]._id,"change0");
+  assert.equal(effect.system.changes[0].value,Number(desired.changes[0].value));
+  assert.equal(effect.changes,undefined);
+  assert.equal(await service._syncActorNow(actor),false);
+});

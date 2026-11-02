@@ -1,3 +1,4 @@
+import { isPlainFirearmBonus } from "./firearm-mastery.js";
 import {
   ACTIONS_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_LABEL,
@@ -317,17 +318,29 @@ export function createPerformerActivePerformanceActivity() {
   };
 }
 
+function isGeneratedMasteryEffect(effect) {
+  const changes=effect?.system?.changes ?? effect?.changes;
+  return effect?._id==="f7ea1e0efb14c7e8" && effect.flags?.[MODULE_ID]?.automation===true && changes?.length===1
+    && effect.name==="Броски атаки" && (!effect.description || effect.description==="<p>+1 к броскам атаки</p>")
+    && effect.disabled!==true && effect.transfer!==false && !effect.statuses?.length
+    && (effect.duration?.value??effect.duration?.seconds??effect.duration?.rounds??effect.duration?.turns)==null
+    && ["system.bonuses.rwak.attack","system.rolls.attack.rwak.bonus"].includes(changes[0].key) && isPlainFirearmBonus(changes[0]);
+}
+
+function sharesLegacyMasteryEffect(activities) {
+  return Object.entries(activities??{}).some(([id,activity])=>id!=="2dde62360d721684" && activity.effects?.some(ref=>ref._id==="f7ea1e0efb14c7e8"));
+}
+
 function applyFeatAutomationOverrides(feat) {
   if (feat.featId === "master-ognestrelnogo-oruzhiya") {
     const activityId="2dde62360d721684",legacyEffectId="f7ea1e0efb14c7e8",effectId="rmFirearmTune001",old=feat.system.activities?.[activityId] ?? {};
-    if(old.type!=="utility" || old.flags?.[MODULE_ID]?.automation!==true || !old.effects?.some(effect=>effect._id===legacyEffectId))return feat;
-    const effects=feat.effects.filter(effect=>!(effect._id===legacyEffectId && effect.flags?.[MODULE_ID]?.automation===true
-      && effect.changes?.length===1 && effect.changes[0].key==="system.bonuses.rwak.attack" && effect.changes[0].value==="1" && effect.changes[0].mode===2));
+    if(old.type!=="utility" || old.flags?.[MODULE_ID]?.automation!==true || !old.effects?.some(effect=>effect._id===legacyEffectId) || sharesLegacyMasteryEffect(feat.system.activities))return feat;
+    const effects=feat.effects.filter(effect=>!isGeneratedMasteryEffect(effect));
     if(effects.some(effect=>effect._id===effectId || effect._id===legacyEffectId))return feat;
     return {...feat,system:{...feat.system,activities:{...feat.system.activities,[activityId]:{...old,_id:activityId,type:"enchant",
-      activation:{...old.activation,type:"minute",value:10},enchant:{self:false},restrictions:{allowMagical:true,type:"weapon",categories:[],properties:[]},
-      effects:[{_id:effectId}],flags:{...old.flags,[MODULE_ID]:{...old.flags?.[MODULE_ID],firearmTuning:true}},
-      description:{chatFlavor:"Настройка огнестрельного оружия на +1 к атаке."}}}},
+      activation:{type:"minute",value:10,...old.activation},enchant:{self:false},restrictions:{allowMagical:true,type:"weapon",categories:[],properties:[]},
+      effects:old.effects.map(ref=>ref._id===legacyEffectId?{...ref,_id:effectId}:ref),flags:{...old.flags,[MODULE_ID]:{...old.flags?.[MODULE_ID],firearmTuning:true}},
+      description:{...old.description,chatFlavor:old.description?.chatFlavor || "Настройка огнестрельного оружия на +1 к атаке."}}}},
       effects:[...effects,{_id:effectId,name:"Настройка огнестрельного оружия",type:"enchantment",transfer:false,changes:[],disabled:false,
         duration:{startTime:null,seconds:null},flags:{[MODULE_ID]:{firearmTuning:{startedAt:null}}}}]};
   }
@@ -398,9 +411,14 @@ export function buildLegacyFirearmMasteryPatch(item) {
   const source=typeof item?.toObject==="function"?item.toObject():item;
   if(source?.type!=="feat" || source.system?.identifier!=="master-ognestrelnogo-oruzhiya")return null;
   const activity=source.system?.activities?.["2dde62360d721684"],effect=(source.effects??[]).find(entry=>entry._id==="f7ea1e0efb14c7e8");
+  if(sharesLegacyMasteryEffect(source.system?.activities))return null;
+  if(activity?.type==="enchant" && activity.flags?.[MODULE_ID]?.automation===true && activity.flags[MODULE_ID].firearmTuning===true
+    && isGeneratedMasteryEffect(effect) && !activity.effects?.some(ref=>ref._id===effect._id)
+    && activity.effects?.some(ref=>ref._id==="rmFirearmTune001") && source.effects.some(e=>e._id==="rmFirearmTune001" && e.type==="enchantment" && e.flags?.[MODULE_ID]?.firearmTuning)){
+    return {_id:source._id,effects:source.effects.filter(e=>e._id!==effect._id)};
+  }
   if(activity?.type!=="utility" || activity.flags?.[MODULE_ID]?.automation!==true || !activity.effects?.some(entry=>entry._id==="f7ea1e0efb14c7e8"))return null;
-  if(effect && (effect.flags?.[MODULE_ID]?.automation!==true || effect.changes?.length!==1
-    || effect.changes[0].key!=="system.bonuses.rwak.attack" || effect.changes[0].value!=="1" || effect.changes[0].mode!==2))return null;
+  if(effect && !isGeneratedMasteryEffect(effect))return null;
   const projected=normalizeFeatItems([source])[0];
   if(projected?.system?.activities?.["2dde62360d721684"]?.type!=="enchant")return null;
   return {_id:source._id,system:{activities:projected.system.activities},effects:projected.effects};
@@ -414,6 +432,7 @@ export async function syncLegacyFirearmMastery(gameState) {
       if(!isActiveGmClient(gameState))return;
       if(item.effects?.get?.("f7ea1e0efb14c7e8") || item.toObject?.().effects?.some(effect=>effect._id==="f7ea1e0efb14c7e8"))
         await item.deleteEmbeddedDocuments("ActiveEffect",["f7ea1e0efb14c7e8"]);
+      if(!patch.system)continue;
       if(!isActiveGmClient(gameState))return;
       delete patch._id;await item.update(patch);
     }catch(error){console.error(`${MODULE_ID} | Failed to migrate firearm mastery on ${actor.name ?? actor.id}.`,error);}

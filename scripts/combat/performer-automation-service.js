@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { appendD20Bonus, isAvailableD20BonusEffect, runD20BonusOperation } from "./d20-bonus-roll.js";
-import { createPerformerActivePerformanceActivity } from "../data/feats-compendium.js?v=1.5.22";
+import { createPerformerActivePerformanceActivity } from "../data/feats-compendium.js?v=1.5.61";
 import {
   cleanText,
   collectionValues,

@@ -578,3 +578,19 @@ test("a completed damage tick publishes a fresh recovery button after the update
     assert.deepEqual(seen, ["updated", "published"]);
   } finally { globalThis.Hooks = oldHooks; globalThis.game = oldGame; }
 });
+test("native v14 decay repair preserves authored conditions, phase, IDs and does not rewrite a second time",async()=>{
+ const globals=installFoundryGlobals();
+ try {
+  globalThis.game.release={generation:14};
+  const service=new CombatStatusService({}), actor=new globals.TestActor();actor.id="actor-1";
+  const effect=makeEffect(globals.TestActiveEffect,actor,{value:6,step:2,damageType:"acid"});
+  const authored={_id:"authored",key:"system.bonuses.abilities.check",type:"add",value:-1,priority:25,phase:"final",replacement:"origin",conditions:'{"op":"and"}'};
+  effect.system={changes:[authored]};delete effect.changes;actor.effects={contents:[effect]};
+  let writes=0;actor.updateEmbeddedDocuments=async(_,rows)=>{writes++;for(const row of rows)await effect.update(row);};
+  await service.handleActiveEffectCreated(effect);
+  assert.deepEqual(effect.system.changes[0],authored);
+  assert.match(effect.system.changes[1].value,/damageRoll=6,damageType=acid/u);
+  assert.equal(effect.changes,undefined);
+  assert.equal(await service.handleActiveEffectUpdate(effect),false);assert.equal(writes,1);
+ } finally {globals.restore();}
+});

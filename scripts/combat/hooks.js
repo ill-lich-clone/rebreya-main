@@ -1,10 +1,10 @@
 import { MODULE_ID } from "../constants.js";
-import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.2";
+import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.61";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.60";
+import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.61";
 import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";
-import { ignoreProneFireDisadvantage } from "./prone-fire.js?v=1.5.22";
-import { canApplyFirearmTuning, allowMagicalFirearmTuning, startTuningForAreaFire } from "./firearm-tuning.js?v=1.5.22";
+import { ignoreProneFireDisadvantage } from "./prone-fire.js?v=1.5.61";
+import { canApplyFirearmTuning, allowMagicalFirearmTuning, startTuningForAreaFire } from "./firearm-tuning.js?v=1.5.61";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.combatHooksRegistered`;
 const CHARACTER_SHEET_RENDER_HOOKS = Object.freeze([
@@ -627,14 +627,8 @@ export function registerCombatHooks(moduleApi) {
     });
   };
 
-  Hooks.on("combatTurn", (combat, updateData, updateOptions) => {
+  const onOrdinaryTurn = (combat, updateData, updateOptions) => {
     if (hasGroupedCombatPhases(combat)) return;
-    if (hasAttackService) {
-      moduleApi.combatAttackService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to handle combat turn reaction processing.`, error);
-      });
-    }
-
     if (hasRaceService) {
       try {
         moduleApi.raceAutomationService.handleCombatTurnChange(combat, updateData, updateOptions);
@@ -642,6 +636,13 @@ export function registerCombatHooks(moduleApi) {
       catch (error) {
         console.error(`${MODULE_ID} | Failed to handle combat turn race automation.`, error);
       }
+    }
+
+    if (Number(globalThis.game?.release?.generation) >= 14 && !isActiveGmClient(globalThis.game)) return;
+    if (hasAttackService) {
+      moduleApi.combatAttackService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle combat turn reaction processing.`, error);
+      });
     }
 
     if (hasFighterService) {
@@ -661,7 +662,15 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to handle paladin turn automation.`, error);
       });
     }
-  });
+  };
+  if (Number(globalThis.game?.release?.generation) >= 14) {
+    Hooks.on("combatTurnChange", (combat, previous, current) => {
+      const direction = combatTurnChangeDirection(previous, current);
+      if (direction > 0) onOrdinaryTurn(combat, { ...current, current, previous }, { direction, current, previous });
+    });
+  } else {
+    Hooks.on("combatTurn", onOrdinaryTurn);
+  }
 
   if (hasSorcererService) {
     Hooks.on("combatTurnChange", advanceSorcererCooldowns);

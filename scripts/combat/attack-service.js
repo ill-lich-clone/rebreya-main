@@ -1,8 +1,8 @@
-import { usageCardData, cardHitEvidence, cardDamageRolls, flushCardDamage } from "../integrations/midi-usage-card.js";
+import { usageCardData, cardHitEvidence, cardDamageRolls, flushCardDamage, originatingCardId } from "../integrations/midi-usage-card.js?v=1.5.61";
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire } from "./firearm-misfire.js?v=1.5.40";
 import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
-import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.22";
+import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.61";
 import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.5.23";
@@ -20,8 +20,8 @@ import {
   isCompatibleAmmunition,
   resolveAmmunitionProfile
 } from "../data/ammunition-compatibility.js?v=1.5.31";
-import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
-import { getNaturalReachFeet } from "./natural-reach.js";
+import { getCharacterSizeRule } from "./size-automation-service.js?v=1.5.61";
+import { getNaturalReachFeet } from "./natural-reach.js?v=1.5.61";
 import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.1";
 import { getWeaponSizeUse } from "../data/equipment-size-rules.js?v=1.4.393";
 import {
@@ -904,6 +904,16 @@ function convertUnitsToFeet(value, units) {
   }
 }
 
+function setWhirlwindCardTargets(data, targets) {
+  if (Number(globalThis.game?.release?.generation) >= 14) {
+    foundry.utils.setProperty(data, "system.targets", targets.map(({uuid, tokenUuid, ...target}) => ({
+      ...target, actor: uuid, token: tokenUuid
+    })));
+  } else {
+    foundry.utils.setProperty(data, "flags.dnd5e.targets", targets);
+  }
+}
+
 function mountedCardHit(message, riderUuid, targetUuid) {
   if (cardHitEvidence(message, targetUuid)) return true;
   const recorded = message?.flags?.[MODULE_ID]?.weaponPropertyHit;
@@ -1274,8 +1284,7 @@ export class CombatAttackService {
 
   async prepareWeaponModDamageUse(activity,config={},message={}){
     if(!this.#isWeaponAttackActivity(activity) || !isFirearmItem(activity.item) || activity.flags?.[MODULE_ID]?.weaponModActivity)return null;
-    const ids=[config.midiOptions?.workflow?.itemCardId,config.workflow?.itemCardId,message.data?.flags?.dnd5e?.originatingMessage,
-      message.data?.["flags.dnd5e.originatingMessage"],config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId].filter(Boolean);
+    const ids=[config.midiOptions?.workflow?.itemCardId,config.workflow?.itemCardId,originatingCardId(message.data),config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId].filter(Boolean);
     let context;for(const id of ids){context=this.getWeaponModDamageContext(id,"",activity.uuid);if(context)break;}
     if(!context)return null;
     const attack=this.getWeaponModAttackContext(game.messages.get(context.attackMessageId),activity.uuid),catalog=this.moduleApi.itemUpgradeAutomationService?.weaponModCatalog;
@@ -1631,10 +1640,10 @@ export class CombatAttackService {
 
   hydrateWeaponModAttackConditions(config,message={}) {
     if(config.rebreyaWeaponModDecisions)return;
-    const activity=config.subject,id=message.data?.flags?.dnd5e?.originatingMessage??message.data?.["flags.dnd5e.originatingMessage"]
+    const activity=config.subject,id=originatingCardId(message.data)
       ??config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId;
     const origin=globalThis.game?.messages?.get?.(id),stored=origin?.getFlag?.(MODULE_ID,"weaponModConditions");
-    if(!origin || !stored || !Array.isArray(stored.decisions) || stored.decisions.length>20 || origin.getFlag?.("dnd5e","activity.uuid")!==activity?.uuid || stored.activityUuid!==activity.uuid
+    if(!origin || !stored || !Array.isArray(stored.decisions) || stored.decisions.length>20 || (origin.system?.activity?.uuid ?? origin.getFlag?.("dnd5e","activity.uuid"))!==activity?.uuid || stored.activityUuid!==activity.uuid
       || stored.actorUuid!==(activity.item?.actor??activity.item?.parent)?.uuid || stored.hostItemId!==activity.item.id)return;
     config.rebreyaWeaponModAttackMessageId=origin.id;
     config.rebreyaWeaponModDecisions=stored.decisions.map(decision=>({...decision,attackMessageId:origin.id}));
@@ -2298,7 +2307,7 @@ export class CombatAttackService {
     }
 
     const itemCardIds = [
-      foundry.utils.getProperty(messageConfig, "data.flags.dnd5e.originatingMessage"),
+      originatingCardId(messageConfig?.data),
       foundry.utils.getProperty(options, "workflow.itemCardId"),
       foundry.utils.getProperty(options, "midiOptions.workflow.itemCardId"),
       options?.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId
@@ -2809,7 +2818,7 @@ export class CombatAttackService {
     if (usageConfig.workflow) usageConfig.workflow.rebreyaWhirlwind = context;
     messageConfig.data ??= {};
     foundry.utils.setProperty(messageConfig.data, `flags.${MODULE_ID}.whirlwindAttack`, context);
-    foundry.utils.setProperty(messageConfig.data, "flags.dnd5e.targets", targets.map(token => ({
+    setWhirlwindCardTargets(messageConfig.data, targets.map(token => ({
       uuid: token.actor?.uuid, tokenUuid: (token.document ?? token).uuid, name: token.name ?? token.actor?.name ?? "Существо",
       img: token.texture?.src ?? token.actor?.img, ac: token.actor?.system?.attributes?.ac?.value
     })));
@@ -2834,7 +2843,7 @@ export class CombatAttackService {
     const content = `<section data-rebreya-whirlwind><p>Круговая атака: половина урона</p><ul>${targets.map(target => `<li>${escape(target.name)}: ${hits.has(targetKey(target)) ? "попадание" : "промах"}</li>`).join("")}</ul></section>`;
     const snapshot = { targetUuids: targets.map(targetKey), hitTokenUuids: [...hits] };
     await message.update({ content: `${String(message.content ?? "").replace(/<section data-rebreya-whirlwind>[\s\S]*?<\/section>/gu, "")}${content}`, [`flags.${MODULE_ID}.whirlwindAttack`]: snapshot });
-    const originId = message.getFlag?.("dnd5e", "originatingMessage");
+    const originId = originatingCardId(message);
     const origin = originId && globalThis.game?.messages?.get?.(originId);
     if (origin?.isOwner) await origin.update({ [`flags.${MODULE_ID}.whirlwindAttack`]: snapshot });
   }
@@ -2847,10 +2856,10 @@ export class CombatAttackService {
       const tokens = [...(workflow.hitTargets ?? []), ...(workflow.hitTargetsEC ?? [])];
       message.data ??= {};
       foundry.utils.setProperty(message.data, `flags.${MODULE_ID}.whirlwindAttack`, workflow.rebreyaWhirlwind ?? {});
-      foundry.utils.setProperty(message.data, "flags.dnd5e.targets", tokens.map(token => ({ uuid: token.actor.uuid, tokenUuid: token.document?.uuid ?? token.uuid, name: token.name ?? token.actor.name })));
+      setWhirlwindCardTargets(message.data, tokens.map(token => ({ uuid: token.actor.uuid, tokenUuid: token.document?.uuid ?? token.uuid, name: token.name ?? token.actor.name })));
       return;
     }
-    const id = message.data?.flags?.dnd5e?.originatingMessage
+    const id = originatingCardId(message.data)
       ?? config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId;
     const origin = id && globalThis.game?.messages?.get?.(id);
     const snapshot = origin?.getFlag?.(MODULE_ID, "whirlwindAttack");
@@ -2861,7 +2870,7 @@ export class CombatAttackService {
     const tokens = (snapshot.hitTokenUuids ?? snapshot.targetUuids ?? []).map(uuid => globalThis.fromUuidSync?.(uuid)).filter(token => token?.actor);
     message.data ??= {};
     foundry.utils.setProperty(message.data, `flags.${MODULE_ID}.whirlwindAttack`, snapshot);
-    foundry.utils.setProperty(message.data, "flags.dnd5e.targets", tokens.map(token => ({ uuid: token.actor.uuid, tokenUuid: token.uuid, name: token.name ?? token.actor.name })));
+    setWhirlwindCardTargets(message.data, tokens.map(token => ({ uuid: token.actor.uuid, tokenUuid: token.uuid, name: token.name ?? token.actor.name })));
   }
 
   async chooseWhirlwindEffectTarget(workflow) {
@@ -4900,7 +4909,9 @@ export class CombatAttackService {
       config.target = undefined;
       for (const roll of config.rolls ?? []) {
         roll.options ??= {};
-        roll.options.rebreyaWhirlwindTargets = message.data.flags.dnd5e.targets;
+        roll.options.rebreyaWhirlwindTargets = message.data.system?.targets?.map(({actor, token, ...target}) => ({
+          ...target, uuid: actor, tokenUuid: token
+        })) ?? message.data.flags.dnd5e.targets;
       }
     }
     if (!this.#isWeaponAttackActivity(activity)) {

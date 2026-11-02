@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.2";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.61";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.craftsmanGadgetHooksRegistered`;
 

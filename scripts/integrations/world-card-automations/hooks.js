@@ -1,3 +1,4 @@
+import { buildPhaseStepKey } from "../../combat/turn-group-rules.js";
 import { cardActivityRole } from "./activity-role.js";
 import { applyPassiveModifier, routeIncomingPassive } from "./passive-authority.js";
 import { requestCardPassive } from "./selected/lib/sockets.js";
@@ -282,8 +283,74 @@ export function registerCprCardHandlers({ Hooks, game, definitions }) {
   const combatToken = (combat, id) => combat.combatants?.get(id)?.token;
   const onToken = (pass, doc, extra) =>
     doc && runDocuments("combat", pass, actorEntities(doc.actor), { token: doc.object, ...extra });
+  function* nearby(current, details) {
+    if (!current?.object || !used.has("combat.turnStartNear")) return;
+    for (const doc of values(current.parent?.tokens)) {
+      if (!doc.object || doc === current) continue;
+      const distance = globalThis.MidiQOL?.computeDistance?.(current.object, doc.object, {
+        wallsBlock: true,
+        includeCover: false
+      });
+      if (Number.isFinite(distance) && distance >= 0) yield [doc, { target: current.object, distance, ...details }];
+    }
+  }
+  const grouped = game.version === "14.369" && game.rebreyaMain?.groupedCombatService?.effects;
+  const cardPass = { "turn-end": "turnEnd", "each-turn": "everyTurn", "turn-start": "turnStartNear" };
+  function* cardSteps(combat, phase, member) {
+    const pass = cardPass[phase.kind];
+    if (!enabled() || !pass || !used.has("combat." + pass) || !member.token) return;
+    const details = { currentRound: phase.round, currentTurn: combat.turns.indexOf(member),
+      previousRound: combat.previous?.round, previousTurn: combat.previous?.turn };
+    const targets = pass === "turnStartNear" ? nearby(member.token, details) : [[member.token, details]];
+    for (const [doc, context] of targets) {
+      const entities = actorEntities(doc.actor).filter(entity => flags(entity)?.macros?.combat?.length);
+      const executors = new Set(entities.map(executorFor).filter(Boolean));
+      for (const executor of executors) {
+        const rows = collect(definitions, entities, "combat", null, pass, { ...context, token: doc.object },
+          entity => executorFor(entity) === executor);
+        if (rows.length) yield { executor, id: JSON.stringify([pass, doc.id, executor]), run: () => execute(rows, {}) };
+      }
+    }
+  }
+  if (grouped?.setWorldCardPhase) {
+    const socket = globalThis.socketlib?.registerModule?.("rebreya-main");
+    const inflight = new WeakMap();
+    socket?.register("groupedWorldCard", function ({combatId, key} = {}) {
+      const combat = game.combats?.get(combatId), state = combat?.flags?.["rebreya-main"]?.groupedCombat;
+      const receipt = state?.receipts?.[key];
+      if (!enabled() || game.user.isGM || !this.socketdata?.userId || this.socketdata.userId !== game.users.activeGM?.id
+        || state?.mode !== "active" || receipt?.status !== "running" || receipt.provider !== "world-card") return false;
+      const member = combat.combatants.get(receipt.combatantId);
+      if (!member) return false;
+      for (const phase of state.pendingTransition?.phases ?? []) {
+        if (phase.kind !== receipt.phase || !phase.memberIds.includes(member.id)) continue;
+        for (const step of cardSteps(combat, phase, member)) {
+          if (step.executor !== game.user.id || buildPhaseStepKey(combatId, phase, member.id, "world-card", step.id) !== key) continue;
+          // A retried socket delivery for the same GM operation must join its existing execution.
+          const stamp = JSON.stringify([key, receipt.operationId]);
+          const prior = inflight.get(combat);
+          if (prior?.stamp === stamp) return prior.result;
+          const result = Promise.resolve().then(step.run).then(() => true);
+          inflight.set(combat, { stamp, result });
+          return result;
+        }
+      }
+      return false;
+    });
+    grouped.setWorldCardPhase((combat, phase, member, add) => {
+      for (const step of cardSteps(combat, phase, member)) {
+        const key = buildPhaseStepKey(combat.id, phase, member.id, "world-card", step.id);
+        add("world-card", member, step.id, async () => {
+          if (step.executor === game.user.id) { await step.run(); return true; }
+          if (!socket) throw new Error("world-card-owner-unavailable");
+          return socket.executeAsUser("groupedWorldCard", step.executor, { combatId: combat.id, key });
+        });
+      }
+    });
+  }
   if (["turnEnd", "everyTurn", "turnStartNear"].some((pass) => used.has("combat." + pass)))
     register("updateCombat", async (combat, changes) => {
+      if (grouped && ["active", "blocked"].includes(combat.flags?.["rebreya-main"]?.groupedCombat?.mode)) return;
       if (!combat.started || !combat.isActive || !("turn" in changes || "round" in changes)) return;
       const cur = combat.current,
         prev = combat.previous;
@@ -299,16 +366,7 @@ export function registerCprCardHandlers({ Hooks, game, definitions }) {
       if (used.has("combat.turnEnd")) await onToken("turnEnd", previous, details);
       if (used.has("combat.everyTurn"))
         for (const c of values(combat.combatants)) await onToken("everyTurn", c.token, details);
-      if (!current?.object || !used.has("combat.turnStartNear")) return;
-      for (const doc of values(current.parent?.tokens)) {
-        if (!doc.object || doc === current) continue;
-        const distance = globalThis.MidiQOL?.computeDistance?.(current.object, doc.object, {
-          wallsBlock: true,
-          includeCover: false
-        });
-        if (Number.isFinite(distance) && distance >= 0)
-          await onToken("turnStartNear", doc, { target: current.object, distance, ...details });
-      }
+      for (const [doc, context] of nearby(current, details)) await onToken("turnStartNear", doc, context);
     });
   if (used.has("combat.combatEnd"))
     register("deleteCombat", async (combat) => {

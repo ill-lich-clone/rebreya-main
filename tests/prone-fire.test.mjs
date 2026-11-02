@@ -62,3 +62,15 @@ test("combined prone and blinded effect does not erase an inseparable disadvanta
  const w=workflow();w.actor.appliedEffects[0].statuses.add("blinded");
  ignoreProneFireDisadvantage(w);assert.equal(w.attackRollModifierTracker.disadvantage.isActive,true);
 });
+test("MIDI 14 removes exactly one counted prone source while preserving an independent range penalty",()=>{
+ const w=workflow({sources:{"attack.all":"Prone",range:"Long Range"}}),d=w.attackRollModifierTracker.disadvantage;
+ for(const ef of w.actor.appliedEffects){ef.system={changes:ef.changes};delete ef.changes;}
+ let count=2;Object.defineProperty(d,"count",{get:()=>count});d.clear=()=>{count=0;};d.add=()=>{count++;};
+ ignoreProneFireDisadvantage(w);
+ assert.deepEqual(w.attackRollModifierTracker.attribution.DIS,{range:"Long Range"});assert.equal(count,1);
+});
+test("a directly authored all-attacks penalty survives even when prone uses the same MIDI key",()=>{
+ const w=workflow();
+ w.actor._source.flags={"midi-qol":{disadvantage:{attack:{all:true}}}};
+ ignoreProneFireDisadvantage(w);assert.equal(w.attackRollModifierTracker.disadvantage.isActive,true);
+});

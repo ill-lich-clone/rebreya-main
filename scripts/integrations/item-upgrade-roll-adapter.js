@@ -1,3 +1,4 @@
+import { originatingCardId } from "./midi-usage-card.js?v=1.5.61";
 import { evaluateSimpleUpgradeRoll } from "../automation/item-upgrade-roll-modifiers.js?v=1.4.254";
 import { evaluateWeaponModAttack } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
 import { getWeaponModHostDescriptor } from "../data/weapon-mod-rules.js?v=1.5.23";
@@ -11,12 +12,17 @@ const weaponActivity = activity => activity?.item?.type === "weapon" && (["mwak"
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 
 export function resolveSimpleUpgradeAttackRoll(config, message = {}, game = globalThis.game) {
-  const id = message.data?.flags?.dnd5e?.originatingMessage ?? message.data?.["flags.dnd5e.originatingMessage"]
+  const id = originatingCardId(message.data)
     ?? config.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId;
   const origin = game?.messages?.get?.(id), activityUuid = config.subject?.uuid;
   if (!origin || !activityUuid) return null;
-  const candidates = (origin.getFlag("dnd5e", "roll.type") === "attack" ? [origin] : Array.from(origin.getAssociatedRolls?.("attack") ?? []))
-    .filter(entry => entry.getFlag("dnd5e", "activity.uuid") === activityUuid);
+  const matchesActivity = entry => (entry.system?.activity?.uuid ?? entry.getFlag?.("dnd5e", "activity.uuid")) === activityUuid;
+  if (origin.type === "usage" && matchesActivity(origin)) {
+    const embedded = (origin.rolls ?? []).filter(roll => roll.options?.["midi-qol"]?.rollType === "attack");
+    if (embedded.length) return embedded.length === 1 ? embedded[0] : null;
+  }
+  const isAttack = origin.type === "attack" || origin.getFlag?.("dnd5e", "roll.type") === "attack";
+  const candidates = (isAttack ? [origin] : Array.from(origin.getAssociatedRolls?.("attack") ?? [])).filter(matchesActivity);
   return candidates.length === 1 && candidates[0].rolls?.length === 1 ? candidates[0].rolls[0] : null;
 }
 

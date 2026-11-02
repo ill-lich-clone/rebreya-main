@@ -3854,11 +3854,11 @@ test("RED: Seeking reroll retains dnd5e's originating usage-message reference", 
     sorcererVirtualSpellLevel: 1,
     sorcererMetamagic: { ids: ["seeking-spell"] }
   }, {}, {}), true);
-  await service.applyDnd5ePostAttackRoll([{ isFailure: true, parent: { flags: { dnd5e: { originatingMessage: "usage-card" } } } }], {
+  await service.applyDnd5ePostAttackRoll([{ isFailure: true, parent: { system: { origin: {id:"usage-card"} } } }], {
     subject: activity,
     ammoUpdate: null
   });
-  assert.equal(messageConfig.data["flags.dnd5e.originatingMessage"], "usage-card");
+  assert.equal(messageConfig.data.system.origin, "usage-card");
 });
 
 test("RED: simultaneous virtual casts serialize Sorcery Point payment for one actor", async () => {

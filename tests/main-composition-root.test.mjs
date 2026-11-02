@@ -6,7 +6,7 @@ import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-regi
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js?v=1.5.3";
-import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.4.330";
+import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.5.61";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.5.48";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
@@ -49,10 +49,10 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.60");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.60.js"]);
+  assert.equal(manifest.version, "1.5.61");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.61.js"]);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
-  assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.59/u);
+  assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.61/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.29/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.5\.48/u);
@@ -66,7 +66,7 @@ test("current release reuses the catalog icon cache graph", async () => {
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    const cacheVersion = name === "feats-compendium" ? "1\\.5\\.22" : name === "gear-compendium" ? "1\\.5\\.31" : name === "magic-items-compendium" ? "1\\.5\\.60" : "1\\.4\\.330";
+    const cacheVersion = ["feats-compendium", "transport-compendium"].includes(name) ? "1\\.5\\.61" : name === "gear-compendium" ? "1\\.5\\.31" : name === "magic-items-compendium" ? "1\\.5\\.60" : "1\\.4\\.330";
     assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=${cacheVersion}`, "u"));
   }
   assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.327/u);
@@ -496,7 +496,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 test("composition root synchronizes the managed transport Actor compendium", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 
-  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js\?v=1\.4\.330";/u);
+  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js\?v=1\.5\.61";/u);
   assert.match(source, /this\.transportCompendium\s*=\s*new TransportCompendiumService/u);
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
@@ -599,4 +599,13 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
   assert.equal(source.match(/module\.api\s*=\s*moduleApi/gu)?.length, 1);
   assert.doesNotMatch(source, /InventoryIngressFilterApp|new\s+InventoryIngress.*Application/u);
   assert.doesNotMatch(source, /Hooks\.on\(["']createItem["'][\s\S]{0,300}inventoryIngress/iu);
+});
+
+test("grouped turn interception is installed before publishing the API and releases before recovery", async () => {
+  const main = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  const ready = main.slice(main.indexOf('Hooks.once("ready", async'));
+  const positions = ["groupedCombatService.holdUntilReady()", "registerGroupedCombatRuntime(moduleApi)",
+    "game.rebreyaMain = moduleApi", "registerCombatHooks(moduleApi)", "releaseGroupedCombat()", "groupedCombatService.reconcile(combat)"]
+    .map(step => ready.indexOf(step));
+  assert.ok(positions.every((position, i) => position >= 0 && (!i || position > positions[i-1])));
 });

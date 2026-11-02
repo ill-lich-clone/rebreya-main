@@ -32,3 +32,10 @@ export function flushCardDamage(workflow, message) {
   const update = message?.type === "usage" && Array.isArray(workflow.chatRolls) ? {rolls: workflow.chatRolls} : {};
   return workflow.performThrottledUpdate(message, update, true);
 }
+
+/** The dnd5e origin foreign key is an ID in creation data and a document after preparation. */
+export function originatingCardId(data) {
+  const origin = data?.system?.origin ?? data?.["system.origin"];
+  return origin?.id ?? origin ?? data?.getFlag?.("dnd5e", "originatingMessage")
+    ?? data?.flags?.dnd5e?.originatingMessage ?? data?.["flags.dnd5e.originatingMessage"];
+}

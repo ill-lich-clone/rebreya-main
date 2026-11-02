@@ -65,6 +65,33 @@ test("custom firearm mastery activity is not overwritten by managed normalizatio
  source.system.activities["2dde62360d721684"].type="enchant";delete source.system.activities["2dde62360d721684"].flags["rebreya-main"].automation;
  const feat=normalizeFeatItems([source])[0];assert.equal(feat.system.activities["2dde62360d721684"].flags["rebreya-main"].firearmTuning,undefined);
 });
+test("v14 migrates the original native add change and retains edited phases, formulas or conditions",()=>{
+ const raw=loadBundleItems().find(item=>item.system?.identifier==="master-ognestrelnogo-oruzhiya");
+ const effect=raw.effects.find(e=>e._id==="f7ea1e0efb14c7e8");
+ const row={_id:"nativeRow0123456",key:"system.bonuses.rwak.attack",type:"add",value:1,phase:"initial",priority:null,conditions:"{}",replacement:""};
+ delete effect.changes;effect.system={changes:[row]};
+ assert.equal(buildLegacyFirearmMasteryPatch(raw)?.system.activities["2dde62360d721684"].type,"enchant");
+ for(const authored of [{phase:"final"},{type:"override"},{value:"@prof"},{conditions:'{"equipped":true}'},{priority:70}]){
+   effect.system.changes=[{...row,...authored}]; assert.equal(buildLegacyFirearmMasteryPatch(raw),null);
+ }
+});
+test("a converted canonical enchant sheds only its orphan legacy +1, never a modified or still-referenced effect",async()=>{
+ const source=loadBundleItems().find(item=>item.system?.identifier==="master-ognestrelnogo-oruzhiya");
+ const old=source.effects[0];
+ const converted=buildLegacyFirearmMasteryPatch(source);
+ const state={...source,effects:converted.effects,system:{...source.system,...converted.system}};
+ old.system={changes:[{key:"system.bonuses.rwak.attack",type:"add",value:1,phase:"initial",priority:null,conditions:"{}"}]};delete old.changes;
+ state.effects.push(old);
+ const activityId="2dde62360d721684",activity=state.system.activities[activityId];
+ const other={_id:"manual",type:"utility",effects:[{_id:old._id}]};state.system.activities.manual=other;
+ assert.equal(buildLegacyFirearmMasteryPatch(state),null);delete state.system.activities.manual;
+ old.system.changes[0].conditions='{"mode":"custom"}';assert.equal(buildLegacyFirearmMasteryPatch(state),null);
+ old.system.changes[0].conditions="{}";const saved=structuredClone(activity);let deletes=0;
+ const owned={toObject:()=>structuredClone(state),async deleteEmbeddedDocuments(type,ids){assert.equal(type,"ActiveEffect");assert.deepEqual(ids,[old._id]);deletes++;state.effects=state.effects.filter(e=>!ids.includes(e._id));},async update(){assert.fail("already-converted Activity must not be rewritten");}};
+ const gm={id:"gm",active:true,isGM:true},world={user:gm,users:{activeGM:gm},actors:{contents:[{items:{contents:[owned]}}]}};
+ await syncLegacyFirearmMastery(world);await syncLegacyFirearmMastery(world);
+ assert.equal(deletes,1);assert.deepEqual(state.system.activities[activityId],saved);assert.deepEqual(state.effects.map(e=>e._id),["rmFirearmTune001"]);
+});
 test("owned legacy feat sync runs only on the active GM and retries after a failed write",async()=>{
  const source=loadBundleItems().find(item=>item.system?.identifier==="master-ognestrelnogo-oruzhiya");source._id="owned-feat";
  const state=structuredClone(source);let updates=0,fail=true;

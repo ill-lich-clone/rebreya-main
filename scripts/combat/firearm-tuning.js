@@ -1,3 +1,5 @@
+import { isPlainFirearmBonus } from "../data/firearm-mastery.js";
+
 const NS="rebreya-main";
 const pendingStarts=new WeakMap();
 const isFirearm=item=>item?.type==="weapon" && (["firearmPrimitive","firearmAdvanced","firearmSpecial"].includes(item.system?.type?.value)
@@ -11,7 +13,14 @@ const isTuningActivity=activity=>{
 };
 function tuning(item,now) {
   if(!isFirearm(item) || !Number.isFinite(now))return null;
-  return effects(item).find(effect=>!effect.disabled && state(effect) && (state(effect).startedAt==null || now<Number(state(effect).startedAt)+60));
+  return effects(item).find(effect=>!effect.disabled && !effect.isSuppressed && state(effect) && (state(effect).startedAt==null || now<Number(state(effect).startedAt)+60));
+}
+function tuningDuration(effect,startedAt) {
+  const seconds=startedAt==null?null:60;
+  if(effect.duration?.units || globalThis.game?.release?.generation>=14) return {
+    ...(startedAt==null?{start:null}:{"start.time":startedAt}),"duration.value":seconds,"duration.units":"seconds","duration.expired":false
+  };
+  return {duration:{startTime:startedAt,seconds}};
 }
 export const getFirearmTuningBonus=(item,now)=>tuning(item,now)?1:0;
 export function applyFirearmTuning(item,config,now) {
@@ -26,7 +35,7 @@ export async function startFirearmTuning(item,now) {
   const effect=tuning(item,now);
   if(!effect || state(effect).startedAt!=null || typeof effect.update!=="function")return;
   if(pendingStarts.has(effect))return pendingStarts.get(effect);
-  const pending=Promise.resolve(effect.update({duration:{startTime:now,seconds:60},[`flags.${NS}.firearmTuning`]:{startedAt:now}}));
+  const pending=Promise.resolve(effect.update({...tuningDuration(effect,now),[`flags.${NS}.firearmTuning`]:{startedAt:now}}));
   pendingStarts.set(effect,pending);
   try{await pending;}finally{pendingStarts.delete(effect);}
 }
@@ -42,11 +51,17 @@ export function canApplyFirearmTuning(item,activity,data={}) {
   const existing=effects(item).find(effect=>state(effect));
   if(!existing){
     data.flags ??= {};data.flags[NS] ??= {};data.flags[NS].firearmTuning={startedAt:null};
-    if(Array.isArray(data.changes))data.changes=data.changes.filter(change=>!(change.key==="activities[attack].attack.bonus" && Number(change.mode)===2 && String(change.value).trim()==="1"));
-    data.duration={...data.duration,startTime:null,seconds:null};
+    const container=Array.isArray(data.system?.changes)?data.system:data;
+    if(Array.isArray(container.changes)){
+      const index=container.changes.findIndex(change=>change.key==="activities[attack].attack.bonus" && isPlainFirearmBonus(change));
+      if(index>=0)container.changes=container.changes.filter((_,i)=>i!==index);
+    }
+    if(data.duration?.units || globalThis.game?.release?.generation>=14){
+      data.start=null;data.duration={...data.duration,value:null,units:"seconds",expired:false};
+    }else data.duration={...data.duration,startTime:null,seconds:null};
     return true;
   }
-  Promise.resolve(existing.update({duration:{startTime:null,seconds:null},[`flags.${NS}.firearmTuning`]:{startedAt:null},disabled:false}))
+  Promise.resolve(existing.update({...tuningDuration(existing,null),[`flags.${NS}.firearmTuning`]:{startedAt:null},disabled:false}))
     .catch(error=>console.error(`${NS} | Failed to reset firearm tuning.`,error));
   return false;
 }
