@@ -234,3 +234,18 @@ test("Craftsman and managed summon lifecycles coexist on one native hook bus", a
   assert.equal(craftsmanPostSummons, 2);
   assert.ok(token.flags["rebreya-main"].summonLink);
 });
+
+test("dnd5e 6 tags persisted smoke Region data and indexes native Region events without compatibility double dispatch", () => {
+  const {Hooks,listeners} = hookHarness();
+  const calls=[];
+  registerCraftsmanGadgetHooks({
+    craftsmanGadgetService:{applyDnd5ePreCreateActivityTemplate:(_activity,data)=>{data.tag=true;return true;}},
+    craftsmanGadgetZoneService:{registerTemplate:d=>calls.push(d),unregisterTemplate:d=>calls.push(d)}
+  },{Hooks,game:{release:{generation:14}}});
+  const shapes=[{},{}];
+  assert.equal(listeners.get("dnd5e.createMeasuredTemplate")({},shapes),true);
+  assert.ok(shapes.every(shape=>shape.tag));
+  for(const event of ["createRegion","updateRegion","deleteRegion"])listeners.get(event)(shapes[0]);
+  assert.deepEqual(calls,[shapes[0],shapes[0],shapes[0]]);
+  assert.equal(listeners.has("createMeasuredTemplate"),false);
+});

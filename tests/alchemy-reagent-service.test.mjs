@@ -253,6 +253,7 @@ function fixture() {
     uuid: "ChatMessage.message1", id: "message1", author: sender,
     flags: {
       dnd5e: {
+        messageType: "usage",
         item: { id: "item1", uuid: "Actor.source.Item.item1" },
         activity: { id: drinkActivityId }, targets: [{ uuid: target.uuid }],
         use: { consumed: { deleted: [{ _id: "item1", type: "consumable", flags: { [MODULE]: itemFlags } }] } }
@@ -565,4 +566,47 @@ test("minimized reagent sheet updates once after restoration", async () => {
     service.refreshOpenSheets(160, 60); service.refreshOpenSheets(170, 10);
     assert.equal(calls.length, 0); await app.maximize(); assert.equal(calls.length, 1);
   } finally { globalThis.ui = previous.ui; globalThis.foundry = previous.foundry; }
+});
+
+for (const mode of ["deleted", "quantity", "uses"]) {
+  test(`native dnd5e 6 usage authorizes and applies the exact consumed potion once (${mode})`, async () => {
+    const {sender,source,target,message,options}=fixture();
+    const legacy=message.flags.dnd5e, item=legacy.use.consumed.deleted[0];
+    source.items={contents:[{...item,id:item._id}]};
+    message.type="usage";
+    message.system={item:legacy.item,activity:legacy.activity,targets:[{actor:target.uuid,token:"Scene.s.Token.t"}],
+      deltas:mode==="deleted"?{deleted:[item]}:{item:{[item._id]:[mode==="uses"
+        ?{keyPath:"system.uses.spent",delta:1}:{keyPath:"system.quantity",delta:-1}]}}};
+    delete message.flags.dnd5e;
+    const service=new AlchemyReagentService(options);
+    await service.applyRecordedUse(message,{sender});
+    await service.applyRecordedUse(message,{sender});
+    assert.equal(target.effects.contents.length,1);
+  });
+}
+
+test("modern potion use requires matching native target, activity and consumption; legacy flags cannot fill gaps",async()=>{
+  const {sender,source,target,message,options}=fixture(), legacy=message.flags.dnd5e, item=legacy.use.consumed.deleted[0];
+  source.items={contents:[{...item,id:item._id}]}; message.type="usage";
+  const service=new AlchemyReagentService(options);
+  const data={item:legacy.item,activity:legacy.activity,targets:[{actor:target.uuid,token:"Scene.s.Token.t"}],deltas:{deleted:[item]}};
+  for (const override of [{targets:[{actor:"Actor.other"}]},{targets:[{uuid:target.uuid}]},{activity:{id:"wrong"}},{deltas:null},
+    {deltas:{deleted:[{...item,_id:"wrong"}]}},{deltas:{item:{other:[{keyPath:"system.quantity",delta:-1}]}}},
+    {deltas:{item:{item1:[{keyPath:"system.quantity",delta:1},{keyPath:"system.uses.spent",delta:-1}]}}}]) {
+    message.system={...data,...override};
+    await assert.rejects(service.applyRecordedUse(message,{sender}));
+  }
+  assert.equal(target.effects.contents.length,0);
+});
+
+test("even matching native dnd5e 6 consumption deltas cannot authorize dosing another actor without the GM receipt",async()=>{
+  const {sender,target,message,options}=foreignFixture();
+  const legacy=message.flags.dnd5e;
+  message.type="usage";message.system={item:legacy.item,activity:legacy.activity,
+    targets:[{actor:target.uuid,token:"Scene.s.Token.t"}],deltas:legacy.use.consumed};
+  delete message.flags.dnd5e;
+  const service=new AlchemyReagentService(options);
+  assert.equal(await service.authorizeRecordedUse(message,sender),false);
+  await assert.rejects(service.applyRecordedUse(message,{sender}));
+  assert.equal(target.effects.contents.length,0);
 });

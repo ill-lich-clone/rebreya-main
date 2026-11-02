@@ -674,10 +674,6 @@ export function registerLootgenChatHooks(moduleApi) {
     }).catch(error=>globalThis.ui?.notifications?.error(error.message||"Не удалось перенести добычу."));
     return false;
   });
-  Hooks.on("renderChatMessage", (message, html) => {
-    bindLootgenChatMessage(message, html);
-  });
-
   Hooks.on("renderChatMessageHTML", (message, html) => {
     bindLootgenChatMessage(message, html);
   });

@@ -444,7 +444,7 @@ test("active performance GM commit clears performer failure uses on success", as
   }
 });
 
-test("active performance can resolve the target from the dnd5e usage message", async () => {
+for (const modern of [false,true]) test(`active performance resolves the ${modern ? "v6" : "legacy"} usage-card target`, async () => {
   const previousTargets = globalThis.game.user.targets;
   const previousFromUuidSync = globalThis.fromUuidSync;
   const performerItem = makePerformerItem({ spent: 0 });
@@ -457,6 +457,7 @@ test("active performance can resolve the target from the dnd5e usage message", a
   try {
     await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {
       message: {
+        ...(modern ? {system:{targets:[{actor:target.uuid,token:target.token.document.uuid}]}} : {
         flags: {
           dnd5e: {
             use: {
@@ -464,6 +465,7 @@ test("active performance can resolve the target from the dnd5e usage message", a
             }
           }
         }
+        })
       }
     });
 

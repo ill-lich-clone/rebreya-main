@@ -40,7 +40,7 @@ import {
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
-} from "./universal-belt.js?v=1.5.44";
+} from "./universal-belt.js?v=1.5.60";
 import {
   bindItemUpgradeInventoryRows,
   bindItemUpgradeSheet,
@@ -2666,7 +2666,7 @@ function getHeroicRollButtonLabels() {
   };
 }
 
-function applyHeroicD20RollModifiers(roll, D20Roll) {
+export function applyHeroicD20RollModifiers(roll) {
   const heroicMode = String(roll?.options?.rebreyaHeroicMode ?? "").trim().toLowerCase();
   if (!roll?.validD20Roll || !["advantage", "disadvantage"].includes(heroicMode)) {
     return;
@@ -2677,9 +2677,9 @@ function applyHeroicD20RollModifiers(roll, D20Roll) {
     return;
   }
 
-  const existingModifierIndex = modifiers.findIndex((modifier) => ["kh", "kl"].includes(modifier));
-  if (existingModifierIndex >= 0) {
-    modifiers.splice(existingModifierIndex, 1);
+  for (let index = modifiers.length - 1; index >= 0; index--) {
+    // dnd5e 6 expands adv/dis before evaluating the die. Heroic rolls already have three dice.
+    if (/^(?:adv|dis|kh|kl)\d*$/iu.test(modifiers[index])) modifiers.splice(index, 1);
   }
 
   roll.d20.number = 3;
@@ -2700,7 +2700,7 @@ function registerHeroicD20RollConfigureModifiersPatch(D20Roll) {
         "CONFIG.Dice.D20Roll.prototype.configureModifiers",
         function configureRebreyaHeroicD20Roll(wrapped, ...args) {
           const result = wrapped(...args);
-          applyHeroicD20RollModifiers(this, D20Roll);
+          applyHeroicD20RollModifiers(this);
           return result;
         },
         "WRAPPER"
@@ -2723,7 +2723,7 @@ function registerHeroicD20RollConfigureModifiersPatch(D20Roll) {
 
   D20Roll.prototype.configureModifiers = function (...args) {
     const result = originalConfigureModifiers.call(this, ...args);
-    applyHeroicD20RollModifiers(this, D20Roll);
+    applyHeroicD20RollModifiers(this);
     return result;
   };
 

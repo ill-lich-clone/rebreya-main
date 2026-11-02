@@ -90,5 +90,6 @@ export async function registerNarrativeItemCreationHooks({
   };
   Hooks.on("renderItemSheet", repairSheet);
   Hooks.on("renderItemSheetV2", repairSheet);
+  Hooks.on("renderItemSheet5e", repairSheet);
   return true;
 }

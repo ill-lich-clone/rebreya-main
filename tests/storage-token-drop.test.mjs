@@ -451,3 +451,15 @@ test("depositing a scene item into storage uses the nearest owned character even
     characterTokenUuid: characterToken.document.uuid
   });
 });
+
+test("storage drops use the actual ApplicationV2 synthetic character rather than its shared base Actor",()=>{
+  const base={id:"hero123",uuid:"Actor.hero123",type:"character"};
+  const synthetic={...base,uuid:"Scene.scene.Token.unlinked.Actor.hero123"};
+  const sheet={id:"CharacterActorSheet-Scene-scene-Token-unlinked-Actor-hero123",nodeType:1,
+    classList:{contains:()=>false}, getBoundingClientRect:()=>({left:0,top:0,right:100,bottom:100})};
+  assert.equal(characterSheetAtPoint(25,25,{
+    document:{elementFromPoint:()=>({closest:()=>sheet})},
+    windows:{},instances:new Map([[sheet.id,{document:synthetic,element:sheet}]]),
+    actors:new Map([[base.id,base]])
+  }),synthetic);
+});

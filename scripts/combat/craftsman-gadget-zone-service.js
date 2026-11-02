@@ -12,15 +12,17 @@ function smokeState(template) {
 
 function tokenCenter(token) {
   const source = token?.object ?? token;
-  const center = source?.center ?? source?.document?.center;
-  if (Number.isFinite(Number(center?.x)) && Number.isFinite(Number(center?.y))) {
-    return { x: Number(center.x), y: Number(center.y) };
-  }
   const document = source?.document ?? source;
-  return { x: Number(document?.x) || 0, y: Number(document?.y) || 0 };
+  const elevation = Number(document?.elevation) || 0;
+  const center = source?.center ?? document?.getCenterPoint?.() ?? document?.center;
+  if (Number.isFinite(Number(center?.x)) && Number.isFinite(Number(center?.y))) {
+    return { x: Number(center.x), y: Number(center.y), elevation };
+  }
+  return { x: Number(document?.x) || 0, y: Number(document?.y) || 0, elevation };
 }
 
 function templateContains(template, point) {
+  if (template.documentName === "Region") return template.testPoint(point);
   const shape = template?.object?.shape ?? template?.shape;
   const originX = Number(template?.x ?? template?.document?.x) || 0;
   const originY = Number(template?.y ?? template?.document?.y) || 0;
@@ -52,6 +54,7 @@ export class CraftsmanGadgetZoneService {
   }
 
   registerTemplate(template) {
+    if (this._sceneId && template?.parent?.id && template.parent.id !== this._sceneId) return null;
     const state = smokeState(template);
     const instanceId = cleanString(state?.instanceId);
     if (!instanceId) return null;
@@ -76,8 +79,10 @@ export class CraftsmanGadgetZoneService {
     return this._templates.delete(instanceId);
   }
 
-  clearTemplates() {
+  clearTemplates(scene = null) {
+    if (scene && this._sceneId && scene.id !== this._sceneId) return;
     this._templates.clear();
+    this._sceneId = null;
   }
 
   async poisonTemplate(instanceId, context = {}) {
@@ -152,6 +157,11 @@ export class CraftsmanGadgetZoneService {
     const source = tokenCenter(sourceToken);
     const target = tokenCenter(targetToken);
     for (const template of this._templates.values()) {
+      if (template.documentName === "Region") {
+        if (template.testPoint(source) || template.testPoint(target)
+          || template.segmentizeMovementPath([source,target], [{x:0,y:0}]).length) return true;
+        continue;
+      }
       for (let step = 0; step <= 64; step += 1) {
         const ratio = step / 64;
         if (templateContains(template, {
@@ -172,10 +182,10 @@ export class CraftsmanGadgetZoneService {
   }
 
   registerSceneTemplates(scene = globalThis.canvas?.scene) {
-    const templates = scene?.templates?.contents
-      ?? (typeof scene?.templates?.values === "function" ? Array.from(scene.templates.values()) : [])
-      ?? [];
+    const collection = Number(globalThis.game?.release?.generation) >= 14 ? scene?.regions : scene?.templates;
+    const templates = collection?.contents ?? collection?.values?.() ?? [];
     this._templates.clear();
+    this._sceneId = scene?.id ?? null;
     for (const template of templates) this.registerTemplate(template);
     return this._templates.size;
   }

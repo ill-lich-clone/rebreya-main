@@ -1042,3 +1042,38 @@ test("Mechanic preparation opens research object selection when no vehicle is bo
     item.flags["rebreya-main"].craftsmanGadget.vehicleUuid === targetVehicle.uuid
   )));
 });
+
+test("GM accepts a native smoke Region only from this gadget, actor and instance", async () => {
+  for (const matches of [false,true]) {
+    const item=preparedGadget("smoke-device","current","region-item",1);
+    const actor=new TestActor({items:[item]});item.uuid=actor.uuid+".Item."+item.id;
+    actor.flags["rebreya-main"]={craftsmanGadgets:{restGeneration:"current",activeInstanceId:""}};
+    const scene={documentName:"Scene",id:"scene",regions:new Map()};
+    const region={id:"region",uuid:"Scene.scene.Region.region",documentName:"Region",parent:scene,
+      flags:{dnd5e:{item:matches?item.uuid:"Actor.other.Item.fake"},"rebreya-main":{craftsmanSmoke:{instanceId:"region-item",ownerActorUuid:actor.uuid}}},
+      async delete(){assert.fail("other origin must not be deleted");}};
+    scene.regions.set(region.id,region);
+    const service=makeService();service.options.fromUuid=async uuid=>uuid===actor.uuid?actor:region;
+    const accepted=await service.executeAuthoritativeMutation({kind:"use",actorUuid:actor.uuid,itemId:item.id,gadgetId:"smoke-device",operation:"activate",
+      expectedInstanceId:"region-item",expectedActiveInstanceId:"",expectedRestGeneration:"current",templateUuids:[region.uuid]});
+    assert.equal(accepted,matches);
+    assert.equal(item.flags["rebreya-main"].craftsmanGadget.state,matches?"active":"prepared");
+  }
+});
+test("a missing Craftsman smoke cloud is placed through the v14 dnd5e Region API with the original poison flags",async t=>{
+  const item=preparedGadget("smoke-device","current","region-fallback");new TestActor({items:[item]});
+  const service=makeService();let result;
+  const old={dnd5e:globalThis.dnd5e,game:globalThis.game};t.after(()=>Object.assign(globalThis,old));
+  const region={documentName:"Region"};
+  globalThis.game={...old.game,release:{generation:14}};
+  globalThis.dnd5e={canvas:{TemplatePlacement:{fromActivity:async(activity,{createData})=>{
+    assert.equal(createData.flags["rebreya-main"].craftsmanSmoke.poisoned,true);
+    assert.equal(createData.flags["rebreya-main"].craftsmanSmoke.instanceId,"region-fallback");
+    assert.equal(service.applyDnd5ePreCreateActivityTemplate(activity,createData),true);
+    assert.equal(createData.flags["rebreya-main"].craftsmanSmoke.poisoned,true);
+    return [region];}}}};
+  service.options.zoneService={poisonTemplate:async(instanceId,context)=>{result=await context.createPoisonedTemplate({...context,instanceId});}};
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item,"activate"),{},{templates:[]});
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item,"action"),{},{});
+  assert.equal(result,region);
+});

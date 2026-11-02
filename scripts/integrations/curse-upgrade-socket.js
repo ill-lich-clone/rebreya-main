@@ -29,12 +29,16 @@ export async function authorizeCurseSaveRequest(payload, { sender } = {}) {
   if (sender.isGM) return true;
   const card = await resolve(payload.itemCardUuid);
   if (!card || (card.author?.id ?? card.user?.id) !== sender.id) return false;
-  const itemUuid = card.flags?.dnd5e?.item?.uuid ?? card.flags?.["midi-qol"]?.itemUuid;
-  const activityUuid = card.flags?.dnd5e?.activity?.uuid ?? card.flags?.["midi-qol"]?.activityUuid;
+  const itemUuid = card.system?.item?.uuid ?? card.flags?.dnd5e?.item?.uuid ?? card.flags?.["midi-qol"]?.itemUuid;
+  const activityUuid = card.system?.activity?.uuid ?? card.flags?.dnd5e?.activity?.uuid ?? card.flags?.["midi-qol"]?.activityUuid;
   if (activityUuid ? activityUuid !== activity.uuid : itemUuid !== activity.item?.uuid) return false;
+  if (itemUuid && itemUuid !== activity.item?.uuid) return false;
+  if (!activityUuid && card.system?.activity?.id && card.system.activity.id !== activity.id) return false;
   if (![card.uuid, card.id].includes(payload.workflowId)) return false;
-  const targets = [...(card.flags?.dnd5e?.targets ?? []), ...(card.flags?.["midi-qol"]?.targets ?? [])];
-  if (!targets.some(entry => [actor.uuid, target.uuid].includes(typeof entry === "string" ? entry : entry?.uuid))) return false;
+  const targets = card.system?.targets ?? [...(card.flags?.dnd5e?.targets ?? []), ...(card.flags?.["midi-qol"]?.targets ?? [])];
+  if (!Array.isArray(targets) || !targets.some(entry => entry?.token
+    ? entry.token === target.uuid && (!entry.actor || entry.actor === actor.uuid)
+    : [actor.uuid, target.uuid].includes(typeof entry === "string" ? entry : entry?.actor ?? entry?.uuid))) return false;
   const event = `curse-save:${payload.workflowId}:${actor.uuid}`;
   if (payload.eventId !== event + (payload.kind === "chains" ? ":chains" : "")) return false;
   if (payload.kind === "chains") return true;

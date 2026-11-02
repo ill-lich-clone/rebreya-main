@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.2";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { registerGrappleHooks } from "./grapple-hooks.js";
+import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.60";
 import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";
 import { ignoreProneFireDisadvantage } from "./prone-fire.js?v=1.5.22";
 import { canApplyFirearmTuning, allowMagicalFirearmTuning, startTuningForAreaFire } from "./firearm-tuning.js?v=1.5.22";

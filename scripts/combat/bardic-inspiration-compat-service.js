@@ -3,6 +3,7 @@ import { collectionValues, escapeFoundryHtml, finiteNumber as toNumber } from ".
 import { isAvailableD20BonusEffect } from "./d20-bonus-roll.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { sha256Hex } from "../shared/sha256.js?v=1.4.268";
+import { cardDamageRolls, cardHitEvidence, flushCardDamage, usageCardData } from "../integrations/midi-usage-card.js";
 import { BARDIC_INSPIRATION_GRANT_COMMAND, BLADE_FLOURISH_COMMAND, BLADE_FLOURISH_SPEED_COMMAND, isValidBardicInspirationGrant, isValidBladeFlourishRequest, isValidBladeFlourishSpeedRequest } from "../infrastructure/foundry/bardic-inspiration-command.js?v=1.5.56";
 
 export const LAARU_BARDIC_INSPIRATION_SOURCE_UUID = "Compendium.laaru-dnd5-hw.classfeatures.Item.hpLNiGq7y67d2EHA";
@@ -75,23 +76,22 @@ function bladeRequestFromRecord(item, record) {
 
 function hasConfirmedBladeFlourishHit(payload, sender, sourceToken) {
   const message = globalThis.game?.messages?.get?.(payload.operationId);
-  const native = message?.flags?.dnd5e;
-  const midi = message?.flags?.["midi-qol"];
+  const native = usageCardData(message);
   const recorded = message?.flags?.[MODULE_ID]?.bladeFlourishHit;
   const authorId = message?.author?.id ?? message?.user?.id ?? message?.user;
   return Boolean(message && (sender?.isGM || authorId === sender?.id)
-    && native?.messageType === "usage" && native?.item?.uuid === payload.weaponItemUuid
+    && native?.item?.uuid === payload.weaponItemUuid
     && native?.activity?.type === "attack" && message.speaker?.scene === sourceToken?.parent?.id
     && message.speaker?.token === sourceToken?.id
-    && ([...collectionValues(midi?.hitTargetUuids), ...collectionValues(midi?.hitECTargetUuids)].includes(payload.targetTokenUuid)
-      || (recorded?.targetTokenUuid === payload.targetTokenUuid && recorded?.sourceTokenUuid === payload.sourceTokenUuid)));
+    && (cardHitEvidence(message,payload.targetTokenUuid)
+      || (message.type !== "usage" && recorded?.targetTokenUuid === payload.targetTokenUuid && recorded?.sourceTokenUuid === payload.sourceTokenUuid)));
 }
 
 function hasBladeAttackCard(payload, sender, sourceToken) {
   const message = globalThis.game?.messages?.get?.(payload.operationId);
-  const native = message?.flags?.dnd5e;
+  const native = usageCardData(message);
   const authorId = message?.author?.id ?? message?.user?.id ?? message?.user;
-  return Boolean(message && (sender?.isGM || authorId === sender?.id) && native?.messageType === "usage"
+  return Boolean(native && (sender?.isGM || authorId === sender?.id)
     && native?.item?.uuid === payload.weaponItemUuid && native?.activity?.type === "attack"
     && message.speaker?.scene === sourceToken?.parent?.id && message.speaker?.token === sourceToken?.id);
 }
@@ -102,11 +102,8 @@ function bladeDamageMarker(operationId, targetTokenUuid, targetActorUuid) {
 
 function hasAttachedBladeFlourishRoll(payload, record, { markerOnly = false } = {}) {
   const message = globalThis.game?.messages?.get?.(payload.operationId);
-  const matches = [...collectionValues(message?.flags?.["midi-qol"]?.damageRolls), ...collectionValues(message?.flags?.["midi-qol"]?.bonusDamageRolls)].flatMap(entry => {
-    let roll = entry;
-    if (typeof entry === "string") { try { roll = JSON.parse(entry); } catch { return []; } }
-    return roll?.options?.rebreyaBladeFlourishOperationId === payload.operationId ? [roll] : [];
-  });
+  const matches = [...cardDamageRolls(message), ...cardDamageRolls(message,{bonus:true})]
+    .filter(roll => roll.options?.rebreyaBladeFlourishOperationId === payload.operationId);
   if (markerOnly) return matches.length > 0;
   if (matches.length !== 1) return false;
   const roll = matches[0], properties = roll?.options?.properties;
@@ -118,9 +115,7 @@ function hasAttachedBladeFlourishRoll(payload, record, { markerOnly = false } = 
 }
 
 function bladeAttackDamageRoll(operationId) {
-  let roll = collectionValues(globalThis.game?.messages?.get?.(operationId)?.flags?.["midi-qol"]?.damageRolls)[0];
-  if (typeof roll === "string") { try { roll = JSON.parse(roll); } catch { return null; } }
-  return roll ?? null;
+  return cardDamageRolls(globalThis.game?.messages?.get?.(operationId))[0] ?? null;
 }
 
 function bladeAttackDamageProperties(operationId) {
@@ -281,7 +276,7 @@ export class BardicInspirationCompatService {
         || (serialized.options?.type && existing.options?.type !== serialized.options.type)
         || (!Array.isArray(actual) && !(actual instanceof Set))
         || JSON.stringify([...new Set(actual)].sort()) !== JSON.stringify(expectedProperties)) throw new Error("Цветение: бросок атаки изменился.");
-      await workflow.performThrottledUpdate(workflow.chatCard, {}, true);
+      await flushCardDamage(workflow,workflow.chatCard);
       return { replayed: true };
     }
     const deserialize = this.options.deserializeBladeFlourish ?? (data => globalThis.Roll?.fromJSON?.(JSON.stringify(data)));
@@ -306,7 +301,7 @@ export class BardicInspirationCompatService {
       roll.options.properties = expectedProperties;
     }
     workflow.damageRolls = workflow.damageRolls;
-    await workflow.performThrottledUpdate(workflow.chatCard, {}, true);
+    await flushCardDamage(workflow,workflow.chatCard);
     return { replayed: false };
   }
 
@@ -323,12 +318,12 @@ export class BardicInspirationCompatService {
       return current.pending;
     }
     const pending = (async () => {
-      await workflow.performThrottledUpdate(workflow.chatCard, {}, true);
+      await flushCardDamage(workflow,workflow.chatCard);
       const message = globalThis.game?.messages?.get?.(payload.operationId);
-      const midi = message?.flags?.["midi-qol"];
       const recorded = message?.flags?.[MODULE_ID]?.bladeFlourishHit;
-      if (![...collectionValues(midi?.hitTargetUuids), ...collectionValues(midi?.hitECTargetUuids)].includes(payload.targetTokenUuid)
-        && !(recorded?.targetTokenUuid === payload.targetTokenUuid && recorded?.sourceTokenUuid === payload.sourceTokenUuid)) {
+      if (!cardHitEvidence(message,payload.targetTokenUuid)
+        && !(message?.type !== "usage" && recorded?.targetTokenUuid === payload.targetTokenUuid && recorded?.sourceTokenUuid === payload.sourceTokenUuid)) {
+        if (message?.type === "usage") throw new Error("Цветение: карточка MIDI не подтверждает попадание по выбранной цели.");
         const hits = [...collectionValues(workflow.hitTargets), ...collectionValues(workflow.hitTargetsEC)].map(tokenDocument);
         if (!hits.some(token => token?.uuid === payload.targetTokenUuid) || typeof workflow.chatCard.update !== "function") {
           throw new Error("Цветение: попадание не подтверждено.");
@@ -967,8 +962,10 @@ export class BardicInspirationCompatService {
   }
 
   #selectedTarget(usageConfig, results = {}) {
+    const cardTargets = collectionValues(usageCardData(results.message)?.targets)
+      .map(entry => results.message.type === "usage" ? entry.token || entry.actor : entry);
     const entries = usageConfig.targets != null ? collectionValues(usageConfig.targets)
-      : collectionValues(results.message?.flags?.dnd5e?.targets).length ? collectionValues(results.message.flags.dnd5e.targets)
+      : cardTargets.length ? cardTargets
         : collectionValues(globalThis.game?.user?.targets);
     const targets = entries.map(resolveTarget).filter(Boolean);
     return targets.length === 1 ? targets[0] : null;
@@ -1007,12 +1004,16 @@ export class BardicInspirationCompatService {
     if (!targetActor || (payload.sourceTokenUuid && origin?.actor?.uuid !== actor.uuid)
       || (payload.targetTokenUuid && token?.actor?.uuid !== targetActor.uuid)) throw new Error("Токен не соответствует источнику или цели вдохновения.");
     const message = globalThis.game?.messages?.get?.(payload.operationId);
-    const native = message?.flags?.dnd5e;
-    if (!message || native?.messageType !== "usage" || native.item?.uuid !== item.uuid || native.activity?.id !== payload.activityId) {
+    const native = usageCardData(message);
+    if (!native || native.item?.uuid !== item.uuid || native.activity?.id !== payload.activityId) {
       throw new Error("Вдохновение: не найдено сообщение использования исходной активности.");
     }
-    if (!collectionValues(native.targets).some(entry => entry.uuid === targetActor.uuid)) throw new Error("Цель не соответствует исходному использованию вдохновения.");
-    if (!collectionValues(native.use?.consumed?.item?.[item.id]).some(delta => delta.keyPath === "system.uses.spent" && Number(delta.delta) >= 1)) {
+    const modern = message.type === "usage";
+    if (!collectionValues(native.targets).some(entry => modern
+      ? entry.actor === targetActor.uuid && (!entry.token || entry.token === payload.targetTokenUuid)
+      : entry.uuid === targetActor.uuid)) throw new Error("Цель не соответствует исходному использованию вдохновения.");
+    const consumed = modern ? native.deltas : native.use?.consumed;
+    if (!collectionValues(consumed?.item?.[item.id]).some(delta => delta.keyPath === "system.uses.spent" && Number(delta.delta) >= 1)) {
       throw new Error("Вдохновение: использование не подтверждает расход заряда.");
     }
     const existing = getProperty(message, RECEIPT);

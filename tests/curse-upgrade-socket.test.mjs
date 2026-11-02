@@ -26,6 +26,14 @@ test("workflow decisions bind exact activity, card author and actual target", as
   assert.equal(await authorizeCurseSaveRequest(p, { sender: { id: "caster" } }), false);
   card.flags.dnd5e.targets = [{ uuid: target.uuid }]; card.flags.dnd5e.activity.uuid = "different";
   assert.equal(await authorizeCurseSaveRequest(p, { sender: { id: "caster" } }), false);
+  card.system = {item:{uuid:activity.item.uuid}, activity:{uuid:activity.uuid}, targets:[{token:token.uuid,actor:target.uuid}]};
+  assert.equal(await authorizeCurseSaveRequest(p,{sender:{id:"caster"}}),true);
+  card.flags.dnd5e.activity.uuid=activity.uuid;
+  card.system.targets=[{token:"Scene.s.Token.other",actor:target.uuid}];
+  assert.equal(await authorizeCurseSaveRequest(p,{sender:{id:"caster"}}),false);
+  card.system.targets=[];
+  assert.equal(await authorizeCurseSaveRequest(p,{sender:{id:"caster"}}),false);
+
 });
 test("four typed commands register with validation and authorization", () => {
   const commands = new Map(); registerCurseUpgradeSocketCommands({ socketCommandBus: { register: (key, value) => commands.set(key, value) }, curseUpgradeAutomationService: {} });

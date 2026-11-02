@@ -75,13 +75,14 @@ export function registerSpellAutomationHooks(moduleApi, {
     () => bridge.handleActiveEffectChanged?.("delete", effect, undefined, options)
   ));
 
-  Hooks.on("createMeasuredTemplate", (template, options) => runAsync(
+  const templateType = Number(game.release?.generation) >= 14 ? "Region" : "MeasuredTemplate";
+  Hooks.on(`create${templateType}`, (template, options) => runAsync(
     () => bridge.handleMeasuredTemplateChanged?.("create", template, undefined, options)
   ));
-  Hooks.on("updateMeasuredTemplate", (template, changed, options) => runAsync(
+  Hooks.on(`update${templateType}`, (template, changed, options) => runAsync(
     () => bridge.handleMeasuredTemplateChanged?.("update", template, changed, options)
   ));
-  Hooks.on("deleteMeasuredTemplate", (template, options) => runAsync(
+  Hooks.on(`delete${templateType}`, (template, options) => runAsync(
     () => bridge.handleMeasuredTemplateChanged?.("delete", template, undefined, options)
   ));
   Hooks.on("combatTurnChange", (combat, prior, current) => runAsync(

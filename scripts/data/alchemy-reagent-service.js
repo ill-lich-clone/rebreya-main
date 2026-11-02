@@ -1,6 +1,7 @@
 import { formatReagentTime } from "../shared/reagent-time.js?v=1.5.44";
 import { deferRefreshUntilMaximized } from "../infrastructure/ui/deferred-window-refresh.js?v=1.5.44";
 import { MODULE_ID } from "../constants.js";
+import { usageCardData } from "../integrations/midi-usage-card.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { buildAlchemyActivities } from "./alchemy-automation.js?v=1.5.11";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
@@ -141,8 +142,7 @@ function ownsActor(actor, sender) {
   return Number(actor?.ownership?.[sender?.id] ?? actor?.ownership?.default ?? 0) >= 3;
 }
 
-function consumedItem(message, actor, itemId) {
-  const consumed = message?.flags?.dnd5e?.use?.consumed;
+function consumedItem(consumed, actor, itemId) {
   const deleted = consumed?.deleted?.find?.((item) => String(item?._id ?? item?.id) === itemId);
   if (deleted) return deleted;
   const changes = consumed?.item?.[itemId];
@@ -454,7 +454,8 @@ export class AlchemyReagentService {
 
   async #inspect(message, sender) {
     const use = message?.flags?.[MODULE_ID]?.[USE_FLAG];
-    const dnd = message?.flags?.dnd5e;
+    const dnd = usageCardData(message);
+    const modern = message?.type === "usage";
     const authorId = message?.author?.id ?? message?.user?.id ?? message?.user;
     if (!use || !message?.uuid || !/^[a-zA-Z0-9]{1,64}$/u.test(String(message.id ?? ""))
       || String(authorId ?? "") !== String(sender?.id ?? "")) throw new Error("Неверное сообщение применения зелья.");
@@ -462,7 +463,8 @@ export class AlchemyReagentService {
     const target = await this.fromUuid(use.targetActorUuid);
     if (!actor || actor.uuid !== use.sourceActorUuid || !ownsActor(actor, sender)
       || !target || target.uuid !== use.targetActorUuid) throw new Error("Применение зелья не авторизовано.");
-    if (!Array.isArray(dnd?.targets) || dnd.targets.length !== 1 || dnd.targets[0]?.uuid !== target.uuid) {
+    if (!Array.isArray(dnd?.targets) || dnd.targets.length !== 1
+      || (modern ? dnd.targets[0]?.actor : dnd.targets[0]?.uuid) !== target.uuid) {
       throw new Error("Цель зелья не совпадает с выбранным существом.");
     }
     const itemId = String(dnd?.item?.id ?? "");
@@ -480,7 +482,7 @@ export class AlchemyReagentService {
         || expected.durationSeconds !== use.durationSeconds || expected.reagentLevel !== use.reagentLevel
         || (reservation.claimedMessageUuid && reservation.claimedMessageUuid !== message.uuid)) throw new Error("Расход зелья не подтверждён Мастером.");
     }
-    const item = reservation?.itemSnapshot ?? consumedItem(message, actor, itemId);
+    const item = reservation?.itemSnapshot ?? consumedItem(modern ? dnd.deltas : dnd.use?.consumed, actor, itemId);
     const itemFlags = item?.flags?.[MODULE_ID];
     const product = await this.getProduct(use.productId);
     if (!item || item.type !== "consumable" || itemFlags?.managed !== true

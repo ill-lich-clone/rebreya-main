@@ -156,3 +156,30 @@ test("scene reindex replaces stale templates and document deletion only unregist
   assert.equal(service.getTemplate("g1"), null);
   assert.equal(second.deleted, undefined);
 });
+
+test("native Region smoke reindexes on load and tests the actor center and sight segment at their elevations",async t=>{
+  const old=globalThis.game;globalThis.game={release:{generation:14}};t.after(()=>{globalThis.game=old;});
+  const region={documentName:"Region",flags:template({poisoned:true}).flags,
+    testPoint:p=>p.x===450 && p.y===450 && p.elevation===5,
+    segmentizeMovementPath:([a,b])=>a.x===200 && b.x===900 && a.elevation===b.elevation?[{type:1}]:[]};
+  const service=new CraftsmanGadgetZoneService();
+  assert.equal(service.registerSceneTemplates({regions:new Map([["smoke",region]]),get templates(){throw Error("deprecated compatibility collection touched");}}),1);
+  assert.equal(isTokenInsideCraftsmanSmoke(region,{center:{x:450,y:450},document:{elevation:5}}),true);
+  assert.equal(isTokenInsideCraftsmanSmoke(region,{center:{x:450,y:450},document:{elevation:20}}),false);
+  assert.equal(service.isSightObscured(token(200,300),token(900,300)),true);
+  assert.equal(service.isSightObscured(token(20,300),token(100,300)),false);
+});
+
+test("a smoke update or deletion on another scene cannot replace or discard the viewed scene's index",()=>{
+  const first={id:"first"},other={id:"other"};
+  const current={...template(),parent:first},foreign={...template({id:"elsewhere"}),parent:other};
+  first.templates={contents:[current]};
+  const service=new CraftsmanGadgetZoneService();
+  service.registerSceneTemplates(first);
+  service.registerTemplate(foreign);
+  assert.equal(service.getTemplate("g1"),current);
+  service.clearTemplates(other);
+  assert.equal(service.getTemplate("g1"),current);
+  service.clearTemplates(first);
+  assert.equal(service.getTemplate("g1"),null);
+});

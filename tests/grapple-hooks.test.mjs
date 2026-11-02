@@ -373,3 +373,12 @@ test("twisted aura uses the GM viewed canvas scene before the globally active sc
   assert.deepEqual(env.calls.twistedScenes, [viewedScene]);
   assert.deepEqual(env.calls.auras, [{ combat: null, scene: viewedScene }]);
 });
+
+test("twisted aura follows the persisted combatant after the turn or round actually changes",async()=>{
+  const env=environment(),scene={id:"scene"}, combat={scene,combatant:{id:"old"}};
+  env.Hooks.call("combatTurn",combat,{turn:1},{direction:1});
+  await flush();assert.deepEqual(env.calls.auras,[]);
+  combat.combatant={id:"new"};
+  env.Hooks.call("combatTurnChange",combat,{round:1,turn:2},{round:2,turn:0});
+  await flush();assert.deepEqual(env.calls.auras,[{combat,scene}]);
+});

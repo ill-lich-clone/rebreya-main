@@ -9,6 +9,28 @@ test("Laaru identity accepts modern and legacy exact source, rejecting unrelated
   assert.equal(isLaaruBardicInspirationItem({ name: "Бардовское вдохновение", system: { uses: {} }, flags: { core: { sourceId: "Compendium.laaru.other.Item.other" } } }), false);
 });
 
+test("v14 grant follows the native usage target and spent delta, rejects forged token and missing charge", async()=>{
+  const f=bardicFixture(),card=game.messages.get(f.payload.operationId),legacy=card.flags.dnd5e;
+  const targetToken={documentName:"Token",id:"ally",uuid:"Scene.scene.Token.ally",actor:f.target};
+  f.documents.set(targetToken.uuid,targetToken);
+  card.type="usage";card.system={item:legacy.item,activity:legacy.activity,targets:[{actor:f.target.uuid,token:targetToken.uuid}],deltas:legacy.use.consumed};
+  delete card.flags.dnd5e;
+  const service=new BardicInspirationCompatService({});
+  const forwarded=[];
+  const hook=new BardicInspirationCompatService({socketCommandBus:{async request(_cmd,payload){forwarded.push(payload);}}});
+  await hook.applyDnd5ePostUseActivity(f.grant,{}, {message:card});
+  assert.equal(forwarded[0].targetActorUuid,f.target.uuid);assert.equal(forwarded[0].targetTokenUuid,targetToken.uuid);
+  const delta=card.system.deltas.item[f.item.id][0];
+  delta.delta=0;
+  await assert.rejects(service.grantInspiration(forwarded[0],{sender:f.sender}),/расход/u);
+  delta.delta=1;card.system.targets[0].token="Scene.scene.Token.somebodyElse";
+  await assert.rejects(service.grantInspiration(forwarded[0],{sender:f.sender}),/Цель/u);
+  card.system.targets[0].token=targetToken.uuid;
+  await service.grantInspiration(forwarded[0],{sender:f.sender});
+  await service.grantInspiration(forwarded[0],{sender:f.sender});
+  assert.equal(f.target.effects.length,1);
+});
+
 for (const [level, expected] of [[1, "1d6"], [5, "1d8"], [10, "1d10"], [15, "1d12"]]) {
   test(`grant freezes source bard die at level ${level}, retains performer and native resource`, async () => {
     const f = bardicFixture({ level });

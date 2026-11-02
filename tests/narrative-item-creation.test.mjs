@@ -119,6 +119,8 @@ test("narrative V1 and V2 sheet hooks restore a read-only local title once witho
   };
   let renders = 0;
   const app = { document: item, rendered: true, render: async () => { renders++; } };
+  // Stock dnd5e 6 ItemSheet5e extends DocumentSheet5e, not core ItemSheetV2.
+  callbacks.get("renderItemSheet5e")(app);
   callbacks.get("renderItemSheetV2")(app);
   callbacks.get("renderItemSheet")(app);
   await new Promise(resolve => setImmediate(resolve));

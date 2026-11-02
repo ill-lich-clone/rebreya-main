@@ -24,9 +24,9 @@ import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.31";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
-import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.44";
+import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.60";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.59";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.60";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.22";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
@@ -321,14 +321,14 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.59";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.60";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.2";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.2";
 import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.59";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.58";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.60";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
@@ -343,7 +343,7 @@ import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.1";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.23";
 import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.23";
-import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js";
+import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js?v=1.5.60";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "./combat/spell-instance-runtime.js";
@@ -360,7 +360,7 @@ import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.5.46";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
-import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.5.1";
+import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.5.60";
 import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.5.59";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
 import {
@@ -372,8 +372,8 @@ import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1
 import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
-} from "./combat/performer-automation-service.js?v=1.5.22";
-import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.57";
+} from "./combat/performer-automation-service.js?v=1.5.60";
+import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.60";
 import { registerBardicInspirationCommand, registerBladeFlourishCommand, registerBladeFlourishSpeedCommand } from "./infrastructure/foundry/bardic-inspiration-command.js?v=1.5.56";
 import { MOUNTED_TOGGLE_COMMAND, registerMountedToggleCommand, registerMountedChargeDamageCommand } from "./infrastructure/foundry/mounted-charge-command.js?v=1.5.58";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.46";
@@ -381,8 +381,8 @@ import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } f
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.58";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.5.59";
 import { getActorHandReservations } from "./integrations/held-items.js?v=1.5.29";
-import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
-import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js?v=1.4.397";
+import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js?v=1.5.60";
+import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js?v=1.5.60";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
 import { CraftsmanConstructorService } from "./combat/craftsman-constructor-service.js";
 import {
@@ -396,7 +396,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.47";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.60";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.48";
 import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.59";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
@@ -417,8 +417,8 @@ import { registerRationFoodConversionHook } from "./integrations/ration-food-con
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.46";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.48";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
-import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.2";
-import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
+import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.60";
+import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js?v=1.5.60";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
 import {
   registerImplantDataModelPatch,
@@ -437,9 +437,9 @@ import { ALCHEMY_REAGENT_COMMAND, ALCHEMY_REAGENT_RESERVE_COMMAND, ALCHEMY_REAGE
   registerAlchemyReagentSocketCommand } from "./integrations/alchemy-reagent-socket.js?v=1.5.11";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js?v=1.4.377";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.396";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.5.48";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.5.60";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.396";
-import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.4.396";
+import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.5.60";
 import { hasStorageNarrativeCandidates, prepareStorageNarrativeRows } from "./data/storage-narrative-rows.js?v=1.4.396";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
@@ -459,7 +459,7 @@ import {
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js?v=1.5.54";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.396";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.5.60";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
@@ -7680,7 +7680,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.5.23");
+      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.5.60");
       let app = null;
 
       if (!viewer && !newWindow && !templateUuid) {

@@ -626,6 +626,14 @@ export class PerformerAutomationService {
   }
 
   #messageTargets(results = {}) {
+    const nativeTargets = results.message?.system?.targets;
+    if (Array.isArray(nativeTargets)) {
+      return nativeTargets.map(entry => {
+        const token = resolveUuidSync(entry?.token);
+        return token && (!entry?.actor || resolveActorFromTarget(token)?.uuid === entry.actor)
+          ? token : resolveUuidSync(entry?.actor);
+      }).filter(Boolean);
+    }
     const descriptors = [
       ...collectionValues(getProperty(results, "message.flags.dnd5e.use.targets")),
       ...collectionValues(getProperty(results, "message.data.flags.dnd5e.use.targets")),

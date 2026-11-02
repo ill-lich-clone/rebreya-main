@@ -238,3 +238,33 @@ test("an active GM resolves weapon bonuses locally without relying on socket ech
   try { await f.service.applyMidiMountedChargeDamage(workflow); assert.equal(local, 1); }
   finally { globalThis.Roll = oldRoll; }
 });
+
+test("v14 usage card proves the primary damage and exact hit independently of legacy flags", async () => {
+  const f=setup(), {card,target,weapon}=f;
+  const damage={class:"DamageRoll",options:{type:"piercing",properties:["mgc"],rollType:"damage","midi-qol":{rollType:"defaultDamage"}}};
+  card.type="usage";card.flags={};card.system={item:{uuid:weapon.uuid},activity:{type:"attack"},midi:{sections:{hits:{data:{hits:[{uuid:target.uuid,hitClass:"success"}]}}}}};
+  card.rolls=[{class:"D20Roll",options:{rollType:"attack"}},damage];
+  card.system.midi.sections.hits.data.hits[0].hitClass="failure";
+  await assert.rejects(f.service.reserveMountedChargeDamage(f.payload,{sender:f.user}),/попад/u);
+  card.system.midi.sections.hits.data.hits[0].hitClass="success";
+  assert.ok((await f.service.reserveMountedChargeDamage(f.payload,{sender:f.user})).roll);
+});
+
+test("Midi 14 DamageRollComplete flushes primary rolls before GM validation and ignores stale miss markers", async () => {
+  const f=setup(), primary={total:8,options:{type:"piercing",properties:["mgc"],"midi-qol":{rollType:"defaultDamage"}}};
+  f.card.type="usage";
+  f.card.system={item:{uuid:f.weapon.uuid},activity:{type:"attack"},midi:{sections:{hits:{data:{hits:[{uuid:f.target.uuid,hitClass:"success"}]}}}}};
+  f.card.flags={"rebreya-main":{weaponPropertyHit:{riderTokenUuid:f.rider.uuid,targetTokenUuid:f.target.uuid}}};
+  const workflow={actor:f.actor,item:f.weapon,token:{document:f.rider},chatCard:f.card,hitTargets:new Set([{document:f.target}]),
+    damageRolls:[primary],chatRolls:[primary],async performThrottledUpdate(message,patch,immediate){assert.equal(immediate,true);Object.assign(message,patch);},
+    async setDamageRolls(rolls){this.damageRolls=rolls;}};
+  const previous=globalThis.Roll;
+  globalThis.Roll={fromJSON:json=>({...JSON.parse(json),_evaluated:true})};
+  try {
+    await f.service.applyMidiMountedChargeDamage(workflow);
+    assert.equal(workflow.damageRolls.length,2);
+    assert.equal(f.rolls,1);
+    f.card.system.midi.sections.hits.data.hits[0].hitClass="failure";
+    await assert.rejects(f.service.reserveMountedChargeDamage(f.payload,{sender:f.user}),/попад/u);
+  } finally {globalThis.Roll=previous;}
+});

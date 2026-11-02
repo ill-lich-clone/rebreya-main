@@ -791,7 +791,7 @@ test("fighter maneuver runtime spends the owned dominance dice item when dnd5e d
   }
 });
 
-test("fighter maneuver runtime does not spend dominance twice when the chat card already consumed it", async () => {
+for (const modern of [false,true]) test(`fighter does not spend dominance twice for a ${modern ? "v6" : "legacy"} consumption receipt`, async () => {
   const previousTargets = globalThis.game.user.targets;
   const dominance = makeItem({
     id: "dominance-real",
@@ -829,6 +829,9 @@ test("fighter maneuver runtime does not spend dominance twice when the chat card
   try {
     await service.applyDnd5ePostUseActivity(activity, {}, {
       message: {
+        ...(modern ? {
+        system: { deltas: { item: { [dominance.id]: [{ keyPath: "system.uses.spent", delta: 1 }] } } }
+        } : {
         flags: {
           dnd5e: {
             use: {
@@ -843,6 +846,7 @@ test("fighter maneuver runtime does not spend dominance twice when the chat card
             }
           }
         }
+        })
       }
     });
 

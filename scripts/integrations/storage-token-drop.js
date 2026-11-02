@@ -67,6 +67,7 @@ function appElement(application) {
 export function characterSheetAtPoint(x, y, {
   document = globalThis.document,
   windows = globalThis.ui?.windows,
+  instances = globalThis.foundry?.applications?.instances,
   actors = globalThis.game?.actors
 } = {}) {
   if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return null;
@@ -74,6 +75,13 @@ export function characterSheetAtPoint(x, y, {
   const sheetElement = topElement?.closest?.(".sheet.actor, .actor.sheet") ?? null;
   if (sheetElement && sheetElement.classList?.contains?.("minimized") !== true
     && pointInside(sheetElement.getBoundingClientRect?.(), Number(x), Number(y))) {
+    const sheet = instances?.get?.(sheetElement.id);
+    if (sheet && appElement(sheet) === sheetElement) {
+      const actor = sheet.document ?? sheet.actor;
+      return !sheet.minimized && actor?.type === "character" ? actor : null;
+    }
+    // Unlinked token sheets can share the same Actor ID with a world document.
+    if (/-Scene-[a-z0-9]+-Token-[a-z0-9]+-Actor-/iu.test(sheetElement.id ?? "")) return null;
     const actorId = clean(sheetElement.dataset?.actorId)
       || clean(sheetElement.dataset?.documentId)
       || clean(sheetElement.id).match(/Actor-([a-z0-9]+)(?:$|-)/iu)?.[1]
@@ -81,7 +89,7 @@ export function characterSheetAtPoint(x, y, {
     const actor = actors?.get?.(actorId) ?? null;
     if (actor?.type === "character") return actor;
   }
-  const applications = Object.values(windows ?? {}).reverse();
+  const applications = [...Object.values(windows ?? {}), ...(instances?.values?.() ?? [])].reverse();
   for (const application of applications) {
     const actor = application?.actor ?? application?.document ?? application?.object;
     if (actor?.type !== "character" || application?.minimized === true || application?._minimized === true) continue;

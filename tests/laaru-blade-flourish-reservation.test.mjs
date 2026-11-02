@@ -48,6 +48,27 @@ test("one successful flourish reserves one die and exact retries do not spend or
   assert.equal(f.item.system.uses.spent,2);
 });
 
+test("v14 Flourish requires a confirmed hit on the exact usage card and snapshots native damage properties",async()=>{
+  const f=setup(),card=game.messages.get(f.payload.operationId),legacy=card.flags.dnd5e;
+  card.type="usage";card.system={item:legacy.item,activity:legacy.activity,midi:{sections:{hits:{data:{hits:[{uuid:f.targetToken.uuid,hitClass:"failure"}]}}}}};
+  card.rolls=[{options:{"midi-qol":{rollType:"defaultDamage"},type:"piercing",properties:["mgc","sil"]}}];
+  delete card.flags.dnd5e;
+  card.flags["rebreya-main"]={bladeFlourishHit:{targetTokenUuid:f.targetToken.uuid,sourceTokenUuid:f.sourceToken.uuid}};
+  await assert.rejects(f.service.reserveBladeFlourish(f.payload,{sender:f.sender}),/попадание/u);
+  assert.equal(f.item.system.uses.spent,1);
+  card.system.midi.sections.hits.data.hits[0].hitClass="success";
+  await f.service.reserveBladeFlourish(f.payload,{sender:f.sender});
+  assert.equal(f.item.system.uses.spent,2);
+  const flourish={total:5,options:{rebreyaBladeFlourishOperationId:f.payload.operationId,type:"piercing",
+    properties:["mgc","sil","rebreya-blade:attack-1:Scene.scene.Token.target:Actor.target"],"midi-qol":{rollType:"bonusDamage"}}};
+  card.flags["midi-qol"].bonusDamageRolls=[flourish];
+  await assert.rejects(f.service.commitBladeFlourish(f.payload,{sender:f.sender}),/урон|атак/u);
+  card.rolls.push(flourish);
+  await f.service.commitBladeFlourish(f.payload,{sender:f.sender});
+  await f.service.commitBladeFlourish(f.payload,{sender:f.sender});
+  assert.equal(f.item.system.uses.spent,2);assert.equal(f.source.effects.length,1);
+});
+
 test("flourish reservation validates actor ownership, actual feature, turn and available resource before spending",async()=>{
   const f=setup();
   await assert.rejects(f.service.reserveBladeFlourish(f.payload,{sender:{id:"stranger",isGM:false}}),/прав|владел/iu);

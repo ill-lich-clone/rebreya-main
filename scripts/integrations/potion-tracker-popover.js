@@ -1,7 +1,7 @@
 import { formatReagentTime } from "../shared/reagent-time.js?v=1.5.44";
 import { MODULE_ID } from "../constants.js";
 import { getAlchemyInventoryEntries } from "../data/alchemy-tracker.js?v=1.5.14";
-import { getActiveAlchemyReagentEffects } from "../data/alchemy-reagent-service.js?v=1.5.44";
+import { getActiveAlchemyReagentEffects } from "../data/alchemy-reagent-service.js?v=1.5.60";
 import { AnchoredOverlay } from "../ui/anchored-overlay.js?v=1.4.392";
 
 const LABELS = { healing: "Лечебные зелья", utility: "Алхимические расходники", reagents: "Действующие зелья" };

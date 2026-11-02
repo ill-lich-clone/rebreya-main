@@ -21,10 +21,10 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.59");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.59.js"]);
+  assert.equal(manifest.version, "1.5.60");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.60.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.59.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.60.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -144,8 +144,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.59");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.59.js"]);
+  assert.equal(manifest.version, "1.5.60");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.60.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -155,7 +155,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
 test("Lootgen window import uses the current template editing cache version", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /lootgen-app\.js\?v=1\.5\.23/u);
+  assert.match(entrypointSource, /lootgen-app\.js\?v=1\.5\.60/u);
   assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.40";/u);
 });
 
@@ -267,7 +267,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.47/u
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.60/u
   );
   assert.match(
     entrypointSource,
@@ -356,9 +356,9 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.47/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.5\.60/u
   );
-  assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.5\.44/u);
+  assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.5\.60/u);
 
   for (const importPath of [
     "data/trader-service.js?v=1.5.49",
@@ -385,7 +385,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-deposit-source.js?v=1.5.48",
     "data/storage-command-service.js?v=1.5.48",
     "integrations/storage-transfer-drop.js?v=1.4.396",
-    "integrations/storage-token-drop.js?v=1.5.48"
+    "integrations/storage-token-drop.js?v=1.5.60"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
@@ -430,7 +430,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /import\("\.\/ui\/lootgen-app\.js\?v=1\.5\.23"\)/u
+    /import\("\.\/ui\/lootgen-app\.js\?v=1\.5\.60"\)/u
   );
   assert.match(
     canonicalSource,
@@ -450,7 +450,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.59.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.60.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -660,11 +660,11 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.59(?=["'])/u,
+    /combat\/hooks\.js\?v=1\.5\.60(?=["'])/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.58(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.60(?=["'])/u,
   );
   assert.match(
     entrypointSource,
@@ -719,7 +719,7 @@ test("paladin dogma automation is constructed and routed through the current com
   );
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.59(?=["'])/u
+    /combat\/hooks\.js\?v=1\.5\.60(?=["'])/u
   );
   assert.match(
     entrypointSource,
@@ -762,11 +762,11 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.5\.47/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.5\.60/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.58(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.60(?=["'])/u,
   );
   assert.match(
     sheetSource,
@@ -787,7 +787,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.5\.59/u
+    /magic-items-compendium\.js\?v=1\.5\.60/u
   );
   assert.match(
     entrypointSource,
@@ -795,7 +795,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
   );
   assert.match(
     compendiumSource,
-    /magic-item-embedded-sync\.js\?v=1\.5\.50/u
+    /magic-item-embedded-sync\.js\?v=1\.5\.60/u
   );
   assert.match(compendiumSource, /magicItem\.js\?v=1\.5\.49/u);
 });

@@ -32,6 +32,7 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
   const zoneService = moduleApi?.craftsmanGadgetZoneService;
   const vehicleService = moduleApi?.craftsmanVehicleService;
   const constructorService = moduleApi?.craftsmanConstructorService;
+  const usesRegions = Number(game?.release?.generation) >= 14;
   if (!Hooks?.on || (!gadgetService && !zoneService && !vehicleService && !constructorService)) return false;
   if (game?.[HOOKS_REGISTERED_KEY]) return true;
   if (game) game[HOOKS_REGISTERED_KEY] = true;
@@ -61,9 +62,10 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
   }
 
   if (gadgetService) {
-    Hooks.on("dnd5e.preCreateActivityTemplate", (activity, templateData) => {
+    Hooks.on(usesRegions ? "dnd5e.createMeasuredTemplate" : "dnd5e.preCreateActivityTemplate", (activity, templateData) => {
       try {
-        return gadgetService.applyDnd5ePreCreateActivityTemplate?.(activity, templateData) ?? true;
+        const documents = usesRegions ? templateData : [templateData];
+        return documents.every(data => gadgetService.applyDnd5ePreCreateActivityTemplate?.(activity, data) !== false);
       }
       catch (error) {
         report("Failed to prepare Craftsman smoke template.", error);
@@ -190,7 +192,8 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
   }
 
   if (zoneService) {
-    for (const hookName of ["createMeasuredTemplate", "updateMeasuredTemplate"]) {
+    const documentName = usesRegions ? "Region" : "MeasuredTemplate";
+    for (const hookName of [`create${documentName}`, `update${documentName}`]) {
       Hooks.on(hookName, (document) => {
         try {
           zoneService.registerTemplate?.(document);
@@ -200,7 +203,7 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
         }
       });
     }
-    Hooks.on("deleteMeasuredTemplate", (document) => {
+    Hooks.on(`delete${documentName}`, (document) => {
       try {
         zoneService.unregisterTemplate?.(document);
       }
@@ -208,9 +211,9 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
         report("Failed to unregister a Craftsman smoke template document.", error);
       }
     });
-    Hooks.on("deleteScene", () => {
+    Hooks.on("deleteScene", (scene) => {
       try {
-        zoneService.clearTemplates?.();
+        zoneService.clearTemplates?.(scene);
       }
       catch (error) {
         report("Failed to clear Craftsman smoke templates for a deleted scene.", error);

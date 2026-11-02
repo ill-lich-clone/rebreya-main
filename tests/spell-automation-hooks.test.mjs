@@ -265,3 +265,15 @@ test("registered empty hook paths do not access runtime documents, mutate state,
     globalThis.setInterval = originalSetInterval;
   }
 });
+
+test("Foundry 14 routes native Region creation, movement and removal to the versioned template recipe once", async()=>{
+  const Hooks=fakeHooks(),seen=[];
+  registerSpellAutomationHooks(moduleApi({handleMeasuredTemplateChanged:(...args)=>seen.push(args)}),{Hooks,game:{release:{generation:14}}});
+  const region={documentName:"Region"},changes={shapes:[]},options={};
+  Hooks.listeners.get("createRegion")[0](region,options);
+  Hooks.listeners.get("updateRegion")[0](region,changes,options);
+  Hooks.listeners.get("deleteRegion")[0](region,options);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(seen,[["create",region,undefined,options],["update",region,changes,options],["delete",region,undefined,options]]);
+  assert.equal(Hooks.listeners.has("updateMeasuredTemplate"), false);
+});

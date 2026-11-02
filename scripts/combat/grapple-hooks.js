@@ -289,7 +289,7 @@ export function registerGrappleHooks(moduleApi, {
     schedule(() => refreshTwistedAura(scene, combat));
   });
 
-  Hooks.on("combatTurn", (combat) => {
+  Hooks.on("combatTurnChange", (combat) => {
     if (!isActiveGmClient(gameProvider())) return;
     const scene = combat?.scene ?? currentScene();
     schedule(() => refreshTwistedAura(scene, combat));

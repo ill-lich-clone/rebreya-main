@@ -219,7 +219,7 @@ test("scatter uses one native fixed damage roll, exact hit list, and a private d
     fx.observer.parent.tokens.contents.push(neighbor);globalThis.fromUuid=async uuid=>uuid===neighbor.uuid?neighbor:resolve(uuid);
     let evaluations=0;globalThis.CONFIG={...previousConfig,Dice:{DamageRoll:class{
       constructor(formula){assert.equal(formula,"(1d6) + (3)");this.total=7;}
-      async evaluate(){evaluations++;return this;}toJSON(){return JSON.stringify({total:this.total});}
+      async evaluate(){evaluations++;return this;}toJSON(){return {total:this.total};}
     }}};
     const payload={...fx.payload,decision:{kind:"scatter",attackMessageId:fx.message.id,primaryTargetUuid:fx.observer.uuid,originPoint:null,abilityModifier:null}},
       before=structuredClone(fx.host.toObject()),currency=structuredClone(fx.group.system.currency);
@@ -246,4 +246,15 @@ test("scatter validates exact decisions, occupied cells, and refuses uncertain R
     await assert.rejects(fx.service.useWeaponModActivity(payload,{sender:fx.sender}),/uncertain scatter roll/u);
     await assert.rejects(fx.service.useWeaponModActivity({...payload,operationId:"retry"},{sender:fx.sender}),/ручная сверка/u);assert.equal(count,1);
   }finally{globalThis.CONFIG=previousConfig;fx.restore();}
+});
+
+test("v14 weapon modification context requires the roll nonce to match the card activity UUID", async () => {
+  const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
+  const service=new CombatAttackService({});
+  const activityUuid="Actor.a.Item.w.Activity.atk";
+  const roll={total:18,options:{rebreyaWeaponModAttack:{nonce:"one",activityUuid}}};
+  const card={type:"usage",system:{activity:{uuid:activityUuid}},rolls:[roll]};
+  assert.equal(service.getWeaponModAttackContext(card)?.roll,roll);
+  card.system.activity.uuid="Actor.a.Item.other.Activity.atk";
+  assert.equal(service.getWeaponModAttackContext(card),null);
 });

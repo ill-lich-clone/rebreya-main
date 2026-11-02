@@ -284,7 +284,7 @@ function stableHashId(seed, scope = "id") {
   return token.padEnd(16, "0").slice(0, 16);
 }
 
-function buildAbilityRingEffect(projection, resolution) {
+function buildAbilityRingEffect(projection, resolution, existingEffects) {
   const definition = projection?.automationDefinition;
   if (definition?.kind !== "abilityRing") return null;
   const ability = cleanText(resolution?.choice?.ability);
@@ -296,7 +296,7 @@ function buildAbilityRingEffect(projection, resolution) {
   }
   const magicItemId = cleanText(projection?.magicItemId ?? resolution?.magicItemId);
   const id = stableHashId(`magic-item:${magicItemId}:ability-ring`, "magic-item-effect");
-  return {
+  const data = {
     _id: id,
     name: `Кольцо характеристики: ${ability.toUpperCase()}`,
     type: "base",
@@ -317,6 +317,16 @@ function buildAbilityRingEffect(projection, resolution) {
     sort: 0,
     flags: { [MODULE_ID]: { managed: true, magicItemAutomation: true, abilityRing: true } }
   };
+  const Effect = globalThis.CONFIG?.ActiveEffect?.documentClass;
+  if (!(globalThis.game?.release?.generation >= 14) || typeof Effect?.cleanData !== "function") return data;
+  const previous = existingEffects.find(effect => effect._id === id && isManagedAutomation(effect));
+  if (previous?._stats) data._stats = cloneValue(previous._stats);
+  const native = Effect.cleanData(data);
+  for (const change of native.system.changes) {
+    const prior = previous?.system?.changes?.find(row => row.key === change.key);
+    change._id = prior?._id ?? stableHashId(change.key,id);
+  }
+  return native;
 }
 
 function hasEquippedArmor(item) {
@@ -339,9 +349,9 @@ function hasEquippedShield(item) {
   ));
 }
 
-function projectRuntimeEffects(item, projection, resolution) {
+function projectRuntimeEffects(item, projection, resolution, existingEffects) {
   const effects = (Array.isArray(projection?.effects) ? projection.effects : []).map(cloneValue);
-  const ringEffect = buildAbilityRingEffect(projection, resolution);
+  const ringEffect = buildAbilityRingEffect(projection, resolution, existingEffects);
   if (ringEffect) effects.push(ringEffect);
   const suppressNaturalArmor = hasEquippedArmor(item);
   for (const effect of effects) {
@@ -360,10 +370,19 @@ function isManagedAutomation(document) {
   return getModuleFlags(document).magicItemAutomation === true;
 }
 
-function effectKeys(effect) {
-  return new Set((Array.isArray(effect?.changes) ? effect.changes : [])
-    .map((change) => cleanText(change?.key))
-    .filter(Boolean));
+function effectChanges(effect) {
+  if (Array.isArray(effect?.system?.changes)) return effect.system.changes;
+  return Array.isArray(effect?.changes) ? effect.changes : [];
+}
+
+function effectKey(change) {
+  const key = cleanText(change?.key);
+  const shims = globalThis.CONFIG?.ActiveEffect?.documentClass?.SHIM_FIELDS;
+  if (!shims) return key;
+  if (shims[key]?.key) return shims[key].key;
+  // dnd5e also constructs these aliases dynamically in ActiveEffect5e._applyChangeShim.
+  const bonus = /^system\.(abilities|skills|tools)\.(\w+)\.bonuses\.(check|save)$/u.exec(key);
+  return bonus ? `system.${bonus[1]}.${bonus[2]}.${bonus[1] === "abilities" ? bonus[3] + "." : ""}roll.bonus` : key;
 }
 
 function compactMechanicalValue(value) {
@@ -485,19 +504,19 @@ export function buildMagicItemAutomationProjection(packItem) {
 function mergeEffects(existingEffects, projectedEffects) {
   const unmanaged = existingEffects.filter((effect) => !isManagedAutomation(effect));
   const merged = unmanaged.map(cloneValue);
-  const unmanagedKeys = new Set(unmanaged.flatMap((effect) => [...effectKeys(effect)]));
+  const unmanagedKeys = new Set(unmanaged.flatMap(effect => effectChanges(effect).map(effectKey)).filter(Boolean));
   for (const projectedEffect of projectedEffects) {
     const nextEffect = cloneValue(projectedEffect);
     if (getModuleFlags(nextEffect).nativeSpellcastingBonus === true) {
       const previous = existingEffects.find(effect => effect._id === nextEffect._id && isManagedAutomation(effect));
       if (typeof previous?.disabled === "boolean") nextEffect.disabled = previous.disabled;
     }
-    const projectedChanges = Array.isArray(nextEffect?.changes) ? nextEffect.changes : [];
-    nextEffect.changes = projectedChanges.filter((change) => (
-      !unmanagedKeys.has(cleanText(change?.key))
-    ));
-    if (projectedChanges.length && !nextEffect.changes.length) {
-      continue;
+    const projectedChanges = effectChanges(nextEffect);
+    if (unmanagedKeys.size && projectedChanges.length) {
+      const retained = projectedChanges.filter(change => !unmanagedKeys.has(effectKey(change)));
+      if (!retained.length) continue;
+      if (Array.isArray(nextEffect.system?.changes)) nextEffect.system.changes = retained;
+      else nextEffect.changes = retained;
     }
     merged.push(nextEffect);
   }
@@ -541,7 +560,7 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
 
   const itemSource = documentSource(item) ?? {};
   const existingEffects = effectSources(itemSource.effects);
-  const projectedEffects = projectRuntimeEffects(item, projection, resolution);
+  const projectedEffects = projectRuntimeEffects(item, projection, resolution, existingEffects);
   const effects = mergeEffects(existingEffects, projectedEffects);
   if (!effects) {
     return { status: "unresolved", reason: "automation-conflict" };

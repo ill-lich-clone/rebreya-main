@@ -1,3 +1,4 @@
+import { usageCardData, cardHitEvidence, cardDamageRolls, flushCardDamage } from "../integrations/midi-usage-card.js";
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire } from "./firearm-misfire.js?v=1.5.40";
 import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
@@ -903,6 +904,12 @@ function convertUnitsToFeet(value, units) {
   }
 }
 
+function mountedCardHit(message, riderUuid, targetUuid) {
+  if (cardHitEvidence(message, targetUuid)) return true;
+  const recorded = message?.flags?.[MODULE_ID]?.weaponPropertyHit;
+  return message?.type !== "usage" && recorded?.riderTokenUuid === riderUuid && recorded.targetTokenUuid === targetUuid;
+}
+
 export class CombatAttackService {
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
@@ -955,11 +962,8 @@ export class CombatAttackService {
       || typeof workflow.setDamageRolls !== "function"
       || (!isActiveGmClient(globalThis.game) && !this.moduleApi?.socketCommandBus?.request)) return true;
     const pending = (async () => {
-      await workflow.performThrottledUpdate(message, {}, true);
-      const midi = message.flags?.["midi-qol"], saved = message.flags?.[MODULE_ID]?.weaponPropertyHit;
-      const recorded = [...(midi?.hitTargetUuids ?? []), ...(midi?.hitECTargetUuids ?? [])].includes(target.uuid)
-        || (saved?.riderTokenUuid === rider.uuid && saved?.targetTokenUuid === target.uuid);
-      if (!recorded) {
+      await flushCardDamage(workflow, message);
+      if (message.type !== "usage" && !mountedCardHit(message, rider.uuid, target.uuid)) {
         if (typeof message.update !== "function") throw new Error("Свойства оружия: попадание не подтверждено.");
         await message.update({ [`flags.${MODULE_ID}.weaponPropertyHit`]: { riderTokenUuid: rider.uuid, targetTokenUuid: target.uuid } });
       }
@@ -1076,24 +1080,22 @@ export class CombatAttackService {
       const rider = await globalThis.fromUuid?.(payload.riderTokenUuid), target = await globalThis.fromUuid?.(payload.targetTokenUuid);
       const item = await globalThis.fromUuid?.(payload.weaponItemUuid), actor = rider?.actor;
       const combat = globalThis.game?.combat, message = globalThis.game?.messages?.get?.(payload.operationId);
-      const midi = message?.flags?.["midi-qol"], native = message?.flags?.dnd5e, recorded = message?.flags?.[MODULE_ID]?.weaponPropertyHit;
+      const native = usageCardData(message);
       const author = message?.author?.id ?? message?.user?.id ?? message?.user;
-      const hits = [...(midi?.hitTargetUuids ?? []), ...(midi?.hitECTargetUuids ?? [])];
       if (!isActiveGmClient(globalThis.game) || !actor || actor.uuid !== lockActorUuid || !(sender?.isGM || actor.testUserPermission?.(sender, "OWNER") === true)
         || rider.uuid !== payload.riderTokenUuid || rider.parent?.tokens?.get?.(rider.id) !== rider || !target?.actor
         || target.uuid !== payload.targetTokenUuid || target.parent !== rider.parent || target.parent?.tokens?.get?.(target.id) !== target
         || item?.type !== "weapon" || (item.actor ?? item.parent)?.uuid !== actor.uuid
-        || !message || (!sender.isGM && author !== sender.id) || native?.messageType !== "usage"
+        || !message || (!sender.isGM && author !== sender.id) || !native
         || native?.item?.uuid !== item.uuid || native?.activity?.type !== "attack"
         || message.speaker?.scene !== rider.parent.id || message.speaker?.token !== rider.id
-        || !(hits.includes(target.uuid) || (recorded?.riderTokenUuid === rider.uuid && recorded?.targetTokenUuid === target.uuid))) {
+        || !mountedCardHit(message, rider.uuid, target.uuid)) {
         throw new Error("Свойства оружия: попадание, токены или права не подтверждены.");
       }
       if (payload.combatId && (!combat?.started || combat.id !== payload.combatId || combat.round !== payload.round || combat.turn !== payload.turn)) {
         throw new Error("Свойства оружия: ход боя изменился.");
       }
-      let original = midi?.damageRolls?.[0];
-      if (typeof original === "string") { try { original = JSON.parse(original); } catch { original = null; } }
+      const original = cardDamageRolls(message)[0];
       const type = original?.options?.type, properties = original?.options?.properties;
       if (typeof type !== "string" || !/^[a-z][a-z0-9-]{0,31}$/u.test(type)
         || (!Array.isArray(properties) && !(properties instanceof Set)) || ![...properties].every(entry => typeof entry === "string")) {
@@ -1149,9 +1151,10 @@ export class CombatAttackService {
         || await globalThis.fromUuid?.(payload.riderTokenUuid) !== rider || await globalThis.fromUuid?.(payload.targetTokenUuid) !== target
         || await globalThis.fromUuid?.(payload.weaponItemUuid) !== item || rider.parent?.tokens?.get?.(rider.id) !== rider
         || target.parent?.tokens?.get?.(target.id) !== target || target.parent !== rider.parent
+        || !mountedCardHit(message, rider.uuid, target.uuid)
         || JSON.stringify({ properties: [...item.system.properties], authored: item.flags?.[MODULE_ID]?.lichWeaponPropertyValues?.dashDice,
           mount: rider.flags?.[MODULE_ID]?.mountedOn, mounted: has("lchMounted") ? mountedDamage(rider, target) : 0,
-          targetActor: target.actor.uuid, original: typeof midi?.damageRolls?.[0] === "string" ? JSON.parse(midi.damageRolls[0]) : midi?.damageRolls?.[0],
+          targetActor: target.actor.uuid, original: cardDamageRolls(message)[0],
           history: canCharge ? rider.movementHistory : null, marker: canCharge ? this.chargeMovementRecords.get(rider.uuid) : null,
           targetMotion: canCharge ? this._chargeTokenMoves.get(target.uuid) : null }) !== fingerprint
         || (turnKey && (game.combat !== combat || combat.round !== payload.round || combat.turn !== payload.turn))
@@ -1228,7 +1231,7 @@ export class CombatAttackService {
   }
 
   getWeaponModAttackContext(message,activityUuid=null){
-    const uuid=message?.getFlag?.("dnd5e","activity.uuid")??message?.flags?.dnd5e?.activity?.uuid;
+    const uuid=message?.system?.activity?.uuid ?? message?.getFlag?.("dnd5e","activity.uuid") ?? message?.flags?.dnd5e?.activity?.uuid;
     const candidates=Array.from(message?.rolls??[]).filter(roll=>{
       const context=roll.options?.rebreyaWeaponModAttack;
       return context?.nonce && context.activityUuid===uuid && (!activityUuid || context.activityUuid===activityUuid) && Number.isFinite(roll.total);
@@ -1434,7 +1437,7 @@ export class CombatAttackService {
       const result={hits,damageTotal:roll?.total??0,damageFormula:plan.damageFormula,radiusFeet:plan.radiusFeet},next={...state,status:"resolved",result,nativeRollJSON:roll?.toJSON()??null},
         names=hits.map(hit=>{const token=tokens.find(token=>token.uuid===hit.uuid);return String(token?.name??token?.actor?.name??token?.id).replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));});
       await this.#writeWeaponModTargetReceipt(receipt,state,next,{content:`<p>Разброс: ${result.damageTotal}. Попадания: ${names.join(", ")||"нет"}. Примените урон к этим целям через обычную карточку урона.</p>`,
-        ...(roll?{rolls:[Roll.fromJSON(roll.toJSON())]}:{}),"flags.dnd5e.messageType":"roll","flags.dnd5e.roll.type":"damage","flags.dnd5e.activity.uuid":activityUuid,
+        ...(roll?{rolls:[roll]}:{}),"flags.dnd5e.messageType":"roll","flags.dnd5e.roll.type":"damage","flags.dnd5e.activity.uuid":activityUuid,
         [`flags.${MODULE_ID}.weaponModDamageContext`]:{attackMessageId:message.id,attackNonce:attack.context.nonce,activityUuid}},guard,key);
       return {...result,receiptId:id,replayed:false};
     });

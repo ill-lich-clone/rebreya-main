@@ -807,7 +807,7 @@ export class FighterAutomationService {
   }
 
   #messageHasConsumedItemUse(results, itemId) {
-    const consumedSources = [
+    const consumedSources = results?.message?.system?.deltas ? [results.message.system.deltas] : [
       getProperty(results, "message.flags.dnd5e.use.consumed"),
       getProperty(results, "message.data.flags.dnd5e.use.consumed"),
       getProperty(results, "message._source.flags.dnd5e.use.consumed"),

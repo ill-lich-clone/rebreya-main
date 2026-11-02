@@ -125,6 +125,7 @@ test("lootgen chat createItem hook ignores item drops from other users", async (
       }
     });
 
+    assert.equal(listeners.some(entry => entry.hookName === "renderChatMessage"), false);
     const createItemListener = listeners.find((entry) => entry.hookName === "createItem")?.listener;
     assert.equal(typeof createItemListener, "function");
 
@@ -267,7 +268,7 @@ test("lootgen chat inventory button takes a row through the party inventory API"
   try {
     const { registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?claim-click=${Date.now()}`);
     registerLootgenChatHooks({});
-    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessageHTML")?.listener;
     const { card, inventoryButton } = createBoundLootgenChatCard({ state });
 
     renderListener({
@@ -340,7 +341,7 @@ test("lootgen chat self button creates the row item on the user's character and 
   try {
     const { registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?self-click=${Date.now()}`);
     registerLootgenChatHooks({});
-    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessageHTML")?.listener;
     const { card, selfButton } = createBoundLootgenChatCard({ state });
 
     renderListener({
@@ -377,7 +378,7 @@ test("prepared loot self button sends only trusted row and actor references with
   try {
     const {registerLootgenChatHooks}=await import(`../scripts/ui/lootgen-chat.js?prepared-self=${Date.now()}`);registerLootgenChatHooks({});
     const {card,selfButton}=createBoundLootgenChatCard({state});
-    listeners.find(entry=>entry.hookName==="renderChatMessage").listener({getFlag:()=>state},card);
+    listeners.find(entry=>entry.hookName==="renderChatMessageHTML").listener({getFlag:()=>state},card);
     await selfButton.listeners.click[0]({currentTarget:selfButton,preventDefault(){},stopPropagation(){}});
     assert.deepEqual(calls,[["prepared","row","Actor.hero"]]);
   }finally{globalThis.Hooks=previousHooks;globalThis.game=previousGame;restoreFoundry();}
@@ -393,7 +394,7 @@ test("prepared chat drag carries references and its sheet hook blocks native Ite
     const {registerLootgenChatHooks}=await import(`../scripts/ui/lootgen-chat.js?prepared-drag=${Date.now()}`);
     registerLootgenChatHooks({claimLootgenChatRowToCharacter:async(...args)=>{calls.push(args);}});
     const {card,row}=createBoundLootgenChatCard({state});
-    listeners.find(entry=>entry.hookName==="renderChatMessage").listener({getFlag:()=>state},card);
+    listeners.find(entry=>entry.hookName==="renderChatMessageHTML").listener({getFlag:()=>state},card);
     row.listeners.dragstart[0]({currentTarget:row,dataTransfer:{setData:(_type,value)=>{payload=JSON.parse(value);}},preventDefault(){}});
     assert.deepEqual(payload,{type:"RebreyaLootgen",version:2,lootId:"prepared",rowId:"row"});
     const hook=listeners.find(entry=>entry.hookName==="dropActorSheetData").listener;
@@ -466,7 +467,7 @@ test("lootgen chat renders and binds a take all button for the party inventory",
     assert.match(content, /Забрать всё/u);
 
     registerLootgenChatHooks({});
-    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessageHTML")?.listener;
     const { card, claimAllButton } = createBoundLootgenChatCard({ state });
 
     renderListener({
@@ -538,7 +539,7 @@ test("lootgen chat renders and opens a persisted item preview button", async () 
     assert.match(content, /data-lootgen-chat-row-id="row-1"/u);
 
     registerLootgenChatHooks({});
-    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessageHTML")?.listener;
     const { card, viewButton } = createBoundLootgenChatCard({ state });
 
     renderListener({
@@ -627,7 +628,7 @@ test("lootgen chat preview prepares fallback temporary item labels before render
   try {
     const { registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?preview-labels=${Date.now()}`);
     registerLootgenChatHooks({});
-    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessageHTML")?.listener;
     const { card, viewButton } = createBoundLootgenChatCard({ state });
 
     renderListener({
@@ -709,7 +710,7 @@ test("lootgen chat drag uses embedded item data instead of a temporary item uuid
   try {
     const { registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?drag-data=${Date.now()}`);
     registerLootgenChatHooks({});
-    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessageHTML")?.listener;
     const { card, row } = createBoundLootgenChatCard({
       state,
       rowDataset: {

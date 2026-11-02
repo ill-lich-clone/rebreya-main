@@ -199,6 +199,7 @@ export class CraftsmanGadgetService {
     const authorizedTemplates = await this.#resolveAuthorizedTemplates(
       payload.templateUuids,
       actor,
+      item,
       state,
       payload.operation
     );
@@ -389,6 +390,7 @@ export class CraftsmanGadgetService {
     const item = activity?.item;
     const state = instanceState(item);
     if (operation?.operation !== "activate" || state?.catalogId !== "smoke-device") return true;
+    if (state.state === "active" && templateData.flags?.[MODULE_ID]?.craftsmanSmoke?.poisoned === true) return true;
     if (!this.#claimActivation(item?.actor ?? activity?.actor, activity, item, state)) return false;
     templateData.flags ??= {};
     templateData.flags[MODULE_ID] ??= {};
@@ -920,7 +922,7 @@ export class CraftsmanGadgetService {
     }
   }
 
-  async #resolveAuthorizedTemplates(uuids, actor, state, operation) {
+  async #resolveAuthorizedTemplates(uuids, actor, item, state, operation) {
     const requested = Array.isArray(uuids) ? uuids : [];
     if (requested.length === 0) return { valid: true, templates: [] };
     if (operation !== "activate" || state?.catalogId !== "smoke-device") {
@@ -930,7 +932,7 @@ export class CraftsmanGadgetService {
     const templates = [];
     for (const uuid of requested) {
       const template = await this.#resolveUuid(uuid);
-      if (!this.#isAuthorizedSmokeTemplate(template, actor, state)) {
+      if (!this.#isAuthorizedSmokeTemplate(template, actor, item, state)) {
         return { valid: false, templates };
       }
       templates.push(template);
@@ -938,14 +940,16 @@ export class CraftsmanGadgetService {
     return { valid: true, templates };
   }
 
-  #isAuthorizedSmokeTemplate(template, actor, state) {
+  #isAuthorizedSmokeTemplate(template, actor, item, state) {
     const document = template?.document ?? template;
     const documentName = cleanString(
       document?.documentName
       ?? document?.constructor?.documentName
       ?? document?.constructor?.metadata?.name
     );
-    if (documentName !== "MeasuredTemplate") return false;
+    if (documentName === "Region") {
+      if (!item?.uuid || document.flags?.dnd5e?.item !== item.uuid || document.parent?.regions?.get(document.id) !== document) return false;
+    } else if (documentName !== "MeasuredTemplate") return false;
     const scene = document?.parent;
     const sceneDocumentName = cleanString(
       scene?.documentName
@@ -1126,8 +1130,7 @@ export class CraftsmanGadgetService {
         activation = storedSource;
       }
     }
-    const AbilityTemplate = globalThis.dnd5e?.canvas?.AbilityTemplate;
-    const previews = AbilityTemplate?.fromActivity?.(activation, {
+    const createData = {
       flags: {
         [MODULE_ID]: {
           craftsmanSmoke: {
@@ -1139,7 +1142,14 @@ export class CraftsmanGadgetService {
           }
         }
       }
-    }) ?? [];
+    };
+    if (Number(globalThis.game?.release?.generation) >= 14) {
+      const placement = globalThis.game?.dnd5e?.canvas?.TemplatePlacement ?? globalThis.dnd5e?.canvas?.TemplatePlacement;
+      const regions = await placement?.fromActivity?.(activation, {createData});
+      return regions?.[0] ?? null;
+    }
+    const AbilityTemplate = globalThis.dnd5e?.canvas?.AbilityTemplate;
+    const previews = AbilityTemplate?.fromActivity?.(activation, createData) ?? [];
     const placed = await previews[0]?.drawPreview?.();
     const document = collectionValues(placed)[0] ?? placed;
     return document?.document ?? document ?? null;

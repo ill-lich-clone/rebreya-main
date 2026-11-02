@@ -464,6 +464,50 @@ test("embedded merge lets manual effect keys override managed automation and bec
   assert.deepEqual(manualOverride.update.effects, conflictItem.effects);
 });
 
+test("v14 native and legacy changes preserve manual precedence and only replace covered mechanics", t => {
+  const savedConfig=globalThis.CONFIG;
+  globalThis.CONFIG={...savedConfig,ActiveEffect:{documentClass:{SHIM_FIELDS:{
+    "system.bonuses.abilities.save":{key:"system.rolls.ability.save.bonus"}
+  }}}};
+  t.after(()=>{if(savedConfig===undefined)delete globalThis.CONFIG;else globalThis.CONFIG=savedConfig;});
+  const manual={_id:"manual",system:{changes:[{_id:"custom",key:"system.rolls.ability.save.bonus",type:"add",value:"@prof",phase:"final"}]},flags:{}};
+  const extra={_id:"bonus",key:"system.attributes.ac.bonus",type:"add",value:"+2",priority:20,phase:"initial"};
+  const managed=managedEffect();
+  const native={...managed,system:{changes:[{...extra,key:"system.bonuses.abilities.save"},extra]}};
+  delete native.changes;
+  const resolution={status:"resolved",magicItemId:"камень-удачи",reason:"stable-id"};
+  const item={_id:"owned",system:{activities:{}},effects:[manual],flags:moduleFlags({magicItemId:resolution.magicItemId})};
+  const projection={magicItemId:resolution.magicItemId,signature:"v14",activities:{},effects:[native]};
+  const patch=embeddedSync.buildEmbeddedMagicItemPatch(item,projection,resolution);
+  assert.deepEqual(patch.update.effects,[manual,{...native,system:{changes:[extra]}}]);
+  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch({...item,...patch.update},projection,resolution),{status:"unchanged"});
+  const covered=embeddedSync.buildEmbeddedMagicItemPatch({...item,effects:[manual,native]}, {...projection,effects:[managed]},resolution);
+  assert.deepEqual(covered.update.effects,[manual]);
+  assert.deepEqual(covered.effectIdsToDelete,[managed._id]);
+});
+
+test("a prepared v14 ability ring stays unchanged after Foundry materializes its source fields",t=>{
+  const oldGame=globalThis.game,oldConfig=globalThis.CONFIG;
+  globalThis.game={release:{generation:14}};
+  const normalize=raw=>{
+    const data=structuredClone(raw);data.start=null;data.duration={value:null,units:"seconds"};
+    data.system.changes=data.changes.map(({key,mode,value,priority},i)=>({_id:"generated"+i,key,type:mode===2?"add":"upgrade",value,priority,phase:"initial"}));
+    delete data.changes;return data;
+  };
+  globalThis.CONFIG={...oldConfig,ActiveEffect:{documentClass:{cleanData:normalize}}};
+  t.after(()=>{globalThis.game=oldGame;globalThis.CONFIG=oldConfig;});
+  const magicItemId="кольцо-характеристики-обычное",projection={magicItemId,signature:"ring",automationDefinition:{kind:"abilityRing",bonus:2,maxAbilityScore:12},effects:[],activities:{},uses:null};
+  const item={_id:"ring",system:{activities:{}},effects:[],flags:moduleFlags({magicItemId})};
+  const resolution={status:"resolved",magicItemId,reason:"stable-id",choice:{ability:"wis",appliedBonus:2}};
+  const first=embeddedSync.buildEmbeddedMagicItemPatch(item,projection,resolution).update;
+  const effect=first.effects[0].system?.changes ? first.effects[0] : normalize(first.effects[0]);
+  effect.system.changes[0]._id="native-change-id";effect._stats={lastModifiedBy:"gm",modifiedTime:1234};
+  const existing={...item,...first,effects:[effect]};
+  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(existing,projection,resolution),{status:"unchanged"});
+  const changed=embeddedSync.buildEmbeddedMagicItemPatch(existing,projection,{...resolution,choice:{ability:"cha",appliedBonus:2}});
+  assert.deepEqual(changed.update.effects[0].system.changes.map(row=>row.key),["system.abilities.cha.value","system.abilities.cha.max"]);
+});
+
 test("embedded merge removes a managed duplicate while retaining uncovered managed changes", () => {
   const manualStrength = {
     _id: "manual-strength",
