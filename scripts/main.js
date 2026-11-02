@@ -373,7 +373,7 @@ import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.5.22";
-import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.56";
+import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js?v=1.5.57";
 import { registerBardicInspirationCommand, registerBladeFlourishCommand, registerBladeFlourishSpeedCommand } from "./infrastructure/foundry/bardic-inspiration-command.js?v=1.5.56";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.46";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";

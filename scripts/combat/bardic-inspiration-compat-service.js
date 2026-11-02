@@ -102,19 +102,19 @@ function bladeDamageMarker(operationId, targetTokenUuid, targetActorUuid) {
 
 function hasAttachedBladeFlourishRoll(payload, record, { markerOnly = false } = {}) {
   const message = globalThis.game?.messages?.get?.(payload.operationId);
-  return collectionValues(message?.flags?.["midi-qol"]?.bonusDamageRolls).some(entry => {
+  const matches = [...collectionValues(message?.flags?.["midi-qol"]?.damageRolls), ...collectionValues(message?.flags?.["midi-qol"]?.bonusDamageRolls)].flatMap(entry => {
     let roll = entry;
-    if (typeof entry === "string") { try { roll = JSON.parse(entry); } catch { return false; } }
-    if (roll?.options?.rebreyaBladeFlourishOperationId !== payload.operationId) return false;
-    if (markerOnly) return true;
-    const properties = roll?.options?.properties;
-    if (!Array.isArray(properties) && !(properties instanceof Set)) return false;
-    const marker = bladeDamageMarker(payload.operationId, payload.targetTokenUuid, record.targetActorUuid);
-    const values = [...new Set(properties)];
-    if (!values.includes(marker)) return false;
-    return Number(roll.total) === Number(record.roll?.total) && roll.options.type === record.damageType
-      && JSON.stringify(values.filter(value => value !== marker).sort()) === JSON.stringify(record.damageProperties);
+    if (typeof entry === "string") { try { roll = JSON.parse(entry); } catch { return []; } }
+    return roll?.options?.rebreyaBladeFlourishOperationId === payload.operationId ? [roll] : [];
   });
+  if (markerOnly) return matches.length > 0;
+  if (matches.length !== 1) return false;
+  const roll = matches[0], properties = roll?.options?.properties;
+  if (!Array.isArray(properties) && !(properties instanceof Set)) return false;
+  const marker = bladeDamageMarker(payload.operationId, payload.targetTokenUuid, record.targetActorUuid);
+  const values = [...new Set(properties)];
+  return values.includes(marker) && Number(roll.total) === Number(record.roll?.total) && roll.options.type === record.damageType
+    && JSON.stringify(values.filter(value => value !== marker).sort()) === JSON.stringify(record.damageProperties);
 }
 
 function bladeAttackDamageRoll(operationId) {
@@ -266,15 +266,15 @@ export class BardicInspirationCompatService {
   }
 
   async attachBladeFlourishRoll(workflow, serialized, operationId, { targetTokenUuid, targetActorUuid } = {}) {
-    if (typeof workflow?.setBonusDamageRolls !== "function" || typeof workflow?.performThrottledUpdate !== "function"
+    if (typeof workflow?.setDamageRolls !== "function" || typeof workflow?.performThrottledUpdate !== "function"
       || !workflow.chatCard || !operationId || !targetTokenUuid || !targetActorUuid || !Number.isFinite(Number(serialized?.total))) {
       throw new Error("Цветение: бонусный урон недоступен.");
     }
-    const rolls = [...(workflow.bonusDamageRolls ?? [])];
+    const rolls = [...(workflow.damageRolls ?? [])];
     const properties = workflow.damageRolls?.[0]?.options?.properties;
     const expectedProperties = [...new Set([...(Array.isArray(properties) || properties instanceof Set ? properties : []),
       bladeDamageMarker(operationId, targetTokenUuid, targetActorUuid)])].sort();
-    const matches = rolls.filter(roll => roll?.options?.rebreyaBladeFlourishOperationId === operationId);
+    const matches = [...rolls, ...(workflow.bonusDamageRolls ?? [])].filter(roll => roll?.options?.rebreyaBladeFlourishOperationId === operationId);
     if (matches.length) {
       const existing = matches[0], actual = existing?.options?.properties;
       if (matches.length !== 1 || Number(existing.total) !== Number(serialized.total)
@@ -290,7 +290,22 @@ export class BardicInspirationCompatService {
     roll.options ??= {};
     roll.options.properties = expectedProperties;
     roll.options.rebreyaBladeFlourishOperationId = operationId;
-    await workflow.setBonusDamageRolls([...rolls, roll]);
+    const previousProperties = rolls.map(existing => ({ existing, had: Object.hasOwn(existing.options ?? {}, "properties"),
+      value: Array.isArray(existing.options?.properties) ? [...existing.options.properties]
+        : existing.options?.properties instanceof Set ? new Set(existing.options.properties) : existing.options?.properties }));
+    for (const entry of previousProperties) {
+      if (entry.existing.options?.properties instanceof Set) entry.existing.options.properties = [...entry.existing.options.properties];
+    }
+    try { await workflow.setDamageRolls([...rolls, roll]); }
+    finally {
+      for (const entry of previousProperties) {
+        if (!entry.existing.options) continue;
+        if (entry.had) entry.existing.options.properties = entry.value;
+        else delete entry.existing.options.properties;
+      }
+      roll.options.properties = expectedProperties;
+    }
+    workflow.damageRolls = workflow.damageRolls;
     await workflow.performThrottledUpdate(workflow.chatCard, {}, true);
     return { replayed: false };
   }

@@ -254,29 +254,91 @@ test("defensive effect survives a lost creation response without duplication",as
 });
 
 
-test("flourish appends its confirmed roll to existing Midi bonuses exactly once", async () => {
+test("flourish appends to primary damage exactly once and keeps existing Midi bonuses", async () => {
   const f = setup();
   const existing = { total: 3, options: { flavor: "other bonus" } };
   const workflow = {
     chatCard: {}, damageRolls: [{ options: { properties: ["mgc", "sil"] } }], bonusDamageRolls: [existing], async performThrottledUpdate() {},
-    async setBonusDamageRolls(rolls) { this.bonusDamageRolls = rolls; }
+    async setDamageRolls(rolls) { this.damageRolls = rolls; }
   };
   f.service.options.deserializeBladeFlourish = data => ({ ...data, _evaluated: true, options: {} });
   const saved = { formula: "1d8[piercing]", total: 5 };
   await f.service.attachBladeFlourishRoll(workflow, saved, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid });
   await f.service.attachBladeFlourishRoll(workflow, saved, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid });
-  assert.equal(workflow.bonusDamageRolls.length, 2);
+  assert.equal(workflow.bonusDamageRolls.length, 1);
   assert.equal(workflow.bonusDamageRolls[0], existing);
-  assert.equal(workflow.bonusDamageRolls[1].total, 5);
-  assert.deepEqual(new Set(workflow.bonusDamageRolls[1].options.properties), new Set(["mgc", "sil", "rebreya-blade:attack-1:Scene.scene.Token.target:Actor.target"]));
-  assert.equal(workflow.bonusDamageRolls[1].options.rebreyaBladeFlourishOperationId, "attack-1");
+  assert.equal(workflow.damageRolls.length, 2);
+  assert.equal(workflow.damageRolls[1].total, 5);
+  assert.deepEqual(new Set(workflow.damageRolls[1].options.properties), new Set(["mgc", "sil", "rebreya-blade:attack-1:Scene.scene.Token.target:Actor.target"]));
+  assert.equal(workflow.damageRolls[1].options.rebreyaBladeFlourishOperationId, "attack-1");
+});
+
+test("defensive flourish enters primary damage before Midi applies resistance", async () => {
+  const f = setup(), original = { total: 3, options: { type: "piercing", properties: ["mgc"] } };
+  const existingBonus = { total: 7, options: { type: "fire", properties: [] } };
+  f.service.options.deserializeBladeFlourish = async data => ({ ...data, _evaluated: true, options: { ...data.options } });
+  const workflow = { chatCard: {}, damageRolls: [original], bonusDamageRolls: [existingBonus], async performThrottledUpdate() {},
+    async setDamageRolls(rolls) { this.damageRolls = rolls; }, async setBonusDamageRolls() { assert.fail("must not place flourish in separate Midi bonus damage"); } };
+  await f.service.attachBladeFlourishRoll(workflow, { total: 1, options: { type: "piercing" } }, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid });
+  assert.equal(workflow.damageRolls.length, 2); assert.deepEqual(workflow.bonusDamageRolls, [existingBonus]);
+  const damage = workflow.damageRolls.map(roll => ({ type: roll.options.type, value: roll.total, properties: new Set(roll.options.properties) }));
+  f.service.applyBladeFlourishPreCalculateDamage(f.target, damage, { midi: { targetUuid: f.targetToken.uuid } });
+  assert.equal(damage.length, 1); assert.equal(Math.floor(damage[0].value / 2), 2);
+});
+
+test("GM commits a flourish saved in primary damage and never refunds it", async () => {
+  const f = setup(); await f.service.reserveBladeFlourish(f.payload, { sender: f.sender });
+  game.messages.get("attack-1").flags["midi-qol"].damageRolls.push({ total: 5, options: {
+    rebreyaBladeFlourishOperationId: "attack-1", type: "piercing", properties: ["mgc", "sil", "rebreya-blade:attack-1:Scene.scene.Token.target:Actor.target"]
+  } });
+  await assert.rejects(f.service.cancelBladeFlourish(f.payload, { sender: f.sender }), /урон|отмен/u);
+  await f.service.commitBladeFlourish(f.payload, { sender: f.sender });
+  assert.equal(f.source.effects[0].changes[0].value, "5"); assert.equal(f.item.system.uses.spent, 2);
+});
+
+test("GM rejects a flourish duplicated between old and new Midi damage fields", async () => {
+  const f = setup(); await f.service.reserveBladeFlourish(f.payload, { sender: f.sender });
+  const die = { total: 5, options: { rebreyaBladeFlourishOperationId: "attack-1", type: "piercing",
+    properties: ["mgc", "sil", "rebreya-blade:attack-1:Scene.scene.Token.target:Actor.target"] } };
+  const midi = game.messages.get("attack-1").flags["midi-qol"];
+  midi.damageRolls.push(die); midi.bonusDamageRolls = [structuredClone(die)];
+  await assert.rejects(f.service.commitBladeFlourish(f.payload, { sender: f.sender }), /урон|бросок|подтверж/u);
+  assert.equal(f.source.effects.length, 0);
+});
+
+test("an already attached legacy flourish is not added again after updating the module", async () => {
+  const f = setup(), marker = "rebreya-blade:attack-1:Scene.scene.Token.target:Actor.target";
+  const legacy = { total: 5, options: { type: "piercing", properties: ["mgc", marker], rebreyaBladeFlourishOperationId: "attack-1" } };
+  const workflow = { chatCard: {}, damageRolls: [{ options: { properties: ["mgc"] } }], bonusDamageRolls: [legacy],
+    async performThrottledUpdate() {}, async setDamageRolls() { assert.fail("legacy die must not be duplicated"); } };
+  const result = await f.service.attachBladeFlourishRoll(workflow, { total: 5, options: { type: "piercing" } }, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid });
+  assert.equal(result.replayed, true); assert.equal(workflow.damageRolls.length, 1); assert.equal(workflow.bonusDamageRolls.length, 1);
+});
+
+test("Midi recalculation does not mutate properties of other primary damage rolls", async () => {
+  const f = setup(), first = { options: { properties: ["mgc"] } }, second = { options: { properties: ["sil", "mgc"] } };
+  f.service.options.deserializeBladeFlourish = data => ({ ...data, _evaluated: true, options: {} });
+  const workflow = { chatCard: {}, damageRolls: [first, second], bonusDamageRolls: [], async performThrottledUpdate() {},
+    async setDamageRolls(rolls) { for (let i = 1; i < rolls.length; i++) rolls[i].options.properties = (rolls[i].options.properties ?? []).concat(rolls[0].options.properties); this.damageRolls = rolls; } };
+  await f.service.attachBladeFlourishRoll(workflow, { total: 5 }, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid });
+  assert.deepEqual(second.options.properties, ["sil", "mgc"]);
+  assert.deepEqual(workflow.damageRolls[2].options.properties, ["mgc", "rebreya-blade:attack-1:Scene.scene.Token.target:Actor.target"]);
+});
+
+test("Midi setter receives arrays even when the existing weapon properties are a Set", async () => {
+  const f = setup(), properties = new Set(["mgc"]), first = { options: { properties } };
+  f.service.options.deserializeBladeFlourish = data => ({ ...data, _evaluated: true, options: {} });
+  const workflow = { chatCard: {}, damageRolls: [first], bonusDamageRolls: [], async performThrottledUpdate() {},
+    async setDamageRolls(rolls) { assert.ok(Array.isArray(rolls[0].options.properties)); this.damageRolls = rolls; } };
+  await f.service.attachBladeFlourishRoll(workflow, { total: 5 }, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid });
+  assert.ok(first.options.properties instanceof Set); assert.deepEqual([...first.options.properties], ["mgc"]);
 });
 
 
 test("flourish refuses a conflicting or unevaluated reconstructed bonus roll", async () => {
   const f = setup();
   const existing = { total: 2, options: { rebreyaBladeFlourishOperationId: "attack-1" } };
-  const workflow = { chatCard: {}, bonusDamageRolls: [existing], async performThrottledUpdate() {}, async setBonusDamageRolls() { assert.fail("must not overwrite"); } };
+  const workflow = { chatCard: {}, damageRolls: [{ options: { properties: [] } }], bonusDamageRolls: [existing], async performThrottledUpdate() {}, async setDamageRolls() { assert.fail("must not overwrite"); } };
   await assert.rejects(f.service.attachBladeFlourishRoll(workflow, { total: 5 }, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid }), /изменился/u);
   workflow.bonusDamageRolls = [];
   f.service.options.deserializeBladeFlourish = () => ({ total: 5, _evaluated: false });
@@ -290,10 +352,10 @@ test("flourish reconstructs a stored roll through the Foundry Roll JSON API", as
   let decoded;
   globalThis.Roll = { fromJSON(json) { decoded = JSON.parse(json); return { ...decoded, _evaluated: true, options: {} }; } };
   try {
-    const workflow = { chatCard: {}, bonusDamageRolls: [], async performThrottledUpdate() {}, async setBonusDamageRolls(rolls) { this.bonusDamageRolls = rolls; } };
+    const workflow = { chatCard: {}, damageRolls: [{ options: { properties: [] } }], bonusDamageRolls: [], async performThrottledUpdate() {}, async setDamageRolls(rolls) { this.damageRolls = rolls; } };
     await f.service.attachBladeFlourishRoll(workflow, { formula: "1d8[piercing]", total: 5 }, "attack-1", { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid });
     assert.equal(decoded.total, 5);
-    assert.equal(workflow.bonusDamageRolls[0].options.rebreyaBladeFlourishOperationId, "attack-1");
+    assert.equal(workflow.damageRolls[1].options.rebreyaBladeFlourishOperationId, "attack-1");
   } finally { globalThis.Roll = originalRoll; }
 });
 
@@ -304,8 +366,8 @@ test("flourish explicitly flushes Midi's persisted bonus before reporting succes
   const card = {};
   const calls = [];
   const workflow = {
-    chatCard: card, bonusDamageRolls: [],
-    async setBonusDamageRolls(rolls) { this.bonusDamageRolls = rolls; calls.push("attach"); },
+    chatCard: card, damageRolls: [{ options: { properties: [] } }], bonusDamageRolls: [],
+    async setDamageRolls(rolls) { this.damageRolls = rolls; calls.push("attach"); },
     async performThrottledUpdate(message, update, immediate) {
       assert.equal(message, card); assert.deepEqual(update, {}); assert.equal(immediate, true); calls.push("flush");
     }
@@ -938,7 +1000,7 @@ test("an existing flourish die must match its target, type, and weapon propertie
   const f = setup();
   const workflow = { chatCard: {}, damageRolls: [{ options: { properties: ["mgc"] } }],
     bonusDamageRolls: [{ total: 5, options: { rebreyaBladeFlourishOperationId: "attack-1", type: "force", properties: ["mgc"] } }],
-    async performThrottledUpdate() {}, async setBonusDamageRolls() { assert.fail("must not overwrite"); } };
+    async performThrottledUpdate() {}, async setDamageRolls() { assert.fail("must not overwrite"); } };
   await assert.rejects(f.service.attachBladeFlourishRoll(workflow, { total: 5, options: { type: "piercing" } }, "attack-1",
     { targetTokenUuid: f.targetToken.uuid, targetActorUuid: f.target.uuid }), /изменился/u);
 });
