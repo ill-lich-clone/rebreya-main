@@ -4034,3 +4034,28 @@ test("saved Quickened feat uses two points from the existing Sorcerer resource a
     assert.ok(points.updates.every(patch=>Object.keys(patch).every(path=>path==="system.uses.spent")));
   }
 });
+
+test("metamagic requires a nonempty dnd5e 6 save ability set before spending points", async () => {
+  for (const id of ["careful-spell", "heightened-spell"]) {
+    const actor = metamagicActor(), service = new SorcererAutomationService({});
+    await service.syncSorceryPoints(actor);
+    const use = () => ({sorcererVirtualSpellLevel: 1, sorcererMetamagic: {ids: [id], targetUuids: ["Token.enemy"]}});
+    const activity = makeSorcererSpell(actor, {activity: {save: {ability: new Set()}}});
+    assert.equal(await service.applyDnd5ePreUseActivity(activity, use(), {}, {}), false);
+    assert.equal(pointsItem(actor).system.uses.spent, 0);
+    activity.save.ability.add("wis");
+    assert.equal(await service.applyDnd5ePreUseActivity(activity, use(), {}, {}), true);
+  }
+});
+
+test("Extended Spell doubles sixty seconds and never shortens an already longer spell", async () => {
+  const actor = metamagicActor(), service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const use = () => ({sorcererVirtualSpellLevel: 1, sorcererMetamagic: {ids: ["extended-spell"]}});
+  const cast = (value,units,config) => service.applyDnd5ePreUseActivity(makeSorcererSpell(actor,{system:{duration:{value,units}}}), config, {}, {});
+  assert.equal(await cast(2,"day",use()),false);
+  assert.equal(pointsItem(actor).system.uses.spent,0);
+  const config = use();
+  assert.equal(await cast(60,"second",config),true);
+  assert.deepEqual(config.spellCast.duration,{value:120,units:"second"});
+});

@@ -361,7 +361,7 @@ import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.5.46";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.5.60";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.5.61";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.5.62";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
 import {
   PaladinAutomationService,

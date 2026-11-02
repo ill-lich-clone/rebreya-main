@@ -664,37 +664,28 @@ function spellDuration(activity) {
   };
 }
 
+const DURATION_SECONDS_PER_UNIT = {
+  second: 1,
+  seconds: 1,
+  round: 6,
+  rounds: 6,
+  turn: 6,
+  turns: 6,
+  minute: 60,
+  minutes: 60,
+  hour: 3600,
+  hours: 3600,
+  day: 86400,
+  days: 86400
+};
+
 function durationSeconds({ value, units }) {
-  const multipliers = {
-    round: 6,
-    rounds: 6,
-    turn: 6,
-    turns: 6,
-    minute: 60,
-    minutes: 60,
-    hour: 3600,
-    hours: 3600,
-    day: 86400,
-    days: 86400
-  };
-  return value * (multipliers[units] ?? 0);
+  return value * (DURATION_SECONDS_PER_UNIT[units] ?? 0);
 }
 
 function durationFromSeconds(seconds, preferredUnits) {
   const normalizedSeconds = Math.min(MAX_EXTENDED_DURATION_SECONDS, Math.max(0, seconds));
-  const multipliers = {
-    round: 6,
-    rounds: 6,
-    turn: 6,
-    turns: 6,
-    minute: 60,
-    minutes: 60,
-    hour: 3600,
-    hours: 3600,
-    day: 86400,
-    days: 86400
-  };
-  const multiplier = multipliers[preferredUnits] ?? 0;
+  const multiplier = DURATION_SECONDS_PER_UNIT[preferredUnits] ?? 0;
   if (multiplier && normalizedSeconds % multiplier === 0) {
     return { value: normalizedSeconds / multiplier, units: preferredUnits };
   }
@@ -706,7 +697,9 @@ function durationFromSeconds(seconds, preferredUnits) {
 
 function spellHasSave(activity) {
   const save = activity?.save ?? activity?.system?.save ?? activity?.item?.system?.save ?? {};
-  return Boolean(cleanText(save?.ability ?? save?.abilityId ?? save?.type));
+  const ability = save.ability ?? save.abilityId ?? save.type;
+  if (ability instanceof Set || Array.isArray(ability)) return Array.from(ability).some(key => typeof key === "string" && key.trim());
+  return typeof ability === "string" && Boolean(ability.trim());
 }
 
 function spellTargetCount(activity) {
@@ -2308,8 +2301,9 @@ export class SorcererAutomationService {
       if (id === "heightened-spell" && (!spellHasSave(activity) || targetUuids.length !== 1)) {
         return null;
       }
-      if (id === "extended-spell" && durationSeconds(spellDuration(activity)) < 60) {
-        return null;
+      if (id === "extended-spell") {
+        const seconds = durationSeconds(spellDuration(activity));
+        if (seconds < 60 || seconds >= MAX_EXTENDED_DURATION_SECONDS) return null;
       }
       if (id === "twinned-spell") {
         const range = spellRange(activity);
