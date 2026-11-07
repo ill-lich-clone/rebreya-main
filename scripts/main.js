@@ -331,7 +331,7 @@ import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js
 import { CombatAttackService } from "./combat/attack-service.js?v=1.5.61";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.5.61";
-import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.4.393";
+import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.5.63";
 import { registerEquipmentSizeCommands } from "./application/equipment-size-commands.js?v=1.4.393";
 import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.4.393";
 import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/equipment-size.js?v=1.4.393";

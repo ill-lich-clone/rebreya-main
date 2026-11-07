@@ -35,7 +35,8 @@ export class EquipmentSizeService {
   async initialize() { return true; }
 
   preUpdateItem(item, changes, options = {}) {
-    if (options.rebreyaEquipmentSize === true) return true;
+    // Foundry treats each root key as a replacement when recursive is false.
+    if (options.rebreyaEquipmentSize === true || options.recursive === false) return true;
     const { update } = this.buildItemUpdate(item, { changes, source: "edit" });
     for (const key of Object.keys(changes)) delete changes[key];
     Object.assign(changes, update);

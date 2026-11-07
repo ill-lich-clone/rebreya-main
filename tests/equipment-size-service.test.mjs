@@ -126,6 +126,27 @@ test("preUpdate normalization is synchronous and hooks register once without wor
   await assert.rejects(service.setItemSize(item, "huge"));
 });
 
+test("preUpdateItem preserves nested replacements in non-recursive updates", () => {
+  const hooks = new Map();
+  const bus = { on(event, handler) { hooks.set(event, handler); } };
+  const service = new EquipmentSizeService({}, { buildItemUpdate: buildEquipmentSizeUpdate });
+  registerEquipmentSizeItemHooks({ equipmentSizeService: service }, { Hooks: bus });
+
+  const weapon = makeEquipment();
+  const ownership = { default: 0, A1b2C3d4E5f6G7h8: 3 };
+  const flags = { dnd5e: { advancementOrigin: "source.advancement" } };
+  const replacements = [
+    [{ type: "class" }, { type: "class", system: { levels: 2 }, ownership, flags }],
+    [weapon, { ...weapon.toObject(), system: { ...weapon.system, weight: { value: 4, units: "lb" } }, ownership, flags }]
+  ];
+
+  for (const [item, replacement] of replacements) {
+    const changes = structuredClone(replacement);
+    assert.equal(hooks.get("preUpdateItem")(item, changes, { recursive: false, diff: false, isAdvancement: true }), true);
+    assert.deepEqual(changes, replacement);
+  }
+});
+
 test("equipment controls exclude natural weapons, coins, spells and journal records", () => {
   assert.equal(isEquipmentSizeItem(makeEquipment()), true);
   assert.equal(isEquipmentSizeItem(makeEquipment({ type: "container" })), true);
