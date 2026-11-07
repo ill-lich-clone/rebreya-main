@@ -683,7 +683,12 @@ export function registerCombatHooks(moduleApi) {
         globalThis.ui?.notifications?.warn?.(error.message);
       });
     });
-    Hooks.on("preUpdateItem", (item, changed) => {
+    Hooks.on("preUpdateItem", (item, changed, options = {}) => {
+      if (options?.recursive === false) {
+        // Other connected clients also receive the replacement and may still use the old hook.
+        if (options.isAdvancement === true) (options[MODULE_ID] ??= {}).firearmPropertySync = true;
+        return;
+      }
       moduleApi.combatAttackService.omitUnchangedFirearmPropertyOrder?.(item, changed);
     });
     Hooks.on("updateItem", (item, changed, options = {}) => {
@@ -692,7 +697,9 @@ export function registerCombatHooks(moduleApi) {
           console.error(`${MODULE_ID} | Failed to synchronize whirlwind activity.`, error);
         });
       }
-      if (options?.[MODULE_ID]?.firearmPropertySync === true) {
+      // Advancement sends the full Item source, including unchanged properties.
+      if (options?.[MODULE_ID]?.firearmPropertySync === true
+        || (options?.isAdvancement === true && options.recursive === false)) {
         return;
       }
       moduleApi.combatAttackService.synchronizeFirearmPropertyState(item, changed).catch((error) => {

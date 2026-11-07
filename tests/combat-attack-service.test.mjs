@@ -81,6 +81,7 @@ TestRoll.messages = [];
 globalThis.Roll = TestRoll;
 
 const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
+const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
 const {captureAmmunition}=await import("../scripts/combat/ammunition-magazine.js");
 
@@ -2693,6 +2694,60 @@ test("firearm property order normalization leaves actual changes and unsupported
   const changed = { system: { properties: ["lchFirearmMisfire"] } };
   service.omitUnchangedFirearmPropertyOrder(unknownSource, changed);
   assert.deepEqual(changed.system.properties, ["lchFirearmMisfire"]);
+});
+
+test("dnd5e advancement preserves existing firearm properties and state", async t => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const hooks = new Map();
+  globalThis.Hooks = { on(name, listener) { hooks.set(name, listener); } };
+  globalThis.game = {};
+  const properties = ["two", "lchFirearmMisfire", "lchFirearmReload"];
+  const weapon = makeFirearmItem({
+    name: "Мушкет (1/1) (клин)",
+    properties: new Set(properties),
+    values: { misfire: 2, reload: "Перезарядка 1", ammunition: "Мушкетные" },
+    ammoState: { current: 1, capacity: 1, ammunition: "Мушкетные" },
+    jammed: { value: true, threshold: 5, rollTotal: 3 }
+  });
+  weapon._source = { system: { properties } };
+  weapon.flags[MODULE_ID].firearmBaseMisfire = 2;
+  weapon.flags[MODULE_ID].firearmMisfire = 5;
+  const options = { recursive: false, diff: false, isAdvancement: true };
+  try {
+    registerCombatHooks({ combatAttackService: new CombatAttackService({}) });
+    await t.test("preUpdateItem retains the full property list", () => {
+      const changes = { system: { properties: [...properties], proficient: 1 } };
+      hooks.get("preUpdateItem")(weapon, changes, { recursive: false });
+      assert.deepEqual(changes.system, { properties, proficient: 1 });
+    });
+    await t.test("preUpdateItem sends the existing sync guard to other clients", () => {
+      const operation = { ...options, [MODULE_ID]: { existing: true } };
+      hooks.get("preUpdateItem")(weapon, { system: { properties: [...properties] } }, operation);
+      assert.deepEqual(operation[MODULE_ID], { existing: true, firearmPropertySync: true });
+    });
+    await t.test("updateItem preserves the charged, jammed firearm", async () => {
+      const flags = structuredClone(weapon.flags);
+      hooks.get("updateItem")(weapon, { system: { properties: [...properties] } }, options);
+      await Promise.resolve();
+      assert.deepEqual(weapon.flags, flags);
+      assert.equal(weapon.name, "Мушкет (1/1) (клин)");
+      assert.equal(weapon.updateCalls.length, 0);
+    });
+    await t.test("updateItem synchronizes property edits in other full replacements", async () => {
+      const editedWeapon = makeFirearmItem({
+        properties: new Set(["two"]),
+        ammoState: { current: 1, capacity: 1, ammunition: "Мушкетные" }
+      });
+      hooks.get("updateItem")(editedWeapon, { system: { properties: ["two"] } }, { recursive: false });
+      await Promise.resolve();
+      assert.equal(editedWeapon.getFlag(MODULE_ID, "firearmAmmoState"), undefined);
+      assert.equal(editedWeapon.updateCalls.length, 1);
+    });
+  } finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
 });
 
 test("removing Misfire clears its values, runtime state, suffix, and maintenance activities", async () => {
