@@ -6266,7 +6266,7 @@ export class RebreyaMainModule {
         characterTokenUuid: safeCharacterTokenUuid
       });
     }
-    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.48");
+    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.67");
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {

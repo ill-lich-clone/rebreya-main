@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import { MODULE_ID } from "../scripts/constants.js";
 import { createOverlayDom } from "./helpers/overlay-dom.mjs";
 import { StorageService, readStorageStateAtPath } from "../scripts/data/storage-service.js";
@@ -36,6 +37,14 @@ globalThis.HTMLElement = FakeElement;
 
 const storageAppModule = await import("../scripts/ui/storage-app.js?storage-app-test");
 const { StorageApp, formatStorageTransferError } = storageAppModule;
+
+test("storage window uses a template path accepted by Foundry", async () => {
+  const templatePath = StorageApp.PARTS.main.template;
+  assert.equal(extname(templatePath), ".hbs");
+  assert.equal(templatePath, `modules/${MODULE_ID}/templates/storage-app.hbs`);
+  const templateFile = new URL(`../${templatePath.slice(`modules/${MODULE_ID}/`.length)}`, import.meta.url);
+  assert.ok((await readFile(templateFile, "utf8")).trim());
+});
 
 test("narrative storage inspection renders saved instance read-only without following its source", async () => {
   const { openStorageRowItem } = await import("../scripts/ui/storage-app.js");

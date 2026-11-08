@@ -175,7 +175,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = {
     main: {
       root: true,
-      template: `modules/${MODULE_ID}/templates/storage-app.hbs?v=1.5.48`
+      template: `modules/${MODULE_ID}/templates/storage-app.hbs`
     }
   };
 
