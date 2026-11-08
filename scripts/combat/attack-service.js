@@ -6016,7 +6016,7 @@ export class CombatAttackService {
     if(existing instanceof Promise)return existing;
     if(existing?.rendered){existing.bringToFront();return existing;}
     const opening=(async()=>{
-      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.32");
+      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.65");
       const app=new AmmunitionMagazineApp(this,actor,weapon);await app.render({force:true});return app;
     })();
     this._magazineEditors.set(key,opening);

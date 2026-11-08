@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { readFile } from "node:fs/promises";
+let handlebars;
+try{handlebars=createRequire(import.meta.url)("handlebars");}catch{}
 globalThis.foundry={applications:{api:{ApplicationV2:class{async _onRender(){}},HandlebarsApplicationMixin:Base=>Base}}};
 const { MagazineDraft, AmmunitionMagazineApp, buildMagazineView }=await import("../scripts/ui/ammunition-magazine-app.js");
 const fixture=()=>({capacity:8,groupSize:3,rounds:[],sources:{a:{name:"Обычные"},b:{name:"Огненные"}},stock:[{key:"a",quantity:6},{key:"b",quantity:8}],presets:[],lastPattern:["b","b","b"],revision:"before"});
@@ -94,4 +98,77 @@ test("blurring the preset name input does not rerender away the pending save cli
   app.element={querySelector:()=>body};let renders=0;app.render=()=>{renders++;};
   await app._onRender({},{});body.dispatchEvent(new Event("change"));
   assert.equal(renders,0);
+});
+
+test("compact markers expose each group, partial count and bounded coordinates across families",()=>{
+  for(const type of ["rebreyaRifle","rebreyaShotgun","rebreyaMusket"]){
+    for(const capacity of [1,2,6,24,36]){
+      const view=buildMagazineView({...fixture(),capacity,groupSize:capacity>6?6:1,rounds:["a"]},0,{system:{ammunition:{type}}});
+      const [x,y,w,h]=view.presentation.viewBox.split(" ").map(Number);
+      for(const cell of view.cells){assert.ok(cell.markerX>=x&&cell.markerX<=x+w);assert.ok(cell.markerY>=y&&cell.markerY<=y+h);assert.ok(cell.icon);}
+      assert.equal(view.cells[0].partial,capacity>6);
+    }
+  }
+});
+
+test("dense individual-round magazines retain non-overlapping reachable markers",()=>{
+  for(const type of ["rebreyaRifle","rebreyaShotgun"]){
+    const view=buildMagazineView({...fixture(),capacity:36,groupSize:1},0,{system:{ammunition:{type}}});
+    const scale=view.markerScale;
+    for(let i=1;i<view.cells.length;i++){
+      const a=view.cells[i-1],b=view.cells[i];
+      assert.ok(Math.max(Math.abs(a.markerX-b.markerX),Math.abs(a.markerY-b.markerY))*scale>=27,"number button bounds must stay separated");
+    }
+  }
+});
+
+test("compact context selects loaded type, exposes manual details and marks modified preset",async()=>{
+  const value=fixture();value.rounds=["b","b","b"];value.presets=[{name:"Лёд",rounds:["a","a","a"]}];
+  const app=new AmmunitionMagazineApp({getMagazineEditorData:()=>value},{},{name:"Винтовка (3/8)"});app.selectedPreset=0;
+  const context=await app._prepareContext();
+  assert.equal(context.selectedCell.key,"b");assert.equal(context.selectedAmmo.key,"b");assert.equal(context.presetModified,true);
+  assert.match(app.title,/Винтовка.*3\s*\/\s*8/u);
+});
+
+async function harness(value=fixture()){
+  const listeners={},body={addEventListener:(name,fn)=>{listeners[name]=fn;}};
+  const input={value:"Новая"};let commits=0,closed=0;
+  const app=new AmmunitionMagazineApp({getMagazineEditorData:()=>value,commitMagazine:async()=>{commits++;}},{},{name:"Оружие"});
+  app.element={querySelector:selector=>selector===".rm-ammo-body"?body:input};app.render=async()=>{};app.close=async()=>{closed++;};
+  await app._onRender({},{});
+  const click=async(action,data={})=>{const button={dataset:{ammoAction:action,...data},getAttribute:()=>null};listeners.click({target:{closest:()=>button},preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));};
+  const preset=async(value)=>{listeners.change({target:{value,matches:selector=>selector.includes("data-ammo-preset")}});await new Promise(resolve=>setImmediate(resolve));};
+  return {app,input,click,preset,commits:()=>commits,closed:()=>closed};
+}
+
+test("row click replaces selected group without auto-advance or writes; shortage remains atomic",async()=>{
+  const h=await harness();await h.click("place",{key:"a"});assert.equal(h.app.selectedGroup,0);assert.deepEqual(h.app.draft.value.rounds,["a","a","a"]);assert.equal(h.commits(),0);
+  h.app.draft.value.stock[1].quantity=2;await h.click("place",{key:"b"});assert.deepEqual(h.app.draft.value.rounds,["a","a","a"]);assert.match(h.app.error,/хватает/);
+  assert.equal((await h.app._prepareContext()).selectedAmmo.key,"b");
+  await h.click("clear");await h.click("fill",{key:"b"});assert.deepEqual(h.app.draft.value.rounds,["b","b"]);assert.equal(h.commits(),0);
+});
+
+test("last pattern menu previews locally while repeat icon confirms once",async()=>{
+  const h=await harness();await h.preset("last");assert.deepEqual(h.app.draft.value.rounds,["b","b","b"]);assert.equal(h.commits(),0);
+  await h.click("last");assert.equal(h.commits(),1);assert.equal(h.closed(),1);
+});
+
+test("preset editor saves copies, renames and deletes locally with validated names",async()=>{
+  const h=await harness();await h.click("place",{key:"a"});await h.click("save");assert.equal(h.app.editingPreset,true);
+  await h.click("save-preset");assert.equal(h.app.draft.value.presets[0].name,"Новая");assert.equal(h.app.selectedPreset,0);
+  h.input.value="Переименована";await h.click("rename-preset");assert.equal(h.app.draft.value.presets[0].name,"Переименована");
+  h.app.draft.savePreset("Другая");assert.throws(()=>h.app.draft.renamePreset(0,"Другая"),/существует/u);assert.throws(()=>h.app.draft.renamePreset(0," "),/название/u);
+  await h.click("delete");assert.deepEqual(h.app.draft.value.presets.map(p=>p.name),["Другая"]);assert.equal(h.commits(),0);
+});
+
+test("rendered compact template has one numbered marker per group outside cartridge scope",{skip:!handlebars&&"Set NODE_PATH to Foundry node_modules"},async()=>{
+  const app=new AmmunitionMagazineApp({getMagazineEditorData:()=>({...fixture(),capacity:24,groupSize:6,rounds:Array(7).fill("a")})},{},{name:"<img src=x>"});
+  const template=await readFile(new URL("../templates/ammunition-magazine.hbs",import.meta.url),"utf8");
+  const html=handlebars.compile(template)(await app._prepareContext());
+  assert.equal((html.match(/class="rm-ammo-marker /g)??[]).length,4);
+  assert.equal((html.match(/class="rm-ammo-marker-number"/g)??[]).length,4);
+  assert.match(html,/class="rm-ammo-partial"[^>]*>1\/6</u);
+  assert.equal((html.match(/data-ammo-action="fill"/g)??[]).length,1);
+  assert.doesNotMatch(html,/data-ammo-action="cancel"|data-ammo-preset-name/u);
+  assert.match(html,/aria-label="Зарядить как в прошлый раз"/u);
 });

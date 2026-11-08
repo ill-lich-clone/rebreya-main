@@ -52,6 +52,13 @@ export class MagazineDraft {
     const preset={name:clean,rounds:[...this.value.rounds]},index=this.value.presets.findIndex(p=>p.name===clean);
     if(index>=0)this.value.presets[index]=preset;else this.value.presets.push(preset);
   }
+  renamePreset(index,name){
+    const clean=String(name??"").trim();
+    if(!clean||clean.length>80)throw new Error("Введите название схемы (до 80 символов).");
+    if(!this.value.presets[index])throw new Error("Выберите схему.");
+    if(this.value.presets.some((p,i)=>i!==index&&p.name===clean))throw new Error("Схема с таким названием уже существует.");
+    this.value.presets[index].name=clean;
+  }
 }
 
 export function buildMagazineView(value,selectedGroup=0,weapon={}){
@@ -66,30 +73,46 @@ export function buildMagazineView(value,selectedGroup=0,weapon={}){
       return {...layout[position],loaded:position<value.rounds.length};
     });
     const name=key===LEGACY_AMMUNITION?"Неизвестные заряды":source(key)?.name??"Пусто";
+    const marker=slots[Math.floor((slots.length-1)/2)];
+    const icon=({cold:"❄",fire:"♨",unknown:"?",lightning:"ϟ",acid:"◈"})[tone(key)]??"•";
     cells.push({index,number:index+1,size,count:rounds.length,name,shortName:name.replace(/^Боеприпасы с /u,"С "),
+      markerX:marker.x,markerY:marker.y,icon,partial:rounds.length>0&&rounds.length<size,
       key,tone:tone(key),unknown:key===LEGACY_AMMUNITION,selected:index===selectedGroup,first:index===0,locked:start>value.rounds.length,
       slots,bandPath:buildMagazineBand(presentation,start,size,value.capacity,slots),mixed:new Set(rounds).size>1});
   }
   const stock=value.stock.filter(row=>row.key!==LEGACY_AMMUNITION||row.quantity>0).map(row=>{
     const data=source(row.key),damage=getAmmunitionDamage(data),remaining=row.quantity+(value.originalRounds??[]).filter(key=>key===row.key).length-value.rounds.filter(key=>key===row.key).length;
-    return {...row,name:row.key===LEGACY_AMMUNITION?"Неизвестные патроны импланта":data?.name??"Боеприпас",img:data?.img??"icons/svg/item-bag.svg",tone:tone(row.key),remaining,empty:remaining<=0,manual:damage.manual,
+    const name=row.key===LEGACY_AMMUNITION?"Неизвестные патроны импланта":data?.name??"Боеприпас";
+    return {...row,name,shortName:name.replace(/^Боеприпасы с /u,"С "),img:data?.img??"icons/svg/item-bag.svg",tone:tone(row.key),remaining,empty:remaining<=0,manual:damage.manual,
       bonus:damage.parts.map(part=>"+"+part.formula.replaceAll("d","к")+" "+(DAMAGE_LABELS[part.type]??part.type)).join(", ")};
   });
   const legacyCount=(value.originalRounds??[]).filter(key=>key===LEGACY_AMMUNITION).length;
-  return {cells,stock,presentation,legacyCount,hasSavedLegacy:legacyCount>0,hasLegacy:legacyCount>0||value.rounds.includes(LEGACY_AMMUNITION)};
+  const [, ,viewWidth,viewHeight]=presentation.viewBox.split(" ").map(Number);
+  let spacing=Infinity;
+  for(let i=1;i<cells.length;i++)spacing=Math.min(spacing,Math.max(Math.abs(cells[i].markerX-cells[i-1].markerX),Math.abs(cells[i].markerY-cells[i-1].markerY)));
+  const markerScale=Math.max(245/viewHeight,28/spacing),markerRadius=Math.min(12,12/markerScale);
+  return {cells,stock,presentation,markerScale,markerRadius,markerFont:markerRadius*1.25,markerIconX:markerRadius+3,markerCountY:markerRadius+11,
+    visualWidth:Math.ceil(viewWidth*markerScale),visualHeight:Math.ceil(viewHeight*markerScale),legacyCount,hasSavedLegacy:legacyCount>0,hasLegacy:legacyCount>0||value.rounds.includes(LEGACY_AMMUNITION)};
 }
 
 const {ApplicationV2,HandlebarsApplicationMixin}=foundry.applications.api;
 export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(ApplicationV2){
-  static DEFAULT_OPTIONS={classes:["rebreya-main","rm-ammunition-magazine"],window:{title:"Снаряжение магазина",icon:"fa-solid fa-bars-staggered",resizable:true},position:{width:960,height:760}};
+  static DEFAULT_OPTIONS={classes:["rebreya-main","rm-ammunition-magazine"],window:{title:"Снаряжение магазина",resizable:true},position:{width:620,height:"auto"}};
   static PARTS={main:{template:"modules/"+MODULE_ID+"/templates/ammunition-magazine.hbs"}};
   constructor(service,actor,weapon,options={}){
     super(options);this.service=service;this.actor=actor;this.weapon=weapon;
-    this.draft=new MagazineDraft(service.getMagazineEditorData(actor,weapon));this.error="";this.busy=false;this.selectedPreset=null;this.selectedGroup=0;
+    this.draft=new MagazineDraft(service.getMagazineEditorData(actor,weapon));this.error="";this.busy=false;this.selectedPreset=null;this.selectedGroup=0;this.selectedAmmoKey=null;this.editingPreset=false;
   }
+  get title(){return this.draft?`${this.weapon.name.replace(/\s+\(\d+\/\d+\)$/u,"")} · ${this.draft.value.rounds.length}/${this.draft.value.capacity}`:"Снаряжение магазина";}
   async _prepareContext(){
     const value=this.draft.value,view=buildMagazineView(value,this.selectedGroup,this.weapon);
+    const selectedCell=view.cells[this.selectedGroup]??view.cells[0];
+    const selectedAmmo=view.stock.find(row=>row.key===(this.selectedAmmoKey??selectedCell?.key))??view.stock[0];
+    const preset=value.presets[this.selectedPreset];
     return {...view,weaponName:this.weapon.name.replace(/\s+\(\d+\/\d+\)$/u,""),current:value.rounds.length,capacity:value.capacity,groupSize:value.groupSize,selectedGroupNumber:this.selectedGroup+1,
+      selectedCell,selectedAmmo,stock:view.stock.map(row=>({...row,selected:row.key===selectedAmmo?.key})),editingPreset:this.editingPreset,presetName:preset?.name??"",
+      hasSelectedPreset:!!preset,presetModified:!!preset&&JSON.stringify(preset.rounds)!==JSON.stringify(value.rounds),lastSelected:this.selectedPreset==="last",
+      canMoveUp:this.selectedGroup>0,canMoveDown:(this.selectedGroup+1)*value.groupSize<value.rounds.length,
       presets:value.presets.map((p,index)=>({...p,index,selected:index===this.selectedPreset})),hasLast:value.lastPattern.length>0,busy:this.busy,error:this.error,
       canResolve:globalThis.game?.user?.isGM && value.originalRounds.includes(LEGACY_AMMUNITION),resolveChoices:view.stock.filter(row=>row.key!==LEGACY_AMMUNITION),unloading:value.rounds.length===0&&value.originalRounds.length>0,
       clipId:("rm-ammo-"+(this.id??this.weapon.id??"draft")).replaceAll(/[^a-zA-Z0-9_-]/g,"")};
@@ -99,7 +122,12 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
     body.addEventListener("change",event=>{
       if(this.busy||!event.target.matches("[data-ammo-preset], [data-ammo-resolve]"))return;
       try{
-        if(event.target.matches("[data-ammo-preset]")){this.selectedPreset=event.target.value===""?null:Number(event.target.value);if(this.selectedPreset!==null)this.draft.usePreset(this.selectedPreset);}
+        if(event.target.matches("[data-ammo-preset]")){
+          const selected=event.target.value===""?null:event.target.value==="last"?"last":Number(event.target.value);
+          if(selected==="last")this.draft.usePattern(this.draft.value.lastPattern);
+          else if(selected!==null)this.draft.usePreset(selected);
+          this.selectedPreset=selected;this.selectedGroup=0;this.selectedAmmoKey=null;this.editingPreset=false;
+        }
         if(event.target.matches("[data-ammo-resolve]")&&event.target.value)this.draft.resolveLegacy(event.target.value);
         this.error="";
       }catch(error){this.error=error.message;}
@@ -130,16 +158,21 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
       this.render();
     });
   }
-  #place(index,key){this.draft.selectGroup(index,key);this.selectedGroup=Math.min(index+1,Math.ceil(this.draft.value.capacity/this.draft.value.groupSize)-1);}
+  #place(index,key){this.selectedAmmoKey=key;this.draft.selectGroup(index,key);this.selectedGroup=index;}
   async #action(button,root){
     try{
       this.error="";const action=button.dataset.ammoAction,index=Number(button.dataset.index);
-      if(action==="select")this.selectedGroup=index;
+      if(action==="select"){this.selectedGroup=index;this.selectedAmmoKey=null;}
       if(action==="place")this.#place(this.selectedGroup,button.dataset.key);
       if(action==="fill")this.draft.fill(button.dataset.key);
       if(action==="up"||action==="down"){this.draft.move(index,action==="up"?-1:1);this.selectedGroup=Math.max(0,Math.min(index+(action==="up"?-1:1),Math.ceil(this.draft.value.rounds.length/this.draft.value.groupSize)-1));}
-      if(action==="save")this.draft.savePreset(root.querySelector("[data-ammo-preset-name]").value);
-      if(action==="delete"&&this.selectedPreset!==null){this.draft.value.presets.splice(this.selectedPreset,1);this.selectedPreset=null;}
+      if(action==="save")this.editingPreset=!this.editingPreset;
+      if(action==="save-preset"){
+        const name=root.querySelector("[data-ammo-preset-name]").value.trim();this.draft.savePreset(name);
+        this.selectedPreset=this.draft.value.presets.findIndex(p=>p.name===name);this.editingPreset=false;
+      }
+      if(action==="rename-preset"){this.draft.renamePreset(this.selectedPreset,root.querySelector("[data-ammo-preset-name]").value);this.editingPreset=false;}
+      if(action==="delete"&&Number.isInteger(this.selectedPreset)){this.draft.value.presets.splice(this.selectedPreset,1);this.selectedPreset=null;this.editingPreset=false;}
       if(action==="clear"){this.draft.value.rounds=[];this.selectedGroup=0;}
       if(action==="cancel"){await this.close();return;}
       if(action==="last"){this.draft.usePattern(this.draft.value.lastPattern);await this.#confirm();return;}
