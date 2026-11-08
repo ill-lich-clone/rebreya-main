@@ -60,7 +60,7 @@ for (const hookName of [
   }
 }
 
-function createHarness({ isGM = false, distance = 5, frameController = null } = {}) {
+function createHarness({ isGM = false, distance = 5, frameController = null, system } = {}) {
   const listeners = new Map();
   const calls = [];
   const openCalls = [];
@@ -109,7 +109,7 @@ function createHarness({ isGM = false, distance = 5, frameController = null } = 
   };
   registerStorageTokenHooks(moduleApi, {
     hooks,
-    gameProvider: () => ({ user }),
+    gameProvider: () => ({ user, system }),
     canvasProvider: () => ({
       grid: { measurePath: () => ({ distance }) },
       tokens: { controlled: [characterToken], placeables: [characterToken, storageToken], get: () => null }
@@ -119,6 +119,29 @@ function createHarness({ isGM = false, distance = 5, frameController = null } = 
   });
   return { listeners, calls, openCalls, shown, feedback, moduleApi, storageToken, tokenListeners };
 }
+
+test("dnd5e 6 protects new storage footprints without locking creatures or older systems", () => {
+  const storageActor = { type: "npc", flags: { [MODULE_ID]: { storage: { enabled: true } } } };
+  const targets = [
+    { actor: storageActor },
+    { flags: { [MODULE_ID]: { groundPile: { enabled: true } } } },
+    { actor: { type: "npc", system: { attributes: { hp: { value: 10 } } } } },
+    { actor: { type: "npc", system: { attributes: { hp: { value: 0 } } } } }
+  ];
+  for (const [system, protectedCount] of [
+    [{ id: "dnd5e", version: "6.0.6" }, 2],
+    [{ id: "dnd5e", version: "5.3.0" }, 0],
+    [{ id: "pf2e", version: "7.12.2" }, 0]
+  ]) {
+    const { listeners } = createHarness({ system });
+    const preCreate = listeners.get("preCreateToken");
+    const patches = [];
+    for (const target of targets) preCreate({ ...target, updateSource: (patch) => patches.push(patch) });
+    assert.deepEqual(patches, Array.from({ length: protectedCount }, () => ({
+      flags: { dnd5e: { lockSize: true, lockScale: true } }
+    })));
+  }
+});
 
 test("drawing a ground pile requests persistent-frame cleanup through the storage token owner", async () => {
   const framed = [];

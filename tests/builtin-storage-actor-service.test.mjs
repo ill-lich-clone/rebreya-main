@@ -196,6 +196,86 @@ test("active GM creates the root folder and every built-in storage Actor exactly
   assert.deepEqual(second.actors, first.actors);
 });
 
+test("dnd5e 6 sync locks storage sizes and recovers only overwritten automatic footprints", async () => {
+  const harness = createHarness();
+  Object.assign(harness.game, {
+    system: { id: "dnd5e", version: "6.0.6" },
+    settings: { get: (namespace, key) => namespace === "dnd5e" && key === "tokenSizeSync" },
+    dnd5e: { config: { actorSizes: { med: { token: 1 } } } }
+  });
+  const actor = makeActorUpdatable({
+    id: "storage-actor", type: "npc",
+    system: { isCreature: true, traits: { size: "med" } },
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    prototypeToken: { sight: { enabled: false }, flags: { dnd5e: { keep: true } } }
+  });
+  harness.actors.push(actor);
+  const cases = [
+    { label: "tiny", layout: [0.5, 0.5], expected: [0.5, 0.5] },
+    { label: "rectangular", layout: [1, 2], expected: [1, 2] },
+    { label: "manual", layout: [0.5, 0.5], custom: true, expected: [1, 1] },
+    { label: "unknown layout", layout: [0, 2], expected: [1, 1] },
+    { label: "different source size", layout: [0.5, 0.5], sourceSize: [2, 2], expected: [2, 2] },
+    { label: "prepared override only", layout: [0.5, 0.5], sourceSize: [0.5, 0.5], expected: [1, 1] },
+    { label: "already locked", layout: [0.5, 0.5], locked: true, expected: [1, 1] }
+  ];
+  const tokens = cases.map(({ label, layout, custom = false, sourceSize, locked }) => {
+    const token = makeTokenUpdatable({
+      id: label, actorId: actor.id, actor,
+      width: label === "different source size" ? 2 : 1, height: label === "different source size" ? 2 : 1,
+      x: 125, y: 275, depth: 1, rotation: 90, sight: { enabled: false },
+      texture: { src: "pile.webp", scaleX: 1.25, scaleY: 1.5 },
+      flags: {
+        dnd5e: { keep: true, ...(locked ? { lockSize: true } : {}) },
+        [MODULE_ID]: { groundPile: { enabled: true, customFootprint: custom, autoLayout: { width: layout[0], height: layout[1] } } }
+      }
+    });
+    if (sourceSize) token.toObject = () => ({ ...token, width: sourceSize[0], height: sourceSize[1] });
+    return token;
+  });
+  const creature = makeTokenUpdatable({ id: "creature", actor: { type: "npc", system: actor.system }, width: 1, height: 1 });
+  harness.scenes.push({ tokens: { contents: [...tokens, creature] } });
+  const updatePrototype = actor.update.bind(actor);
+  actor.update = async (patch) => {
+    assert.ok(tokens.every(token => token.flags.dnd5e.lockSize === true));
+    await updatePrototype(patch);
+  };
+
+  await harness.service.sync();
+
+  const lockedFlags = { keep: true, lockSize: true, lockScale: true };
+  assert.deepEqual(actor.prototypeToken.flags.dnd5e, lockedFlags);
+  assert.ok(harness.actorCreates.every(({ data }) => data.prototypeToken.flags.dnd5e?.lockSize === true
+    && data.prototypeToken.flags.dnd5e?.lockScale === true));
+  for (const [index, token] of tokens.entries()) {
+    assert.deepEqual([token.width, token.height], cases[index].expected, token.id);
+    assert.deepEqual(token.flags.dnd5e, lockedFlags, token.id);
+    assert.deepEqual([token.x, token.y, token.depth, token.rotation, token.texture.scaleX, token.texture.scaleY],
+      [125, 275, 1, 90, 1.25, 1.5], token.id);
+  }
+  assert.deepEqual(tokens[5].updates, [{ "flags.dnd5e.lockSize": true, "flags.dnd5e.lockScale": true }]);
+  assert.deepEqual(creature.updates, []);
+  await harness.service.sync();
+  assert.ok(tokens.every(token => token.updates.length === 1));
+});
+
+test("dnd5e 6 locks existing storage even with native sync disabled and leaves its geometry alone", async () => {
+  const harness = createHarness();
+  Object.assign(harness.game, {
+    system: { id: "dnd5e", version: "6.0.6" },
+    settings: { get: () => false },
+    dnd5e: { config: { actorSizes: { med: { token: 1 } } } }
+  });
+  const token = makeTokenUpdatable({
+    actor: { type: "npc", system: { isCreature: true, traits: { size: "med" } } },
+    width: 1, height: 1, sight: { enabled: false },
+    flags: { [MODULE_ID]: { groundPile: { enabled: true, customFootprint: false, autoLayout: { width: 0.5, height: 0.5 } } } }
+  });
+  harness.scenes.push({ tokens: { contents: [token] } });
+  await harness.service.sync();
+  assert.deepEqual(token.updates, [{ "flags.dnd5e.lockSize": true, "flags.dnd5e.lockScale": true }]);
+});
+
 test("sync disables prototype sight for every classified persistent storage Actor only", async () => {
   const harness = createHarness();
   const storageFolder = {

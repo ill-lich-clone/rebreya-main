@@ -7,6 +7,7 @@ import {
 import { isStorageActor } from "../data/storage-service.js?v=1.5.48";
 import { isCorpseStorageTarget } from "../data/storage-corpse-target.js?v=1.5.19";
 import { storageObjectKind } from "../data/storage-object-kind.js?v=1.5.19";
+import { DND5E_STORAGE_SIZE_LOCKS, supportsDnd5eStorageSizeLocks } from "../data/storage-token-dimensions.js?v=1.5.68";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.197-door-trigger-target";
 import { GroundPileFrameController } from "./storage-ground-pile-frame.js?v=1.5.19";
 
@@ -69,6 +70,10 @@ export function registerStorageTokenHooks(moduleApi, {
 
   hooks.on("dnd5e.determineOccupiedGridSpaceBlocking", excludeStorageMovementObstacles);
   hooks.on("dnd5e.determineOccupiedGridSpaceDifficult", excludeStorageMovementObstacles);
+  hooks.on("preCreateToken", (token) => {
+    if (!supportsDnd5eStorageSizeLocks(gameProvider()) || storageObjectKind(token) === null) return;
+    token.updateSource({ flags: { dnd5e: { ...DND5E_STORAGE_SIZE_LOCKS } } });
+  });
 
   const pointerHandlers = new WeakMap();
   const ensureGroundPileFrame = async (token) => {

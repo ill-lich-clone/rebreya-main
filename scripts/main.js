@@ -271,7 +271,7 @@ import {
   measureStoragePointDistance,
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
-import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.5.48";
+import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.5.68";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.5.48";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.396";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.5.66";
@@ -415,7 +415,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.46";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.48";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.68";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.61";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js?v=1.5.60";
