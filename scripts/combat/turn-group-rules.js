@@ -1,5 +1,9 @@
 export const GROUPED_COMBAT_FLAG = "groupedCombat";
 export const combatantsOf = combat => Array.from(combat?.combatants?.contents ?? combat?.combatants ?? []);
+export function combatantById(combat, id) {
+  if (typeof combat?.combatants?.get === "function") return combat.combatants.get(id);
+  return combatantsOf(combat).find(combatant => combatant.id === id);
+}
 // Foundry expands every dotted object key, including keys inside arbitrary flags.
 export const combatFlagKey = value => encodeURIComponent(JSON.stringify(value)).replaceAll(".", "%2E");
 

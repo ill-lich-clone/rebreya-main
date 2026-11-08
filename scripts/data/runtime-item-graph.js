@@ -4,6 +4,36 @@ import { buildHeldItemWornUpdate } from "../integrations/held-items.js?v=1.5.29"
 import { collectItemSourceUuids, preserveItemSourceUuid } from "./item-source-reference.js?v=1.4.377";
 const MODULE_ID = "rebreya-main";
 export const RUNTIME_ITEM_GRAPH_FLAG = "runtimeItemGraph";
+const parentKey = value => String(value ?? "").trim();
+const installedWeaponMod = item => (item.flags ?? item.toObject?.()?.flags)?.[MODULE_ID]?.installedWeaponMod;
+
+function addToGroup(groups, key, item) {
+  const group = groups.get(key);
+  if (group) group.push(item);
+  else groups.set(key, [item]);
+}
+
+export function indexRuntimeItemParents(items) {
+  const childrenByParent = new Map();
+  for (const item of items) addToGroup(childrenByParent, parentKey(item.system?.container), item);
+  return childrenByParent;
+}
+
+export function indexRuntimeItems(items) {
+  const byId = new Map(), upgradesByHost = new Map(), weaponModsByHost = new Map();
+  for (const item of items) {
+    const id = item.id ?? item._id;
+    if (!byId.has(id)) byId.set(id, item);
+    const upgrade = typeof item.getFlag === "function"
+      ? item.getFlag(MODULE_ID, "installedUpgrade")
+      : item.flags?.[MODULE_ID]?.installedUpgrade;
+    if (upgrade?.hostItemId) addToGroup(upgradesByHost, upgrade.hostItemId, item);
+    const mod = installedWeaponMod(item);
+    if (mod?.hostItemId) addToGroup(weaponModsByHost, mod.hostItemId, item);
+  }
+  return { byId, childrenByParent: indexRuntimeItemParents(items), upgradesByHost, weaponModsByHost };
+}
+
 const conflict = () => { const error = new Error("Состав предмета изменился или перенесён частично; нужна сверка экземпляров."); error.code = "graph-manual-review"; throw error; };
 const clone = value => structuredClone(value);
 const snapshotKey = data => { const copy = clone(data); delete copy._stats; return itemInstanceFingerprint(copy); };
@@ -15,7 +45,7 @@ const matchesPreparedValue = (actual, expected) => {
 };
 
 /** Physical links only: unsupported/custom rules remain transferable without granting effects. */
-export function getRuntimeWeaponModChildren(host,items) {
+export function getRuntimeWeaponModChildren(host,items,index = null) {
   const data=host.toObject?.() ?? host,hostId=host.id ?? host._id,flags=data.flags?.[MODULE_ID],state=flags?.weaponMods;
   if(flags?.weaponModShot?.phase==="consumed"){
     const error=new Error("Сначала восстановите карточку выстрела гранатомёта; затем оружие можно переносить или изменять.");
@@ -26,7 +56,8 @@ export function getRuntimeWeaponModChildren(host,items) {
     if(state.version!==1 || !Array.isArray(state.attachments) || !Array.isArray(state.modernizedParts)
       || data.system?.quantity!==1)conflict();
     for(const [field,kind] of [["attachments","weaponAttachment"],["modernizedParts","modernizedPart"]])for(const entry of state[field]) {
-      const child=items.find(item=>(item.id ?? item._id)===entry.itemId),childData=child?.toObject?.() ?? child,childFlags=childData?.flags?.[MODULE_ID],link=childFlags?.installedWeaponMod;
+      const child=index ? index.byId.get(entry.itemId) : items.find(item=>(item.id ?? item._id)===entry.itemId);
+      const childData=child?.toObject?.() ?? child,childFlags=childData?.flags?.[MODULE_ID],link=childFlags?.installedWeaponMod;
       const selected=field==="attachments"?entry.mountIds:[];
       if(!child || !entry.sourceId || seen.has(entry.itemId) || sources.has(entry.sourceId) || childData.system?.quantity!==1
         || childData.system?.container!==hostId || childFlags?.gearId!==entry.sourceId || link?.version!==1
@@ -37,16 +68,16 @@ export function getRuntimeWeaponModChildren(host,items) {
       seen.add(entry.itemId);sources.add(entry.sourceId);selected.forEach(mount=>mounts.add(mount));children.push(child);
     }
   }
-  for(const child of items) {
-    const childFlags=(child.flags ?? child.toObject?.()?.flags)?.[MODULE_ID];
-    if(childFlags?.installedWeaponMod?.hostItemId===hostId && !seen.has(child.id ?? child._id))conflict();
+  const installed = index ? index.weaponModsByHost.get(hostId) ?? [] : items.filter(child => installedWeaponMod(child)?.hostItemId === hostId);
+  for(const child of installed) {
+    if(!seen.has(child.id ?? child._id))conflict();
   }
   return children;
 }
 
 /** Detached transport snapshot of live Documents, not a catalogue rebuild or another world repository. */
-export function captureRuntimeItemGraph(actor, root) {
-  const items = Array.from(actor.items.contents ?? actor.items.values());
+export function captureRuntimeItemGraph(actor, root, index = null) {
+  index ??= indexRuntimeItems(Array.from(actor.items.contents ?? actor.items.values()));
   const nodes = [], visited = new Set(), sourceUuidsByItemId = {};
   const visit = item => {
     if (!item || visited.has(item.id) || nodes.length >= 200) conflict();
@@ -55,9 +86,11 @@ export function captureRuntimeItemGraph(actor, root) {
     if (sourceUuid) sourceUuidsByItemId[item.id] = sourceUuid;
     const installed = data.flags?.[MODULE_ID]?.itemUpgrades?.installed ?? [];
     const childIds = new Set(installed.map(entry => entry.itemId));
-    for(const child of getRuntimeWeaponModChildren(item,items))childIds.add(child.id ?? child._id);
-    for (const child of items) if (child.system?.container === item.id) childIds.add(child.id);
-    for (const id of childIds) visit(actor.items.get(id));
+    for(const child of getRuntimeWeaponModChildren(item,null,index))childIds.add(child.id ?? child._id);
+    for (const child of index.childrenByParent.get(parentKey(item.id)) ?? []) {
+      if (child.system?.container === item.id) childIds.add(child.id);
+    }
+    for (const id of childIds) visit(index.byId.get(id));
   };
   visit(root);
   return { version: 1, rootId: root.id, nodes, ...(Object.keys(sourceUuidsByItemId).length ? { sourceUuidsByItemId } : {}) };
@@ -68,7 +101,8 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actor
     || graph.nodes[0]?._id !== graph.rootId || typeof operationId !== "string" || !operationId) conflict();
   const ids = new Map(graph.nodes.map(node => [node._id, createStableGearDocumentId(`${operationId}:${node._id}`)]));
   if (ids.size !== graph.nodes.length || graph.nodes.some(node => typeof node._id !== "string" || !node._id)) conflict();
-  for(const node of graph.nodes)getRuntimeWeaponModChildren(node,graph.nodes);
+  const index = indexRuntimeItems(graph.nodes);
+  for(const node of graph.nodes)getRuntimeWeaponModChildren(node,null,index);
   const documents = graph.nodes.map(node => {
     const sourceId = node._id;
     const input = node._id === graph.rootId ? rootData ?? node : node;

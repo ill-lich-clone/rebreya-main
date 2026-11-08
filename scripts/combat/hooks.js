@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.61";
+import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.66";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.61";
 import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";

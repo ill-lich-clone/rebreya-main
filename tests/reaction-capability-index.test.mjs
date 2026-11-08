@@ -28,6 +28,43 @@ test("native MIDI deduplication recognizes indexed module activities without sca
   assert.equal(index.ownsActivity({ actor: actor("other"), item: { uuid: "Item.guard" }, id: "a" }), false);
 });
 
+test("refreshing a moved or reassigned token does not traverse other actors", () => {
+  const original = actor("original"), replacement = actor("replacement");
+  const moving = { ...token("moving", original), x: 0 };
+  let scene = { id: "scene-1", tokens: [moving, ...Array.from({ length: 200 }, (_, i) => token(String(i), actor(String(i))))] };
+  const index = new ReactionCapabilityIndex({ sceneProvider: () => scene });
+  index.registerProvider("position", ({ actor, token }) => token.x > 0 ? [{
+    actorUuid: actor.uuid, tokenUuid: token.uuid, itemUuid: `${actor.uuid}.Item.reaction`
+  }] : []);
+  assert.deepEqual(index.list("position"), []);
+  const buckets = index._tokensByActor;
+  const entries = buckets[Symbol.iterator].bind(buckets);
+  let scanned = 0;
+  buckets[Symbol.iterator] = function* () {
+    for (const entry of entries()) {
+      scanned++;
+      yield entry;
+    }
+  };
+
+  moving.x = 1;
+  index.refreshToken(moving);
+  assert.deepEqual(index.list("position").map(entry => entry.actorUuid), [original.uuid]);
+  moving.actor = replacement;
+  index.refreshToken(moving);
+  index.refreshActor(original);
+  assert.deepEqual(index.list("position").map(entry => entry.actorUuid), [replacement.uuid]);
+  index.removeActor(replacement);
+  assert.deepEqual(index.list("position"), []);
+  index.refreshToken(moving);
+  index.removeToken(moving.uuid);
+  assert.deepEqual(index.list("position"), []);
+  index.invalidateScene();
+  scene = { id: "scene-2", tokens: [{ ...moving, actor: original }] };
+  assert.deepEqual(index.list("position").map(entry => entry.actorUuid), [original.uuid]);
+  assert.equal(scanned, 0);
+});
+
 test("reaction capability index lazily builds the active scene once", () => {
   const caster = actor("caster", [{ uuid: "Actor.caster.Item.counterspell" }]);
   const scene = { id: "scene-1", tokens: [token("caster-token", caster)] };

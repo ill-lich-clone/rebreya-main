@@ -49,7 +49,7 @@ import { ensureWorldShieldSpell } from "./data/shield-spell-item.js?v=1.5.59";
 import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js?v=1.5.31";
+import { EconomyRepository } from "./data/repository.js?v=1.5.66";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.5.49";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
@@ -245,7 +245,7 @@ import {
 } from "./infrastructure/foundry/grapple-command-contract.js";
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js?v=1.5.3";
-import { GlobalEventsService } from "./data/global-events-service.js";
+import { GlobalEventsService } from "./data/global-events-service.js?v=1.5.66";
 import { LootgenTemplateItemService } from "./data/lootgen-template-item.js?v=1.4.396";
 import {
   registerLootgenTemplateItemSheet,
@@ -274,7 +274,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.5.48";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.5.48";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.396";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.5.48";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.5.66";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.396";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -322,11 +322,11 @@ import {
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.5.64";
-import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.61";
+import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.66";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
-import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.61";
-import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.61";
+import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.66";
+import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.66";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.5.65";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
@@ -336,7 +336,7 @@ import { registerEquipmentSizeCommands } from "./application/equipment-size-comm
 import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.4.393";
 import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/equipment-size.js?v=1.4.393";
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
-import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
+import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js?v=1.5.66";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.7";
 import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.59";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
@@ -438,7 +438,7 @@ import { ALCHEMY_REAGENT_COMMAND, ALCHEMY_REAGENT_RESERVE_COMMAND, ALCHEMY_REAGE
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js?v=1.4.377";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.396";
 import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.5.60";
-import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.396";
+import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.5.66";
 import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.5.60";
 import { hasStorageNarrativeCandidates, prepareStorageNarrativeRows } from "./data/storage-narrative-rows.js?v=1.4.396";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";

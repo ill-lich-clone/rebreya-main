@@ -791,8 +791,9 @@ export class GlobalEventsService {
     if (this.#scopeCache.has(cacheKey)) {
       return this.#scopeCache.get(cacheKey);
     }
-    const cities = toArray(dataset?.cities ?? this.moduleApi?.repository?.dataset?.cities);
-    const city = cities.find((entry) => entry.id === safeCityId) ?? null;
+    const city = dataset?.cityById instanceof Map
+      ? dataset.cityById.get(safeCityId)
+      : toArray(dataset?.cities ?? this.moduleApi?.repository?.dataset?.cities).find((entry) => entry.id === safeCityId);
     if (!city) {
       this.#scopeCache.set(cacheKey, false);
       return false;

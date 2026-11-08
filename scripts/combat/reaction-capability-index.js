@@ -47,6 +47,7 @@ export class ReactionCapabilityIndex {
     this._keysByActor = new Map();
     this._keysByToken = new Map();
     this._tokensByActor = new Map();
+    this._actorUuidByToken = new Map();
     this._scene = null;
     this._sceneId = "";
     this._built = false;
@@ -95,6 +96,7 @@ export class ReactionCapabilityIndex {
     this._keysByActor.clear();
     this._keysByToken.clear();
     this._tokensByActor.clear();
+    this._actorUuidByToken.clear();
     this._scene = scene ?? null;
     this._sceneId = cleanString(scene?.id ?? scene?._id);
 
@@ -104,9 +106,11 @@ export class ReactionCapabilityIndex {
         continue;
       }
       const actorUuid = cleanString(actor.uuid ?? actor.id ?? actor._id);
+      const tokenUuid = cleanString(token.uuid ?? token.document?.uuid ?? token.id ?? token._id);
       const tokens = this._tokensByActor.get(actorUuid) ?? new Map();
-      tokens.set(cleanString(token.uuid ?? token.id ?? token._id), token);
+      tokens.set(tokenUuid, token);
       this._tokensByActor.set(actorUuid, tokens);
+      this._actorUuidByToken.set(tokenUuid, actorUuid);
       this._indexActorToken(actor, token, scene);
     }
 
@@ -147,12 +151,15 @@ export class ReactionCapabilityIndex {
     }
     this._keysByToken.delete(normalizedTokenUuid);
 
-    for (const [actorUuid, tokens] of this._tokensByActor) {
+    const actorUuid = this._actorUuidByToken.get(normalizedTokenUuid);
+    const tokens = this._tokensByActor.get(actorUuid);
+    if (tokens) {
       tokens.delete(normalizedTokenUuid);
       if (tokens.size === 0) {
         this._tokensByActor.delete(actorUuid);
       }
     }
+    this._actorUuidByToken.delete(normalizedTokenUuid);
     return this;
   }
 
@@ -171,6 +178,7 @@ export class ReactionCapabilityIndex {
     const tokens = this._tokensByActor.get(actorUuid) ?? new Map();
     tokens.set(tokenUuid, token);
     this._tokensByActor.set(actorUuid, tokens);
+    this._actorUuidByToken.set(tokenUuid, actorUuid);
     this._indexActorToken(actor, token, this._scene);
     return this;
   }
@@ -184,6 +192,7 @@ export class ReactionCapabilityIndex {
     this._removeActorEntries(actorUuid);
     for (const tokenUuid of this._tokensByActor.get(actorUuid)?.keys() ?? []) {
       this._keysByToken.delete(tokenUuid);
+      this._actorUuidByToken.delete(tokenUuid);
     }
     this._tokensByActor.delete(actorUuid);
     return this;
@@ -199,6 +208,7 @@ export class ReactionCapabilityIndex {
     this._keysByActor.clear();
     this._keysByToken.clear();
     this._tokensByActor.clear();
+    this._actorUuidByToken.clear();
     this._scene = null;
     this._sceneId = "";
     this._built = false;

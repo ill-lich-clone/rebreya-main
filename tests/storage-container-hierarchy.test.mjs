@@ -79,6 +79,40 @@ test("valid nested portable storage is left unchanged", async () => {
   assert.equal(owner.updates.length, 0);
 });
 
+test("repair reads each parent once even when many chains share ancestors", () => {
+  let reads = 0;
+  const items = Array.from({ length: 200 }, (_, i) => {
+    const entry = item(String(i), String(i));
+    Object.defineProperty(entry.system, "container", {
+      get() { reads++; return i > 0 ? String(i - 1) : null; }
+    });
+    return entry;
+  }).reverse();
+  assert.deepEqual(planPortableContainerCycleRepairs(actor(items)), []);
+  assert.equal(reads, items.length);
+});
+
+test("synchronous creates share a repair and retain the first event's preferred item", async () => {
+  const first = item("first", "First", "second", { portable: true });
+  const second = item("second", "Second", "first", { portable: true });
+  const owner = actor([first, second]);
+  let scans = 0;
+  Object.defineProperty(owner.items, "contents", { get() { scans++; return [first, second]; } });
+  const registrations = new Map();
+  await registerStorageContainerHierarchyHooks({
+    Hooks: { on(name, fn) { registrations.set(name, fn); } },
+    gameProvider: () => ({ actors: [] }),
+    isActiveGm: () => true,
+    notify: () => {}
+  });
+  registrations.get("createItem")(first);
+  registrations.get("createItem")(second);
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.deepEqual(owner.updates.map(update => update.patches), [[{ _id: "second", "system.container": null }]]);
+  assert.ok(scans <= 2, `expected one actor snapshot, got ${scans} contents reads`);
+});
+
 test("moving an ancestor into portable storage rotates the hierarchy without hiding either container", () => {
   const backpack = item("backpack", "Рюкзак");
   const bag = item("bag", "Сумка хранения", backpack.id, { portable: true });

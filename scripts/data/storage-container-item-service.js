@@ -2,7 +2,7 @@ import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4
 import { normalizeLootgenComposition, weaponModComponents } from "./lootgen-composition.js?v=1.4.393";
 import { getEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
 import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.5.23";
-import { buildRuntimeGraphDocuments, captureRuntimeItemGraph, materializeRuntimeItemGraph, getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.5.18";
+import { buildRuntimeGraphDocuments, captureRuntimeItemGraph, materializeRuntimeItemGraph, getRuntimeWeaponModChildren, indexRuntimeItemParents, indexRuntimeItems } from "./runtime-item-graph.js?v=1.5.66";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
@@ -155,14 +155,14 @@ function captureCurrency(currency) {
 }
 
 /** Capture this host and installed components; ordinary contents remain canonical snapshot rows. */
-function captureHostData(item, allItems, composition) {
+function captureHostData(item, index, composition) {
   const data = plainItemData(item), flags = data.flags[MODULE_ID];
   delete flags.storageContainer; delete flags.runtimeItemGraph; delete flags.lootgenComposition;
   const installed = flags.itemUpgrades?.installed ?? [], seen = new Set(), nodes = [{...clone(data),_id:clean(item.id)}];
   if (installed.length && itemQuantity(item) !== 1) treeConflict("stacked-upgrade-host");
   const upgrades = [];
   for (const link of installed) {
-    const child = allItems.find(candidate=>candidate.id===link.itemId);
+    const child = index.byId.get(link.itemId);
     const binding = readFlag(child,"installedUpgrade");
     if (!child || seen.has(child.id) || child.system?.container !== item.id || binding?.hostItemId !== item.id
       || binding.slotIndex !== link.slotIndex || Number(child.system?.quantity) !== 1) treeConflict("installed-upgrade-link");
@@ -170,21 +170,21 @@ function captureHostData(item, allItems, composition) {
     const childData = plainItemData(child);
     delete childData.flags[MODULE_ID].runtimeItemGraph;
     if ((childData.flags[MODULE_ID].itemUpgrades?.installed ?? []).length
-      || allItems.some(candidate=>candidate.system?.container===child.id)) treeConflict("nested-upgrade-child");
+      || index.childrenByParent.get(clean(child.id))?.some(candidate=>candidate.system?.container===child.id)) treeConflict("nested-upgrade-child");
     nodes.push({...childData,_id:child.id});
     const sourceId = clean(readFlag(child,"gearId"));
     const previous = composition?.upgrades?.find(entry=>entry.sourceId===sourceId && entry.slotIndex===link.slotIndex);
     upgrades.push({instanceKey:previous?.instanceKey ?? `native-upgrade:${child.uuid ?? child.id}`,sourceId,
       slotIndex:link.slotIndex,choices:clone(readFlag(child,"upgradeChoices")) ?? {}});
   }
-  if (allItems.some(child=>readFlag(child,"installedUpgrade")?.hostItemId===item.id && !seen.has(child.id))) treeConflict("orphan-installed-upgrade");
+  if (index.upgradesByHost.get(item.id)?.some(child=>!seen.has(child.id))) treeConflict("orphan-installed-upgrade");
   const weaponMods={version:1,attachments:[],modernizedParts:[]},sourceUuidsByItemId={};
-  for(const child of getRuntimeWeaponModChildren(item,allItems)){
-    const graph=captureRuntimeItemGraph({items:{contents:allItems,get:id=>allItems.find(candidate=>candidate.id===id)}},child);
+  for(const child of getRuntimeWeaponModChildren(item,null,index)){
+    const graph=captureRuntimeItemGraph(item.parent ?? item.actor,child,index);
     for(const node of graph.nodes){
       if(seen.has(node._id) || node._id===item.id || nodes.length>=200)treeConflict("nested-installed-component");
       seen.add(node._id);
-      const childData=plainItemData(allItems.find(candidate=>candidate.id===node._id));delete childData.flags[MODULE_ID].runtimeItemGraph;
+      const childData=plainItemData(index.byId.get(node._id));delete childData.flags[MODULE_ID].runtimeItemGraph;
       nodes.push({...childData,_id:node._id});
     }
     Object.assign(sourceUuidsByItemId,graph.sourceUuidsByItemId);
@@ -193,7 +193,7 @@ function captureHostData(item, allItems, composition) {
     weaponMods[field].push({instanceKey:previous?.instanceKey??`native-weapon-mod:${child.uuid??child.id}`,sourceId,
       ...(field==="attachments"?{mountIds:clone(binding.mountIds)}:{})});
   }
-  if (item.type !== "container" && allItems.some(child=>child.system?.container===item.id && !seen.has(child.id))) treeConflict("ordinary-host-contents");
+  if (item.type !== "container" && index.childrenByParent.get(clean(item.id))?.some(child=>child.system?.container===item.id && !seen.has(child.id))) treeConflict("ordinary-host-contents");
   if (nodes.length > 1) flags.runtimeItemGraph = {version:1,rootId:clean(item.id),nodes,...(Object.keys(sourceUuidsByItemId).length?{sourceUuidsByItemId}:{})};
   flags.storageCapturedHost = true;
   let metadata;
@@ -484,9 +484,9 @@ export class StorageContainerItemService {
       if (partialRoot && typeof actor?.deleteEmbeddedDocuments === "function") {
         try {
           const ids = [];
-          const allItems = itemCollection(actor);
+          const childrenByParent = indexRuntimeItemParents(itemCollection(actor));
           const collect = (parentId) => {
-            for (const child of allItems.filter((item) => clean(item?.system?.container) === parentId)) {
+            for (const child of childrenByParent.get(parentId) ?? []) {
               ids.push(clean(child.id));
               collect(clean(child.id));
             }
@@ -532,23 +532,25 @@ export class StorageContainerItemService {
   }
 
   async #captureItemTree(item,allItems) {
+    const index = indexRuntimeItems(allItems);
     const visit = async (current, ancestors = new Set()) => {
       const base = readPortableStorageContainerSnapshot(current) ?? nativeContainerSnapshot(current);
       const storedState = base.state ?? {};
       const itemId = clean(current.id);
       if (ancestors.has(itemId)) throw new Error("Обнаружен цикл нативных dnd5e-контейнеров.");
       const nextAncestors = new Set(ancestors).add(itemId);
-      const capturedHost = captureHostData(current,allItems,readFlag(current,STORAGE_CONTAINER_MEMBER_FLAG)?.composition ?? storedState.lootgenComposition);
-      const children = allItems.filter((candidate) => clean(candidate?.system?.container) === itemId && !capturedHost.installedIds.has(candidate.id));
+      const capturedHost = captureHostData(current,index,readFlag(current,STORAGE_CONTAINER_MEMBER_FLAG)?.composition ?? storedState.lootgenComposition);
+      const children = index.childrenByParent.get(itemId) ?? [];
       const rows = [];
       for (const child of children) {
+        if (capturedHost.installedIds.has(child.id)) continue;
         if (clean(child?.type) === "container") {
           rows.push(buildStorageContainerRow(await visit(child, nextAncestors), {
             rowId: memberRowId(child)
           }));
           continue;
         }
-        const captured = captureHostData(child,allItems,readFlag(child,STORAGE_CONTAINER_MEMBER_FLAG)?.composition);
+        const captured = captureHostData(child,index,readFlag(child,STORAGE_CONTAINER_MEMBER_FLAG)?.composition);
         const data = captured.data;
         delete data.system.container;
         const quantity = itemQuantity(child);
@@ -622,10 +624,10 @@ export class StorageContainerItemService {
     // Prove the transport can be restored before deleting the source tree.
     await this.prepareItemGraph(snapshot,{actorId:actor.id ?? ""});
     const rootId = clean(item.id);
-    const allItems = itemCollection(actor);
+    const childrenByParent = indexRuntimeItemParents(itemCollection(actor));
     const descendants = [];
     const collect = (parentId) => {
-      for (const child of allItems.filter((candidate) => clean(candidate?.system?.container) === parentId)) {
+      for (const child of childrenByParent.get(parentId) ?? []) {
         collect(clean(child.id));
         descendants.push(clean(child.id));
       }

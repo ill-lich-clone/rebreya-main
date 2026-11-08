@@ -1,4 +1,4 @@
-import { buildPhaseStepKey } from "../../combat/turn-group-rules.js";
+import { buildPhaseStepKey } from "../../combat/turn-group-rules.js?v=1.5.66";
 import { cardActivityRole } from "./activity-role.js";
 import { applyPassiveModifier, routeIncomingPassive } from "./passive-authority.js";
 import { requestCardPassive } from "./selected/lib/sockets.js";

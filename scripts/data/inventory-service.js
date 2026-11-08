@@ -8,7 +8,7 @@ import {
 } from "./inventory-material-quantity.js?v=1.4.377";
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.5.17";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
-import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph, runtimeItemGraphMatchesSource, deleteRuntimeItemGraph, rollbackRuntimeItemGraph } from "./runtime-item-graph.js?v=1.5.18";
+import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph, runtimeItemGraphMatchesSource, deleteRuntimeItemGraph, rollbackRuntimeItemGraph } from "./runtime-item-graph.js?v=1.5.66";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph, transferInventoryGraphNative } from "../application/inventory-graph-transfer.js?v=1.5.18";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.396";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.5.10";

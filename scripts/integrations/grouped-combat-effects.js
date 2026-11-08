@@ -1,6 +1,6 @@
 import { installV14EffectGuards, planV14Expiry, planV14MidiOptionals, planV14RegionEvents } from "./grouped-combat-v14.js";
 import { MODULE_ID } from "../constants.js";
-import { buildPhaseStepKey, combatFlagKey, combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js";
+import { buildPhaseStepKey, combatFlagKey, combatantById, combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
 
 const GUARDED = Symbol.for("rebreya-main.groupedCombatProviderGuard");
 const KNOWN = { dae: "13.0.27", "times-up": "13.1.9", "midi-qol": "13.0.61", effectmacro: "13.0.4" };
@@ -96,7 +96,7 @@ export function createGroupedCombatEffects(dependencies = {}) {
       const combat = game.combats?.get?.(combatId), state = combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
       const receipt = state?.receipts?.[stepKey];
       const allowed = { "turn-start": "onTurnStart", "turn-end": "onTurnEnd", "each-turn": "onEachTurn", "round-start": "onRoundStart", "round-end": "onRoundEnd", "combat-start": "onCombatStart", "combat-end": "onCombatEnd" };
-      const member = combatantsOf(combat).find(c => c.id === receipt?.combatantId);
+      const member = combatantById(combat, receipt?.combatantId);
       if (state?.mode !== "active" || receipt?.status !== "running" || receipt.provider !== "effectmacro" || allowed[receipt.phase] !== hook || !macro.utils.isExecutor(member?.actor)) return { status: "cancelled" };
       const effect = applicableEffects(member.actor).find(e => e.uuid === receipt.effectUuid);
       if (!effect || !macro.utils.hasMacro(effect, hook)) return { status: "completed" };
@@ -148,7 +148,8 @@ export function createGroupedCombatEffects(dependencies = {}) {
   }
 
   function plan(combat, phase, state = combat.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG]) {
-    const steps = [], combatants = combatantsOf(combat), selected = combatants.filter(c => phase.memberIds.includes(c.id));
+    const steps = [], combatants = combatantsOf(combat), memberIds = new Set(phase.memberIds);
+    const selected = combatants.filter(c => memberIds.has(c.id));
     const add = (provider, c, id, run, effect = null) => steps.push({
       key: buildPhaseStepKey(combat.id, phase, c?.id ?? "all", provider, id), provider, combatantId: c?.id ?? null, effectUuid: effect?.uuid ?? null,
       actorUuid: c?.actor?.uuid ?? null, actorSourceId: c?.token?.baseActor?.id ?? null,
@@ -161,12 +162,12 @@ export function createGroupedCombatEffects(dependencies = {}) {
     const start = phase.kind === "turn-start", end = phase.kind === "turn-end";
     const expiring = new Set();
     if (!modern() && (start || end)) {
+      const currentIndex = combat.turns?.findIndex(c => memberIds.has(c.id)) ?? 0;
       for (const target of combatants) for (const effect of applicableEffects(target.actor)) {
         const special = effect.flags?.dae?.specialDuration ?? [];
-        const own = selected.some(c => c.id === target.id);
+        const own = memberIds.has(target.id);
         const source = selected.some(c => effect.origin === c.actor?.uuid || effect.origin?.startsWith(`${c.actor?.uuid}.`));
         const createdRound = effect.duration?.startRound ?? -1, createdTurn = effect.duration?.startTurn ?? -1;
-        const currentIndex = combat.turns?.findIndex(c => phase.memberIds.includes(c.id)) ?? 0;
         const existedAtStart = createdRound < phase.round || (createdRound === phase.round && createdTurn < currentIndex);
         const expires = (own && start && special.includes("turnStart")) || (own && end && existedAtStart && special.includes("turnEnd"))
           || (source && start && special.includes("turnStartSource")) || (source && end && existedAtStart && special.includes("turnEndSource"))
@@ -225,7 +226,8 @@ export function createGroupedCombatEffects(dependencies = {}) {
       if (worldCardPhase) for (const member of selected) worldCardPhase(combat, phase, member, add);
     }
     if (dependencies.planRebreyaPhase) {
-      for (const step of dependencies.planRebreyaPhase(combat, phase)) add("rebreya", combatants.find(c => c.id === step.combatantId), step.id, step.run);
+      const byId = new Map(combatants.map(c => [c.id, c]));
+      for (const step of dependencies.planRebreyaPhase(combat, phase)) add("rebreya", byId.get(step.combatantId), step.id, step.run);
     } else add("rebreya", null, "automation", () => runRebreyaPhase(combat, phase));
     return steps;
   }

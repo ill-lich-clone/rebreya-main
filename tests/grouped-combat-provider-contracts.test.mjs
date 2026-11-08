@@ -21,6 +21,17 @@ test("every group member starts at entry and ends only at exit, with awaited ind
   for (const step of api.plan(combat, { kind: "turn-end", round: 1, groupId: "g", memberIds: ["a", "b", "c"] })) await step.run();
   assert.deepEqual(calls.filter(c => c[1] === "endTurn").map(c => c[0]), ["a", "b", "c"]);
 });
+
+test("legacy effect planning finds the phase's native turn once", () => {
+  const { combat, actors, api } = environment();
+  actors[0].appliedEffects.push(...Array.from({ length: 20 }, (_, i) => effect(`extra-${i}`)));
+  const turns = combat.turns;
+  let reads = 0;
+  Object.defineProperty(combat, "turns", { get() { reads++; return turns; } });
+  const steps = api.plan(combat, { kind: "turn-end", round: 1, groupId: "g", memberIds: ["b", "c"] });
+  assert.deepEqual(steps.filter(step => step.provider === "dae").map(step => step.combatantId), ["b", "c"]);
+  assert.equal(reads, 1);
+});
 test("source durations expire on the source member, Any repeats include suppressed effects, native guards leave ordinary combat intact", async () => {
   const { calls, combat, actors, game } = environment();
   const source = effect("source", { dae: { specialDuration: ["turnStartSource"] } }); source.origin = "Actor.b.Item.spell";

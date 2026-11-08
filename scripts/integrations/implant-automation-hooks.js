@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.61";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.66";
 import { renderImplantItemSheetActions } from "./implant-item-sheet.js";
 
 const registeredHookSets = new WeakSet();

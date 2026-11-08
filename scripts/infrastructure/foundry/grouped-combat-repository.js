@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../../constants.js";
-import { GROUPED_COMBAT_FLAG, combatantsOf } from "../../combat/turn-group-rules.js";
+import { GROUPED_COMBAT_FLAG, combatantsOf } from "../../combat/turn-group-rules.js?v=1.5.66";
 
 export const GROUPED_NATIVE_WRITES = new WeakSet();
 const stateOf = combat => combat?.getFlag?.(MODULE_ID, GROUPED_COMBAT_FLAG) ?? combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG] ?? null;

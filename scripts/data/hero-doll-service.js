@@ -8,7 +8,7 @@ import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-d
 import { ItemInstanceError, planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { normalizeHeroDollPresets, captureHeroDollPresetSlots, heroDollPresetModified } from "./hero-doll-presets.js?v=1.4.364-hero-presets";
 import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.5.18";
-import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.5.18";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.5.66";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildHeldItemWornUpdate, buildHeldItemHandUpdate, buildHeldItemReleaseHandUpdate, canHoldItemInTwoHands, getItemHeldHands, getOccupiedHandSlots } from "../integrations/held-items.js?v=1.5.29";
 import { readInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";

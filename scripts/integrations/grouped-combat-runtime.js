@@ -1,6 +1,6 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
-import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.61";
+import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.66";
 import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
@@ -81,7 +81,8 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   const usableGroups = combat => {
     const groups = stateOf(combat)?.groups ?? [];
     if (!combat.settings?.skipDefeated) return groups;
-    const live = groups.filter(g => g.memberIds.some(id => combatantsOf(combat).some(c => c.id === id && !c.isDefeated)));
+    const liveIds = new Set(combatantsOf(combat).filter(c => !c.isDefeated).map(c => c.id));
+    const live = groups.filter(g => g.memberIds.some(id => liveIds.has(id)));
     return live.length ? live : groups;
   };
   const requestTransition = (combat, target) => {

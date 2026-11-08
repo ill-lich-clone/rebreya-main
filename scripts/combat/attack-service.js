@@ -3,7 +3,7 @@ import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire } from "./firearm-misfire.js?v=1.5.40";
 import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
 import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.61";
-import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js";
+import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js?v=1.5.66";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.5.23";
 import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.5.23";

@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
-import { buildCombatTurnGroups, planGroupTransition, buildPhaseStepKey, combatantsOf } from "../combat/turn-group-rules.js";
-import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.61";
+import { buildCombatTurnGroups, planGroupTransition, buildPhaseStepKey, combatantsOf, combatantById } from "../combat/turn-group-rules.js?v=1.5.66";
+import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.66";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js";
 
@@ -96,7 +96,7 @@ export class GroupedCombatService {
           if (turn >= 0 && turn !== combat.turn) await this.repository.commitNativePosition(combat, { round: combat.round, turn }, { turnEvents: false, worldTime: { delta: 0 } });
         }
         if (!combat.started) {
-          const group = groups.find(g => !combat.settings?.skipDefeated || g.memberIds.some(id => !combatantsOf(combat).find(c => c.id === id)?.isDefeated)) ?? groups[0];
+          const group = groups.find(g => !combat.settings?.skipDefeated || g.memberIds.some(id => !combatantById(combat, id)?.isDefeated)) ?? groups[0];
           return this.runPipeline(combat, state, planGroupTransition({ current: null }, { round: 1, groupId: group.id }, groups), { round: 1, groupId: group.id }, request.operationId, true);
         }
         if (state.mode === "active") {
@@ -117,20 +117,21 @@ export class GroupedCombatService {
     return this.coordinator.runIdempotent(`grouped-combat:${combat.id}`, request.operationId, async () => {
       const state = this.repository.readState(combat);
       if (!state || !this.isAuthority()) return rejection("forbidden");
-      const liveIds = new Set(combatantsOf(combat).map(c => c.id));
-      state.groups = state.groups.map(g => ({ ...g, memberIds: g.memberIds.filter(id => liveIds.has(id)) })).filter(g => g.memberIds.length);
+      const combatants = combatantsOf(combat);
+      const byId = new Map(combatants.map(c => [c.id, c]));
+      state.groups = state.groups.map(g => ({ ...g, memberIds: g.memberIds.filter(id => byId.has(id)) })).filter(g => g.memberIds.length);
       const active = state.groups.find(g => g.id === state.current?.groupId);
-      const member = combatantsOf(combat).find(c => c.id === active?.memberIds[0]);
+      const member = byId.get(active?.memberIds[0]);
       if (!sender?.isGM && !(active?.memberIds.length === 1 && member?.actor?.type === "character" && member.actor.testUserPermission?.(sender, "OWNER"))) return rejection("forbidden");
       if (state.revision !== request.expectedRevision) return rejection("stale-combat");
       if (state.pendingTransition) return this.recoverPending(combat, state);
       if (state.mode === "blocked") return rejection("combat-blocked", { combatId: combat.id, state });
-      const support = this.effects.inspect(combat.scene, combatantsOf(combat).map(c => c.actor));
+      const support = this.effects.inspect(combat.scene, combatants.map(c => c.actor));
       if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
       const target = { round: request.targetRound, groupId: request.targetGroupId };
       if (!Number.isSafeInteger(target.round) || target.round < 1 || !state.groups.some(g => g.id === target.groupId)) return rejection("invalid-combat-target");
       if (!sender?.isGM) {
-        const groups = state.groups.filter(g => !combat.settings?.skipDefeated || g.memberIds.some(id => combatantsOf(combat).some(c => c.id === id && !c.isDefeated)));
+        const groups = state.groups.filter(g => !combat.settings?.skipDefeated || g.memberIds.some(id => !byId.get(id).isDefeated));
         const next = groups.findIndex(g => g.id === active.id) + 1;
         if (!groups.length || target.groupId !== groups[next % groups.length].id || target.round !== state.current.round + (next === groups.length ? 1 : 0)) return rejection("forbidden");
       }
@@ -144,7 +145,7 @@ export class GroupedCombatService {
           { kind: "round-start", round: target.round, groupId: null, memberIds: all },
           { kind: "each-turn", ...target, memberIds: all }, { kind: "turn-start", ...target, memberIds: incoming.memberIds }];
       } else {
-        const skipped = new Set(combat.settings?.skipDefeated ? state.groups.filter(g => g.memberIds.every(id => combatantsOf(combat).find(c => c.id === id)?.isDefeated)).map(g => g.id) : []);
+        const skipped = new Set(combat.settings?.skipDefeated ? state.groups.filter(g => g.memberIds.every(id => byId.get(id).isDefeated)).map(g => g.id) : []);
         phases = planGroupTransition(state, target, state.groups, skipped);
       }
       return this.runPipeline(combat, state, phases, target, request.operationId);
@@ -170,8 +171,9 @@ export class GroupedCombatService {
       await this.save(combat, state);
       const group = state.groups.find(g => g.id === position.groupId);
       combat.setupTurns?.();
-      let turn = combat.turns.findIndex(c => group?.memberIds.includes(c.id) && (!combat.settings?.skipDefeated || !c.isDefeated));
-      if (turn < 0) turn = combat.turns.findIndex(c => group?.memberIds.includes(c.id));
+      const groupIds = new Set(group?.memberIds);
+      let turn = combat.turns.findIndex(c => groupIds.has(c.id) && (!combat.settings?.skipDefeated || !c.isDefeated));
+      if (turn < 0) turn = combat.turns.findIndex(c => groupIds.has(c.id));
       if (turn < 0) throw new Error("combat-group-unavailable");
       if (pending.begin && !pending.committedPositions.length) await this.repository.beginCombat(combat, { round: position.round, turn });
       else {
@@ -194,15 +196,15 @@ export class GroupedCombatService {
         const liveIds = new Set(combatantsOf(combat).map(c => c.id));
         let memberIds = phase.memberIds.filter(id => liveIds.has(id));
         if (phase.kind === "turn-end" && !phase.legacy) {
-          const started = state.memberStarts[JSON.stringify({ round: phase.round, groupId: phase.groupId })] ?? [];
-          memberIds = memberIds.filter(id => started.includes(id));
+          const started = new Set(state.memberStarts[JSON.stringify({ round: phase.round, groupId: phase.groupId })]);
+          memberIds = memberIds.filter(id => started.has(id));
         }
         const steps = this.effects.plan(combat, { ...phase, memberIds }, state);
         await this.save(combat, state);
         for (const step of steps) {
           if (state.receipts[step.key]?.status === "done") continue;
           if (step.combatantId) {
-            const member = combatantsOf(combat).find(c => c.id === step.combatantId);
+            const member = combatantById(combat, step.combatantId);
             if (!member?.actor || (step.actorUuid && member.actor.uuid !== step.actorUuid) || (step.actorSourceId && member.token?.baseActor?.id !== step.actorSourceId)) {
               state.receipts[step.key] = { status: "done", operationId, reason: "member-unavailable" };
               await this.save(combat, state, { receiptKey: step.key }); continue;

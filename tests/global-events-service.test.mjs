@@ -122,6 +122,18 @@ function eventData(id, name = id) {
   };
 }
 
+test("event scope uses indexed cities without enumerating the list and supports raw arrays", () => {
+  const service = new GlobalEventsService({});
+  const city = { id: "a", regionId: "region", state: "state" };
+  const event = { id: "regional", name: "Regional", scope: { regions: ["region"] } };
+  let scans = 0;
+  const dataset = { cityById: new Map([["a", city]]), get cities() { scans++; return [city]; } };
+  assert.equal(service.eventAppliesToCity(event, "a", dataset), true);
+  assert.equal(service.eventAppliesToCity({ ...event, id: "raw" }, "a", { cities: [city] }), true);
+  assert.equal(service.eventAppliesToCity(event, "missing", dataset), false);
+  assert.equal(scans, 0);
+});
+
 test("global-event writes use one fresh queued repository mutation and preserve concurrent creates", async () => {
   const fixture = createFixture({ holdFirstWrite: true });
   try {

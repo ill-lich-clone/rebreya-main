@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { combatFlagKey, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js";
+import { combatFlagKey, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
 
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
 const eventFor = { "turn-start": "turnStart", "turn-end": "turnEnd", "round-start": "roundStart", "round-end": "roundEnd" };

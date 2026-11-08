@@ -484,6 +484,28 @@ test("removing and restoring a portable container moves its entire item tree", a
   assert.equal(actor.items.contents.length, 4);
 });
 
+test("removing a container does not repeatedly scan unrelated items for each child", async (t) => {
+  const actor = createActor();
+  const [bag, inner, ...children] = await actor.createEmbeddedDocuments("Item", [
+    { _id: "bag", type: "container", name: "Bag", system: { quantity: 1 } },
+    { _id: "inner", type: "container", name: "Inner", system: { quantity: 1, container: "bag" } },
+    ...Array.from({ length: 20 }, (_, i) => ({
+      _id: `child-${i}`, type: "loot", name: `Child ${i}`, system: { quantity: 2, container: "inner" }
+    }))
+  ]);
+  const [unrelated] = await actor.createEmbeddedDocuments("Item", [{ _id: "other", type: "loot", name: "Other", system: { quantity: 1 } }]);
+  let reads = 0;
+  Object.defineProperty(unrelated.system, "container", { get() { reads++; return null; } });
+  const deletion = t.mock.method(actor, "deleteEmbeddedDocuments");
+
+  const receipt = await new StorageContainerItemService().removeItemTree(bag);
+  assert.deepEqual(deletion.mock.calls[0].arguments[1], [...children.map(child => child.id), inner.id, bag.id]);
+  assert.deepEqual(actor.items.contents.map(item => item.id), ["other"]);
+  const snapshotRows = receipt.snapshot.state.manualRows;
+  assert.equal(snapshotRows[0].rowKind, "container");
+  assert.ok(reads <= 4, `unrelated item's parent read ${reads} times`);
+});
+
 test("an ordinary native dnd5e container is captured with all of its live contents", async () => {
   const actor = createActor();
   const [bag] = await actor.createEmbeddedDocuments("Item", [{

@@ -159,12 +159,14 @@ export class EconomyRepository {
       dataset: baseModelForEvents
     }) ?? null;
 
-    this.#model = buildEconomyModel(this.#dataset, {
-      connectionStates,
-      tradeRouteOverrides,
-      statePolicies,
-      globalEventModifiers
-    });
+    this.#model = !globalEventModifiers || globalEventModifiers.enabled === false
+      ? baseModelForEvents
+      : buildEconomyModel(this.#dataset, {
+        connectionStates,
+        tradeRouteOverrides,
+        statePolicies,
+        globalEventModifiers
+      });
     this.#modelRevision += 1;
     this.#routePlanCache = new Map();
     this.#citySnapshotCache = new Map();

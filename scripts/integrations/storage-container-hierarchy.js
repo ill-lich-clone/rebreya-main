@@ -14,7 +14,8 @@ function clone(value) {
 }
 
 function collectionValues(collection) {
-  if (Array.isArray(collection?.contents)) return collection.contents;
+  const contents = collection?.contents;
+  if (Array.isArray(contents)) return contents;
   if (Array.isArray(collection)) return collection;
   if (collection?.values instanceof Function) return Array.from(collection.values());
   if (collection?.[Symbol.iterator] instanceof Function) return Array.from(collection);
@@ -23,26 +24,6 @@ function collectionValues(collection) {
 
 function actorItems(actor) {
   return collectionValues(actor?.items).filter((item) => clean(item?.id));
-}
-
-function cycleFor(item, byId) {
-  const trail = [];
-  const indexes = new Map();
-  let current = item;
-  while (current) {
-    const id = clean(current.id);
-    if (!id) return [];
-    if (indexes.has(id)) return trail.slice(indexes.get(id));
-    indexes.set(id, trail.length);
-    trail.push(current);
-    const parentId = clean(current?.system?.container);
-    current = parentId ? byId.get(parentId) : null;
-  }
-  return [];
-}
-
-function cycleKey(cycle) {
-  return cycle.map((item) => clean(item.id)).sort().join(":");
 }
 
 function proposedParentId(changes = {}) {
@@ -86,18 +67,27 @@ export function planPortableContainerReparent(item, changes = {}) {
 export function planPortableContainerCycleRepairs(actor, { updatedItemId = "" } = {}) {
   const items = actorItems(actor);
   const byId = new Map(items.map((item) => [clean(item.id), item]));
-  const handled = new Set();
+  const visited = new Set();
   const preferredSourceId = clean(updatedItemId);
   const repairs = [];
 
   for (const item of items) {
-    const cycle = cycleFor(item, byId);
-    if (!cycle.length) continue;
-    const key = cycleKey(cycle);
-    if (!key || handled.has(key)) continue;
-    handled.add(key);
+    if (visited.has(clean(item.id))) continue;
+    const trail = [];
+    let current = item;
+    while (current) {
+      const id = clean(current.id);
+      if (visited.has(id)) break;
+      visited.add(id);
+      trail.push(current);
+      current = byId.get(clean(current.system?.container));
+    }
+    if (!current) continue;
+    const cycleStartId = clean(current.id);
+    const cycleStart = trail.findIndex(entry => clean(entry.id) === cycleStartId);
+    if (cycleStart < 0) continue;
 
-    const portable = cycle.filter(isPortableStorageContainerItem);
+    const portable = trail.slice(cycleStart).filter(isPortableStorageContainerItem);
     if (!portable.length) continue;
     const target = portable.find((candidate) => clean(candidate.id) !== preferredSourceId) ?? portable[0];
     repairs.push({ _id: clean(target.id), "system.container": null });
@@ -165,18 +155,27 @@ export async function registerStorageContainerHierarchyHooks({
   if (!Hooks || typeof Hooks.on !== "function") return { registered: false, repaired: 0 };
   if (registeredHookObjects.has(Hooks)) return { registered: false, repaired: 0 };
   registeredHookObjects.add(Hooks);
+  const pendingCreates = new WeakMap();
 
-  const handleChange = (item, changes = {}, options = {}) => {
+  const handleChange = (item, changes = {}, options = {}, created = false) => {
     if (options?.[REPAIR_OPTION] === true) return;
     if (changes && Object.keys(changes).length && !containerChanged(changes)) return;
     const game = gameProvider();
     if (isActiveGm(game) !== true) return;
     const actor = item?.parent?.documentName === "Actor" || item?.parent?.items ? item.parent : item?.actor;
     if (!actor) return;
+    if (created) {
+      if (pendingCreates.has(actor)) return;
+      const batch = {};
+      pendingCreates.set(actor, batch);
+      queueMicrotask(() => {
+        if (pendingCreates.get(actor) === batch) pendingCreates.delete(actor);
+      });
+    } else pendingCreates.delete(actor);
     void queueRepair(actor, clean(item?.id), { notify, logger });
   };
 
-  Hooks.on("createItem", (item, options = {}) => handleChange(item, {}, options));
+  Hooks.on("createItem", (item, options = {}) => handleChange(item, {}, options, true));
   Hooks.on("preUpdateItem", (item, changes = {}, options = {}) => {
     if (options?.[REPAIR_OPTION] === true || !containerChanged(changes)) return;
     const plan = planPortableContainerReparent(item, changes);
@@ -186,7 +185,7 @@ export async function registerStorageContainerHierarchyHooks({
       .catch((error) => logger.error("Rebreya storage container reparent failed.", error));
     return false;
   });
-  Hooks.on("updateItem", handleChange);
+  Hooks.on("updateItem", (item, changes, options) => handleChange(item, changes, options));
 
   const game = gameProvider();
   if (isActiveGm(game) !== true) return { registered: true, repaired: 0 };

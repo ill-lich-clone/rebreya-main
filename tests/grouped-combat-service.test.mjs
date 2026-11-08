@@ -235,12 +235,19 @@ test("losing active GM authority mid-workflow rejects the lifecycle ticket witho
 });
 test("a member removed during another member's awaited workflow is never processed from a stale phase snapshot", { timeout: 2000 }, async () => {
   const e = setup(); await e.start("start"); const state = e.repository.readState(); let release;
+  const combatants = e.combat.combatants;
+  const lookups = [];
+  e.combat.combatants = {
+    get contents() { return combatants; },
+    get(id) { lookups.push(id); return combatants.find(member => member.id === id); }
+  };
   e.setGate(new Promise(resolve => { release = resolve; }));
   const operation = e.service.transition({ combatId: "fight", expectedRevision: state.revision, targetRound: 1, targetGroupId: state.groups[1].id, operationId: "deleted-during-save" }, { sender: { isGM: true } });
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  e.combat.combatants.splice(e.combat.combatants.findIndex(c => c.id === "b"), 1); release();
+  combatants.splice(combatants.findIndex(c => c.id === "b"), 1); release();
   assert.equal((await operation).ok, true);
   assert.equal(e.calls.includes("turn-end:b"), false); assert.equal(e.calls.includes("turn-end:c"), true);
+  assert.ok(lookups.includes("b"));
 });
 
 test("pending group recovery refuses provider drift without replaying a single phase", async () => {

@@ -36,6 +36,24 @@ test("normal next advances an entire group once; ordinary combat delegates; regi
   dispose(); delete globalThis.game;
 });
 
+test("skipping defeated groups reads the combatant collection once per navigation", async (t) => {
+  const e = fixture(), combat = new e.Combat();
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  const previousGame = globalThis.game;
+  t.after(() => { globalThis.game = previousGame; });
+  globalThis.game = { user: { id: "gm", isGM: true } };
+  const members = Array.from({ length: 200 }, (_, i) => ({ id: `c${i}`, isDefeated: i === 1 }));
+  const state = combat.flags["rebreya-main"].groupedCombat;
+  state.current.groupId = "g0";
+  state.groups = members.map((member, i) => ({ id: `g${i}`, memberIds: [member.id] }));
+  let snapshots = 0;
+  combat.combatants = { get contents() { snapshots++; return members; } };
+
+  await combat.nextTurn();
+  assert.equal(e.calls[0].targetGroupId, "g2");
+  assert.equal(snapshots, 1);
+});
+
 test("repeated navigation and a positional update join the pending transition rather than sending stale revisions", async () => {
   const e = fixture(), combat = new e.Combat(); let release;
   const gate = new Promise(resolve => { release = resolve; });
