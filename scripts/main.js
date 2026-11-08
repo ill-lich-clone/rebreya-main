@@ -26,6 +26,7 @@ import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.31";
 import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.11";
 import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.60";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
+import { repairDfredsExhaustionIcons } from "./integrations/dfreds-exhaustion-icons.js?v=1.5.69";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.60";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.61";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
@@ -459,7 +460,7 @@ import {
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js?v=1.5.54";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.5.60";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.5.69";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
@@ -3613,6 +3614,12 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to repair native ammunition compatibility.`, error);
     }
     try {
+      await repairDfredsExhaustionIcons(globalThis.game);
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to repair DFreds exhaustion icons.`, error);
+    }
+    try {
       await this.mapObjectTokenService.syncManagedDocuments();
     }
     catch (error) {
@@ -4035,7 +4042,11 @@ export class RebreyaMainModule {
     }
 
     if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW && isActiveGmClient(game)) {
-      await this.claimLootgenChatRow(message.payload?.lootId, message.payload?.rowId, { quiet: true, fromSocket: true });
+      await this.claimLootgenChatRow(message.payload?.lootId, message.payload?.rowId, {
+        quiet: true,
+        fromSocket: true,
+        ignoreMissing: message.payload?.ignoreMissing === true
+      });
       return;
     }
 
@@ -4073,9 +4084,10 @@ export class RebreyaMainModule {
     }) ?? null;
   }
 
-  async #updateLootgenChatState(lootId, mutator) {
+  async #updateLootgenChatState(lootId, mutator, { ignoreMissing = false } = {}) {
     const message = this.#findLootgenChatMessage(lootId);
     if (!message) {
+      if (ignoreMissing) return { message: null, state: null, changed: false };
       throw new Error("Сообщение с лутом не найдено.");
     }
 
@@ -4241,12 +4253,12 @@ export class RebreyaMainModule {
     }
 
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
-    const lootId = randomID();
+    const lootId = foundry.utils.randomID();
     const appKey = String(options.appKey ?? "");
     const chatRows = [];
 
     for (const [index, row] of rows.entries()) {
-      const rowId = randomID();
+      const rowId = foundry.utils.randomID();
       const rowIndex = Number.isFinite(Number(row.rowIndex)) ? Number(row.rowIndex) : index;
       const itemData = await this.inventoryService.buildLootgenChatItemData(row, {
         lootId,
@@ -4611,7 +4623,7 @@ export class RebreyaMainModule {
     return result.changed;
   }
 
-  async claimLootgenChatRow(lootId, rowId, { quiet = false, fromSocket = false } = {}) {
+  async claimLootgenChatRow(lootId, rowId, { quiet = false, fromSocket = false, ignoreMissing = false } = {}) {
     const safeLootId = String(lootId ?? "").trim();
     const safeRowId = String(rowId ?? "").trim();
     if (!safeLootId || !safeRowId) {
@@ -4620,7 +4632,11 @@ export class RebreyaMainModule {
 
     if (!game.user?.isGM) {
       if (!fromSocket) {
-        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ROW, { lootId: safeLootId, rowId: safeRowId });
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ROW, {
+          lootId: safeLootId,
+          rowId: safeRowId,
+          ...(ignoreMissing ? { ignoreMissing: true } : {})
+        });
       }
       return true;
     }
@@ -4639,7 +4655,7 @@ export class RebreyaMainModule {
       row.claimed = true;
       claimedRow = row;
       return true;
-    });
+    }, { ignoreMissing });
 
     if (!result.changed || !claimedRow) {
       return false;
@@ -4706,7 +4722,7 @@ export class RebreyaMainModule {
       return false;
     }
 
-    const result = await this.claimLootgenChatRow(claim.lootId, claim.rowId, { quiet: true });
+    const result = await this.claimLootgenChatRow(claim.lootId, claim.rowId, { quiet: true, ignoreMissing: true });
     try {
       await item.unsetFlag(MODULE_ID, "lootgenChat");
     }
@@ -7680,7 +7696,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.5.60");
+      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.5.69");
       let app = null;
 
       if (!viewer && !newWindow && !templateUuid) {

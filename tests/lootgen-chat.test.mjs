@@ -313,6 +313,7 @@ test("lootgen chat self button creates the row item on the user's character and 
       itemData: {
         name: "Test Relic",
         type: "loot",
+        flags: { "rebreya-main": { lootgenChat: { lootId: "loot-1", rowId: "row-1" }, retained: true } },
         system: {
           quantity: 1
         }
@@ -359,6 +360,8 @@ test("lootgen chat self button creates the row item on the user's character and 
     assert.equal(created.length, 1);
     assert.equal(created[0].type, "Item");
     assert.equal(created[0].documents[0].name, "Test Relic");
+    assert.deepEqual(created[0].documents[0].flags["rebreya-main"], { retained: true });
+    assert.equal(state.rows[0].itemData.flags["rebreya-main"].lootgenChat.lootId, "loot-1");
     assert.equal(created[0].options["rebreya-main"].skipLootgenChatAutoClaim, true);
   }
   finally {

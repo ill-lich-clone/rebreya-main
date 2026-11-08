@@ -1,7 +1,7 @@
 import { getLootgenContainerSummary } from "./lootgen-container-preview.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { resolveLootgenItemValue as resolveLegacyItemValue } from "../data/item-value.js?v=1.4.393";
-import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.5.60";
+import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.5.69";
 import {
   buildLootgenRowIdentity,
   normalizeBrokenEquipmentChance,
@@ -255,7 +255,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   constructor(moduleApi, options = {}) {
     super(options);
     this.moduleApi = moduleApi;
-    this.appKey = String(options.appKey ?? randomID());
+    this.appKey = String(options.appKey ?? foundry.utils.randomID());
     this.viewer = Boolean(options.viewer);
     this.rankMin = 0;
     this.rankMax = 4;
@@ -532,7 +532,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     const promise=(async()=>{
       if(form.enableUpgrades || form.enableFilledContainers){
-        if(this.pendingPreparation?.key!==key)this.pendingPreparation={key,operationId:randomID()};
+        if(this.pendingPreparation?.key!==key)this.pendingPreparation={key,operationId:foundry.utils.randomID()};
         const result=await this.moduleApi.prepareLootgenGeneratedResult(form,{operationId:this.pendingPreparation.operationId});
         this.generated=this.#projectPreparedResult(result);
         this.chatLootId=result.lootId;
@@ -540,7 +540,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return;
       }
       this.generated = await this.moduleApi.lootgenSourceCatalog.generate(form, {
-      batchId: randomID(),
+      batchId: foundry.utils.randomID(),
       generatedAt: new Intl.DateTimeFormat("ru-RU", {dateStyle:"short",timeStyle:"medium"}).format(new Date())
     });
     this.chatLootId = "";
@@ -645,7 +645,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #claimPreparedResult(action,execute) {
     const lootId=this.generated.lootId,key=`${lootId}:${action}`;
-    const claimId=this.pendingPreparedClaims.get(key)??randomID();this.pendingPreparedClaims.set(key,claimId);
+    const claimId=this.pendingPreparedClaims.get(key)??foundry.utils.randomID();this.pendingPreparedClaims.set(key,claimId);
     try{
       const result=await execute(claimId);
       this.pendingPreparedClaims.delete(key);return result;

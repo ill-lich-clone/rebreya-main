@@ -215,6 +215,7 @@ async function claimLootgenRowToSelf(message, lootId, rowId) {
     return api.claimLootgenChatRowToCharacter(lootId,rowId,actor.uuid);
   }
 
+  if (itemData.flags?.[MODULE_ID]) delete itemData.flags[MODULE_ID].lootgenChat;
   await actor.createEmbeddedDocuments("Item", [itemData], {
     [MODULE_ID]: {
       skipLootgenChatAutoClaim: true

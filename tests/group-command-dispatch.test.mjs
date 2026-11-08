@@ -129,6 +129,7 @@ function installFixture({ currentUserId = "gm-a", includeGroupB = false } = {}) 
   globalThis.foundry = {
     utils: {
       deepClone: clone,
+      escapeHTML: value => String(value),
       mergeObject: (base, update) => ({ ...clone(base), ...clone(update) })
     }
   };
@@ -2420,6 +2421,66 @@ test("typed Lootgen ingress validates and authorizes the exact group batch", asy
     assert.equal(resultFor(fixture, invalid.requestId)?.error?.code, "invalid-payload");
   }
   finally {
+    fixture.restore();
+  }
+});
+
+test("automatic Lootgen item claim clears stale links and keeps active and explicit claims distinct", async () => {
+  const fixture = installFixture();
+  const globals = installCombatStatusGlobals();
+  const claim = { lootId: "loot", rowId: "row" };
+  const removed = [];
+  const deleted = [];
+  const item = {
+    parent: new globals.Actor(),
+    getFlag: () => claim,
+    unsetFlag: async (...args) => removed.push(args)
+  };
+  item.parent.getFlag = () => false;
+  const api = new RebreyaMainModule();
+  api.inventoryService.deleteLootgenChatItem = async (uuid) => deleted.push(uuid);
+  const state = { ...claim, createdBy: fixture.users.gmA.id, rows: [{ ...claim, itemUuid: "Item.temporary" }] };
+  try {
+    assert.equal(await api.handleLootgenChatItemCreated(item), false);
+    assert.deepEqual(removed, [[MODULE_ID, "lootgenChat"]]);
+    assert.deepEqual(deleted, []);
+    await assert.rejects(api.claimLootgenChatRow(claim.lootId, claim.rowId), /Сообщение с лутом не найдено/u);
+    game.user = fixture.users.playerA;
+    await api.handleLootgenChatItemCreated(item);
+    const { message: request } = fixture.emitted.at(-1);
+    assert.deepEqual(request.payload, { ...claim, ignoreMissing: true });
+    game.user = fixture.users.gmA;
+    await api.handleSocketMessage(request, fixture.users.playerA.id);
+    game.messages.contents.push({
+      author: fixture.users.gmA,
+      getFlag: () => state,
+      async update(patch) { Object.assign(state, patch[`flags.${MODULE_ID}.lootgenChat`]); }
+    });
+    assert.equal(await api.handleLootgenChatItemCreated(item), true);
+    assert.equal(state.rows[0].claimed, true);
+    assert.deepEqual(deleted, ["Item.temporary"]);
+    assert.equal(removed.length, 3);
+  } finally {
+    globals.restore();
+    fixture.restore();
+  }
+});
+
+test("Lootgen publishes a legacy chat result without a global randomID", async () => {
+  const fixture = installFixture();
+  const previousChat = globalThis.ChatMessage;
+  let sequence = 0;
+  foundry.utils.randomID = () => `id-${++sequence}`;
+  globalThis.ChatMessage = { getSpeaker: () => ({}), create: async () => ({ id: "message" }) };
+  try {
+    const api = new RebreyaMainModule();
+    api.inventoryService.buildLootgenChatItemData = async row => ({ name: row.name, type: "loot" });
+    const result = await api.createLootgenChatMessage({ rows: [{ name: "Loot" }] });
+    assert.equal(result.lootId, "id-1");
+    assert.equal(result.rows[0].rowId, "id-2");
+  } finally {
+    if (previousChat === undefined) delete globalThis.ChatMessage;
+    else globalThis.ChatMessage = previousChat;
     fixture.restore();
   }
 });

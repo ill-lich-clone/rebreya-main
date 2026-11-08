@@ -21,10 +21,10 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.68");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.68.js"]);
+  assert.equal(manifest.version, "1.5.69");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.69.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.68.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.69.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -144,8 +144,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.68");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.68.js"]);
+  assert.equal(manifest.version, "1.5.69");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.69.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -155,7 +155,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
 test("Lootgen window import uses the current template editing cache version", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /lootgen-app\.js\?v=1\.5\.60/u);
+  assert.match(entrypointSource, /lootgen-app\.js\?v=1\.5\.69/u);
   assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.65";/u);
 });
 
@@ -375,6 +375,8 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.5.68",
     "integrations/inventory-sync.js?v=1.5.44",
+    "ui/lootgen-chat.js?v=1.5.69",
+    "integrations/dfreds-exhaustion-icons.js?v=1.5.69",
     "data/gear-compendium.js?v=1.5.31",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.5.48",
@@ -430,7 +432,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /import\("\.\/ui\/lootgen-app\.js\?v=1\.5\.60"\)/u
+    /import\("\.\/ui\/lootgen-app\.js\?v=1\.5\.69"\)/u
   );
   assert.match(
     canonicalSource,
@@ -450,7 +452,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.68.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.69.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
