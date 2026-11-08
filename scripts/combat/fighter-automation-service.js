@@ -1,15 +1,17 @@
 import { CLASS_FEATURES_COMPENDIUM_NAME, CLASSES_COMPENDIUM_NAME, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
-import { whirlwindEffectTargets } from "./whirlwind-attack.js?v=1.5.1";
+import { isWhirlwindActivity, markDamageRollTarget, markWhirlwindDamageRolls, whirlwindEffectTargets } from "./whirlwind-attack.js?v=1.5.70";
 import {
   getClassStartingEquipmentConfig,
   getClassStartingEquipmentConfigBySourceType,
   getClassStartingEquipmentPackage,
   isClassStartingEquipmentPackageSourceType
 } from "../data/class-starting-equipment.js";
-import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
+import { fighterSecondWindUsesMax, getFighterManeuverAutomation } from "../data/fighter-automation.js?v=1.5.70";
+import { FIGHTER_MANEUVER_COMMAND, SECOND_WIND_COMMAND, classCombatCardOwned, reserveClassCombatOperation, resolveClassCombatHit } from "../infrastructure/foundry/class-combat-command.js?v=1.5.70";
+import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
 
-const EFFECT_MODE_OVERRIDE = 5;
 const LAST_ATTACK_MAX_AGE_MS = 120000;
+const SUBSEQUENT_ATTACK_MANEUVERS = new Set(["атака с финтом", "быстрый бросок", "готовность", "ответный удар", "удар командующего", "широкая атака"]);
 const BLOODIED_STATUS_IDS = new Set(["bloodied", "rebreya-bloodied"]);
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const REBREYA_CLASS_IDENTIFIERS = new Set([
@@ -228,10 +230,16 @@ function resolveActorFromTarget(target) {
     ?? null;
 }
 
-function targetActorsFromWorkflow(workflow) {
-  return (whirlwindEffectTargets(workflow) ?? collectionValues(workflow?.hitTargets ?? workflow?.targets))
-    .map(resolveActorFromTarget)
-    .filter((actor) => actor instanceof Actor);
+function attackHitTargets(workflow) {
+  return whirlwindEffectTargets(workflow)
+    ?? [...collectionValues(workflow?.hitTargets), ...collectionValues(workflow?.hitTargetsEC)];
+}
+
+function isWeaponWorkflow(workflow) {
+  const item = workflow?.item ?? workflow?.activity?.item;
+  if (workflow?.activity && workflow.activity.type !== "attack" && !isWhirlwindActivity(workflow.activity)) return false;
+  if (!workflow?.attackRoll || workflow.attackRoll._evaluated === false) return false;
+  return item?.type === "weapon" || /(?:^|-)unarmed-strike$/u.test(cleanText(item?.system?.identifier));
 }
 
 function defaultDamageTypeFromWorkflow(workflow) {
@@ -241,7 +249,7 @@ function defaultDamageTypeFromWorkflow(workflow) {
     return detailedType;
   }
 
-  const itemType = cleanText(workflow?.item?.system?.damage?.base?.types?.[0]);
+  const itemType = cleanText(collectionValues(workflow?.item?.system?.damage?.base?.types)[0]);
   if (itemType) {
     return itemType;
   }
@@ -275,6 +283,11 @@ function multiattackChoiceFromItem(item) {
   return FIGHTER_MULTIATTACK_CHOICES.find((choice) => (
     choice.featureId === rawId || normalizeText(choice.name) === normalizeText(item?.name)
   )) ?? null;
+}
+
+function isSuperiorTechnique(item) {
+  return rawFeatureId(itemFeatureId(item)) === "superior-technique"
+    || ["боевой стиль превосходная техника", "превосходная техника"].includes(normalizeText(item?.name));
 }
 
 function isSecondWindRecovery(recovery) {
@@ -326,7 +339,7 @@ function fighterManeuverAutomationFromActivity(activity) {
     return directAutomation;
   }
 
-  if (!isFighterManeuverItem(activity?.item)) {
+  if (!isFighterManeuverActivityDocument(activity)) {
     return {};
   }
 
@@ -401,8 +414,13 @@ export class FighterAutomationService {
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi;
     this._lastAttacks = new Map();
+    this._maneuverUses = new WeakSet();
+    this._pendingManeuvers = new Map();
+    this._usedAttackWorkflows = new WeakSet();
+    this._seenAttackWorkflows = new WeakSet();
     this._ironWillTurnPrompts = new Set();
     this._ironWillNextSavePending = new Set();
+    this._secondWindPending = new Set();
     this._classAdvancementSourcesPromise = null;
     this._repairActorPromises = new Map();
     this._options = options;
@@ -419,6 +437,10 @@ export class FighterAutomationService {
 
     if (this.#isFighterStartingEquipmentPackageItem(item)) {
       return this.#expandStartingEquipmentPackageItem(item);
+    }
+
+    if (isSuperiorTechnique(item) || featureIdMatches(item, FIGHTER_DOMINANCE_FEATURE_ID)) {
+      return this.handleDominanceItemChange(item, userId);
     }
 
     if (!this.#isFighterClassItem(item)) {
@@ -456,34 +478,51 @@ export class FighterAutomationService {
     return true;
   }
 
+  async handleDominanceItemChange(item, userId = "") {
+    if (!isSuperiorTechnique(item) && !featureIdMatches(item, FIGHTER_DOMINANCE_FEATURE_ID)) return false;
+    if (userId && game.user?.id && userId !== game.user.id) return false;
+    const actor = item?.actor ?? item?.parent;
+    if (!(actor instanceof Actor) || !this.#canPrompt(actor)) return false;
+    return this.#repairDominancePool(actor);
+  }
+
   applyMidiRollComplete(workflow) {
     const actor = workflow?.actor;
     if (!(actor instanceof Actor)) {
       return true;
     }
 
-    if (this.#isFighterManeuverWorkflow(workflow)) {
+    if (this.#isFighterManeuverWorkflow(workflow) || !isWeaponWorkflow(workflow)) {
       return true;
     }
+    if (this._seenAttackWorkflows.has(workflow)) return true;
+    this._seenAttackWorkflows.add(workflow);
 
-    const targets = targetActorsFromWorkflow(workflow);
+    const targets = workflow.isFumble === true ? [] : attackHitTargets(workflow)
+      .filter(target => resolveActorFromTarget(target) instanceof Actor);
+    const actorKey = this.#actorKey(actor);
+    const pending = this._pendingManeuvers.get(actorKey);
+    if (!targets.length && pending?.selected
+      && collectionValues(workflow.targets).some(entry => this.#sameManeuverTarget(entry, pending.selected))) {
+      this._pendingManeuvers.delete(actorKey);
+    }
     if (!targets.length) {
+      this._lastAttacks.delete(actorKey);
       return true;
     }
 
-    this._lastAttacks.set(this.#actorKey(actor), {
+    this._lastAttacks.set(actorKey, {
       targets,
+      workflow,
       damageType: defaultDamageTypeFromWorkflow(workflow),
       sourceItemUuid: workflow?.item?.uuid,
       timestamp: Date.now()
     });
+    if (this._lastAttacks.size > 256) this._lastAttacks.delete(this._lastAttacks.keys().next().value);
     return true;
   }
 
   async applyDnd5ePostUseActivity(activity, usageConfig, results) {
-    void usageConfig;
-    void results;
-
     const actor = activity?.actor ?? activity?.item?.actor;
     if (!(actor instanceof Actor)) {
       return true;
@@ -498,15 +537,43 @@ export class FighterAutomationService {
     }
 
     if (automation === "fighter-dominance-maneuver" || fighterAutomation?.kind === "maneuver") {
-      await this.#applyManeuver(actor, activity, fighterAutomation, results);
+      const receipt = results?.message ?? results;
+      if (receipt && typeof receipt === "object") {
+        if (this._maneuverUses.has(receipt)) return true;
+        this._maneuverUses.add(receipt);
+      }
+      await this.#applyManeuver(actor, activity, fighterAutomation, results, usageConfig);
     }
 
     return true;
   }
 
+  prepareDnd5eManeuverUse(activity, usageConfig = {}) {
+    const automation = fighterManeuverAutomationFromActivity(activity);
+    if (automation.kind !== "maneuver") return true;
+    if (automation.key === "точная атака") {
+      globalThis.ui?.notifications?.warn("Точная атака: выберите кость доминирования при броске атаки оружием.");
+      return false;
+    }
+    const actor = activity.actor ?? activity.item?.actor;
+    const selected = this.#selectedManeuverTarget(actor, {}, usageConfig);
+    const attack = this.#lastAttack(actor);
+    const pending = SUBSEQUENT_ATTACK_MANEUVERS.has(automation.key);
+    if (pending && !selected && ["атака с финтом", "удар командующего"].includes(automation.key)) {
+      globalThis.ui?.notifications?.warn("Воинский приём: выберите цель.");
+      return false;
+    }
+    if (!automation.extraDamage || pending) return true;
+    if (this.#resolveManeuverTarget(actor, selected, attack, automation) && !this.#attackUsedForManeuver(attack?.workflow)) return true;
+    globalThis.ui?.notifications?.warn("Воинский приём: требуется подходящее попадание без другого приёма.");
+    return false;
+  }
+
   async handleCombatTurnChange(combat, updateData = {}) {
+    const activeGm = getActiveGm(game);
+    if (activeGm && activeGm.id !== game.user?.id) return true;
     const actor = this.#resolveCombatTurnActor(combat, updateData);
-    if (!(actor instanceof Actor)) {
+    if (!(actor instanceof Actor) || !this.#canPrompt(actor)) {
       return true;
     }
 
@@ -518,14 +585,26 @@ export class FighterAutomationService {
       return true;
     }
 
-    const turnKey = `${updateData?.round ?? combat?.round ?? 0}:${updateData?.turn ?? combat?.turn ?? 0}:${this.#actorKey(actor)}:iron-will`;
+    const turnKey = `${combat?.id ?? ""}:${updateData?.round ?? combat?.round ?? 0}:${updateData?.turn ?? combat?.turn ?? 0}:${this.#actorKey(actor)}`;
     if (this._ironWillTurnPrompts.has(turnKey)) {
       return true;
     }
     this._ironWillTurnPrompts.add(turnKey);
+    if (this._ironWillTurnPrompts.size > 256) {
+      this._ironWillTurnPrompts.delete(this._ironWillTurnPrompts.values().next().value);
+    }
 
     const secondWind = this.#findSecondWind(actor);
     if (!secondWind) {
+      return true;
+    }
+
+    const owners = collectionValues(game.users)
+      .filter(user => user.active && !user.isGM && actor.testUserPermission?.(user, "OWNER"))
+      .map(user => user.id).sort();
+    if (owners.length && activeGm && this.moduleApi?.reactionQueueService?.promptDecision
+      && typeof this._options.confirmIronWillSecondWind !== "function") {
+      await this.#useSecondWind(actor, secondWind, { ownerUserIds: owners }, combat);
       return true;
     }
 
@@ -536,9 +615,22 @@ export class FighterAutomationService {
         die: "d6",
         maxDiceAbility: "con",
         minDice: 1
-      });
+      }, combat);
     }
 
+    return true;
+  }
+
+  async handleCombatTurnEnd(combat, previous = {}) {
+    const activeGm = getActiveGm(game);
+    if (activeGm && activeGm.id !== game.user?.id) return true;
+    const actor = this.#resolveCombatTurnActor(combat, previous);
+    if (!(actor instanceof Actor) || !this.#canPrompt(actor)) return true;
+    const effect = this.#findIronWillNextSaveEffect(actor);
+    const automation = readDocumentFlag(effect, "fighterAutomation");
+    if (!automation || !Object.hasOwn(automation, "createdTurn")) return true;
+    const turn = this.#combatTurnKey({ id: combat.id, round: previous.round, turn: previous.turn });
+    if (automation.createdTurn !== turn) await this.#consumeIronWillNextSave(actor);
     return true;
   }
 
@@ -610,6 +702,7 @@ export class FighterAutomationService {
       await this.#ensureSecondWindResource(actor, secondWind, { render: false });
     }
 
+    await this.#repairDominancePool(actor);
     await this.#repairManeuverSections(actor);
     await this.#repairStartingEquipmentContainerLinks(actor);
     return true;
@@ -684,17 +777,100 @@ export class FighterAutomationService {
     return true;
   }
 
-  async #applyManeuver(actor, activity, fighterAutomation = {}, results = {}) {
+  async #applyManeuver(actor, activity, fighterAutomation = {}, results = {}, usageConfig = {}) {
+    const key = fighterAutomation.key ?? normalizeText(activity?.item?.name ?? activity?.name);
+    if (key === "точная атака") return false;
+    const lastAttack = this.#lastAttack(actor);
+    const selected = this.#selectedManeuverTarget(actor, results, usageConfig);
+    const target = this.#resolveManeuverTarget(actor, selected, lastAttack, fighterAutomation);
+    const hasDamage = Boolean(fighterAutomation?.extraDamage?.formula);
+    if (!target && hasDamage && !SUBSEQUENT_ATTACK_MANEUVERS.has(key)) return false;
+    if (target && lastAttack && this.#attackUsedForManeuver(lastAttack.workflow)) return false;
+
     if ((await this.#consumeDominanceDieIfNeeded(actor, activity, results)) === false) {
       return false;
     }
 
-    const lastAttack = this.#lastAttack(actor);
-    const target = this.#resolveManeuverTarget(lastAttack, actor);
-    const item = activity?.item;
+    if (!target && hasDamage) {
+      const ally = key === "удар командующего" ? resolveActorFromTarget(selected) : null;
+      if (key === "удар командующего" && !ally) return false;
+      const timestamp = Date.now();
+      const turn = this.#combatTurnKey(game.combat);
+      if (ally) {
+        await actor.update({ [`flags.${MODULE_ID}.fighterCommanderOrder`]: {
+          id: results?.message?.id ?? createDocumentId(), allyActorUuid: ally.uuid,
+          allyTokenUuid: selected.document?.uuid ?? selected.uuid ?? "", timestamp, turn
+        } });
+      }
+      else {
+        this._pendingManeuvers.set(this.#actorKey(actor), {
+          key, actor, selected, formula: fighterAutomation.extraDamage.formula, timestamp, turn
+        });
+        if (this._pendingManeuvers.size > 128) this._pendingManeuvers.delete(this._pendingManeuvers.keys().next().value);
+      }
+      await this.#postManeuverChat(actor, activity, fighterAutomation, resolveActorFromTarget(selected));
+      return true;
+    }
 
-    if (target && fighterAutomation?.extraDamage?.formula) {
-      await this.#applyDamage(target, fighterAutomation.extraDamage.formula, cleanText(lastAttack?.damageType), {
+    if (target && lastAttack) this._usedAttackWorkflows.add(lastAttack.workflow);
+    if (target && !game.user?.isGM && target.isOwner === false) {
+      const hit = lastAttack?.targets.find(entry => this.#isSameActor(resolveActorFromTarget(entry), target)
+        && (!selected || this.#sameManeuverTarget(entry, selected)));
+      const targetTokenUuid = hit?.document?.uuid ?? hit?.uuid;
+      const attackId = lastAttack?.workflow?.chatCard?.id ?? lastAttack?.workflow?.itemCardId;
+      const maneuverId = results?.message?.id;
+      if (!attackId || !maneuverId || !targetTokenUuid || !this.moduleApi?.socketCommandBus?.request) {
+        globalThis.ui?.notifications?.warn("Воинский приём: мастер должен подтвердить попадание по карточке атаки.");
+        return false;
+      }
+      const disadvantage = Boolean(fighterAutomation.saveAbility && this.#hasIronWillNextSave(actor)
+        && await this.#confirmIronWillDisadvantage(actor, target));
+      await this.moduleApi.socketCommandBus.request(FIGHTER_MANEUVER_COMMAND, {
+        attackId, maneuverId, targetTokenUuid, disadvantage
+      });
+    }
+    else if (target) {
+      await this.#applyConfirmedManeuver(actor, target, activity, fighterAutomation, lastAttack?.damageType);
+    }
+    await this.#postManeuverChat(actor, activity, fighterAutomation, target);
+    return true;
+  }
+
+  async applyRemoteManeuver(payload, { sender } = {}) {
+    const hit = await resolveClassCombatHit(payload, { sender });
+    const message = game.messages?.get?.(payload.maneuverId);
+    const item = message?.getAssociatedItem?.();
+    if (!hit || !classCombatCardOwned(message, sender) || item?.actor?.uuid !== hit.actor.uuid || !isFighterManeuverItem(item)) {
+      throw new Error("Воинский приём: карточка применения или цель не подтверждена.");
+    }
+    const resource = this.#findDominanceItem(hit.actor);
+    const automation = getFighterManeuverAutomation(item.name, FIGHTER_CLASS_IDENTIFIER);
+    if (!resource || !this.#messageHasConsumedItemUse({ message }, documentId(resource))
+      || (!automation.extraDamage && !automation.status) || SUBSEQUENT_ATTACK_MANEUVERS.has(automation.key)) {
+      throw new Error("Воинский приём: расход или вид приёма не подтверждён.");
+    }
+    const { receipt } = await reserveClassCombatOperation("fighter", hit, item, message.id);
+    if (!receipt) return { applied: false };
+    const type = defaultDamageTypeFromWorkflow({ item: hit.item });
+    await this.#applyConfirmedManeuver(hit.actor, hit.target, { item }, automation, type, payload.disadvantage);
+    return { applied: true };
+  }
+
+  async applyRemoteSecondWind(payload, { sender } = {}) {
+    const actor = await globalThis.fromUuid?.(payload.actorUuid);
+    if (!(actor instanceof Actor) || !sender || !actor.testUserPermission?.(sender, "OWNER")
+      || payload.turn !== this.#combatTurnKey(game.combat)) return { applied: false };
+    const item = this.#findSecondWind(actor);
+    if (!item) return { applied: false };
+    const applied = await this.#useSecondWind(actor, item, { diceCount: payload.diceCount });
+    return { applied: applied === true };
+  }
+
+  async #applyConfirmedManeuver(actor, target, activity, fighterAutomation, damageType, requestedDisadvantage) {
+    const item = activity?.item;
+    const hasDamage = Boolean(fighterAutomation.extraDamage?.formula);
+    if (target && hasDamage) {
+      await this.#applyDamage(target, fighterAutomation.extraDamage.formula, cleanText(damageType), {
         sourceActor: actor,
         sourceItemUuid: item?.uuid,
         label: item?.name ?? activity?.name ?? "Воинский приём"
@@ -703,19 +879,73 @@ export class FighterAutomationService {
 
     let saveSucceeded = false;
     if (target && fighterAutomation?.saveAbility) {
-      if (this.#hasIronWillNextSave(actor)) {
-        await this.#applySaveDisadvantageEffect(target, fighterAutomation.saveAbility, actor);
-        await this.#consumeIronWillNextSave(actor);
-      }
-
-      saveSucceeded = await this.#rollManeuverSave(target, fighterAutomation.saveAbility, actor, item ?? activity) === true;
+      const disadvantage = this.#hasIronWillNextSave(actor)
+        && (requestedDisadvantage ?? await this.#confirmIronWillDisadvantage(actor, target));
+      saveSucceeded = await this.#rollManeuverSave(target, fighterAutomation.saveAbility, actor, item ?? activity, disadvantage);
+      if (disadvantage && saveSucceeded !== null) await this.#consumeIronWillNextSave(actor);
     }
 
-    if (target && fighterAutomation?.status?.id && !saveSucceeded) {
+    if (target && fighterAutomation?.status?.id && saveSucceeded === false) {
       await this.#setStatus(target, fighterAutomation.status, actor);
     }
 
-    await this.#postManeuverChat(actor, activity, fighterAutomation, target);
+  }
+
+  async applyMidiManeuverDamage(workflow) {
+    if (!isWeaponWorkflow(workflow) || this.#attackUsedForManeuver(workflow)) return true;
+    const key = this.#actorKey(workflow?.actor);
+    const pending = this._pendingManeuvers.get(key) ?? this.#commanderOrder(workflow);
+    if (!pending) return true;
+    if (Date.now() - pending.timestamp > LAST_ATTACK_MAX_AGE_MS || pending.turn !== this.#combatTurnKey(game.combat)) {
+      this._pendingManeuvers.delete(key);
+      return true;
+    }
+    if (pending.key === "широкая атака" && !isWhirlwindActivity(workflow.activity)) return true;
+    if (pending.key === "быстрый бросок"
+      && !collectionValues(workflow.item?.system?.properties).includes("thr")) return true;
+    const hits = attackHitTargets(workflow);
+    const target = pending.selected ? hits.find(hit => this.#sameManeuverTarget(hit, pending.selected)) : hits[0];
+    if (!target || typeof workflow.setBonusDamageRolls !== "function") return true;
+    this._pendingManeuvers.delete(key);
+    const DamageRoll = globalThis.CONFIG?.Dice?.DamageRoll ?? globalThis.Roll;
+    const type = defaultDamageTypeFromWorkflow(workflow);
+    const options = { type, types: type ? [type] : [] };
+    const roll = this._options.createManeuverDamageRoll?.(pending.formula, pending.actor, options)
+      ?? new DamageRoll(pending.formula, pending.actor.getRollData?.() ?? {}, options);
+    await roll.evaluate();
+    const tokenUuid = target?.document?.uuid ?? target?.uuid;
+    if (isWhirlwindActivity(workflow.activity)) markWhirlwindDamageRolls({ rolls: [roll] }, tokenUuid);
+    else if (hits.length > 1 && tokenUuid) markDamageRollTarget(roll, tokenUuid);
+    if (pending.id) {
+      const uses = collectionValues(readDocumentFlag(workflow.actor, "fighterCommanderUses"));
+      if (uses.includes(pending.id)) return true;
+      await workflow.actor.update({ [`flags.${MODULE_ID}.fighterCommanderUses`]: [...uses.slice(-23), pending.id] });
+    }
+    await workflow.setBonusDamageRolls([...(workflow.bonusDamageRolls ?? []), roll]);
+    this._usedAttackWorkflows.add(workflow);
+    return true;
+  }
+
+  #commanderOrder(workflow) {
+    const attacker = workflow.actor;
+    const token = workflow.token?.document ?? workflow.token;
+    const uses = collectionValues(readDocumentFlag(attacker, "fighterCommanderUses"));
+    for (const candidate of collectionValues(token?.parent?.tokens ?? globalThis.canvas?.scene?.tokens)) {
+      const actor = resolveActorFromTarget(candidate);
+      const order = readDocumentFlag(actor, "fighterCommanderOrder");
+      if (!order?.id || uses.includes(order.id) || order.allyActorUuid !== attacker?.uuid
+        || (order.allyTokenUuid && order.allyTokenUuid !== token?.uuid)
+        || order.turn !== this.#combatTurnKey(game.combat)
+        || Date.now() - order.timestamp > LAST_ATTACK_MAX_AGE_MS) continue;
+      const formula = getFighterManeuverAutomation("Удар командующего", FIGHTER_CLASS_IDENTIFIER).extraDamage.formula;
+      return { ...order, actor, formula };
+    }
+    return null;
+  }
+
+  #attackUsedForManeuver(workflow) {
+    return Boolean(workflow && (this._usedAttackWorkflows.has(workflow)
+      || workflow.rebreyaAttackRollBoosts?.some(boost => boost.id === "fighter-precise-attack")));
   }
 
   #lastAttack(actor) {
@@ -732,20 +962,40 @@ export class FighterAutomationService {
     return entry;
   }
 
-  #resolveManeuverTarget(lastAttack, sourceActor = null) {
-    const selectedTarget = collectionValues(game.user?.targets)
-      .map(resolveActorFromTarget)
-      .find((actor) => actor instanceof Actor && !this.#isSameActor(actor, sourceActor)) ?? null;
-    if (selectedTarget) {
-      return selectedTarget;
-    }
+  #selectedManeuverTarget(actor, results, usageConfig) {
+    const descriptors = results.message?.system?.targets ?? getProperty(results, "message.flags.dnd5e.use.targets") ?? [];
+    const saved = collectionValues(descriptors).map(descriptor => {
+      const token = globalThis.fromUuidSync?.(descriptor.token ?? descriptor.uuid);
+      const tokenActor = resolveActorFromTarget(token);
+      if (tokenActor && (!descriptor.actor || descriptor.actor === tokenActor.uuid)) return token;
+      const targetActor = typeof descriptor.actor === "string" ? globalThis.fromUuidSync?.(descriptor.actor) : null;
+      return targetActor ? { actor: targetActor } : descriptor;
+    });
+    const selected = saved.length ? saved : usageConfig.targets != null
+      ? collectionValues(usageConfig.targets) : collectionValues(game.user?.targets);
+    return selected
+      .find(entry => resolveActorFromTarget(entry) instanceof Actor && !this.#isSameActor(resolveActorFromTarget(entry), actor)) ?? null;
+  }
 
-    const storedTarget = lastAttack?.targets?.find((target) => target instanceof Actor && !this.#isSameActor(target, sourceActor));
-    if (storedTarget) {
-      return storedTarget;
-    }
+  #sameManeuverTarget(left, right) {
+    const leftUuid = left?.document?.uuid ?? left?.uuid;
+    const rightUuid = right?.document?.uuid ?? right?.uuid;
+    return leftUuid && rightUuid ? leftUuid === rightUuid
+      : this.#isSameActor(resolveActorFromTarget(left), resolveActorFromTarget(right));
+  }
 
-    return null;
+  #resolveManeuverTarget(actor, selected, lastAttack, automation) {
+    const key = automation.key;
+    if (["атака с финтом", "быстрый бросок", "готовность", "удар командующего"].includes(key)) return null;
+    if (key === "широкая атака" && !isWhirlwindActivity(lastAttack?.workflow?.activity)) return null;
+    const hits = lastAttack?.targets ?? [];
+    const hit = selected ? hits.find(entry => this.#sameManeuverTarget(entry, selected)) : hits[0];
+    if (hit && !this.#isSameActor(resolveActorFromTarget(hit), actor)) return resolveActorFromTarget(hit);
+    return automation.extraDamage?.formula ? null : resolveActorFromTarget(selected);
+  }
+
+  #combatTurnKey(combat) {
+    return combat && combat.started !== false ? `${combat.id ?? ""}:${combat.round}:${combat.turn}` : "";
   }
 
   #isFighterManeuverWorkflow(workflow) {
@@ -857,6 +1107,25 @@ export class FighterAutomationService {
     }) ?? null;
   }
 
+  async #repairDominancePool(actor) {
+    const item = this.#findDominanceItem(actor);
+    if (!item) return false;
+    const maximum = cleanText(item?._source?.system?.uses?.max ?? item.system?.uses?.max);
+    const base = cleanText(readDocumentFlag(item, "dominanceStyleBaseMax"));
+    const enhanced = Boolean(base && maximum === `(${base}) + 1`);
+    const hasStyle = collectionValues(actor.items).some(isSuperiorTechnique);
+    if (hasStyle && maximum && !enhanced) {
+      return updateRepairItem(item, {
+        "system.uses.max": `(${maximum}) + 1`,
+        [`flags.${MODULE_ID}.dominanceStyleBaseMax`]: maximum
+      }, repairUpdateOptions());
+    }
+    if (!hasStyle && enhanced) {
+      return updateRepairItem(item, { "system.uses.max": base }, repairUpdateOptions());
+    }
+    return false;
+  }
+
   #fighterManeuverSaveDc(actor) {
     const proficiency = toNumber(getProperty(actor, "system.attributes.prof", 2), 2);
     const strength = toNumber(getProperty(actor, "system.abilities.str.mod", 0), 0);
@@ -864,7 +1133,7 @@ export class FighterAutomationService {
     return 8 + proficiency + Math.max(strength, dexterity);
   }
 
-  async #rollManeuverSave(target, ability, sourceActor, sourceDocument) {
+  async #rollManeuverSave(target, ability, sourceActor, sourceDocument, disadvantage = false) {
     if (typeof target?.rollSavingThrow !== "function") {
       return null;
     }
@@ -873,7 +1142,8 @@ export class FighterAutomationService {
     const dc = this.#fighterManeuverSaveDc(sourceActor);
     const rolls = await target.rollSavingThrow({
       ability: abilityKey,
-      target: dc
+      target: dc,
+      ...(disadvantage ? { disadvantage: true } : {})
     }, {}, {
       data: {
         speaker: speakerForActor(target),
@@ -882,7 +1152,7 @@ export class FighterAutomationService {
     });
     const roll = Array.isArray(rolls) ? rolls[0] : rolls;
     const total = Number(roll?.total);
-    return Number.isFinite(total) ? total >= dc : null;
+    return roll?.total != null && Number.isFinite(total) ? total >= dc : null;
   }
 
   #isLongRest(result = {}, config = {}) {
@@ -944,15 +1214,15 @@ export class FighterAutomationService {
       selectedKept = true;
     }
 
-    if (deleteIds.length && typeof actor.deleteEmbeddedDocuments === "function") {
-      await actor.deleteEmbeddedDocuments("Item", deleteIds.filter(Boolean));
-    }
-
     if (!selectedKept) {
       const itemData = await this.#loadMultiattackFeatureData(selected.featureId);
-      if (itemData && typeof actor.createEmbeddedDocuments === "function") {
-        await actor.createEmbeddedDocuments("Item", [itemData]);
-      }
+      if (!itemData || typeof actor.createEmbeddedDocuments !== "function") return false;
+      const created = await actor.createEmbeddedDocuments("Item", [itemData]);
+      if (!created?.length) return false;
+    }
+
+    if (deleteIds.length && typeof actor.deleteEmbeddedDocuments === "function") {
+      await actor.deleteEmbeddedDocuments("Item", deleteIds.filter(Boolean));
     }
 
     return true;
@@ -992,16 +1262,29 @@ export class FighterAutomationService {
     return data;
   }
 
-  async #useSecondWind(actor, item, automation = {}) {
+  async #useSecondWind(actor, item, automation = {}, combat = game.combat) {
+    const actorKey = this.#actorKey(actor);
+    const turnKey = this.#combatTurnKey(combat);
+    if (this._secondWindPending.has(actorKey)
+      || (turnKey && readDocumentFlag(actor, "secondWindTurn") === turnKey)) return false;
+    this._secondWindPending.add(actorKey);
+    try {
+      return await this.#resolveSecondWind(actor, item, automation, turnKey, combat);
+    }
+    finally {
+      this._secondWindPending.delete(actorKey);
+    }
+  }
+
+  async #resolveSecondWind(actor, item, automation, turnKey, combat) {
     const secondWind = item ?? this.#findSecondWind(actor);
     if (!secondWind) {
       globalThis.ui?.notifications?.warn("Второе дыхание: предмет не найден у актёра.");
       return false;
     }
 
-    const uses = secondWind.system?.uses ?? {};
     const maxUses = await this.#ensureSecondWindResource(actor, secondWind);
-    const spent = Math.max(0, Math.floor(toNumber(uses.spent, 0)));
+    const spent = Math.max(0, Math.floor(toNumber(secondWind.system?.uses?.spent, 0)));
     const remaining = Math.max(0, maxUses - spent);
     if (remaining <= 0) {
       globalThis.ui?.notifications?.warn("Второе дыхание: не осталось костей лечения.");
@@ -1013,29 +1296,51 @@ export class FighterAutomationService {
     const ability = cleanText(automation?.maxDiceAbility, "con");
     const abilityLimit = Math.max(minDice, Math.floor(toNumber(actor?.system?.abilities?.[ability]?.mod, minDice)));
     const maxDice = Math.max(minDice, Math.min(remaining, abilityLimit));
-    const diceCount = await this.#promptSecondWindDice(actor, {
+    const diceCount = automation.diceCount ?? await this.#promptSecondWindDice(actor, {
       min: minDice,
       max: maxDice,
       remaining,
-      die
+      die,
+      ...(automation.ownerUserIds ? { ownerUserIds: automation.ownerUserIds } : {})
     });
     if (!diceCount) {
       return false;
     }
 
     const safeDiceCount = clampInteger(diceCount, minDice, maxDice);
+    const gm = getActiveGm(game);
+    if (gm && gm.id !== game.user?.id && this.moduleApi?.socketCommandBus?.request) {
+      const result = await this.moduleApi.socketCommandBus.request(SECOND_WIND_COMMAND, {
+        actorUuid: actor.uuid, diceCount: safeDiceCount, turn: turnKey
+      });
+      return result?.applied === true;
+    }
     const roll = this.#createRoll(`${safeDiceCount}${die}`, actor);
     await roll.evaluate();
+    if (turnKey && (readDocumentFlag(actor, "secondWindTurn") === turnKey
+      || `${combat.id ?? ""}:${combat.round}:${combat.turn}` !== turnKey)) return false;
+    const liveSpent = Math.max(0, Math.floor(toNumber(secondWind.system?.uses?.spent, 0)));
+    if (liveSpent + safeDiceCount > maxUses) return false;
     const healed = Math.max(0, toNumber(roll.total, 0));
-    const nextHp = Math.min(actorHpMax(actor), actorHpValue(actor) + healed);
+    const previousHp = actorHpValue(actor);
+    const nextHp = Math.min(actorHpMax(actor), previousHp + healed);
 
-    await actor.update({ "system.attributes.hp.value": nextHp });
-    await secondWind.update?.({ "system.uses.spent": spent + safeDiceCount });
+    await updateRepairItem(secondWind, { "system.uses.spent": liveSpent + safeDiceCount });
+    try {
+      await actor.update({
+        "system.attributes.hp.value": nextHp,
+        ...(turnKey ? { [`flags.${MODULE_ID}.secondWindTurn`]: turnKey } : {})
+      });
+    }
+    catch (error) {
+      await updateRepairItem(secondWind, { "system.uses.spent": liveSpent });
+      throw error;
+    }
     await roll.toMessage?.({
       speaker: speakerForActor(actor),
       flavor: `Второе дыхание: ${safeDiceCount}${die}`
     });
-    await this.#applyIronWillAfterHealing(actor);
+    if (nextHp > previousHp) await this.#applyIronWillAfterHealing(actor);
     return true;
   }
 
@@ -1051,7 +1356,9 @@ export class FighterAutomationService {
     }
 
     const patch = {};
-    if (String(uses.max ?? "") !== String(maxUses)) {
+    const sourceMaximum = item?._source?.system?.uses?.max ?? uses.max;
+    if (sourceMaximum !== fighterSecondWindUsesMax(FIGHTER_CLASS_IDENTIFIER)
+      && String(uses.max ?? "") !== String(maxUses)) {
       patch["system.uses.max"] = maxUses;
     }
     if (!isSecondWindRecovery(uses.recovery)) {
@@ -1347,12 +1654,11 @@ export class FighterAutomationService {
   }
 
   #isIronWillNextSaveEffect(effect, actor) {
+    if (effect?.active === false || effect?.disabled === true || effect?.duration?.expired === true || effect?.transfer === true) {
+      return false;
+    }
     if (readDocumentFlag(effect, "fighterAutomation")?.kind === "ironWillNextSave") {
       return true;
-    }
-
-    if (effect?.disabled === true || effect?.transfer === true) {
-      return false;
     }
 
     if (normalizeText(effect?.name) !== normalizeText(IRON_WILL_NEXT_SAVE_EFFECT_NAME)) {
@@ -1371,47 +1677,16 @@ export class FighterAutomationService {
     return Boolean(effect);
   }
 
-  async #applySaveDisadvantageEffect(target, ability, sourceActor) {
-    const abilityKey = cleanText(ability, "wis");
-    return this.#createActorEffect(target, {
-      name: "Железная воля: помеха спасброску",
-      type: "base",
-      img: "icons/svg/downgrade.svg",
-      system: {},
-      changes: [{
-        key: `flags.midi-qol.disadvantage.ability.save.${abilityKey}`,
-        mode: EFFECT_MODE_OVERRIDE,
-        value: "1",
-        priority: 20
-      }],
-      disabled: false,
-      duration: {
-        startTime: null,
-        seconds: null,
-        combat: null,
-        rounds: 1,
-        turns: null,
-        startRound: null,
-        startTurn: null
-      },
-      description: `<p>Первый спасбросок против воинского приёма ${escapeHtml(sourceActor?.name)} совершается с помехой.</p>`,
-      origin: sourceActor?.uuid ?? null,
-      transfer: false,
-      statuses: [],
-      flags: {
-        dae: {
-          specialDuration: ["isSave", "combatEnd"]
-        },
-        [MODULE_ID]: {
-          managed: true,
-          fighterAutomation: {
-            kind: "ironWillSaveDisadvantage",
-            sourceActorUuid: sourceActor?.uuid ?? "",
-            ability: abilityKey
-          }
-        }
-      }
-    });
+  async #confirmIronWillDisadvantage(actor, target) {
+    if (typeof this._options.confirmIronWillDisadvantage === "function") {
+      return this._options.confirmIronWillDisadvantage(actor, target);
+    }
+    if (!this.#canPrompt(actor)) return false;
+    const DialogV2 = foundry.applications?.api?.DialogV2;
+    return await DialogV2?.confirm?.({
+      window: { title: "Железная воля" },
+      content: `<p>Дать помеху на спасбросок цели «${escapeHtml(target.name)}»?</p>`
+    }) === true;
   }
 
   #ironWillNextSaveEffectData(actor) {
@@ -1437,12 +1712,13 @@ export class FighterAutomationService {
       statuses: [],
       flags: {
         dae: {
-          specialDuration: ["turnEndSource", "combatEnd"]
+          specialDuration: ["combatEnd"]
         },
         [MODULE_ID]: {
           managed: true,
           fighterAutomation: {
-            kind: "ironWillNextSave"
+            kind: "ironWillNextSave",
+            createdTurn: this.#combatTurnKey(game.combat)
           }
         }
       }
@@ -1886,6 +2162,24 @@ export class FighterAutomationService {
   async #promptSecondWindDice(actor, context) {
     if (typeof this._options.promptSecondWindDice === "function") {
       return this._options.promptSecondWindDice(actor, context);
+    }
+
+    if (context.ownerUserIds?.length) {
+      const options = [];
+      for (let value = context.min; value <= context.max; value += 1) {
+        options.push({ value: String(value), label: `${value}${context.die}` });
+      }
+      const choice = await this.moduleApi.reactionQueueService.promptDecision({
+        candidate: { actorUuid: actor.uuid, ownerUserIds: context.ownerUserIds },
+        prompt: {
+          title: "Железная воля",
+          body: "Использовать «Второе дыхание» в начале хода?",
+          acceptLabel: "Исцелиться",
+          declineLabel: "Пропустить",
+          fields: [{ name: "diceCount", type: "select", label: "Кости лечения", options }]
+        }
+      });
+      return choice?.accepted ? Number(choice.diceCount) : null;
     }
 
     if (!this.#canPrompt(actor) || typeof Dialog !== "function") {

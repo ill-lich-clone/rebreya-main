@@ -48,6 +48,13 @@ test("reaction and Rune Knight hot paths contain no polling or world actor scans
   ]) {
     const source = await readFile(new URL(name, combatDirectory), "utf8");
     assert.doesNotMatch(source, /\bsetInterval\s*\(|\brequestAnimationFrame\s*\(/u, `${name} must be event-driven`);
-    assert.doesNotMatch(source, /\bgame\?*\.actors\b|\bglobalThis\.game\?*\.actors\b/u, `${name} must stay actor-local`);
+    const hotPaths = name === "rune-knight-automation-service.js"
+      ? source.replace(/  async #removeDeletedRuneEffects\(actor, item\) \{[\s\S]*?\n  \}/u, "")
+      : source;
+    assert.doesNotMatch(hotPaths, /\bgame\?*\.actors\b|\bglobalThis\.game\?*\.actors\b/u, `${name} must stay actor-local`);
+    if (name === "rune-knight-automation-service.js") {
+      assert.match(source, /!this\.#actorStillOwnsItem\(actor, item\)\) \{\s*await this\.#removeDeletedRuneEffects\(actor, item\)/u);
+      assert.equal((source.match(/#removeDeletedRuneEffects\(/gu) ?? []).length, 2);
+    }
   }
 });

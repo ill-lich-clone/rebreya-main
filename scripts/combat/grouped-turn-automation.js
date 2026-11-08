@@ -22,6 +22,9 @@ export function planRebreyaCombatAutomation(moduleApi, combat, phase) {
     if (phase.kind === "turn-start") for (const [id, owner] of Object.entries({ fighter: moduleApi.fighterAutomationService, paladin: moduleApi.paladinAutomationService, sorcerer: moduleApi.sorcererAutomationService })) {
       if (owner?.handleCombatTurnChange) add(id, c.id, () => owner.handleCombatTurnChange(combat, context, { direction: 1 }));
     }
+    if (phase.kind === "turn-end" && moduleApi.fighterAutomationService?.handleCombatTurnEnd) {
+      add("fighter", c.id, () => moduleApi.fighterAutomationService.handleCombatTurnEnd(combat, { ...context, turn: combat.turn }));
+    }
   }
   return steps;
 }

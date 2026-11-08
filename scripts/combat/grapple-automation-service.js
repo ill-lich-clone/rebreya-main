@@ -4,7 +4,7 @@ import {
   getActorHandReservations,
   getFreeHandSlots
 } from "../integrations/held-items.js?v=1.5.29";
-import { getNaturalReachFeet } from "./natural-reach.js?v=1.5.61";
+import { getNaturalReachFeet } from "./natural-reach.js?v=1.5.70";
 import { computeTwistedPullPosition, tokenFootprint, twistedDistanceFeet, validateGrapplePlacement } from "./grapple-geometry.js";
 
 export const GRAPPLE_LINK_FLAG = "grappleLink";

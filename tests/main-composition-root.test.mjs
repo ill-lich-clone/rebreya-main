@@ -9,7 +9,7 @@ import { PrivilegedMutationGateway } from "../scripts/application/privileged-mut
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.5.61";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.5.68";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
-import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
+import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js?v=1.5.70";
 import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.5.58";
 import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.5.59";
 import {
@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.69");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.69.js"]);
+  assert.equal(manifest.version, "1.5.70");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.70.js"]);
   assert.match(mainSource, /application\/equipment-size-service\.js\?v=1\.5\.63/u);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.61/u);
@@ -67,7 +67,9 @@ test("current release reuses the catalog icon cache graph", async () => {
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    const cacheVersion = ["feats-compendium", "transport-compendium"].includes(name) ? "1\\.5\\.61" : name === "gear-compendium" ? "1\\.5\\.31" : name === "magic-items-compendium" ? "1\\.5\\.60" : "1\\.4\\.330";
+    const cacheVersion = ["feats-compendium", "transport-compendium"].includes(name) ? "1\\.5\\.61"
+      : ["gear-compendium", "classes-compendium"].includes(name) ? "1\\.5\\.70"
+        : name === "magic-items-compendium" ? "1\\.5\\.60" : "1\\.4\\.330";
     assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=${cacheVersion}`, "u"));
   }
   assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.327/u);

@@ -4,7 +4,7 @@ import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire 
 import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
 import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.61";
 import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js?v=1.5.66";
-import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
+import { getFighterManeuverAutomation } from "../data/fighter-automation.js?v=1.5.70";
 import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.5.23";
 import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.5.23";
 import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
@@ -21,8 +21,8 @@ import {
   resolveAmmunitionProfile
 } from "../data/ammunition-compatibility.js?v=1.5.31";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.5.61";
-import { getNaturalReachFeet } from "./natural-reach.js?v=1.5.61";
-import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.1";
+import { getNaturalReachFeet } from "./natural-reach.js?v=1.5.70";
+import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.70";
 import { getWeaponSizeUse } from "../data/equipment-size-rules.js?v=1.4.393";
 import {
   buildHeldItemHandUpdate,

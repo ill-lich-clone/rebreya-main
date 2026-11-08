@@ -892,7 +892,8 @@ test("weapon attack activities mark auto-held items before activity use continue
 
 test("Runic Juggernaut reach comes only from its active Huge form and only affects melee", () => {
   const weapon = makeWeaponItem({ heldHands: ["left"] });
-  const actor = makeActor([weapon]);
+  const juggernaut = { id: "juggernaut", type: "feat", name: "Рунический Джаггернаут" };
+  const actor = makeActor([weapon, juggernaut]);
   actor.system.traits.size = "huge";
   actor.effects = [{
     id: "giant-form",
@@ -1004,7 +1005,8 @@ test("size, Lich weapon, racial, and Rune Knight reach bonuses stack independent
     properties: ["lchReach"],
     lichWeaponPropertyValues: { reachBonus: 5 }
   });
-  const actor = makeActor([weapon], {
+  const juggernaut = { id: "juggernaut", type: "feat", name: "Рунический Джаггернаут" };
+  const actor = makeActor([weapon, juggernaut], {
     size: "huge",
     racialReachBonusFeet: 5,
     effects: [{

@@ -69,6 +69,11 @@ export function markWhirlwindDamageRolls(config, targetUuid) {
   }
 }
 
+export function markDamageRollTarget(roll, targetUuid) {
+  roll.options ??= {};
+  roll.options.properties = [...new Set([...(roll.options.properties ?? []), `${TARGET_PROPERTY}${targetUuid}`])];
+}
+
 export function buildWhirlwindDamagePackets({ baseDamage = [], extraDamage = [], selectedTargetUuid, targetUuid }) {
   return [...baseDamage, ...(selectedTargetUuid && selectedTargetUuid === targetUuid ? extraDamage : [])]
     .map(entry => ({ ...entry, value: entry.value * 0.5 }));
@@ -81,12 +86,11 @@ export function applyWhirlwindDamage(_actor, damages, options = {}) {
   for (const damage of damages ?? []) {
     if (processedDamage.has(damage)) continue;
     const properties = new Set(damage.properties ?? []);
-    if (!properties.has(HALF_PROPERTY)) continue;
+    const half = properties.has(HALF_PROPERTY);
     const addressed = [...properties].find(property => property.startsWith(TARGET_PROPERTY));
-    const packets = buildWhirlwindDamagePackets(addressed
-      ? { extraDamage: [damage], selectedTargetUuid: addressed.slice(TARGET_PROPERTY.length), targetUuid }
-      : { baseDamage: [damage] });
-    damage.value = packets[0]?.value ?? 0;
+    if (!half && !addressed) continue;
+    if (addressed && addressed.slice(TARGET_PROPERTY.length) !== targetUuid) damage.value = 0;
+    else if (half) damage.value *= 0.5;
     if (damage.damage !== undefined) damage.damage = damage.value;
     processedDamage.add(damage);
   }

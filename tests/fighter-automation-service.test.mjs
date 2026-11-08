@@ -598,6 +598,7 @@ test("fighter maneuver runtime adds dominance damage to the last MIDI hit target
     item: {
       type: "weapon"
     },
+    attackRoll: fixedRoll(15),
     hitTargets: new Set([{ actor: target }]),
     damageDetail: [{ type: "slashing" }]
   });
@@ -614,6 +615,86 @@ test("fighter maneuver runtime adds dominance damage to the last MIDI hit target
     durationRounds: 1,
     sourceActor: source
   }]);
+});
+
+test("fighter uses the stored target and actual weapon hit instead of a changed selection", async () => {
+  const previousTargets = game.user.targets;
+  const previousResolve = globalThis.fromUuidSync;
+  const source = new TestActor({ id: "fighter" });
+  const target = new TestActor({ id: "hit" });
+  const other = new TestActor({ id: "other" });
+  const token = { uuid: "Scene.scene.Token.hit", actor: target };
+  const item = makeItem({ id: "thrust", name: "Атака с выпадом" });
+  const activity = makeActivity({ actor: source, item, automation: "fighter-dominance-maneuver" });
+  const service = new FighterAutomationService({}, { rollFactory: () => fixedRoll(4) });
+  try {
+    game.user.targets = new Set([{ actor: other }]);
+    globalThis.fromUuidSync = (uuid) => uuid === token.uuid ? token : null;
+    service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([token]) });
+    service.applyMidiRollComplete({ actor: source, item: { type: "spell" }, hitTargets: game.user.targets });
+    const use = { message: { system: { targets: [{ token: token.uuid, actor: target.uuid }] } } };
+    await service.applyDnd5ePostUseActivity(activity, {}, use);
+    await service.applyDnd5ePostUseActivity(activity, {}, use);
+    assert.equal(target.damageApplications.length, 1);
+    assert.equal(other.damageApplications.length, 0);
+  }
+  finally {
+    game.user.targets = previousTargets;
+    globalThis.fromUuidSync = previousResolve;
+  }
+});
+
+test("fighter does not apply a save-gated status if the save was canceled", async () => {
+  const previousTargets = game.user.targets;
+  const source = new TestActor({ id: "fighter" });
+  const target = new TestActor({ id: "target" });
+  target.rollSavingThrow = async () => null;
+  const item = makeItem({ id: "menacing", name: "Атака с угрозой" });
+  const activity = makeActivity({ actor: source, item, automation: "fighter-dominance-maneuver",
+    fighterAutomation: { kind: "maneuver", status: { id: "frightened" }, saveAbility: "wis" } });
+  const service = new FighterAutomationService({}, { rollFactory: () => fixedRoll(4) });
+  try {
+    game.user.targets = new Set([{ actor: target }]);
+    service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: game.user.targets });
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+    assert.deepEqual(target.createdEffects, []);
+  }
+  finally {
+    game.user.targets = previousTargets;
+  }
+});
+
+test("a weapon miss invalidates the previous maneuver hit and blocks spending before use", () => {
+  const source = new TestActor({ id: "fighter" });
+  const target = new TestActor({ id: "target" });
+  const item = makeItem({ id: "thrust", name: "Атака с выпадом" });
+  const activity = makeActivity({ actor: source, item, automation: "fighter-dominance-maneuver" });
+  const service = new FighterAutomationService({});
+  service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([{ actor: target }]) });
+  service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set() });
+  assert.equal(service.prepareDnd5eManeuverUse(activity, { targets: [{ actor: target }] }), false);
+});
+
+test("the chosen ally can apply Commander’s Strike on a separate workflow client only once", async () => {
+  const source = new TestActor({ id: "commander" });
+  const ally = new TestActor({ id: "ally" });
+  const enemy = new TestActor({ id: "enemy" });
+  const item = makeItem({ id: "command", name: "Удар командующего" });
+  const activity = makeActivity({ actor: source, item, automation: "fighter-dominance-maneuver" });
+  const scene = { tokens: [] };
+  const sourceToken = { actor: source, uuid: "Scene.scene.Token.commander", parent: scene };
+  const allyToken = { actor: ally, uuid: "Scene.scene.Token.ally", parent: scene };
+  scene.tokens.push(sourceToken, allyToken);
+  const fighterClient = new FighterAutomationService({});
+  const allyClient = new FighterAutomationService({}, { createManeuverDamageRoll: () => fixedRoll(4) });
+  await fighterClient.applyDnd5ePostUseActivity(activity, { targets: [allyToken] }, {});
+  const workflow = { actor: ally, token: allyToken, item: { type: "weapon" }, attackRoll: fixedRoll(15),
+    hitTargets: new Set([{ actor: enemy }]), async setBonusDamageRolls(rolls) { this.bonusDamageRolls = rolls; } };
+  await allyClient.applyMidiManeuverDamage(workflow);
+  assert.equal(workflow.bonusDamageRolls?.length, 1);
+  const next = { ...workflow, bonusDamageRolls: [] };
+  await allyClient.applyMidiManeuverDamage(next);
+  assert.equal(next.bonusDamageRolls.length, 0);
 });
 
 test("fighter maneuver runtime ignores the maneuver self-target workflow and uses the selected creature target", async () => {
@@ -638,6 +719,7 @@ test("fighter maneuver runtime ignores the maneuver self-target workflow and use
   });
 
   try {
+    service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([{ actor: target }]) });
     await service.applyMidiRollComplete({
       actor: source,
       item,
@@ -680,6 +762,7 @@ test("fighter maneuver runtime ignores duplicate actor instances for the source 
   });
 
   try {
+    service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([{ actor: target }]) });
     await service.applyDnd5ePostUseActivity(activity, {}, {});
 
     assert.equal(sourceTokenActor.damageApplications.length, 0);
@@ -726,6 +809,8 @@ test("fighter maneuver runtime infers automation from stale subtype-only maneuve
   });
 
   try {
+    service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([{ actor: target }]) });
+    target.rollSavingThrow = async () => [fixedRoll(20)];
     await service.applyDnd5ePostUseActivity(activity, {}, {
       updates: {
         item: [{
@@ -781,6 +866,7 @@ test("fighter maneuver runtime spends the owned dominance dice item when dnd5e d
   });
 
   try {
+    service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([{ actor: target }]) });
     await service.applyDnd5ePostUseActivity(activity, {}, {});
 
     assert.equal(dominance.system.uses.spent, 1);
@@ -827,6 +913,7 @@ for (const modern of [false,true]) test(`fighter does not spend dominance twice 
   });
 
   try {
+    service.applyMidiRollComplete({ actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([{ actor: target }]) });
     await service.applyDnd5ePostUseActivity(activity, {}, {
       message: {
         ...(modern ? {
@@ -1053,6 +1140,51 @@ test("fighter second wind prompts for dice, spends selected uses, and heals the 
   assert.equal(secondWind.system.uses.spent, 4);
   assert.equal(actor.system.attributes.hp.value, 21);
   assert.ok(secondWind.updates.some((patch) => patch["system.uses.spent"] === 4));
+});
+
+test("second wind admits one use across manual and iron will calls", async () => {
+  const secondWind = makeItem({
+    id: "second-wind", name: "Второе дыхание", uses: { spent: 0, max: 5 }
+  });
+  const ironWill = makeItem({ id: "iron-will", name: "Железная воля" });
+  const actor = new TestActor({ items: [secondWind, ironWill] });
+  const combat = { id: "combat", round: 1, turn: 0, combatant: { actor } };
+  const previous = game.combat;
+  game.combat = combat;
+  try {
+    const service = new FighterAutomationService({}, {
+      confirmIronWillSecondWind: async () => true,
+      promptSecondWindDice: async () => 1,
+      rollFactory: () => fixedRoll(2)
+    });
+    const activity = makeActivity({ actor, item: secondWind, automation: "fighter-second-wind" });
+    await Promise.all([
+      service.handleCombatTurnChange(combat),
+      service.applyDnd5ePostUseActivity(activity, {}, {})
+    ]);
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+    assert.equal(secondWind.system.uses.spent, 1);
+    assert.equal(actor.system.attributes.hp.value, 12);
+  }
+  finally {
+    game.combat = previous;
+  }
+});
+
+test("failed second wind payment preserves HP and available dice", async () => {
+  const secondWind = makeItem({ id: "second-wind", name: "Второе дыхание", uses: {
+    spent: 1, max: 5, recovery: [{ period: "lr", type: "recoverAll", formula: "" }]
+  } });
+  const actor = new TestActor({ items: [secondWind] });
+  secondWind.update = async () => { throw new Error("write failed"); };
+  const service = new FighterAutomationService({}, {
+    promptSecondWindDice: async () => 1,
+    rollFactory: () => fixedRoll(3)
+  });
+  const activity = makeActivity({ actor, item: secondWind, automation: "fighter-second-wind" });
+  await assert.rejects(service.applyDnd5ePostUseActivity(activity, {}, {}), /write failed/u);
+  assert.equal(actor.system.attributes.hp.value, 10);
+  assert.equal(secondWind.system.uses.spent, 1);
 });
 
 test("fighter second wind repairs a missing actor resource before asking how many dice to spend", async () => {
@@ -1721,6 +1853,46 @@ test("fighter long rest can add a selected multiattack variant back from the cla
   }
 });
 
+test("failed multiattack replacement preserves the previously selected variant", async () => {
+  const actionSurge = makeItem({
+    id: "action-surge",
+    name: "Воинская мультиатака: Всплеск действий",
+    featureId: "fighter-rework-v028::class::fighter-multiattack-action-surge"
+  });
+  const actor = new TestActor({ id: "fighter", items: [actionSurge] });
+  const service = new FighterAutomationService({}, {
+    promptFighterMultiattackChoice: async () => "fighter-multiattack-horde-breaker"
+  });
+
+  await service.handleRestCompleted(actor, { type: "long" });
+
+  assert.deepEqual(actor.items.contents.map((item) => item.id), ["action-surge"]);
+  assert.deepEqual(actor.deletedDocuments, []);
+});
+
+test("superior technique increases the authored dominance pool by one without resetting it", async () => {
+  const resource = makeItem({
+    id: "dominance",
+    name: "Стиль доминирования",
+    featureId: "fighter-rework-v028::class::fighter-dominance",
+    system: { uses: { max: "2 + 3", spent: 2 } }
+  });
+  const style = makeItem({
+    id: "style",
+    name: "Боевой стиль: Превосходная техника",
+    featureId: "fighter-rework-v028::fightingStyle::superior-technique"
+  });
+  const actor = new TestActor({ items: [resource, style] });
+  const service = new FighterAutomationService({});
+  await service.repairActor(actor);
+  await service.repairActor(actor);
+  assert.equal(resource.system.uses.max, "(2 + 3) + 1");
+  assert.equal(resource.system.uses.spent, 2);
+  actor.items.contents.pop();
+  await service.repairActor(actor);
+  assert.equal(resource.system.uses.max, "2 + 3");
+});
+
 test("fighter iron will prompts second wind at the start of a bloodied turn", async () => {
   const secondWind = makeItem({
     id: "second-wind",
@@ -1851,8 +2023,29 @@ test("fighter iron will creates its next-save effect after healing while not blo
   assert.equal(effect.name, "Железная воля: следующий приём");
   assert.equal(effect.duration.rounds, null);
   assert.equal(effect.duration.turns, null);
-  assert.deepEqual(effect.flags.dae.specialDuration, ["turnEndSource", "combatEnd"]);
+  assert.deepEqual(effect.flags.dae.specialDuration, ["combatEnd"]);
   assert.equal(effect.flags["rebreya-main"].fighterAutomation.kind, "ironWillNextSave");
+});
+
+test("iron will lasts through the current turn and expires at the end of the next own turn", async () => {
+  const previous = game.combat;
+  const actor = new TestActor({ hp: { value: 20, max: 30 }, items: [makeItem({ id: "iron", name: "Железная воля" })] });
+  const combat = { id: "combat", round: 2, turn: 1, turns: [{ actor }, { actor }] };
+  game.combat = combat;
+  try {
+    const service = new FighterAutomationService({});
+    await service.applyDnd5eApplyDamage(actor, -4);
+    const effect = actor.createdEffects[0].rows[0];
+    effect.delete = async () => { actor.effects.contents.pop(); };
+    actor.effects.contents.push(effect);
+    await service.handleCombatTurnEnd(combat, { round: 2, turn: 1, combatant: { actor } });
+    assert.equal(actor.effects.contents.length, 1);
+    await service.handleCombatTurnEnd(combat, { round: 3, turn: 1, combatant: { actor } });
+    assert.equal(actor.effects.contents.length, 0);
+  }
+  finally {
+    game.combat = previous;
+  }
 });
 
 test("fighter iron will does not create duplicate next-save effects when healing fires twice before effects refresh", async () => {

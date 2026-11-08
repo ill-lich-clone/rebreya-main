@@ -1,6 +1,6 @@
 import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
-import { whirlwindEffectTargets, isWhirlwindActivity } from "./whirlwind-attack.js?v=1.5.1";
+import { whirlwindEffectTargets, isWhirlwindActivity } from "./whirlwind-attack.js?v=1.5.70";
 import {
   buildGiantTribeAdvancement,
   createAutomationActivity

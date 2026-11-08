@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { whirlwindEffectTargets, isWhirlwindActivity, markWhirlwindDamageRolls } from "./whirlwind-attack.js?v=1.5.1";
+import { whirlwindEffectTargets, isWhirlwindActivity, markWhirlwindDamageRolls } from "./whirlwind-attack.js?v=1.5.70";
 
 const ROGUE_CLASS_IDENTIFIER = "rogue-rework-v00";
 const SNEAK_ATTACK_FEATURE_ID = "rogue-sneak-attack";

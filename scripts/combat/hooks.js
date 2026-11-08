@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.66";
-import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.61";
+import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.70";
 import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";
 import { ignoreProneFireDisadvantage } from "./prone-fire.js?v=1.5.61";
 import { canApplyFirearmTuning, allowMagicalFirearmTuning, startTuningForAreaFire } from "./firearm-tuning.js?v=1.5.61";
@@ -385,23 +385,33 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasRuneKnightService) {
-    const handleRuneKnightItem = (item) => {
+    const handleRuneKnightItem = (item, ...args) => {
+      const userId = args.at(-1);
+      if (typeof userId === "string" && game.user?.id !== userId) return;
       moduleApi.runeKnightAutomationService.handleEmbeddedItemChange(item).catch((error) => {
         console.error(`${MODULE_ID} | Failed to synchronize Rune Knight item resources.`, error);
       });
     };
-    const handleRuneKnightEffect = (effect) => {
+    const handleRuneKnightEffect = (effect, ...args) => {
+      const userId = args.at(-1);
+      if (typeof userId === "string" && game.user?.id !== userId) return;
       moduleApi.runeKnightAutomationService.handleEmbeddedEffectChange(effect).catch((error) => {
         console.error(`${MODULE_ID} | Failed to synchronize Rune Knight source effects.`, error);
       });
     };
-    for (const hookName of ["createItem", "updateItem", "deleteItem"]) {
+    for (const hookName of ["createItem", "updateItem"]) {
       Hooks.on(hookName, handleRuneKnightItem);
     }
+    Hooks.on("deleteItem", (item, options, userId) => {
+      const activeGm = getActiveGm(game);
+      if (!activeGm) return handleRuneKnightItem(item, options, userId);
+      if (activeGm.id === game.user?.id) return handleRuneKnightItem(item);
+    });
     for (const hookName of ["createActiveEffect", "updateActiveEffect"]) {
       Hooks.on(hookName, handleRuneKnightEffect);
     }
-    Hooks.on("deleteActiveEffect", (effect) => {
+    Hooks.on("deleteActiveEffect", (effect, _options, userId) => {
+      if (userId && game.user?.id !== userId) return;
       moduleApi.runeKnightAutomationService.handleEmbeddedEffectDeletion(effect).catch((error) => {
         console.error(`${MODULE_ID} | Failed to restore Rune Knight form state.`, error);
       });
@@ -477,6 +487,7 @@ export function registerCombatHooks(moduleApi) {
         return true;
       }
     });
+    Hooks.on("dnd5e.rollDamage", (rolls) => moduleApi.runeKnightAutomationService.commitDnd5eGiantMightDamage(rolls));
     Hooks.on("preCreateActiveEffect", (effect, data, options) => {
       try {
         return moduleApi.runeKnightAutomationService.prepareActiveEffectCreate(effect, data, options);
@@ -497,11 +508,7 @@ export function registerCombatHooks(moduleApi) {
     });
     Hooks.on("midi-qol.preTargetSave", async (target, workflow, saveDetails) => {
       try {
-        await moduleApi.runeKnightAutomationService.applyMidiStormPreRoll(saveDetails, "save", {
-          actor: target?.actor ?? target?.document?.actor,
-          token: target,
-          workflow
-        });
+        await moduleApi.runeKnightAutomationService.applyMidiTargetSave(target, workflow, saveDetails);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to resolve Storm Rune before a saving throw.`, error);
@@ -646,6 +653,12 @@ export function registerCombatHooks(moduleApi) {
     }
 
     if (hasFighterService) {
+      const previous = updateOptions?.previous ?? updateData?.previous;
+      if (previous?.turn != null) {
+        moduleApi.fighterAutomationService.handleCombatTurnEnd(combat, previous).catch((error) => {
+          console.error(`${MODULE_ID} | Failed to expire fighter turn effects.`, error);
+        });
+      }
       moduleApi.fighterAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
         console.error(`${MODULE_ID} | Failed to handle combat turn fighter automation.`, error);
       });
@@ -1372,6 +1385,14 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasFighterService) {
+    Hooks.on("dnd5e.preUseActivity", (activity, usageConfig) => (
+      moduleApi.fighterAutomationService.prepareDnd5eManeuverUse(activity, usageConfig)
+    ));
+    Hooks.on("deleteItem", (item, _options, userId) => {
+      moduleApi.fighterAutomationService.handleDominanceItemChange(item, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize the fighter dominance pool.`, error);
+      });
+    });
     Hooks.on("createItem", (item, options, userId) => {
       moduleApi.fighterAutomationService.handleCreatedItem(item, options, userId).catch((error) => {
         console.error(`${MODULE_ID} | Failed to handle fighter starting equipment.`, error);
@@ -1424,7 +1445,7 @@ export function registerCombatHooks(moduleApi) {
       return true;
     });
 
-    Hooks.on("midi-qol.RollComplete", (workflow) => {
+    const captureFighterAttack = (workflow) => {
       try {
         return moduleApi.fighterAutomationService.applyMidiRollComplete(workflow);
       }
@@ -1432,6 +1453,17 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to capture fighter MIDI workflow.`, error);
         return true;
       }
+    };
+    Hooks.on("midi-qol.AttackRollComplete", captureFighterAttack);
+    Hooks.on("midi-qol.RollComplete", captureFighterAttack);
+    Hooks.on("midi-qol.preDamageRollComplete", async (workflow) => {
+      try {
+        await moduleApi.fighterAutomationService.applyMidiManeuverDamage(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply fighter maneuver damage.`, error);
+      }
+      return true;
     });
   }
 

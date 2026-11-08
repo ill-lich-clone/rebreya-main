@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { getFighterManeuverAutomation, normalizeFighterAutomationKey } from "../data/fighter-automation.js";
+import { getFighterManeuverAutomation, normalizeFighterAutomationKey } from "../data/fighter-automation.js?v=1.5.70";
 import { appendD20Bonus, isAvailableD20BonusEffect, runD20BonusOperation } from "./d20-bonus-roll.js";
 
 const ATTACK_ROLL_BOOST_FLAG = "attackRollBoosts";

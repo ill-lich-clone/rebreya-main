@@ -118,7 +118,10 @@ const RUNE_AUTOMATION = Object.freeze({
     usesMax: "1",
     recovery: SHORT_OR_LONG_REST,
     runtimeManagedPayment: true,
-    passive: { toolExpertise: true }
+    passive: {
+      toolExpertise: true,
+      changes: [{ key: "flags.dnd5e.toolExpertise", mode: 5, value: "true", priority: 20 }]
+    }
   }),
   hill: freezeAutomation({
     kind: "rune",
@@ -244,4 +247,9 @@ export function getRuneKnightFeatureAutomation(feature) {
   }
 
   return FEATURE_AUTOMATION[featureSourceId(feature)] ?? null;
+}
+
+export function isRuneKnightEffectActive(effect) {
+  return Boolean(effect && effect.active !== false && effect.disabled !== true
+    && effect.isSuppressed !== true && effect.duration?.expired !== true);
 }

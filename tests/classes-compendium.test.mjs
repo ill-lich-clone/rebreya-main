@@ -2544,7 +2544,7 @@ test("class icon search prioritizes icons under the Classes directory", () => {
   assert.ok(fighterClassPathIndex < oldFighterPathIndex);
 });
 
-test("fighter class advancement grants every non-special base feature", () => {
+test("fighter chooses multiattack at long rest without a level two variant grant", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const featureDefinitions = buildFeatureDefinitions(fighter);
   const featureUuidById = makeUuidMap(featureDefinitions);
@@ -2558,7 +2558,7 @@ test("fighter class advancement grants every non-special base feature", () => {
   });
   const specialFeatureNames = new Set(["Младшая черта", "Повышение характеристики", "Увеличение характеристик"]);
   const expectedFeatureUuids = fighter.classData.features
-    .filter((feature) => !specialFeatureNames.has(feature.name))
+    .filter((feature) => !specialFeatureNames.has(feature.name) && !feature.featureId.startsWith("fighter-multiattack-"))
     .map((feature) => featureUuidById.get(`${fighter.classData.identifier}::class::${feature.featureId}`));
   const grantedFeatureUuids = advancement
     .filter((entry) => entry.type === "ItemGrant" && entry.title.startsWith("Классовые умения"))
@@ -2567,9 +2567,23 @@ test("fighter class advancement grants every non-special base feature", () => {
   assert.deepEqual(new Set(grantedFeatureUuids), new Set(expectedFeatureUuids));
 });
 
+test("fighter grants one general feat choice at levels six and fourteen", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const generalFeatUuids = ["Compendium.world.rebreya-feats.Item.general"];
+  const advancements = buildClassAdvancement(fighter.classData, { generalFeatUuids });
+  const choices = advancements.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Дополнительная черта"));
+  assert.deepEqual(choices.map((entry) => entry.level), [6, 14]);
+  for (const entry of choices) {
+    assert.deepEqual(entry.configuration.pool, generalFeatUuids.map((uuid) => ({ uuid })));
+    assert.equal(entry.configuration.choices[entry.level].count, 1);
+  }
+});
+
 test("fighter maneuvers consume the shared dominance dice item by identifier", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
-  const maneuver = buildFeatureDefinitions(fighter)
+  const definitions = buildFeatureDefinitions(fighter);
+  const resource = createFeatureEntryData(definitions.find((definition) => definition.featureId.endsWith("::fighter-dominance")), new Map());
+  const maneuver = definitions
     .find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Ответный удар");
   const entry = createFeatureEntryData(maneuver, new Map());
   const activity = Object.values(entry.system.activities)[0];
@@ -2581,7 +2595,7 @@ test("fighter maneuvers consume the shared dominance dice item by identifier", (
   assert.equal(entry.system.type.subtype, "fighterManeuver");
   assert.deepEqual(activity.consumption.targets, [{
     type: "itemUses",
-    target: "fighter-dominance",
+    target: resource.system.identifier,
     value: "1",
     scaling: {
       mode: "",
@@ -2596,7 +2610,9 @@ test("fighter maneuvers consume the shared dominance dice item by identifier", (
 
 test("all fighter maneuvers have an activity that spends dominance dice", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
-  const maneuvers = buildFeatureDefinitions(fighter).filter((definition) => definition.sourceType === "fighterManeuver");
+  const definitions = buildFeatureDefinitions(fighter);
+  const resource = createFeatureEntryData(definitions.find((definition) => definition.featureId.endsWith("::fighter-dominance")), new Map());
+  const maneuvers = definitions.filter((definition) => definition.sourceType === "fighterManeuver");
 
   for (const maneuver of maneuvers) {
     const entry = createFeatureEntryData(maneuver, new Map());
@@ -2606,7 +2622,7 @@ test("all fighter maneuvers have an activity that spends dominance dice", () => 
     assert.equal(entry.flags["rebreya-main"].automation.type, "fighterManeuver");
     assert.deepEqual(activities[0].consumption.targets, [{
       type: "itemUses",
-      target: "fighter-dominance",
+      target: resource.system.identifier,
       value: "1",
       scaling: {
         mode: "",
@@ -2619,6 +2635,18 @@ test("all fighter maneuvers have an activity that spends dominance dice", () => 
       assert.equal(activities[0].target.prompt, true, `${maneuver.name} должен брать выбранную цель`);
     }
     assert.match(activities[0].description.chatFlavor, /@scale\.fighter-rework-v028\.dominance-die/u);
+  }
+});
+
+test("fighter maneuver activation follows the warrior's authored timing", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const features = buildFeatureDefinitions(fighter);
+  for (const [name, expected] of [
+    ["Атака с манёвром", "special"], ["Удар командующего", "special"],
+    ["Опрокидывающая атака", "special"], ["Быстрый бросок", "bonus"]
+  ]) {
+    const item = createFeatureEntryData(features.find((feature) => feature.name === name), new Map());
+    assert.equal(Object.values(item.system.activities)[0].activation.type, expected, name);
   }
 });
 
@@ -2681,7 +2709,7 @@ test("fighter second wind uses its item uses as the healing dice pool", () => {
   const entry = createFeatureEntryData(secondWind, new Map());
   const activity = Object.values(entry.system.activities)[0];
 
-  assert.equal(entry.system.uses.max, "@details.level");
+  assert.equal(entry.system.uses.max, "@classes.fighter-rework-v028.levels");
   assert.deepEqual(entry.system.uses.recovery, [{
     period: "lr",
     type: "recoverAll",

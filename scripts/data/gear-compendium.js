@@ -30,7 +30,7 @@ import {
   finiteNumber as toFiniteNumber
 } from "../shared/foundry-values.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildWhirlwindActivity } from "../combat/whirlwind-attack.js?v=1.5.1";
+import { buildWhirlwindActivity } from "../combat/whirlwind-attack.js?v=1.5.70";
 
 export { buildGearIconLookup };
 

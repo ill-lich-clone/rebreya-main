@@ -7,6 +7,7 @@ function makeActor({
   runeReach = 0,
   disabled = false,
   suppressed = false,
+  juggernaut = true,
   appliedSize = "huge"
 } = {}) {
   const effects = runeReach > 0 ? [{
@@ -31,6 +32,7 @@ function makeActor({
       }
     },
     effects: { contents: effects },
+    items: juggernaut ? [{ name: "Рунический Джаггернаут" }] : [],
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
     }
@@ -55,4 +57,6 @@ test("natural reach ignores inactive and non-Huge Rune Knight effects", async ()
   assert.equal(getNaturalReachFeet(makeActor({ size: "huge", runeReach: 5, disabled: true })), 15);
   assert.equal(getNaturalReachFeet(makeActor({ size: "huge", runeReach: 5, suppressed: true })), 15);
   assert.equal(getNaturalReachFeet(makeActor({ size: "lg", runeReach: 5, appliedSize: "lg" })), 10);
+  assert.equal(getNaturalReachFeet(makeActor({ size: "lg", runeReach: 5, appliedSize: "huge" })), 10);
+  assert.equal(getNaturalReachFeet(makeActor({ size: "huge", runeReach: 5, juggernaut: false })), 15);
 });

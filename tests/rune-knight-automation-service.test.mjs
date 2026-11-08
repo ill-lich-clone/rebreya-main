@@ -200,6 +200,28 @@ test("actor repair is local and coalesces concurrent work", async () => {
   assert.equal(service._repairActorPromises.size, 0);
 });
 
+test("deleting a rune removes effects owned by it on other actors without removing unrelated effects", async () => {
+  const fire = createItem({ id: "deleted-fire", automation: "fire" });
+  const source = createActor({ items: [fire] });
+  const target = createActor({ effects: [
+    { id: "owned", flags: { "rebreya-main": { runeKnight: { sourceItemUuid: fire.uuid } } } },
+    { id: "other", flags: { "rebreya-main": { runeKnight: { sourceItemUuid: "Actor.other.Item.fire" } } } }
+  ] });
+  source.items.pop();
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "game");
+  Object.defineProperty(globalThis, "game", {
+    configurable: true, writable: true, value: { ...globalThis.game, actors: [source, target] }
+  });
+  try {
+    await new RuneKnightAutomationService({}).handleEmbeddedItemChange(fire);
+    assert.deepEqual(target.effects.map(effect => effect.id), ["other"]);
+  }
+  finally {
+    if (previous) Object.defineProperty(globalThis, "game", previous);
+    else delete globalThis.game;
+  }
+});
+
 test("Frost, Hill, and Storm activations pay once and create source-owned timed effects", async () => {
   const frost = createItem({ id: "frost", automation: "frost", spent: 0, max: 1 });
   const hill = createItem({ id: "hill", automation: "hill", spent: 0, max: 1 });
@@ -247,11 +269,14 @@ test("Fire tool expertise, Hill poison saves, and Storm surprise immunity are co
 
   const proficientTool = { actor, proficiency: { multiplier: 1 } };
   const untrainedTool = { actor, proficiency: { multiplier: 0 } };
+  const expertTool = { actor, proficiency: { multiplier: 2 } };
   service.applyDnd5ePreRollToolCheck(proficientTool, {}, {});
   service.applyDnd5ePreRollToolCheck(untrainedTool, {}, {});
+  service.applyDnd5ePreRollToolCheck(expertTool, {}, {});
   assert.equal(proficientTool.proficiency.multiplier, 2);
   assert.equal(proficientTool.bonus, "@prof");
   assert.equal(untrainedTool.proficiency.multiplier, 0);
+  assert.equal(expertTool.bonus, undefined);
 
   const poisonSave = { actor, ability: "con", options: { damageType: "poison" } };
   const ordinarySave = { actor, ability: "con", options: { damageType: "fire" } };
@@ -270,7 +295,7 @@ test("Fire tool expertise, Hill poison saves, and Storm surprise immunity are co
   assert.equal(service.prepareActiveEffectCreate(surprised), true);
 });
 
-function createStoneHarness({ promptAccepted = true, reactionConsumed = true, capabilityAvailable = true } = {}) {
+function createStoneHarness({ promptAccepted = true, reactionConsumed = true, capabilityAvailable = true, firstSave = false } = {}) {
   const stone = createItem({ id: "stone", automation: "stone", spent: 0, max: 1 });
   const reactor = createActor({ level: 10, prof: 4, items: [stone] });
   reactor.name = "Rune Knight";
@@ -334,7 +359,7 @@ function createStoneHarness({ promptAccepted = true, reactionConsumed = true, ca
     clearTimeoutFn: () => {}
   });
   moduleApi.reactionQueueService = queue;
-  const saveResults = [false, true];
+  const saveResults = [firstSave, true];
   const service = new RuneKnightAutomationService(moduleApi, {
     distanceFeet() {
       calls.distance += 1;
@@ -346,7 +371,7 @@ function createStoneHarness({ promptAccepted = true, reactionConsumed = true, ca
     },
     async rollSave() {
       calls.saves += 1;
-      return saveResults.shift() ?? true;
+      return saveResults.length ? saveResults.shift() : true;
     }
   });
   return {
@@ -415,6 +440,19 @@ test("Stone Rune timeout and failed ordinary-reaction payment roll back all stat
   assert.equal(failedResult.accepted.length, 0);
   assert.equal(reactionFailure.stone.system.uses.spent, 0);
   assert.deepEqual(reactionFailure.target.effects, []);
+});
+
+test("Stone Rune refunds a canceled save and does not incapacitate a charm-immune creature", async () => {
+  for (const [firstSave, immune] of [[null, false], [false, true]]) {
+    const harness = createStoneHarness({ firstSave });
+    harness.target.system.traits.ci = { value: new Set(immune ? ["charmed"] : []) };
+    await harness.service.initialize();
+    await harness.service.handleCombatTurnChange(harness.combat, {
+      previous: { combatant: { actor: harness.target, token: harness.targetToken }, round: 2, turn: 0 }
+    });
+    assert.equal(harness.target.createdEffects.length, 0);
+    assert.equal(harness.stone.system.uses.spent, immune ? 1 : 0);
+  }
 });
 
 test("Stone Rune capability guard performs zero geometry when no reactor exists", async () => {
@@ -532,6 +570,22 @@ test("whirlwind Fire Rune bonus is halved and restricted to the chosen hit token
   assert.ok(harness.target.effects.find(effect => effect.flags?.["rebreya-main"]?.runeKnight?.automation === "fire-shackles"));
 });
 
+test("normal multi-target Fire Rune damage is addressed to the selected hit only", async () => {
+  const harness = createFireHarness();
+  const other = { uuid: "Scene.scene.Token.other", actor: createActor() };
+  harness.workflow.hitTargets.add(other);
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+  await harness.service.applyMidiPreDamageRollComplete(harness.workflow);
+  const roll = harness.workflow.bonusDamageRolls[0];
+  const { applyWhirlwindDamage } = await import("../scripts/combat/whirlwind-attack.js");
+  const selected = { value: 7, properties: roll.options.properties };
+  const unrelated = { ...selected };
+  applyWhirlwindDamage(harness.target, [selected], { midi: { targetUuid: harness.targetToken.uuid } });
+  applyWhirlwindDamage(other.actor, [unrelated], { midi: { targetUuid: other.uuid } });
+  assert.equal(selected.value, 7);
+  assert.equal(unrelated.value, 0);
+});
+
 test("Fire Rune is weapon-only and rolls back payment when damage integration fails", async () => {
   const spellHarness = createFireHarness({ weapon: false });
   await spellHarness.service.repairActor(spellHarness.actor);
@@ -542,7 +596,7 @@ test("Fire Rune is weapon-only and rolls back payment when damage integration fa
   const failed = createFireHarness({ damageFails: true });
   await failed.service.repairActor(failed.actor);
   await failed.service.applyMidiHitsChecked(failed.workflow);
-  assert.equal(await failed.service.applyMidiPreDamageRollComplete(failed.workflow), false);
+  assert.equal(await failed.service.applyMidiPreDamageRollComplete(failed.workflow), true);
   assert.equal(failed.fire.system.uses.spent, 0);
   assert.deepEqual(failed.target.effects, []);
 
@@ -861,6 +915,54 @@ test("Runic Shield restores its reroll and use when applying the reroll fails", 
   assert.strictEqual(harness.workflow.attackRoll, originalRoll);
 });
 
+test("Runic Shield replaces one d20 and preserves evaluated bonus terms", async () => {
+  const harness = createHitRewriteHarness({ includeShield: true });
+  harness.cloudItem.system.uses.spent = 1;
+  let rolled = 0;
+  class AttackDie {
+    constructor({ number, options }) {
+      Object.assign(this, { number, options, faces: 20, total: 13 });
+    }
+    async evaluate() {
+      rolled += this.number;
+      this.total = 7;
+      return this;
+    }
+  }
+  const die = new AttackDie({ number: 2, options: { criticalSuccess: 19 } });
+  const bonus = { total: 5 };
+  harness.workflow.attackRoll.terms = [die, bonus];
+  harness.workflow.attackRoll.constructor = { fromTerms(terms) {
+    assert.equal(terms[1], bonus);
+    assert.equal(terms[0].options.criticalSuccess, 19);
+    return { terms, total: terms[0].total + terms[1].total };
+  } };
+  await harness.service.initialize();
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+  assert.equal(rolled, 1);
+  assert.equal(harness.calls.rerolls, 0);
+  assert.equal(harness.workflow.attackRoll.total, 12);
+});
+
+test("the attack client applies a Cloud Rune redirect returned by the reaction coordinator", async () => {
+  const harness = createHitRewriteHarness();
+  const previous = globalThis.fromUuidSync;
+  globalThis.fromUuidSync = uuid => uuid === harness.redirectedToken.uuid ? harness.redirectedToken : null;
+  try {
+    harness.queue.resolve = async ({ kind }) => ({
+      accepted: kind === "rune-cloud"
+        ? [{ effect: { applied: true, onOrigin: true, redirectedTokenUuid: harness.redirectedToken.uuid } }]
+        : []
+    });
+    await harness.service.applyMidiHitsChecked(harness.workflow);
+    assert.deepEqual([...harness.workflow.targets], [harness.redirectedToken]);
+    assert.equal(harness.workflow.damageList.length, 0);
+  }
+  finally {
+    globalThis.fromUuidSync = previous;
+  }
+});
+
 function createStormHarness({ mode = "disadvantage", reactionConsumed = true, prophetic = true } = {}) {
   const stormItem = createItem({ id: "storm", automation: "storm", spent: 1, max: 1 });
   const effect = prophetic ? {
@@ -1011,6 +1113,24 @@ test("Storm applies an accepted roll mode once and ignores a roll that already f
   assert.equal(finished.calls.distance, 0);
 });
 
+test("Storm updates the MIDI save choices without mutating shared workflow options", async () => {
+  const harness = createStormHarness({ mode: "advantage" });
+  await harness.queue.initialize();
+  await harness.service.initialize();
+  const markers = [];
+  const tracker = { advantage: { add: (key) => markers.push(key) }, hasAdvantage: true, hasDisadvantage: false };
+  const workflowOptions = {};
+  harness.workflow.workflowOptions = workflowOptions;
+  const save = { workflowOptions, modifierTracker: tracker, advantageByChoice: { wis: { tracker } } };
+  await harness.service.applyMidiStormPreRoll(save, "save", {
+    workflow: harness.workflow, actor: harness.rollingActor, token: harness.rollingToken
+  });
+  assert.equal(save.advantage, true);
+  assert.equal(save.advantageByChoice.wis.hasAdvantage, true);
+  assert.equal(markers.length, 1);
+  assert.deepEqual(workflowOptions, {});
+});
+
 test("Storm capability requires prophetic state and native hooks apply only a pre-resolved mode", async () => {
   const dormant = createStormHarness({ prophetic: false });
   await dormant.service.initialize();
@@ -1035,6 +1155,7 @@ function createGiantMightHarness({
   dominanceSpent = 0,
   dominanceMax = 4,
   fallbackAccepted = true,
+  damageAccepted = true,
   canGrow = true,
   effectFails = false,
   features = [],
@@ -1082,6 +1203,7 @@ function createGiantMightHarness({
         calls.prompts += 1;
         calls.promptTitles.push(prompt.title);
         if (prompt.title === "Мощь великана") return { accepted: fallbackAccepted };
+        if (prompt.title === "Мощь великана: дополнительный урон") return { accepted: damageAccepted };
         if (prompt.title === "Рунический исполин") {
           return { accepted: hugeAccepted, size: "huge", resizeWeapons };
         }
@@ -1197,6 +1319,44 @@ test("Giant's Might keeps its combat benefits when there is no room to grow", as
   assert.equal(harness.actor.createdEffects[0].flags["rebreya-main"].runeKnight.form.grew, false);
 });
 
+test("v14 expiry restores the giant form once and permits reuse", async () => {
+  const harness = createGiantMightHarness();
+  await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token });
+  const effect = harness.actor.createdEffects[0];
+  effect.duration.expired = true;
+  await harness.service.handleEmbeddedEffectChange(effect);
+  assert.equal(harness.actor.system.traits.size, "med");
+  assert.equal(harness.token.width, 1);
+  assert.equal(harness.actor.effects.includes(effect), true);
+
+  await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token });
+  assert.equal(harness.actor.createdEffects.length, 2);
+  assert.equal(harness.giantItem.system.uses.spent, 2);
+  await harness.service.handleEmbeddedEffectDeletion(effect);
+  assert.equal(harness.actor.system.traits.size, "lg");
+});
+
+test("expired rune effects do not block activation", async () => {
+  const frost = createItem({ id: "frost", automation: "frost", max: 1 });
+  const actor = createActor({ items: [frost] });
+  const service = new RuneKnightAutomationService({});
+  const activity = { actor, item: frost, flags: frost.flags };
+  await service.applyDnd5ePostUseActivity(activity);
+  actor.createdEffects[0].duration.expired = true;
+  await service.handleRestCompleted(actor, { type: "short" });
+  await service.applyDnd5ePostUseActivity(activity);
+  assert.equal(actor.createdEffects.length, 2);
+  assert.equal(frost.system.uses.spent, 1);
+});
+
+test("ordinary growth to Huge does not grant juggernaut reach", async () => {
+  const harness = createGiantMightHarness();
+  harness.actor.system.traits.size = "lg";
+  await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token });
+  assert.equal(harness.actor.system.traits.size, "huge");
+  assert.equal(harness.actor.createdEffects[0].flags["rebreya-main"].runeKnight.reachBonus, 0);
+});
+
 test("Giant's Might cleanup does not overwrite size values changed by another source", async () => {
   const harness = createGiantMightHarness();
   await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token });
@@ -1272,6 +1432,7 @@ test("Giant's Might adds damage to the first weapon hit on the actor's turn only
     await harness.service.applyMidiPreDamageRollComplete(workflow);
     await harness.service.applyMidiPreDamageRollComplete(workflow);
     assert.equal(harness.calls.damage, 1);
+    assert.deepEqual(harness.calls.promptTitles, ["Мощь великана: дополнительный урон"]);
     assert.equal(workflow.bonusDamageRolls.length, 1);
     assert.equal(workflow.bonusDamageRolls[0].formula, "1d6");
 
@@ -1308,6 +1469,7 @@ test("Giant's Might native damage fallback uses the same once-per-turn key", asy
   const second = { subject: activity, rolls: [] };
   try {
     assert.equal(harness.service.applyDnd5eGiantMightDamage(first, {}, {}), true);
+    harness.service.commitDnd5eGiantMightDamage(first.rolls);
     assert.equal(harness.service.applyDnd5eGiantMightDamage(second, {}, {}), true);
     assert.equal(first.rolls.length, 1);
     assert.deepEqual(first.rolls[0].parts, ["1d6"]);

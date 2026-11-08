@@ -535,7 +535,7 @@ export class ReactionQueueService {
       triggerId: cleanString(message?.triggerId),
       kind: cleanString(message?.kind),
       workflowId: cleanString(message?.workflowId),
-      context: message?.context ?? {}
+      context: { ...message?.context, _reactionTransportSender: senderId }
     });
     game?.socket?.emit?.(REACTION_SOCKET_CHANNEL, {
       type: REACTION_TRIGGER_RESULT_EVENT,

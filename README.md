@@ -7,12 +7,12 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.5.69`.
+- Версия: `1.5.70`.
 - Черта «Мастер огнестрельного оружия» добавляет количество мест обвесов по текущему бонусу мастерства владельца; дополнительные места показаны сеткой под чертежом. Уже установленные обвесы сохраняются при потере черты или снижении бонуса.
 - Foundry VTT: minimum `13`, verified `14`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.5.69` загружает только тонкий `scripts/main-1.5.69.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
+- Manifest версии `1.5.70` загружает только тонкий `scripts/main-1.5.70.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
 - `scripts/main.js` — единственный composition root. Ранее опубликованные versioned entrypoint-файлы, включая `scripts/main-1.4.*.js`, сохранены как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Узкий API регистрации panel tools публикуется в `game.modules.get("rebreya-main")?.api` уже на `init`, до первой сборки Scene Controls. Полный runtime API на `ready` публикуется как `game.rebreyaMain` и заменяет module API.
 
@@ -245,6 +245,7 @@ Versioned entrypoint обязан оставаться минимальным ca
 - `RuneKnightAutomationService` управляет шестью всегда активными рунами, их SR/LR-перезарядкой, Stone/Cloud/Storm реакциями, Fire/Hill/Frost эффектами, Runic Shield и формой Giant's Might. MIDI-QOL используется для ожидающих pre-roll/hit/damage hooks, DAE — для постоянных и временных эффектов; native dnd5e получает безопасные fallback-маркеры там, где системный hook синхронный.
 - Окно Cloud Rune открывается только для атакующего с противоположным ненулевым token disposition и только когда существует новая цель, отличная от атакующего и исходной цели. Дружественные и нейтральные атаки, исчерпанный ресурс и отсутствие альтернативной цели пропускаются без окна и расхода.
 - Ресурсы Rune Knight синхронизируются локально на конкретном Actor: руны получают 1 применение (2 с Master of Runes), Giant's Might и Runic Shield — бонус мастерства за продолжительный отдых. Все runtime-кэши и журналы дедупликации ограничены по размеру.
+- Foundry 14 может оставить истёкший эффект в листе. Такой эффект больше не мешает пробуждению руны, а окончание «Мощи великана» возвращает размер и габариты, которые всё ещё принадлежат форме. Бонус урона в MIDI предлагается на подтверждённом попадании в собственный ход, включая общий ход. Для чужой цели Огненной руны активный GM сверяет карточку попадания и владение руной, затем подтверждает применение.
 
 ## Сохранность состояния и «база»
 
@@ -397,6 +398,8 @@ Versioned entrypoint обязан оставаться минимальным ca
 | Сервис | Hooks/идентификаторы | Автоматизация | Cleanup/права | Тест |
 |---|---|---|---|---|
 | `FighterAutomationService` | `createItem`, sheet render, combat turn, post-use, damage, rest, Midi RollComplete; class `fighter-rework-v028` | starting equipment, dominance maneuvers, precise attack, second wind, iron will, multiattack choice и repair advancement/container links | prompt выполняет создающий/владеющий клиент; расход dominance/second-wind защищён от дубля; turn/rest эффекты завершаются по source turn/long rest | `fighter-automation-service.test.mjs` |
+
+Воин выбирает один вариант мультиатаки на продолжительном отдыхе начиная со 2-го уровня. Нативная прогрессия предлагает общую черту на 6-м и 14-м уровнях, а «Превосходная техника» добавляет одну кость к существующему пулу доминирования. «Второе дыхание» считает уровни воина и имеет общий лимит на ход для обычного применения и «Железной воли». Приёмы с добавочным уроном используют подтверждённое оружейное попадание. Активный GM подтверждает запись по чужой цели по связанным карточкам применения и атаки.
 | `SorcererAutomationService` | item create/update, cast dialogs, pre-use, attack/save/damage hooks, post message, combat turn, rest | Sorcery Points, virtual slots/cooldowns, metamagic (Careful, Distant, Empowered, Extended, Heightened, Quickened, Seeking, Subtle, Twinned), draconic options, Mana Storm и Transcendence | платежи сериализованы по Actor и откатываются при отмене cast; cooldown идёт по ходу владельца; high-level virtual slots сбрасываются long rest | `sorcerer-automation-service.test.mjs` |
 | `PaladinAutomationService` | item/actor updates, post-use, rest, `midi-qol.preDamageRoll` | prepared spells, Lay on Hands, Divine Smite; class `paladin-rework-v01` | чужая цель Lay on Hands идёт active GM; socket sender должен владеть source Actor; smite once/turn, prepared spells — long rest | `paladin-automation-service.test.mjs` |
 | `RogueAutomationService` | `midi-qol.preDamageRoll`; class `rogue-rework-v00` | Sneak Attack и Cunning Strike: Hamstring, Disrupt Aim, Open Position, Trip, Break Tempo и данные sourceType `rogueCunningStrike` | один Sneak Attack на combat turn; добавляет damage config до roll, статусы/карточку — после выбора | `rogue-automation-service.test.mjs` |

@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.5.61";
+import { isRuneKnightEffectActive } from "../data/rune-knight-automation.js?v=1.5.70";
 
 function collectionValues(collection) {
   if (Array.isArray(collection)) return collection;
@@ -20,9 +21,14 @@ function actorFlag(actor, key) {
 }
 
 function runeKnightReachBonusFeet(actor) {
+  if (actor?.system?.traits?.size !== "huge") return 0;
+  if (!collectionValues(actor.items).some(item => (
+    item.flags?.[MODULE_ID]?.runeKnightAutomation?.id === "runic-juggernaut"
+    || /^(?:рунический джаггернаут|рунический исполин)$/iu.test(String(item.name ?? "").trim())
+  ))) return 0;
   let maximum = 0;
   for (const effect of collectionValues(actor?.effects)) {
-    if (effect?.disabled === true || effect?.isSuppressed === true) continue;
+    if (!isRuneKnightEffectActive(effect)) continue;
     const runeKnight = effect?.flags?.[MODULE_ID]?.runeKnight;
     if (String(runeKnight?.automation ?? "").trim() !== "giant-might-form") continue;
     if (String(runeKnight?.form?.appliedActorSize ?? "").trim().toLowerCase() !== "huge") continue;

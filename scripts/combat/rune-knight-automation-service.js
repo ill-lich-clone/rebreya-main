@@ -1,6 +1,11 @@
 import { MODULE_ID } from "../constants.js";
-import { whirlwindEffectTargets, isWhirlwindActivity, markWhirlwindDamageRolls } from "./whirlwind-attack.js?v=1.5.1";
+import { whirlwindEffectTargets, isWhirlwindActivity, markWhirlwindDamageRolls, markDamageRollTarget } from "./whirlwind-attack.js?v=1.5.70";
 import { getCreatureTokenFootprint } from "../data/equipment-size-rules.js?v=1.4.393";
+import { isRuneKnightEffectActive } from "../data/rune-knight-automation.js?v=1.5.70";
+import { isCombatActorActive } from "./turn-group-rules.js?v=1.5.66";
+import { FIRE_RUNE_COMMAND, reserveClassCombatOperation, resolveClassCombatHit } from "../infrastructure/foundry/class-combat-command.js?v=1.5.70";
+import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
+import { cardHitEvidence, usageCardData } from "../integrations/midi-usage-card.js";
 
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const EFFECT_MODE_ADD = 2;
@@ -50,8 +55,10 @@ const MIGRATION_AUTOMATION_BY_NAME = new Map([
   ["мощь великана", "giant-might"],
   ["рунический щит", "runic-shield"],
   ["великанский рост", "great-stature"],
+  ["великий рост", "great-stature"],
   ["мастер рун", "master-of-runes"],
-  ["рунический исполин", "runic-juggernaut"]
+  ["рунический исполин", "runic-juggernaut"],
+  ["рунический джаггернаут", "runic-juggernaut"]
 ]);
 
 function cleanText(value, fallback = "") {
@@ -168,6 +175,19 @@ function firstActivityId(item) {
   return documentId(collectionValues(item?.system?.activities)[0]);
 }
 
+function workflowHitTargets(workflow) {
+  return [...new Set([...collectionValues(workflow?.hitTargets), ...collectionValues(workflow?.hitTargetsEC)])];
+}
+
+function hitTargetFields(tokens) {
+  return tokens.length > 1 ? [{
+    name: "targetTokenUuid",
+    type: "select",
+    label: "Цель",
+    options: tokens.map(token => ({ value: documentUuid(token), label: tokenActor(token)?.name || documentUuid(token) }))
+  }] : [];
+}
+
 function ownerUserIds(actor) {
   return collectionValues(globalThis.game?.users)
     .filter((user) => {
@@ -219,11 +239,15 @@ function contextIsPoison(...contexts) {
       context?.type,
       context?.options?.damageType,
       context?.options?.type,
-      context?.options?.sourceType,
-      context?.flavor,
-      context?.data?.flavor
+      context?.options?.sourceType
     ];
-    if (values.some((value) => /(?:^|\W)(?:poison|яд)(?:$|\W)/iu.test(cleanText(value)))) return true;
+    if (values.some(value => ["poison", "poisoned", "яд", "отравление"].includes(cleanText(value).toLowerCase()))) return true;
+    const activity = context?.activity ?? context?.subject;
+    if (collectionValues(activity?.damage?.parts).some(part => collectionValues(part.types).includes("poison"))) return true;
+    if (collectionValues(activity?.effects).some(link => {
+      const effect = activity.item?.effects?.get?.(link.id ?? link._id);
+      return statusIds(effect).has("poisoned");
+    })) return true;
   }
   return false;
 }
@@ -241,7 +265,9 @@ function statusIds(document) {
 
 function actorIsIncapacitated(actor) {
   if (statusIds(actor).has("incapacitated")) return true;
-  return collectionValues(actor?.effects).some((effect) => statusIds(effect).has("incapacitated"));
+  return collectionValues(actor?.effects).some((effect) => (
+    isRuneKnightEffectActive(effect) && statusIds(effect).has("incapacitated")
+  ));
 }
 
 function classIdentifier(item) {
@@ -321,17 +347,19 @@ export class RuneKnightAutomationService {
     this.options = options;
     this._repairActorPromises = new Map();
     this._pendingRepairOptions = new Map();
-    this._actorFeatureCache = new Map();
     this._stoneTriggers = new Map();
     this._fireWorkflowStates = new Map();
     this._fireWorkflowPromises = new Map();
     this._fireTurnKeys = new Set();
     this._hitReactionTriggers = new Map();
+    this._remoteHitTriggers = new WeakMap();
     this._stormRollTriggers = new Map();
     this._stormRollResults = new WeakMap();
     this._stormRollSequence = 0;
     this._giantMightDamageKeys = new Set();
     this._giantMightDamageWorkflows = new WeakMap();
+    this._giantMightRestorations = new WeakMap();
+    this._itemUsePayments = new WeakSet();
   }
 
   async initialize() {
@@ -421,7 +449,6 @@ export class RuneKnightAutomationService {
 
   async #repairActorNow(actor, { restoreRunes = false, restoreLongRest = false } = {}) {
     const items = collectionValues(actor?.items);
-    this.#cacheActorFeatures(actor, items);
     const level = fighterLevel(actor);
     const hasMasterOfRunes = level >= 15 && items.some((item) => automationId(item) === "master-of-runes");
     const runeMaximum = hasMasterOfRunes ? 2 : 1;
@@ -517,24 +544,48 @@ export class RuneKnightAutomationService {
     if (!actor) return true;
 
     const id = automationId(item);
-    this._actorFeatureCache.delete(actorKey(actor));
     if (RUNE_IDS.has(id) && !this.#actorStillOwnsItem(actor, item)) {
-      await this.#deleteSourceEffects(actor, cleanText(item?.uuid));
+      await this.#removeDeletedRuneEffects(actor, item);
     }
     await this.repairActor(actor);
     return true;
   }
 
+  async #removeDeletedRuneEffects(actor, item) {
+    const game = globalThis.game;
+    const targets = new Set([actor, ...collectionValues(game?.actors)]);
+    for (const scene of collectionValues(game?.scenes)) {
+      for (const token of collectionValues(scene.tokens)) {
+        if (token.actor && token.actorLink === false) targets.add(token.actor);
+      }
+    }
+    for (const target of targets) {
+      if (game?.user?.isGM || target.isOwner !== false) await this.#deleteSourceEffects(target, documentUuid(item));
+    }
+  }
+
   async handleEmbeddedEffectChange(effect) {
     const actor = actorFromEmbeddedDocument(effect);
-    if (actor) await this.repairActor(actor);
+    if (!actor) return true;
+    if (effect.duration?.expired === true
+      && getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`) === GIANT_MIGHT_FORM_AUTOMATION) {
+      await this.#finishGiantMightForm(actor, effect);
+    }
+    if (isRuneKnightEffectActive(effect) && statusIds(effect).has("incapacitated")) {
+      for (const state of collectionValues(actor.effects)) {
+        if (isRuneKnightEffectActive(state) && getProperty(state, `flags.${MODULE_ID}.runeKnight.propheticState`) === true) {
+          await this.#deleteActorEffect(actor, state);
+        }
+      }
+    }
+    await this.repairActor(actor);
     return true;
   }
 
   async handleEmbeddedEffectDeletion(effect) {
     const actor = actorFromEmbeddedDocument(effect);
     if (actor && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === GIANT_MIGHT_FORM_AUTOMATION) {
-      await this.#restoreGiantMightForm(actor, effect);
+      await this.#finishGiantMightForm(actor, effect);
     }
     if (actor) await this.repairActor(actor);
     return true;
@@ -577,7 +628,8 @@ export class RuneKnightAutomationService {
 
   applyDnd5ePreRollToolCheck(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
     const actor = contextActor(rollConfig, dialogConfig, messageConfig);
-    if (!actor || !this.#actorHasFeature(actor, "fire") || rollConfig._rebreyaRuneToolExpertise) {
+    if (!actor || !this.#actorHasFeature(actor, "fire") || rollConfig._rebreyaRuneToolExpertise
+      || getProperty(actor, "flags.dnd5e.toolExpertise")) {
       return true;
     }
 
@@ -594,7 +646,7 @@ export class RuneKnightAutomationService {
         0
       )
       : numberValue(proficiency, 0);
-    if (multiplier <= 0) return true;
+    if (multiplier !== 1) return true;
 
     const currentBonus = cleanText(rollConfig.bonus);
     if (!/(?:^|\W)@prof(?:$|\W)/u.test(currentBonus)) {
@@ -650,7 +702,7 @@ export class RuneKnightAutomationService {
 
     const workflowId = cleanText(documentUuid(workflow) || documentId(workflow));
     const targetActorUuid = documentUuid(targetActor) || actorKey(targetActor);
-    const triggerId = `${workflowId || `native-${++this._stormRollSequence}`}:${targetActorUuid}:${normalizedType}:storm-rune`;
+    const triggerId = `${workflowId || `native-${++this._stormRollSequence}`}:${documentUuid(targetToken) || targetActorUuid}:${normalizedType}:storm-rune`;
     const trigger = {
       kind: STORM_REACTION_KIND,
       rollType: normalizedType,
@@ -681,9 +733,36 @@ export class RuneKnightAutomationService {
     }
     const accepted = collectionValues(result?.accepted)[0];
     const mode = this.#stormMode(accepted?.effect?.mode ?? accepted?.choice?.mode);
-    if (mode) this.#setStormRollMode(rollContext, mode);
+    if (mode && options.workflow && rollContext !== workflow) {
+      this.#addMidiSaveMode(rollContext, mode, "rebreya-storm-rune", "Штормовая руна");
+    }
+    else if (mode) this.#setStormRollMode(rollContext, mode);
     this._stormRollResults.set(rollContext, result);
     return result;
+  }
+
+  applyMidiTargetSave(target, workflow, saveDetails) {
+    if (!saveDetails) return true;
+    const actor = tokenActor(target);
+    const type = !saveDetails.rollType || saveDetails.rollType === "save" ? "save" : "check";
+    if (type === "save" && this.#actorHasFeature(actor, "hill") && contextIsPoison(
+      saveDetails, { activity: workflow?.saveActivity ?? workflow?.activity }
+    )) {
+      this.#addMidiSaveMode(saveDetails, "advantage", "rebreya-hill-rune", "Холмовая руна");
+    }
+    return this.applyMidiStormPreRoll(saveDetails, type, { actor, token: target, workflow });
+  }
+
+  #addMidiSaveMode(details, mode, source, label) {
+    const choices = Object.values(details.advantageByChoice ?? {});
+    const trackers = new Set([details.modifierTracker, ...choices.map(choice => choice.tracker)].filter(Boolean));
+    for (const tracker of trackers) tracker[mode]?.add?.(source, label);
+    details[mode] = true;
+    for (const choice of choices) {
+      if (!choice.tracker) continue;
+      choice.hasAdvantage = choice.tracker.hasAdvantage;
+      choice.hasDisadvantage = choice.tracker.hasDisadvantage;
+    }
   }
 
   applyDnd5eStormRollMode(rollConfig = {}, dialogConfig = {}, messageConfig = {}, rollType = "check") {
@@ -707,7 +786,7 @@ export class RuneKnightAutomationService {
   applyDnd5eGiantMightDamage(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
     void dialogConfig;
     void messageConfig;
-    if (rollConfig?._rebreyaGiantMightDamageApplied === true) return true;
+    if (rollConfig?._rebreyaGiantMightDamageApplied === true || rollConfig?.workflow) return true;
     const activity = rollConfig?.subject ?? rollConfig?.activity ?? null;
     const item = activity?.item ?? rollConfig?.item ?? null;
     const actor = activity?.actor ?? item?.actor ?? rollConfig?.actor ?? null;
@@ -720,10 +799,6 @@ export class RuneKnightAutomationService {
       cleanText(roll?.options?.[MODULE_ID]?.damageSource) === "giant-might"
     ))) return true;
 
-    this._giantMightDamageKeys.add(damageKey);
-    while (this._giantMightDamageKeys.size > 256) {
-      this._giantMightDamageKeys.delete(this._giantMightDamageKeys.values().next().value);
-    }
     const damageType = cleanText(collectionValues(item?.system?.damage?.base?.types)[0]);
     rollConfig.rolls ??= [];
     rollConfig.rolls.push({
@@ -733,11 +808,18 @@ export class RuneKnightAutomationService {
         type: damageType,
         types: damageType ? [damageType] : [],
         flavor: "Мощь великана",
-        [MODULE_ID]: { damageSource: "giant-might" }
+        [MODULE_ID]: { damageSource: "giant-might", damageKey }
       }
     });
     rollConfig._rebreyaGiantMightDamageApplied = true;
     return true;
+  }
+
+  commitDnd5eGiantMightDamage(rolls) {
+    for (const roll of rolls ?? []) {
+      const marker = roll?.options?.[MODULE_ID];
+      if (marker?.damageSource === "giant-might" && marker.damageKey) this.#claimGiantMightDamage(marker.damageKey);
+    }
   }
 
   async handleGroupedCombatPhase(combat, phase) {
@@ -864,7 +946,7 @@ export class RuneKnightAutomationService {
   #hasPropheticState(actor, item) {
     const sourceItemUuid = documentUuid(item);
     return collectionValues(actor?.effects).some((effect) => {
-      if (effect?.disabled === true || effect?.isSuppressed === true) return false;
+      if (!isRuneKnightEffectActive(effect)) return false;
       if (getProperty(effect, `flags.${MODULE_ID}.runeKnight.propheticState`) !== true) return false;
       const effectSource = cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.sourceItemUuid`));
       return !effectSource || !sourceItemUuid || effectSource === sourceItemUuid;
@@ -1026,76 +1108,52 @@ export class RuneKnightAutomationService {
     }];
   }
 
-  async #resolveCloudReaction(workflow, key) {
-    const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
-    const queue = this.moduleApi?.reactionQueueService;
-    if (
-      typeof capabilityIndex?.has !== "function"
-      || !capabilityIndex.has(CLOUD_REACTION_KIND)
-      || typeof queue?.resolve !== "function"
-    ) return true;
-    const originalTarget = collectionValues(workflow?.hitTargets)[0];
-    if (!originalTarget) return true;
-
-    const triggerId = `${key}:cloud-rune-hit`;
-    const trigger = {
-      kind: CLOUD_REACTION_KIND,
-      workflow,
-      targetToken: originalTarget,
-      targetActor: tokenActor(originalTarget),
-      attackerToken: workflow?.token ?? workflow?.tokenDocument ?? null,
-      active: true
-    };
-    this.#rememberWorkflowState(this._hitReactionTriggers, triggerId, trigger);
-    const context = {
-      triggerId,
-      workflowId: key,
-      targetTokenUuid: documentUuid(originalTarget),
-      attackerTokenUuid: documentUuid(trigger.attackerToken),
-      triggerActive: true
-    };
-    try {
-      return await queue.resolve({ triggerId, kind: CLOUD_REACTION_KIND, context });
-    }
-    finally {
-      this._hitReactionTriggers.delete(triggerId);
-    }
+  #resolveCloudReaction(workflow, key) {
+    return this.#resolveHitReaction(workflow, key, CLOUD_REACTION_KIND);
   }
 
-  async #resolveRunicShieldReaction(workflow, key) {
+  #resolveRunicShieldReaction(workflow, key) {
+    return this.#resolveHitReaction(workflow, key, RUNIC_SHIELD_REACTION_KIND);
+  }
+
+  async #resolveHitReaction(workflow, key, kind) {
     const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
     const queue = this.moduleApi?.reactionQueueService;
-    if (
-      typeof capabilityIndex?.has !== "function"
-      || !capabilityIndex.has(RUNIC_SHIELD_REACTION_KIND)
-      || typeof queue?.resolve !== "function"
-    ) return true;
-    const hitTarget = collectionValues(workflow?.hitTargets)[0];
-    if (!hitTarget) return true;
-
-    const triggerId = `${key}:runic-shield-hit`;
-    const trigger = {
-      kind: RUNIC_SHIELD_REACTION_KIND,
-      workflow,
-      targetToken: hitTarget,
-      targetActor: tokenActor(hitTarget),
-      attackerToken: workflow?.token ?? workflow?.tokenDocument ?? null,
-      active: true
-    };
-    this.#rememberWorkflowState(this._hitReactionTriggers, triggerId, trigger);
-    const context = {
-      triggerId,
-      workflowId: key,
-      targetTokenUuid: documentUuid(hitTarget),
-      attackerTokenUuid: documentUuid(trigger.attackerToken),
-      triggerActive: true
-    };
-    try {
-      return await queue.resolve({ triggerId, kind: RUNIC_SHIELD_REACTION_KIND, context });
+    if (!capabilityIndex?.has?.(kind) || typeof queue?.resolve !== "function") return true;
+    const game = globalThis.game;
+    const activeGm = getActiveGm(game);
+    if (activeGm && activeGm.id !== game?.user?.id) {
+      await workflow.displayHits?.(workflow.whisperAttackCard);
     }
-    finally {
-      this._hitReactionTriggers.delete(triggerId);
+    for (const targetToken of workflowHitTargets(workflow)) {
+      const targetTokenUuid = documentUuid(targetToken);
+      const triggerId = `${key}:${kind}:${targetTokenUuid}`;
+      const attackerToken = workflow?.token ?? workflow?.tokenDocument ?? null;
+      const trigger = { kind, workflow, targetToken, targetActor: tokenActor(targetToken), attackerToken, active: true };
+      this.#rememberWorkflowState(this._hitReactionTriggers, triggerId, trigger);
+      try {
+        const result = await queue.resolve({
+          triggerId, kind,
+          context: {
+            triggerId, workflowId: key, targetTokenUuid, attackerTokenUuid: documentUuid(attackerToken),
+            attackId: workflow.chatCard?.id ?? workflow.itemCardId, triggerActive: true
+          }
+        });
+        const accepted = result?.accepted?.[0];
+        if (accepted?.effect?.onOrigin === true) {
+          if (kind === CLOUD_REACTION_KIND) {
+            trigger.redirectedToken = globalThis.fromUuidSync?.(accepted.effect.redirectedTokenUuid);
+            if (trigger.redirectedToken) await this.#applyCloudReaction({}, {}, trigger);
+          }
+          else await this.#applyRunicShieldReaction(null, trigger);
+        }
+        if (accepted) return result;
+      }
+      finally {
+        this._hitReactionTriggers.delete(triggerId);
+      }
     }
+    return true;
   }
 
   #cloudReactionProvider() {
@@ -1123,6 +1181,7 @@ export class RuneKnightAutomationService {
       rollback: (_candidate, transaction) => this.#rollbackHitReaction(transaction),
       serializeEffect: (effect) => ({
         applied: effect?.applied === true,
+        onOrigin: effect?.onOrigin === true,
         redirectedTokenUuid: documentUuid(effect?.redirectedToken)
       })
     };
@@ -1133,7 +1192,8 @@ export class RuneKnightAutomationService {
       listCandidates: (_context, capabilityIndex) => capabilityIndex?.list?.(RUNIC_SHIELD_REACTION_KIND) ?? [],
       isTriggerValid: (context) => {
         const trigger = this.#hitReactionTrigger(context, RUNIC_SHIELD_REACTION_KIND);
-        return trigger?.active !== false && this.#workflowHasHitTarget(trigger?.workflow, trigger?.targetToken);
+        return trigger?.active !== false
+          && (trigger.onOrigin === true || this.#workflowHasHitTarget(trigger?.workflow, trigger?.targetToken));
       },
       revalidateCandidate: (candidate, context) => this.#canUseHitReaction(
         this.#normalizeHitReactionCandidate(candidate, "runic-shield"),
@@ -1159,6 +1219,7 @@ export class RuneKnightAutomationService {
       rollback: (_candidate, transaction) => this.#rollbackHitReaction(transaction),
       serializeEffect: (effect) => ({
         applied: effect?.applied === true,
+        onOrigin: effect?.onOrigin === true,
         attackTotal: numberValue(effect?.newRoll?.total, 0)
       })
     };
@@ -1187,27 +1248,36 @@ export class RuneKnightAutomationService {
   }
 
   #hitReactionTrigger(context = {}, kind) {
-    if (context._runeKnightHitTrigger?.kind === kind) return context._runeKnightHitTrigger;
+    const cached = this._remoteHitTriggers.get(context);
+    if (cached?.kind === kind) return cached;
     const triggerId = cleanText(context.triggerId);
-    const local = this._hitReactionTriggers.get(triggerId);
-    if (local) {
-      context._runeKnightHitTrigger = local;
-      return local;
-    }
+    const local = !context._reactionTransportSender && this._hitReactionTriggers.get(triggerId);
+    if (local) return local;
 
-    const workflow = globalThis.MidiQOL?.Workflow?.getWorkflow?.(context.workflowId)
+    const workflow = !context._reactionTransportSender && (globalThis.MidiQOL?.Workflow?.getWorkflow?.(context.workflowId)
       ?? globalThis.MidiQOL?.Workflow?.getWorkflow?.(triggerId)
-      ?? null;
+      ?? null);
     const targetToken = globalThis.fromUuidSync?.(context.targetTokenUuid) ?? null;
+    const attackerToken = globalThis.fromUuidSync?.(context.attackerTokenUuid) ?? workflow?.token ?? null;
+    const game = globalThis.game;
+    const sender = game?.users?.get?.(context._reactionTransportSender);
+    const card = game?.messages?.get?.(context.attackId);
+    const validRemote = Boolean(sender && tokenActor(attackerToken)?.testUserPermission?.(sender, "OWNER")
+      && (card?.author?.id ?? card?.user?.id ?? card?.user) === sender.id
+      && card.speaker?.scene === (attackerToken?.parent ?? attackerToken?.document?.parent)?.id
+      && card.speaker?.token === documentId(attackerToken?.document ?? attackerToken)
+      && (targetToken?.parent ?? targetToken?.document?.parent) === (attackerToken?.parent ?? attackerToken?.document?.parent)
+      && usageCardData(card) && cardHitEvidence(card, context.targetTokenUuid));
     const trigger = {
       kind,
       workflow,
       targetToken,
       targetActor: tokenActor(targetToken),
-      attackerToken: globalThis.fromUuidSync?.(context.attackerTokenUuid) ?? workflow?.token ?? null,
-      active: context.triggerActive !== false
+      attackerToken,
+      onOrigin: validRemote,
+      active: context.triggerActive !== false && (!context._reactionTransportSender || validRemote)
     };
-    context._runeKnightHitTrigger = trigger;
+    this._remoteHitTriggers.set(context, trigger);
     return trigger;
   }
 
@@ -1277,9 +1347,13 @@ export class RuneKnightAutomationService {
   async #applyCloudReaction(_candidate, choice, trigger, transaction) {
     const workflow = trigger?.workflow;
     const originalTarget = trigger?.targetToken;
-    const redirectedToken = this.#cloudRedirectTargets(_candidate, trigger).find((token) => (
+    const redirectedToken = trigger?.redirectedToken ?? this.#cloudRedirectTargets(_candidate, trigger).find((token) => (
       documentUuid(token) === cleanText(choice?.targetTokenUuid)
     ));
+    if (trigger?.onOrigin && redirectedToken) {
+      trigger.active = false;
+      return { applied: true, onOrigin: true, redirectedToken };
+    }
     if (!workflow || !originalTarget || !redirectedToken) return { applied: false };
 
     const snapshot = this.#workflowSnapshot(workflow);
@@ -1289,6 +1363,7 @@ export class RuneKnightAutomationService {
     workflow.targets = this.#replaceToken(workflow.targets, originalTarget, redirectedToken, true);
     workflow.hitTargets = this.#replaceToken(workflow.hitTargets, originalTarget, redirectedToken, hit);
     workflow.hitTargetsEC = this.#replaceToken(workflow.hitTargetsEC, originalTarget, redirectedToken, false);
+    if (typeof workflow.checkHits === "function") await this.#recalculateWorkflowHits(workflow);
     this.#removeDamageRecipient(workflow, originalTarget);
     trigger.active = false;
     effect.applied = true;
@@ -1296,20 +1371,37 @@ export class RuneKnightAutomationService {
   }
 
   async #applyRunicShieldReaction(_candidate, trigger, transaction) {
+    if (trigger?.onOrigin) {
+      trigger.active = false;
+      return { applied: true, onOrigin: true };
+    }
     const workflow = trigger?.workflow;
     const attackRoll = workflow?.attackRoll;
-    if (!workflow || typeof attackRoll?.reroll !== "function") return { applied: false };
+    if (!workflow || !attackRoll) return { applied: false };
     const snapshot = this.#workflowSnapshot(workflow);
     const effect = { applied: false, workflow, trigger, snapshot, newRoll: null };
     if (transaction) transaction.effect = effect;
-    const newRoll = await attackRoll.reroll();
+    const newRoll = await this.#rerollAttackD20(attackRoll);
     if (!newRoll) return { applied: false };
     if (typeof workflow.setAttackRoll === "function") await workflow.setAttackRoll(newRoll);
     else workflow.attackRoll = newRoll;
-    this.#recalculateWorkflowHits(workflow);
+    await workflow.processAttackRoll?.();
+    await this.#recalculateWorkflowHits(workflow);
+    await workflow.displayAttackRoll?.();
     effect.applied = true;
     effect.newRoll = newRoll;
     return effect;
+  }
+
+  async #rerollAttackD20(roll) {
+    if (!Array.isArray(roll.terms)) return roll.reroll?.();
+    const index = roll.terms.findIndex(term => term.faces === 20);
+    if (index < 0 || typeof roll.constructor.fromTerms !== "function") return null;
+    const original = roll.terms[index];
+    const die = new original.constructor({ number: 1, faces: 20, options: { ...original.options } });
+    const terms = [...roll.terms];
+    terms[index] = await die.evaluate();
+    return roll.constructor.fromTerms(terms, { ...roll.options });
   }
 
   async #rollbackHitReaction(transaction) {
@@ -1327,6 +1419,7 @@ export class RuneKnightAutomationService {
       targets: new Set(collectionValues(workflow?.targets)),
       hitTargets: new Set(collectionValues(workflow?.hitTargets)),
       hitTargetsEC: new Set(collectionValues(workflow?.hitTargetsEC)),
+      hitDisplayData: workflow?.hitDisplayData,
       damageList: Array.isArray(workflow?.damageList) ? [...workflow.damageList] : null,
       damageRecipients: workflow?.damageRecipients
         ? [...collectionValues(workflow.damageRecipients)]
@@ -1339,10 +1432,13 @@ export class RuneKnightAutomationService {
     if (snapshot.attackRoll && workflow.attackRoll !== snapshot.attackRoll) {
       if (typeof workflow.setAttackRoll === "function") await workflow.setAttackRoll(snapshot.attackRoll);
       else workflow.attackRoll = snapshot.attackRoll;
+      await workflow.processAttackRoll?.();
+      await workflow.displayAttackRoll?.();
     }
     workflow.targets = new Set(snapshot.targets);
     workflow.hitTargets = new Set(snapshot.hitTargets);
     workflow.hitTargetsEC = new Set(snapshot.hitTargetsEC);
+    if (snapshot.hitDisplayData) workflow.hitDisplayData = snapshot.hitDisplayData;
     if (snapshot.damageList) workflow.damageList = [...snapshot.damageList];
     if (snapshot.damageRecipients) {
       workflow.damageRecipients = snapshot.damageRecipientsWasSet
@@ -1374,15 +1470,27 @@ export class RuneKnightAutomationService {
   }
 
   #workflowHasHitTarget(workflow, targetToken) {
-    return collectionValues(workflow?.hitTargets).some((token) => this.#sameToken(token, targetToken));
+    return workflowHitTargets(workflow).some((token) => this.#sameToken(token, targetToken));
   }
 
-  #recalculateWorkflowHits(workflow) {
-    const targets = collectionValues(workflow?.targets);
-    const hits = targets.filter((token) => this.#attackHitsToken(workflow.attackRoll, token));
-    workflow.hitTargets = new Set(hits);
-    workflow.hitTargetsEC = new Set();
-    const hitUuids = new Set(hits.map(documentUuid).filter(Boolean));
+  async #recalculateWorkflowHits(workflow) {
+    if (typeof workflow.checkHits === "function" && workflow.workflowOptions) {
+      const options = workflow.workflowOptions;
+      const previous = options.noProvokeReaction;
+      options.noProvokeReaction = true;
+      try {
+        await workflow.checkHits();
+      }
+      finally {
+        if (previous === undefined) delete options.noProvokeReaction;
+        else options.noProvokeReaction = previous;
+      }
+    }
+    else {
+      workflow.hitTargets = new Set(collectionValues(workflow.targets).filter(token => this.#attackHitsToken(workflow.attackRoll, token)));
+      workflow.hitTargetsEC = new Set();
+    }
+    const hitUuids = new Set(workflowHitTargets(workflow).map(documentUuid).filter(Boolean));
     if (Array.isArray(workflow.damageList)) {
       workflow.damageList = workflow.damageList.filter((row) => {
         const tokenUuid = cleanText(row?.tokenUuid ?? row?.token?.uuid);
@@ -1410,7 +1518,7 @@ export class RuneKnightAutomationService {
   async #prepareFireRune(workflow, key) {
     const actor = workflow?.actor ?? workflow?.activity?.actor ?? null;
     const sourceItem = workflow?.item ?? workflow?.activity?.item ?? null;
-    const hitTargets = whirlwindEffectTargets(workflow) ?? collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC);
+    const hitTargets = whirlwindEffectTargets(workflow) ?? workflowHitTargets(workflow);
     if (
       !isActorDocument(actor)
       || sourceItem?.type !== "weapon"
@@ -1422,9 +1530,7 @@ export class RuneKnightAutomationService {
 
     const runeItem = collectionValues(actor?.items).find((item) => automationId(item) === "fire");
     if (!runeItem || !this.#itemHasUse(runeItem)) return true;
-    const targetToken = hitTargets[0];
-    const targetActor = tokenActor(targetToken);
-    if (!isActorDocument(targetActor)) return true;
+    if (!isActorDocument(tokenActor(hitTargets[0]))) return true;
 
     const queue = this.moduleApi?.reactionQueueService;
     if (typeof queue?.promptDecision !== "function") return true;
@@ -1437,21 +1543,29 @@ export class RuneKnightAutomationService {
       },
       prompt: {
         title: "Огненная руна",
-        body: `Пробудить Огненную руну при попадании по ${cleanText(targetActor?.name, "цели")}?`,
+        body: "Пробудить Огненную руну при попадании?",
         acceptLabel: "Призвать кандалы",
-        declineLabel: "Пропустить"
+        declineLabel: "Пропустить",
+        fields: hitTargetFields(hitTargets)
       }
     });
     if (choice?.accepted !== true) return true;
+    const targetToken = choice.targetTokenUuid
+      ? hitTargets.find(token => documentUuid(token) === choice.targetTokenUuid) : hitTargets[0];
+    const targetActor = tokenActor(targetToken);
+    if (!isActorDocument(targetActor) || !this.#workflowHasHitTarget(workflow, targetToken)) return true;
 
-    const rollback = await this.#consumeItemUse(runeItem);
-    if (!rollback) return false;
+    const remote = globalThis.game?.user?.isGM !== true && targetActor.isOwner === false;
+    const rollback = remote ? null : await this.#consumeItemUse(runeItem);
+    if (!remote && !rollback) return false;
     this.#rememberWorkflowState(this._fireWorkflowStates, key, {
       key,
       actor,
       runeItem,
       targetActor,
       targetToken,
+      addressed: hitTargets.length > 1,
+      remote,
       rollback,
       applied: false,
       effect: null,
@@ -1463,7 +1577,6 @@ export class RuneKnightAutomationService {
   async applyMidiPreDamageRollComplete(workflow) {
     const key = this.#workflowKey(workflow);
     const state = this._fireWorkflowStates.get(key);
-    let fireResult = true;
     if (state && state.applied !== true) {
       if (!state.processing) {
         const operation = this.#applyPendingFireRune(workflow, state).finally(() => {
@@ -1471,10 +1584,10 @@ export class RuneKnightAutomationService {
         });
         state.processing = operation;
       }
-      fireResult = await state.processing;
+      await state.processing;
     }
-    const giantResult = await this.#applyGiantMightDamageOnce(workflow);
-    return fireResult !== false && giantResult !== false;
+    await this.#applyGiantMightDamageOnce(workflow);
+    return true;
   }
 
   #applyGiantMightDamageOnce(workflow) {
@@ -1495,18 +1608,35 @@ export class RuneKnightAutomationService {
   async #applyGiantMightDamage(workflow) {
     const actor = workflow?.actor ?? workflow?.activity?.actor ?? null;
     const item = workflow?.item ?? workflow?.activity?.item ?? null;
+    const targets = whirlwindEffectTargets(workflow) ?? workflowHitTargets(workflow);
     if (
       !isActorDocument(actor)
       || !this.#giantMightFormEffect(actor)
       || !this.#isWeaponOrUnarmed(item)
-      || !(whirlwindEffectTargets(workflow) ?? collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC)).length
+      || !targets.length
     ) return true;
     const damageKey = this.#giantMightDamageKey(workflow, actor);
     if (!damageKey || this._giantMightDamageKeys.has(damageKey)) return true;
-    this._giantMightDamageKeys.add(damageKey);
-    while (this._giantMightDamageKeys.size > 256) {
-      this._giantMightDamageKeys.delete(this._giantMightDamageKeys.values().next().value);
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.promptDecision !== "function") return true;
+    const choice = await queue.promptDecision({
+      candidate: { actorUuid: actorKey(actor), tokenUuid: documentUuid(workflow.token), ownerUserIds: ownerUserIds(actor) },
+      prompt: {
+        title: "Мощь великана: дополнительный урон",
+        body: "Добавить урон «Мощи великана» к этому попаданию?",
+        acceptLabel: "Добавить урон",
+        declineLabel: "Пропустить",
+        fields: hitTargetFields(targets)
+      }
+    });
+    if (choice?.accepted !== true || damageKey !== this.#giantMightDamageKey(workflow, actor)
+      || !this.#giantMightFormEffect(actor) || this._giantMightDamageKeys.has(damageKey)) {
+      return true;
     }
+    const target = choice.targetTokenUuid
+      ? targets.find(token => documentUuid(token) === choice.targetTokenUuid) : targets[0];
+    if (!target || !this.#workflowHasHitTarget(workflow, target)) return true;
+    this.#claimGiantMightDamage(damageKey);
 
     const previousRolls = [...(workflow?.bonusDamageRolls ?? [])];
     try {
@@ -1518,6 +1648,7 @@ export class RuneKnightAutomationService {
         "Мощь великана"
       );
       if (isWhirlwindActivity(workflow.activity)) markWhirlwindDamageRolls({ rolls: [roll] }, workflow.rebreyaWhirlwind?.selectedTargetUuid ?? null);
+      else if (targets.length > 1) markDamageRollTarget(roll, documentUuid(target));
       const nextRolls = [...previousRolls, roll];
       if (typeof workflow?.setBonusDamageRolls === "function") {
         await workflow.setBonusDamageRolls(nextRolls);
@@ -1542,8 +1673,8 @@ export class RuneKnightAutomationService {
   #giantMightDamageKey(workflow, actor) {
     const combat = globalThis.game?.combat;
     if (combat) {
-      const currentActor = combat?.combatant?.actor ?? tokenActor(combat?.combatant?.token);
-      if (!isActorDocument(currentActor) || actorKey(currentActor) !== actorKey(actor)) return "";
+      const token = workflow?.token ?? workflow?.tokenDocument ?? workflow?.subject?.token ?? actor?.token;
+      if (!isCombatActorActive(combat, token ?? actor)) return "";
       return [
         cleanText(combat.uuid ?? combat.id ?? combat._id),
         numberValue(combat.round, 0),
@@ -1553,6 +1684,13 @@ export class RuneKnightAutomationService {
       ].join(":");
     }
     return `${this.#workflowKey(workflow)}:${actorKey(actor)}:giant-might-damage`;
+  }
+
+  #claimGiantMightDamage(key) {
+    this._giantMightDamageKeys.add(key);
+    if (this._giantMightDamageKeys.size > 256) {
+      this._giantMightDamageKeys.delete(this._giantMightDamageKeys.values().next().value);
+    }
   }
 
   #isWeaponOrUnarmed(item) {
@@ -1586,6 +1724,7 @@ export class RuneKnightAutomationService {
     try {
       const roll = await this.#createDamageRoll("2d6", "fire", state.actor, "Огненная руна");
       if (isWhirlwindActivity(workflow.activity)) markWhirlwindDamageRolls({ rolls: [roll] }, workflow.rebreyaWhirlwind?.selectedTargetUuid ?? null);
+      else if (state.addressed) markDamageRollTarget(roll, documentUuid(state.targetToken));
       const nextRolls = [...previousRolls, roll];
       if (typeof workflow?.setBonusDamageRolls === "function") {
         await workflow.setBonusDamageRolls(nextRolls);
@@ -1594,14 +1733,14 @@ export class RuneKnightAutomationService {
         workflow.bonusDamageRolls = nextRolls;
       }
 
-      const dc = 8
-        + proficiencyBonus(state.actor)
-        + Math.floor(numberValue(state.actor?.system?.abilities?.con?.mod, 0));
-      const saved = await this.#rollSave(state.targetActor, "str", dc);
-      if (!saved) {
-        state.effect = await this.#createFireShackles(state.targetActor, state, dc);
-        if (!state.effect) throw new Error("Fire Rune shackles could not be created");
+      if (state.remote) {
+        const attackId = workflow.chatCard?.id ?? workflow.itemCardId;
+        const result = attackId && await this.moduleApi?.socketCommandBus?.request?.(FIRE_RUNE_COMMAND, {
+          attackId, targetTokenUuid: documentUuid(state.targetToken), itemUuid: documentUuid(state.runeItem)
+        });
+        if (result?.applied !== true) throw new Error("Fire Rune hit was not authorized");
       }
+      else await this.#resolveFireShackles(state);
       state.applied = true;
       state.rollback = null;
       return true;
@@ -1619,6 +1758,41 @@ export class RuneKnightAutomationService {
       this.options.logger?.error?.("Fire Rune workflow failed", { error, workflowId: state.key });
       return false;
     }
+  }
+
+  async applyRemoteFireRune(payload, { sender } = {}) {
+    const hit = await resolveClassCombatHit(payload, { sender });
+    const runeItem = globalThis.fromUuidSync?.(payload.itemUuid) ?? await globalThis.fromUuid?.(payload.itemUuid);
+    if (!hit || hit.item.type !== "weapon" || automationId(runeItem) !== "fire"
+      || !this.#actorStillOwnsItem(hit.actor, runeItem)) throw new Error("Огненная руна: источник или попадание не подтверждены.");
+    const { receipt, existing } = await reserveClassCombatOperation("fire", hit, runeItem);
+    if (existing) {
+      const marker = getProperty(existing, `flags.${MODULE_ID}.classCombatReceipt`);
+      return { applied: marker?.applied === true && marker.target === payload.targetTokenUuid };
+    }
+    if (!receipt) return { applied: false };
+    const rollback = await this.#consumeItemUse(runeItem);
+    if (!rollback) return { applied: false };
+    const state = { actor: hit.actor, targetActor: hit.target, targetToken: hit.token, runeItem };
+    try {
+      await this.#resolveFireShackles(state);
+      await receipt.update({ [`flags.${MODULE_ID}.classCombatReceipt.applied`]: true });
+      return { applied: true };
+    }
+    catch (error) {
+      if (state.effect) await this.#deleteActorEffect(hit.target, state.effect);
+      await rollback();
+      throw error;
+    }
+  }
+
+  async #resolveFireShackles(state) {
+    const dc = 8 + proficiencyBonus(state.actor) + Math.floor(numberValue(state.actor?.system?.abilities?.con?.mod, 0));
+    const saved = await this.#rollSave(state.targetActor, "str", dc, "Огненная руна");
+    if (saved == null) throw new Error("Fire Rune saving throw was canceled");
+    if (saved || collectionValues(state.targetActor.system?.traits?.ci?.value).includes("restrained")) return;
+    state.effect = await this.#createFireShackles(state.targetActor, state, dc);
+    if (!state.effect) throw new Error("Fire Rune shackles could not be created");
   }
 
   async applyMidiRollComplete(workflow) {
@@ -1729,7 +1903,8 @@ export class RuneKnightAutomationService {
 
   #fireShackleEffects(actor) {
     return collectionValues(actor?.effects).filter((effect) => (
-      cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === "fire-shackles"
+      isRuneKnightEffectActive(effect)
+      && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === "fire-shackles"
     ));
   }
 
@@ -1914,6 +2089,11 @@ export class RuneKnightAutomationService {
     if (typeof this.options.isVisible === "function") {
       return this.options.isVisible(candidate, trigger) === true;
     }
+    if (typeof globalThis.MidiQOL?.canSee === "function") {
+      const observer = candidate?.token?.object ?? candidate?.token;
+      const target = trigger?.targetToken?.object ?? trigger?.targetToken;
+      return Boolean(observer && target && globalThis.MidiQOL.canSee(observer, target));
+    }
     return candidate?.token?.visible !== false
       && candidate?.token?.isVisible !== false
       && trigger?.targetToken?.visible !== false
@@ -1950,7 +2130,10 @@ export class RuneKnightAutomationService {
       + proficiencyBonus(candidate?.actor)
       + Math.floor(numberValue(candidate?.actor?.system?.abilities?.con?.mod, 0));
     const saved = await this.#rollSave(targetActor, "wis", dc);
-    if (saved === true) return { applied: true, saved: true, effectUuid: "" };
+    if (saved == null) return { applied: false };
+    if (saved === true || collectionValues(targetActor.system?.traits?.ci?.value).includes("charmed")) {
+      return { applied: true, saved: saved === true, effectUuid: "" };
+    }
 
     const effect = await this.#createStoneStupor(targetActor, candidate, dc);
     if (!effect) return { applied: false };
@@ -2028,7 +2211,8 @@ export class RuneKnightAutomationService {
   async #resolveStoneRepeatSave(actor) {
     if (globalThis.game?.modules?.get?.("midi-qol")?.active === true) return false;
     const effects = collectionValues(actor?.effects).filter((effect) => (
-      cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === "stone-stupor"
+      isRuneKnightEffectActive(effect)
+      && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === "stone-stupor"
     ));
     let removed = false;
     for (const effect of effects) {
@@ -2043,16 +2227,16 @@ export class RuneKnightAutomationService {
     return removed;
   }
 
-  async #rollSave(actor, ability, dc) {
+  async #rollSave(actor, ability, dc, label = "Каменная руна") {
     if (typeof this.options.rollSave === "function") {
       return this.options.rollSave(actor, ability, dc);
     }
-    if (typeof actor?.rollSavingThrow !== "function") return false;
+    if (typeof actor?.rollSavingThrow !== "function") return null;
     const rolls = await actor.rollSavingThrow({ ability, target: dc }, { configure: false }, {
-      data: { flavor: `Каменная руна: спасбросок ${ability.toUpperCase()} Сл ${dc}` }
+      data: { flavor: `${label}: спасбросок ${ability.toUpperCase()} Сл ${dc}` }
     });
     const roll = Array.isArray(rolls) ? rolls[0] : rolls;
-    return Number.isFinite(Number(roll?.total)) ? Number(roll.total) >= dc : false;
+    return roll?.total != null && Number.isFinite(Number(roll.total)) ? Number(roll.total) >= dc : null;
   }
 
   async #deleteActorEffect(actor, effect) {
@@ -2091,16 +2275,8 @@ export class RuneKnightAutomationService {
     return null;
   }
 
-  #cacheActorFeatures(actor, items = collectionValues(actor?.items)) {
-    const ids = new Set(items.map(automationId).filter(Boolean));
-    this._actorFeatureCache.set(actorKey(actor), ids);
-    return ids;
-  }
-
   #actorHasFeature(actor, id) {
-    const key = actorKey(actor);
-    const cached = this._actorFeatureCache.get(key) ?? this.#cacheActorFeatures(actor);
-    return cached.has(id);
+    return collectionValues(actor?.items).some(item => automationId(item) === id);
   }
 
   async #activateGiantMight(actor, item, token) {
@@ -2240,7 +2416,8 @@ export class RuneKnightAutomationService {
     } : null;
     const canGrow = Boolean(tokenDocument && appliedActorSize !== originalActorSize)
       && await this.#canGrowGiantToken(tokenDocument, appliedToken, originalToken, gridSize);
-    const reachBonus = appliedActorSize === "huge" && (canGrow || originalActorSize === "huge") ? 5 : 0;
+    const reachBonus = this.#actorHasFeature(actor, "runic-juggernaut")
+      && appliedActorSize === "huge" && (canGrow || originalActorSize === "huge") ? 5 : 0;
     return {
       grew: canGrow,
       reachBonus,
@@ -2306,6 +2483,7 @@ export class RuneKnightAutomationService {
 
   async #createGiantMightFormEffect(actor, item, form) {
     if (typeof actor?.createEmbeddedDocuments !== "function") return null;
+    const nativeRollMode = Number(globalThis.game?.system?.version?.split(".")[0]) >= 6;
     const effectData = {
       name: "Мощь великана",
       type: "base",
@@ -2323,11 +2501,12 @@ export class RuneKnightAutomationService {
         startTime: globalThis.game?.time?.worldTime ?? null
       },
       statuses: [],
-      changes: [
+      changes: nativeRollMode ? [
+        { key: "system.abilities.str.check.roll.mode", mode: EFFECT_MODE_ADD, value: "1", priority: 20 },
+        { key: "system.abilities.str.save.roll.mode", mode: EFFECT_MODE_ADD, value: "1", priority: 20 }
+      ] : [
         { key: "flags.midi-qol.advantage.ability.check.str", mode: EFFECT_MODE_CUSTOM, value: "1", priority: 20 },
-        { key: "flags.midi-qol.advantage.ability.save.str", mode: EFFECT_MODE_CUSTOM, value: "1", priority: 20 },
-        { key: "system.abilities.str.check.roll.mode", mode: EFFECT_MODE_OVERRIDE, value: "1", priority: 20 },
-        { key: "system.abilities.str.save.roll.mode", mode: EFFECT_MODE_OVERRIDE, value: "1", priority: 20 }
+        { key: "flags.midi-qol.advantage.ability.save.str", mode: EFFECT_MODE_CUSTOM, value: "1", priority: 20 }
       ],
       flags: {
         dae: { stackable: "noneName" },
@@ -2355,6 +2534,17 @@ export class RuneKnightAutomationService {
     }
     await this.#updateDocument(actor, { "system.traits.size": form.appliedActorSize });
     await this.#updateDocument(token?.document ?? token, form.appliedToken);
+  }
+
+  #finishGiantMightForm(actor, effect) {
+    const current = this._giantMightRestorations.get(effect);
+    if (current) return current;
+    const restoration = this.#restoreGiantMightForm(actor, effect).catch((error) => {
+      this._giantMightRestorations.delete(effect);
+      throw error;
+    });
+    this._giantMightRestorations.set(effect, restoration);
+    return restoration;
   }
 
   async #restoreGiantMightForm(actor, effect, { offerWeapons = true } = {}) {
@@ -2401,7 +2591,7 @@ export class RuneKnightAutomationService {
 
   #giantMightFormEffect(actor) {
     return collectionValues(actor?.effects).find((effect) => (
-      effect?.disabled !== true
+      isRuneKnightEffectActive(effect)
       && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === GIANT_MIGHT_FORM_AUTOMATION
     )) ?? null;
   }
@@ -2409,18 +2599,33 @@ export class RuneKnightAutomationService {
   #hasRuntimeEffect(actor, item, id) {
     const sourceItemUuid = cleanText(item?.uuid);
     return collectionValues(actor?.effects).some((effect) => (
-      cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.id`)) === id
+      isRuneKnightEffectActive(effect)
+      && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.id`)) === id
         && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.sourceItemUuid`)) === sourceItemUuid
     ));
   }
 
   async #consumeItemUse(item) {
+    if (!item || this._itemUsePayments.has(item)) return null;
     const uses = item?.system?.uses ?? {};
     const spent = Math.max(0, Math.floor(numberValue(uses.spent, 0)));
     const maximum = this.#itemUseMaximum(item);
     if (spent >= maximum) return null;
-    await updateItem(item, { "system.uses.spent": spent + 1 });
-    return async () => updateItem(item, { "system.uses.spent": spent });
+    this._itemUsePayments.add(item);
+    try {
+      await updateItem(item, { "system.uses.spent": spent + 1 });
+    }
+    finally {
+      this._itemUsePayments.delete(item);
+    }
+    let refunded = false;
+    return async () => {
+      if (refunded) return false;
+      refunded = true;
+      const current = Math.max(0, Math.floor(numberValue(item.system?.uses?.spent, 0)));
+      if (!current) return false;
+      return updateItem(item, { "system.uses.spent": current - 1 });
+    };
   }
 
   async #createRuneActivationEffect(actor, item, id) {

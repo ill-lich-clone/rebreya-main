@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const rules = await import("../scripts/combat/whirlwind-attack.js?v=1.5.1");
+const rules = await import("../scripts/combat/whirlwind-attack.js?v=1.5.70");
 let DamageActor;
 try {
   const map = JSON.parse(await readFile(new URL("../../../systems/dnd5e/dnd5e-compiled.mjs.map", import.meta.url), "utf8"));

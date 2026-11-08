@@ -23,7 +23,7 @@ import {
   getFighterIronWillAutomation,
   getFighterManeuverAutomation,
   getFighterSecondWindAutomation
-} from "./fighter-automation.js";
+} from "./fighter-automation.js?v=1.5.70";
 import { getClassStartingEquipmentConfig } from "./class-starting-equipment.js";
 import {
   buildCraftsmanGadgetAutomation,
@@ -41,7 +41,7 @@ import { getManagedIconProjection, syncFlaggedManagedDocuments } from "./managed
 import {
   getRuneKnightFeatureAutomation,
   getRuneKnightRuneAutomation
-} from "./rune-knight-automation.js";
+} from "./rune-knight-automation.js?v=1.5.70";
 import { PALADIN_OATHS } from "./paladin-dogmas.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -114,6 +114,7 @@ const DRACONIC_ANCESTOR_FEATURE_NAME = "драконий предок";
 const SORCERER_EXPANDED_METAMAGIC_FEATURE_NAME = "расширенный список метамагии";
 const FIGHTING_STYLE_FEATS_SECTION = "черты боевых стилей";
 const MINOR_FEATS_SECTION = "младшие черты";
+const GENERAL_FEATS_SECTION = "общие черты";
 const BATTLE_MASTER_MANEUVER_CHOICE_LEVELS = [3, 7, 10, 15, 18];
 const SORCERER_METAMAGIC_CHOICE_LEVELS = [[3, 3], [10, 1], [17, 1]];
 const RUNE_KNIGHT_RUNE_CHOICE_LEVELS = [
@@ -2808,11 +2809,17 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
   const description = cleanString(feature.description, feature.name);
   const fighterAutomation = getFighterManeuverAutomation(feature.name, classIdentifier);
   const targetsCreature = Boolean(fighterAutomation.extraDamage || fighterAutomation.status);
-  const activationType = /триггер|реакци|⚡/iu.test(description)
+  const explicitActivation = {
+    "атака с маневром": "special",
+    "удар командующего": "special",
+    "опрокидывающая атака": "special",
+    "быстрый бросок": "bonus"
+  }[fighterAutomation.key];
+  const activationType = explicitActivation ?? (/триггер|реакци|⚡/iu.test(description)
     ? "reaction"
     : /бонусным действием/iu.test(description)
       ? "bonus"
-      : "action";
+      : "action");
 
   return {
     activities: {
@@ -2836,7 +2843,7 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
           spellSlot: false,
           targets: [{
             type: "itemUses",
-            target: "fighter-dominance",
+            target: `${classIdentifier}-fighter-dominance`,
             value: "1",
             scaling: {
               mode: "",
@@ -4481,6 +4488,7 @@ function normalizeFeatIndexRecord(record, pack) {
   const uuid = compendiumItemUuid(pack.collection, id);
   const section = normalizeMatchText(foundry.utils.getProperty(record, "flags.teyvankal.section"));
   const choiceOption = foundry.utils.getProperty(record, `flags.${MODULE_ID}.choiceOption`);
+  const subtype = cleanString(foundry.utils.getProperty(record, "system.type.subtype"));
 
   return {
     id,
@@ -4488,6 +4496,7 @@ function normalizeFeatIndexRecord(record, pack) {
     name: cleanString(record?.name),
     normalizedName: normalizeMatchText(record?.name),
     section,
+    subtype,
     isChoiceOption: isPlainObject(choiceOption)
   };
 }
@@ -4497,6 +4506,7 @@ async function buildFeatLookup() {
   if (!pack) {
     return {
       minorFeatUuids: [],
+      generalFeatUuids: [],
       fightingStyleFeatUuids: [],
       byName: new Map()
     };
@@ -4505,11 +4515,13 @@ async function buildFeatLookup() {
   const index = await pack.getIndex({
     fields: [
       "flags.teyvankal.section",
+      "system.type.subtype",
       `flags.${MODULE_ID}.choiceOption`
     ]
   });
   const minorFeatRecords = [];
   const fightingStyleFeatRecords = [];
+  const generalFeatRecords = [];
   const allFeatRecords = [];
   const byName = new Map();
 
@@ -4543,6 +4555,9 @@ async function buildFeatLookup() {
         sortName
       });
     }
+    if (record.section === GENERAL_FEATS_SECTION || record.subtype === "general") {
+      generalFeatRecords.push({ uuid: record.uuid, sortName });
+    }
   }
 
   const sortRecords = (records = []) => {
@@ -4568,6 +4583,7 @@ async function buildFeatLookup() {
   if (normalizedMinor.length) {
     return {
       minorFeatUuids: normalizedMinor,
+      generalFeatUuids: sortRecords(generalFeatRecords),
       fightingStyleFeatUuids: sortRecords(fightingStyleFeatRecords),
       byName
     };
@@ -4575,6 +4591,7 @@ async function buildFeatLookup() {
 
   return {
     minorFeatUuids: sortRecords(allFeatRecords),
+    generalFeatUuids: sortRecords(generalFeatRecords),
     fightingStyleFeatUuids: sortRecords(fightingStyleFeatRecords),
     byName
   };
@@ -4618,6 +4635,7 @@ export function buildClassAdvancement(classData, context = {}) {
     classFeatureEntries = [],
     rageActionEntries = [],
     minorFeatUuids = [],
+    generalFeatUuids = [],
     fightingStyleFeatUuids = [],
     rageProgression = {},
     rageDamageProgression = {},
@@ -4806,6 +4824,7 @@ export function buildClassAdvancement(classData, context = {}) {
   const classFeatureByLevel = new Map();
   const optionalFeatureByLevel = new Map();
   for (const feature of classFeatureEntries) {
+    if (classIdentifier === "fighter-rework-v028" && feature.featureId.startsWith("fighter-multiattack-")) continue;
     const featureKey = `${classIdentifier}::class::${feature.featureId}`;
     const uuid = featureUuidById.get(featureKey);
     if (!uuid) {
@@ -4891,6 +4910,19 @@ export function buildClassAdvancement(classData, context = {}) {
         level,
         count: 1,
         pool: minorFeatUuids
+      }));
+    }
+  }
+
+  if (classIdentifier === "fighter-rework-v028" && generalFeatUuids.length) {
+    for (const level of [6, 14]) {
+      advancements.push(buildItemChoiceAdvancement({
+        classIdentifier,
+        seed: `fighter-extra-feat-${level}`,
+        title: `Дополнительная черта (${level}-й уровень)`,
+        hint: "Выберите общую черту.",
+        level,
+        pool: generalFeatUuids
       }));
     }
   }
@@ -5835,6 +5867,7 @@ export async function syncClassesPack(normalizedDataList, context = {}) {
       classFeatureEntries: classFeatures,
       rageActionEntries: normalizedData.rageActions,
       minorFeatUuids: context.minorFeatUuids,
+      generalFeatUuids: context.generalFeatUuids,
       rageProgression: normalizedData.rageProgression,
       rageDamageProgression: normalizedData.rageDamageProgression,
       fightingStyleEntries: normalizedData.fightingStyles,
@@ -5928,6 +5961,7 @@ export class ClassesCompendiumService {
       featureUuidById,
       subclassUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
+      generalFeatUuids: featLookup.generalFeatUuids,
       fightingStyleFeatUuids: featLookup.fightingStyleFeatUuids,
       spellUuidById,
       iconLookup

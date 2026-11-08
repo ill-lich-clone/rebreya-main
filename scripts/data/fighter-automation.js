@@ -112,8 +112,7 @@ export function getFighterSecondWindAutomation() {
 }
 
 export function fighterSecondWindUsesMax(classIdentifier) {
-  void classIdentifier;
-  return "@details.level";
+  return `@classes.${classIdentifier}.levels`;
 }
 
 export function getFighterIronWillAutomation() {
