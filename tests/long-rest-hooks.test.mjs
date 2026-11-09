@@ -83,6 +83,26 @@ test("rest dispatcher registers exactly once, ignores unknown rests, and shuts d
   assert.deepEqual(shutdownReasons, ["world-closed"]);
 });
 
+test("only a completed short rest for an actor with a prepared recipe routes to field alchemy", async () => {
+  const { Hooks, listeners } = hookHarness();
+  const calls = [];
+  registerLongRestHooks({
+    longRestPipelineService: { enqueue() {} },
+    mutateAlchemyCraft: async (...args) => { calls.push(args); }
+  }, { Hooks, game: {} });
+  const actor = { id: "hero", flags: { "rebreya-main": { alchemyCraftField: {
+    status: "prepared", operationId: "brew", groupId: "group"
+  } } } };
+  const config = { type: "short", chat: false };
+  listeners.get("dnd5e.preRestCompleted")(actor, { type: "short" }, config);
+  assert.equal(config.chat, true);
+  assert.deepEqual(calls, []);
+  listeners.get("dnd5e.restCompleted")(actor, { type: "short", message: { uuid: "ChatMessage.rest" } }, config);
+  assert.deepEqual(calls, [["completeField", {
+    groupId: "group", actorId: "hero", operationId: "brew", restMessageUuid: "ChatMessage.rest"
+  }]]);
+});
+
 test("live module composes and exposes the long-rest pipeline", async () => {
   const source = await readFile(
     new URL("../scripts/main.js", import.meta.url),

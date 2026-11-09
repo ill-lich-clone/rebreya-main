@@ -8,6 +8,7 @@ import {
   ensurePackSidebarFolder
 } from "./compendium-utils.js?v=1.4.327";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
+import { applyCraftedPotionHealing, resolveCraftedPotionProduct } from "./alchemy-crafting-rules.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
@@ -466,7 +467,8 @@ export class AlchemyCompendiumService {
         const product = byId.get(flags.alchemyProductId);
         if (item?.type !== "consumable" || flags.managed !== true || flags.sourceType !== "alchemyProduct"
           || !product || flags.sourceNumber !== product.sourceNumber || flags.productType !== "Зелье") continue;
-        const [id, original] = Object.entries(buildAlchemyActivities(product))[0] ?? [];
+        const catalyst = flags.alchemyCraft?.catalyst;
+        const [id, original] = Object.entries(buildAlchemyActivities(resolveCraftedPotionProduct(product, catalyst)))[0] ?? [];
         if (!id) continue;
         const activities = item.system?.activities;
         if (typeof activities?.get === "function" ? activities.get(id) : activities?.[id]) continue;
@@ -474,7 +476,7 @@ export class AlchemyCompendiumService {
         const unconfigured = !uses || ((!uses.max || Number(uses.max) === 0)
           && Number(uses.spent ?? 0) === 0 && !(uses.recovery?.length));
         const standardUses = unconfigured || (Number(uses?.max) === 1 && uses?.autoDestroy === true);
-        const activity = structuredClone(original);
+        const activity = applyCraftedPotionHealing(structuredClone(original), catalyst);
         if (activity.flags?.[MODULE_ID]?.alchemyReagent && Object.hasOwn(flags, "reagentLevel")) {
           activity.flags[MODULE_ID].alchemyReagent.reagentLevel = flags.reagentLevel;
         }

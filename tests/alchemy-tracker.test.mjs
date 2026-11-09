@@ -50,6 +50,13 @@ test("inventory totals sum ranks times quantity and separate the nine healing po
   assert.deepEqual(calculateAlchemyInventoryTotals(items), { healing: 8, utility: 12 });
 });
 
+test("night steel counts as a healing potion while keeping the authored rank", () => {
+  const item = alchemyItem(35, 3, 1, "Зелье", { flags: {
+    alchemyCraft: { catalyst: { materialId: "material-175" } }
+  } });
+  assert.deepEqual(calculateAlchemyInventoryTotals([item]), { healing: 3, utility: 0 });
+});
+
 test("untrusted identities, missing ranks and zero or invalid quantities never invent levels", () => {
   const items = [
     alchemyItem(80, 4, 0),

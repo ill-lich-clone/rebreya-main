@@ -2334,6 +2334,7 @@ export class DowntimeService {
     description = "",
     weeks = 1,
     craftProject = null,
+    alchemyCraft = null,
     targetActionSelections = [],
     submittedByUserId = ""
   } = {}) {
@@ -2344,6 +2345,9 @@ export class DowntimeService {
     this.#assertCanSubmitForActor(actor, context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
     const action = await this.#resolveAction(context, actionId);
+    if (alchemyCraft && cleanId(action.downtimeId) !== "laboratory-alchemy") {
+      throw new Error("A potion recipe requires laboratory alchemy.");
+    }
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
     const userId = cleanId(submittedByUserId) || cleanId(getCurrentUser()?.id);
@@ -2393,6 +2397,7 @@ export class DowntimeService {
         request.craftProject = clone(craftPayload);
         request.ownedWorkshop = craftPayload.ownedWorkshop === true;
       }
+      if (alchemyCraft) request.alchemyCraft = clone(alchemyCraft);
       applyRequestTemplateMetadata(request, action, resolvedActionId);
       refreshMappedDowntimeResults(request);
       state.scheduleSlots = allocateRequestSlots({
@@ -2453,6 +2458,7 @@ export class DowntimeService {
       if (request.actorId !== actor.id) {
         throw new Error("Downtime request does not belong to this character.");
       }
+      if (request.alchemyCraft) throw new Error("Для изменения состава подайте новую заявку через «Алхимию».");
       if (request.status !== "pending") {
         throw new Error("Only pending downtime requests can be edited.");
       }
@@ -2701,7 +2707,7 @@ export class DowntimeService {
     });
   }
 
-  async setRequestStatus(requestId, status, { groupId = "", result = "" } = {}) {
+  async setRequestStatus(requestId, status, { groupId = "", result = "", alchemyCraftManaged = false, alchemyCraftRefundPending = false } = {}) {
     const context = cleanId(groupId)
       ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
       : this.#resolveContext();
@@ -2714,6 +2720,7 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
+      if (request.alchemyCraft && !alchemyCraftManaged) throw new Error("Alchemy requests use the recipe-aware status route.");
       this.#assertRequestAccountingAvailable(state, request.id);
       if (
         nextStatus === "approved"
@@ -2789,10 +2796,41 @@ export class DowntimeService {
         ));
       }
       request.status = effectiveStatus;
+      if (request.alchemyCraft && alchemyCraftRefundPending) request.alchemyCraft.refundPending = true;
       request.result = cleanString(result);
       request.reviewedByUserId = cleanId(getCurrentUser()?.id);
       request.updatedAt = Date.now();
       state.balancesByActorId[request.actorId] = balance;
+      return clone(request);
+    });
+  }
+
+  async recordAlchemyCraftOutput({ groupId, requestId, actorId, itemId }) {
+    const context = this.moduleApi.groupContextService.resolveForGroup(groupId);
+    this.#assertCanManage(context);
+    return this.#writeGroupState(context, (state) => {
+      const request = this.#findRequest(state, requestId);
+      if (request.status !== "completed" || request.actorId !== actorId || !request.alchemyCraft) {
+        throw new Error("Лабораторная варка ещё не завершена.");
+      }
+      if (request.alchemyCraft.itemId && request.alchemyCraft.itemId !== itemId) throw new Error("Результат уже подтверждён.");
+      request.alchemyCraft.itemId = itemId;
+      request.result = "Зелье передано персонажу.";
+      request.updatedAt = Date.now();
+      return clone(request);
+    });
+  }
+
+  async recordAlchemyCraftRefund({ groupId, requestId, actorId }) {
+    const context = this.moduleApi.groupContextService.resolveForGroup(groupId);
+    this.#assertCanManage(context);
+    return this.#writeGroupState(context, (state) => {
+      const request = this.#findRequest(state, requestId);
+      if (request.actorId !== actorId || !request.alchemyCraft || !RELEASED_STATUSES.has(request.status)) {
+        throw new Error("Заявка на варку ещё не закрыта.");
+      }
+      request.alchemyCraft.refundPending = false;
+      request.updatedAt = Date.now();
       return clone(request);
     });
   }

@@ -16,7 +16,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.44";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.71";
 import { promptStorageTransferQuantity } from "./storage-transfer-ui.js?v=1.5.10";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
@@ -2545,12 +2545,16 @@ function mapDowntimeRequest(request, actionCatalogById = new Map()) {
     hasResources: resourceActions.length > 0,
     hasCheckActions: checkActions.length > 0,
     hasResultActions: resultActions.length > 0,
-    isArchived: DOWNTIME_ARCHIVE_STATUSES.has(status),
+    isArchived: DOWNTIME_ARCHIVE_STATUSES.has(status)
+      && !(status === "completed" && request.alchemyCraft && !request.alchemyCraft.itemId)
+      && !request.alchemyCraft?.refundPending,
     hasResult: Boolean(cleanText(request?.result)),
-    canApprove: status === "pending" || status === "returned",
-    canReturn: status === "pending" || status === "approved",
-    canReject: status === "pending" || status === "approved" || status === "returned",
-    canComplete: status === "approved"
+    canApprove: status === "pending" || (status === "returned" && !request.alchemyCraft),
+    canReturn: !request.alchemyCraft && (status === "pending" || status === "approved"),
+    canReject: status === "pending" || status === "approved" || status === "returned" || request.alchemyCraft?.refundPending === true,
+    canComplete: request.alchemyCraft ? status === "completed" && !request.alchemyCraft.itemId : status === "approved",
+    isAlchemyCraft: Boolean(request.alchemyCraft),
+    alchemyRefundPending: request.alchemyCraft?.refundPending === true
   };
 }
 

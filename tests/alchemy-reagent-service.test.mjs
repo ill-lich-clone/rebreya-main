@@ -392,6 +392,23 @@ function foreignFixture() {
   return { ...setup, item, payload };
 }
 
+test("the GM validates crafted reagent duration against the catalyst on the source item", async () => {
+  const { sender, item, payload, options } = foreignFixture();
+  const potion = catalog.find(({ id }) => id === "alchemy-15");
+  options.getProduct = async () => potion;
+  Object.assign(item.flags[MODULE], {
+    alchemyProductId: potion.id, sourceNumber: potion.sourceNumber, reagentLevel: potion.reagentLevel,
+    alchemyCraft: { catalyst: { materialId: "material-132" }, expiresAt: 200 }
+  });
+  item.system.activities = buildAlchemyActivities(potion);
+  const service = new AlchemyReagentService(options);
+  const intent = { ...payload, productId: potion.id, durationSeconds: 3600, reagentLevel: potion.reagentLevel };
+  assert.equal(await service.authorizeReservation(intent, sender), true);
+  assert.equal(await service.authorizeReservation({ ...intent, durationSeconds: 60 }, sender), false);
+  options.game.time.worldTime = 200;
+  assert.equal(await service.authorizeReservation(intent, sender), false);
+});
+
 test("a forged chat receipt cannot add reagents to a non-owned actor without observed consumption", async () => {
   const { sender, target, message, options } = foreignFixture();
   const service = new AlchemyReagentService(options);

@@ -52,6 +52,7 @@ function withSceneControlsHandler(callback) {
     }
   };
   globalThis.game = {
+    system: { id: "dnd5e" },
     i18n: { localize: (key) => key },
     modules: new Map([["rebreya-gen", { id: "rebreya-gen", active: true }]]),
     settings: { get: () => true },
@@ -556,6 +557,7 @@ test("scene controls create a separate Rebreya group for record controls", () =>
       "rebreya-main-panel",
       "rebreya-main-economy",
       "rebreya-main-inventory",
+      "rebreya-main-alchemy",
       "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-cosmology",
@@ -565,6 +567,9 @@ test("scene controls create a separate Rebreya group for record controls", () =>
     const groupsTool = controls["rebreya-main-rebreya"].tools["rebreya-main-groups"];
     assert.equal(groupsTool.title, "REBREYA_MAIN.Controls.OpenGroups");
     assert.equal(groupsTool.visible, true);
+    const alchemyTool = controls["rebreya-main-rebreya"].tools["rebreya-main-alchemy"];
+    assert.equal(alchemyTool.title, "REBREYA_MAIN.Controls.OpenAlchemy");
+    assert.equal(alchemyTool.visible, true);
     const cosmologyTool = controls["rebreya-main-rebreya"].tools["rebreya-main-cosmology"];
     assert.equal(cosmologyTool.title, "REBREYA_MAIN.Controls.OpenCosmology");
     assert.equal(cosmologyTool.icon, "fa-solid fa-solar-system");
@@ -624,6 +629,7 @@ test("scene controls create a separate Rebreya group for array controls", () => 
       "rebreya-main-panel",
       "rebreya-main-economy",
       "rebreya-main-inventory",
+      "rebreya-main-alchemy",
       "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-cosmology",

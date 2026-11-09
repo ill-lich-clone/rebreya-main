@@ -40,7 +40,7 @@ import {
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
-} from "./universal-belt.js?v=1.5.60";
+} from "./universal-belt.js?v=1.5.71";
 import {
   bindItemUpgradeInventoryRows,
   bindItemUpgradeSheet,

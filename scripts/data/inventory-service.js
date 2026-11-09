@@ -675,6 +675,9 @@ function inventoryStackIdentity(item) {
 
 function itemsCanMergeInInventory(sourceItem, acceptedItem) {
   if (hasLootgenNarrative(sourceItem) || hasLootgenNarrative(acceptedItem)) return false;
+  const sourceCraft = sourceItem?.flags?.[MODULE_ID]?.alchemyCraft;
+  const acceptedCraft = acceptedItem?.flags?.[MODULE_ID]?.alchemyCraft;
+  if (sourceCraft || acceptedCraft) return false;
   const sourceIdentity = inventoryStackIdentity(sourceItem);
   const acceptedIdentity = inventoryStackIdentity(acceptedItem);
   const materialPrice = item => {
@@ -1657,6 +1660,10 @@ export function resolveInventorySaleQuote(itemData, quantity = 1) {
       : Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)))
     : 0;
   const unitCopper = priceToCopper(readInventoryItemUnitPrice(itemData));
+  if (itemData?.flags?.[MODULE_ID]?.alchemyCraft?.pending) {
+    return { eligible: false, code: "alchemy-pending", message: "Выдача зелья ещё подтверждается.",
+      quantity: sellQuantity, unitCopper, multiplier: 0, gainedCopper: 0 };
+  }
   if (isMagicalInventoryItem(itemData)) {
     return {
       eligible: false,

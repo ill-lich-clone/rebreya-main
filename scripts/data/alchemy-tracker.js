@@ -17,7 +17,9 @@ export function getAlchemyInventoryEntries(items = []) {
       || flags.alchemyProductId !== `alchemy-${number}` || !ALCHEMY_TYPES.has(flags.productType)
       || !Number.isInteger(rank) || rank < 1 || rank > 9
       || !Number.isInteger(quantity) || quantity <= 0) continue;
-    const kind = flags.productType === "Зелье" && number >= 77 && number <= 85 ? "healing" : "utility";
+    const healing = flags.productType === "Зелье"
+      && ((number >= 77 && number <= 85) || flags.alchemyCraft?.catalyst?.materialId === "material-175");
+    const kind = healing ? "healing" : "utility";
     entries.push({ kind, productId: flags.alchemyProductId, name: String(item?.name ?? flags.alchemyProductId), rank, quantity });
   }
   return entries;

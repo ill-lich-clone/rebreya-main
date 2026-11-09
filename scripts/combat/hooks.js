@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { canUseCraftedPotion } from "../data/alchemy-crafting-rules.js";
 import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.66";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.70";
@@ -108,6 +109,22 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("dnd5e.preApplyEnchantment", (item, data, {activity}={}) => canApplyFirearmTuning(item,activity,data));
     Hooks.on("dnd5e.canEnchant", (activity,item,errors) => allowMagicalFirearmTuning(activity,item,errors));
     Hooks.on("dnd5e.postUseActivity", activity => { startTuningForAreaFire(activity,Number(game.time?.worldTime)).catch(error=>console.error(`${MODULE_ID} | Failed to start firearm tuning.`,error)); });
+  }
+
+  if (moduleApi?.alchemyCraftingService) {
+    const preventExpiredPotion = (activity) => {
+      if (canUseCraftedPotion(activity?.item, globalThis.game?.time?.worldTime ?? 0)) return true;
+      const pending = activity?.item?.flags?.[MODULE_ID]?.alchemyCraft?.pending;
+      globalThis.ui?.notifications?.warn?.(pending ? "Выдача зелья ещё подтверждается." : "Срок хранения полевого зелья истёк.");
+      return false;
+    };
+    Hooks.on("dnd5e.preUseActivity", preventExpiredPotion);
+    Hooks.on("dnd5e.preActivityConsumption", preventExpiredPotion);
+    Hooks.on("preDeleteItem", (item) => {
+      if (!item?.flags?.[MODULE_ID]?.alchemyCraft?.pending) return true;
+      globalThis.ui?.notifications?.warn?.("Выдача зелья ещё подтверждается.");
+      return false;
+    });
   }
 
   if (hasAlchemyReagentService) {

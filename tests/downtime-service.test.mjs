@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
-import { DowntimeService } from "../scripts/data/downtime-service.js?v=1.4.96-craft-calendar";
+import { DowntimeService } from "../scripts/data/downtime-service.js?v=1.5.71";
 import { normalizeGroupState } from "../scripts/data/group-context-service.js";
 
 function clone(value) {
@@ -458,6 +458,32 @@ test("createRequest allocates pending workdays and approval propagates to its sl
     assert.equal(state.balancesByActorId["actor-a"].spentWorkdays, 0);
   }
   finally {
+    harness.restore();
+  }
+});
+
+test("alchemy spends its scheduled workdays and only records output after calendar completion", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const template = createDowntimeTemplateItem({ id: "alchemy", name: "Лабораторная алхимия",
+    config: { downtimeId: "laboratory-alchemy" } });
+  const harness = createHarness({ members: [actor], groupItems: [template], downtimeState: { version: 2 } });
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: actor.id, actionId: template.uuid, weeks: 1,
+      alchemyCraft: { productId: "alchemy-77", operationId: "potion1", goldGp: 20 } });
+    await assert.rejects(harness.service.setRequestStatus(request.id, "approved"), /recipe-aware/);
+    await harness.service.setRequestStatus(request.id, "approved", { alchemyCraftManaged: true });
+    const output = { groupId: "group-1", actorId: actor.id, requestId: request.id, itemId: "potion-item" };
+    await assert.rejects(harness.service.recordAlchemyCraftOutput(output), /не завершена/u);
+    const dates = getDowntimeState(harness).scheduleSlots.map(({ isoDate }) => isoDate);
+    for (const isoDate of dates) {
+      await harness.service.processScheduledDate(isoDate, { transitionId: `alchemy-${isoDate}`, activityProcessor: () => ({ result: null }) });
+    }
+    const state = getDowntimeState(harness);
+    assert.equal(state.balancesByActorId[actor.id].spentWorkdays, 5);
+    assert.equal(state.requests.find(({ id }) => id === request.id).alchemyCraft.itemId, undefined);
+    assert.equal((await harness.service.recordAlchemyCraftOutput(output)).alchemyCraft.itemId, output.itemId);
+  } finally {
     harness.restore();
   }
 });

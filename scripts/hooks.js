@@ -621,6 +621,7 @@ function createRebreyaControlChange() {
 function buildToolsRecord() {
   const economyToolName = `${MODULE_ID}-economy`;
   const inventoryToolName = `${MODULE_ID}-inventory`;
+  const alchemyToolName = `${MODULE_ID}-alchemy`;
   const groupsToolName = `${MODULE_ID}-groups`;
   const calendarToolName = `${MODULE_ID}-calendar`;
   const cosmologyToolName = `${MODULE_ID}-cosmology`;
@@ -659,6 +660,15 @@ function buildToolsRecord() {
         () => game.rebreyaMain?.openInventoryApp?.(),
         "Inventory control click failed."
       )
+    },
+    [alchemyToolName]: {
+      name: alchemyToolName,
+      order: 22,
+      title: game.i18n.localize("REBREYA_MAIN.Controls.OpenAlchemy"),
+      icon: "fa-solid fa-flask",
+      button: true,
+      visible: game.system?.id === "dnd5e",
+      onChange: createSafeAction(() => game.rebreyaMain?.openAlchemyCraftingApp?.(), "Alchemy control click failed.")
     },
     [groupsToolName]: {
       name: groupsToolName,

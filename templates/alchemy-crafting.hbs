@@ -1,0 +1,98 @@
+<section class="rm-alchemy-form">
+  {{#if noActor}}
+    <p>В текущей группе нет доступных персонажей.</p>
+  {{else}}
+    <div class="rm-alchemy-toolbar">
+      <label>Режим
+        <select name="mode">
+          <option value="laboratory" {{#if laboratory}}selected{{/if}}>Простой</option>
+          <option value="field" {{#if fieldMode}}selected{{/if}}>Путешествие</option>
+        </select>
+      </label>
+      {{#if chooseActor}}<label>Персонаж
+        <select name="actor">
+          {{#each actors}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+        </select>
+      </label>{{/if}}
+      <span class="rm-alchemy-meta">Инструменты · {{toolRank}} ранг{{#if laboratory}} · {{availableWeeks}} нед.{{/if}}</span>
+    </div>
+    {{#if error}}<p class="rm-alchemy-error" role="alert">{{error}}</p>{{/if}}
+    {{#if prepared}}
+      <p>Зелье подготовлено к следующему короткому отдыху.</p>
+      <div class="rm-alchemy-toolbar">
+        {{#if restMessageUuid}}<button type="button" data-craft-action="retry">Обработать отдых</button>{{/if}}
+        <button type="button" data-craft-action="cancel">Отменить подготовку</button>
+      </div>
+    {{else}}
+      {{#if fieldResult}}
+        <p>{{#if field.success}}Зелье готово.{{else}}Варка не удалась.{{/if}} Проверка {{field.total}} против Сл {{field.dc}}.</p>
+      {{/if}}
+      {{#each laboratoryRequests}}
+        <p class="rm-alchemy-meta">{{title}} · {{weeks}} нед. · {{statusText}}</p>
+      {{/each}}
+      <input type="search" data-craft-search aria-label="Поиск зелий" placeholder="Найти зелье" value="{{search}}">
+      <div class="rm-alchemy-recipes" aria-label="Рецепты">
+        {{#each allRecipes}}
+          <button type="button" data-craft-product="{{id}}" aria-pressed="{{selected}}" {{#if hidden}}hidden{{/if}}>
+            <img src="{{img}}" alt=""><span>{{name}}</span><b>{{rank}}</b>
+          </button>
+        {{/each}}
+      </div>
+      {{#if product}}
+        <h3>{{product.name}}</h3>
+        {{#if options}}
+          <label>Рецепт
+            <select name="option">
+              {{#each options}}<option value="{{index}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+        {{/if}}
+        {{#if manual}}
+          <div class="rm-alchemy-toolbar">
+            <label>Срок, нед. <input type="number" name="manualWeeks" min="1" step="1" value="{{manualWeeks}}"></label>
+            <label>Цена, зм <input type="number" name="manualGoldGp" min="0" step="0.01" value="{{manualGoldGp}}"></label>
+          </div>
+        {{/if}}
+        {{#if fieldMode}}
+          <label>Проверка
+            <select name="ability">
+              <option value="int" {{#unless abilityWis}}selected{{/unless}}>Интеллект</option>
+              <option value="wis" {{#if abilityWis}}selected{{/if}}>Мудрость</option>
+            </select>
+          </label>
+        {{/if}}
+        {{#if catalysts}}
+          <details data-craft-expand="catalyst" {{#if catalyst}}open{{/if}}>
+            <summary>Катализатор{{#if catalyst}} · {{catalyst.name}}{{/if}}</summary>
+            <select name="catalyst" aria-label="Катализатор">
+              <option value="">Без катализатора</option>
+              {{#each catalysts}}<option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+            </select>
+            {{#if catalyst}}<p class="rm-alchemy-meta">{{catalyst.effect}}</p>{{/if}}
+          </details>
+        {{/if}}
+        {{#if stock}}
+          <details data-craft-expand="stock">
+            <summary>Запасы и распределение</summary>
+            {{#each stock}}
+              <label class="rm-alchemy-stock">
+                <span>{{roleLabel}} · {{name}} · {{actorName}} ({{maximum}})</span>
+                <input type="number" min="0" max="{{maximum}}" step="{{step}}" value="{{quantity}}" data-craft-stock="{{index}}">
+              </label>
+            {{/each}}
+          </details>
+        {{/if}}
+        <div class="rm-alchemy-footer">
+          <span>{{quote.goldGp}} зм{{#if quote.weeks}} · {{quote.weeks}} нед.{{/if}}{{#if quote.dc}} · Сл {{quote.dc}}{{/if}}</span>
+          <button type="button" data-craft-action="confirm" {{#unless ready}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            {{#if laboratory}}Подать заявку{{else}}Подготовить варку{{/if}}
+          </button>
+        </div>
+        {{#if fieldMode}}<p class="rm-alchemy-meta">Провал: потеря {{fieldLoss}} аспектов. Срок готового зелья: {{shelfLifeHours}} ч.</p>{{/if}}
+        {{#if errors}}
+          <ul class="rm-alchemy-error" role="status">{{#each errors}}<li>{{message}}</li>{{/each}}</ul>
+        {{/if}}
+      {{/if}}
+    {{/if}}
+  {{/if}}
+</section>

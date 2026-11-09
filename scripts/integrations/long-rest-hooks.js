@@ -60,6 +60,13 @@ export function registerLongRestHooks(moduleApi, options = {}) {
     game[HOOKS_REGISTERED_KEY] = true;
   }
 
+  const fieldCraft = (actor) => actor && (moduleApi.alchemyCraftingService?.fieldSnapshot?.(actor)
+    ?? actor.flags?.[MODULE_ID]?.alchemyCraftField);
+  Hooks.on("dnd5e.preRestCompleted", (actor, result, config) => {
+    if (config && restKind(result, config) === "short" && fieldCraft(actor)?.status === "prepared") {
+      config.chat = true;
+    }
+  });
   Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
     const kind = restKind(result, config);
     let operation;
@@ -72,6 +79,19 @@ export function registerLongRestHooks(moduleApi, options = {}) {
         result,
         config
       );
+      const craft = fieldCraft(actor);
+      if (craft?.status === "prepared" && result.message?.uuid) {
+        void Promise.resolve(moduleApi.mutateAlchemyCraft?.("completeField", {
+          groupId: craft.groupId, actorId: actor.id, operationId: craft.operationId, restMessageUuid: result.message.uuid
+        })).then((outcome) => {
+          if (!outcome) return;
+          const message = outcome.outcome === "field-success" ? "Полевое зелье готово." : "Проверка полевой алхимии провалена.";
+          globalThis.ui?.notifications?.info?.(message);
+        }).catch((error) => {
+          logger?.error?.(`${MODULE_ID} | Field alchemy failed.`, error);
+          globalThis.ui?.notifications?.warn?.(error.message);
+        });
+      }
     }
     if (operation) {
       Promise.resolve(operation).catch((error) => {

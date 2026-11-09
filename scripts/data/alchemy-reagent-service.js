@@ -4,6 +4,7 @@ import { MODULE_ID } from "../constants.js";
 import { usageCardData } from "../integrations/midi-usage-card.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { buildAlchemyActivities } from "./alchemy-automation.js?v=1.5.11";
+import { canUseCraftedPotion, resolveCraftedPotionProduct } from "./alchemy-crafting-rules.js";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const USE_FLAG = "alchemyPotionUse";
@@ -317,7 +318,9 @@ export class AlchemyReagentService {
     if (item?.type !== "consumable" || itemFlags?.managed !== true || itemFlags.sourceType !== "alchemyProduct"
       || itemFlags.alchemyProductId !== payload.productId || !product || product.productType !== "Зелье"
       || itemFlags.sourceNumber !== product.sourceNumber || itemFlags.productType !== product.productType
-      || !activity || productQuantity(actor, product.id) < 1 || !validDuration(product, payload.durationSeconds)
+      || !activity || productQuantity(actor, product.id) < 1
+      || !canUseCraftedPotion(item, Number(this.game?.time?.worldTime ?? 0))
+      || !validDuration(resolveCraftedPotionProduct(product, itemFlags.alchemyCraft?.catalyst), payload.durationSeconds)
       || payload.durationSeconds <= 0 || (level == null ? !validLevel(payload.reagentLevel) : level !== payload.reagentLevel)) {
       throw new Error("Зелье или его параметры не подтверждены.");
     }
@@ -493,7 +496,7 @@ export class AlchemyReagentService {
       throw new Error("Расход зелья не подтверждён.");
     }
     const authoredLevel = Object.hasOwn(itemFlags, "reagentLevel") ? itemFlags.reagentLevel : product.reagentLevel;
-    if (!validDuration(product, use.durationSeconds)
+    if (!validDuration(resolveCraftedPotionProduct(product, itemFlags.alchemyCraft?.catalyst), use.durationSeconds)
       || (authoredLevel == null
         ? (use.durationSeconds > 0 ? !validLevel(use.reagentLevel) : use.reagentLevel !== null)
         : use.reagentLevel !== authoredLevel)) throw new Error("Параметры реагентов не совпадают с предметом.");
