@@ -4,7 +4,7 @@ import { MODULE_ID } from "../constants.js";
 import { usageCardData } from "../integrations/midi-usage-card.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { buildAlchemyActivities } from "./alchemy-automation.js?v=1.5.11";
-import { canUseCraftedPotion, resolveCraftedPotionProduct } from "./alchemy-crafting-rules.js";
+import { canUseCraftedPotion, resolveCraftedPotionProduct } from "./alchemy-crafting-rules.js?v=1.5.72";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const USE_FLAG = "alchemyPotionUse";

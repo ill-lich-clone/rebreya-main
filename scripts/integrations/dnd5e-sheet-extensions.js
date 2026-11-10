@@ -40,7 +40,7 @@ import {
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
-} from "./universal-belt.js?v=1.5.71";
+} from "./universal-belt.js?v=1.5.72";
 import {
   bindItemUpgradeInventoryRows,
   bindItemUpgradeSheet,
@@ -6419,6 +6419,9 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
   upsertWeaponAttackTraitsField(root, app);
   bindWeaponPropertyGlossary(root);
   bindItemUpgradeSheet(root, app, moduleApi, {openContextMenu:openHeldItemContextMenu});
+  void bindAlchemyExtractionAction(root, item, moduleApi).catch((error) => {
+    console.error(`${MODULE_ID} | Failed to bind plant extraction action.`, error);
+  });
 }
 
 function resolveActorItem(actor, itemId) {
@@ -7725,3 +7728,4 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
   });
 }
+import { bindAlchemyExtractionAction } from "../ui/alchemy-extraction-dialog.js";

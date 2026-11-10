@@ -1,4 +1,5 @@
 import { consumeTreatWoundsKitOnce } from "../application/treat-wounds-kit-consumption.js?v=1.4.372";
+import { getAlchemyAspectKind } from "./alchemy-aspects.js";
 import { preserveItemSourceUuid } from "./item-source-reference.js?v=1.4.377";
 import { getEquipmentSize, isEquipmentSize } from "./equipment-size-rules.js?v=1.4.393";
 import {
@@ -662,6 +663,8 @@ export function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
 function inventoryStackIdentity(item) {
   const itemData = item?.toObject?.() ?? item;
   const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  const aspect = getAlchemyAspectKind(itemData);
+  if (aspect) return `alchemy-aspect:${aspect}`;
   if (isInventoryMaterialItemData(itemData)) return `material:${cleanId(flags.materialId ?? flags.sourceId)}`;
   const identities = [
     ["gear", flags.gearId],
@@ -677,7 +680,8 @@ function itemsCanMergeInInventory(sourceItem, acceptedItem) {
   if (hasLootgenNarrative(sourceItem) || hasLootgenNarrative(acceptedItem)) return false;
   const sourceCraft = sourceItem?.flags?.[MODULE_ID]?.alchemyCraft;
   const acceptedCraft = acceptedItem?.flags?.[MODULE_ID]?.alchemyCraft;
-  if (sourceCraft || acceptedCraft) return false;
+  if (sourceCraft || acceptedCraft || sourceItem?.flags?.[MODULE_ID]?.alchemyAspectCredit
+    || acceptedItem?.flags?.[MODULE_ID]?.alchemyAspectCredit) return false;
   const sourceIdentity = inventoryStackIdentity(sourceItem);
   const acceptedIdentity = inventoryStackIdentity(acceptedItem);
   const materialPrice = item => {
@@ -702,8 +706,9 @@ export function captureInventoryTransferIdentity(item) {
   }
   const itemData = item?.toObject?.() ?? item;
   const flags = itemData?.flags?.[MODULE_ID] ?? {};
-  const sourceType = cleanId(flags.sourceType);
-  const sourceId = cleanId(flags.sourceId);
+  const aspect = getAlchemyAspectKind(itemData);
+  const sourceType = aspect ? "alchemyAspect" : cleanId(flags.sourceType);
+  const sourceId = aspect ? `alchemy-aspect-${aspect}` : cleanId(flags.sourceId);
   const hasManagedIdentity = Boolean(sourceType && sourceId);
   return {
     sourceType: hasManagedIdentity ? sourceType : "",

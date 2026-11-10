@@ -16,6 +16,9 @@
       </label>{{/if}}
       <span class="rm-alchemy-meta">Инструменты · {{toolRank}} ранг{{#if laboratory}} · {{availableWeeks}} нед.{{/if}}</span>
     </div>
+    <div class="rm-alchemy-aspects" aria-label="Аспекты персонажа и группы">
+      {{#each aspectStock}}<span title="{{name}}">{{code}} {{available}}</span>{{/each}}
+    </div>
     {{#if error}}<p class="rm-alchemy-error" role="alert">{{error}}</p>{{/if}}
     {{#if prepared}}
       <p>Зелье подготовлено к следующему короткому отдыху.</p>
@@ -40,6 +43,9 @@
       </div>
       {{#if product}}
         <h3>{{product.name}}</h3>
+        {{#if aspectNeeds}}<div class="rm-alchemy-aspects" aria-label="Доступно и требуется">
+          {{#each aspectNeeds}}<span>{{name}} {{available}}/{{required}}</span>{{/each}}
+        </div>{{/if}}
         {{#if options}}
           <label>Рецепт
             <select name="option">
@@ -88,7 +94,7 @@
             {{#if laboratory}}Подать заявку{{else}}Подготовить варку{{/if}}
           </button>
         </div>
-        {{#if fieldMode}}<p class="rm-alchemy-meta">Провал: потеря {{fieldLoss}} аспектов. Срок готового зелья: {{shelfLifeHours}} ч.</p>{{/if}}
+        {{#if showFieldLoss}}<p class="rm-alchemy-meta">Провал: потеря {{fieldLoss}} аспектов. Срок готового зелья: {{shelfLifeHours}} ч.</p>{{/if}}
         {{#if errors}}
           <ul class="rm-alchemy-error" role="status">{{#each errors}}<li>{{message}}</li>{{/each}}</ul>
         {{/if}}

@@ -14360,3 +14360,8 @@ summary:focus-visible {
 .rm-alchemy-stock { display: grid; grid-template-columns: minmax(0, 1fr) 95px; gap: 8px; align-items: center; margin-top: 3px; }
 .rm-alchemy-form summary { cursor: pointer; }
 .rm-alchemy-form .rm-alchemy-error { color: var(--color-level-error, #cc4539); }
+.rm-alchemy-aspects { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .9em; }
+.rm-alchemy-extraction-action { width: auto; margin: 4px; }
+.rm-alchemy-extraction fieldset { max-height: 50vh; overflow: auto; }
+.rm-alchemy-extraction-row { display: grid; grid-template-columns: minmax(0, 1fr) 75px; gap: 6px; margin-bottom: 4px; align-items: center; }
+.rm-alchemy-extraction-row small { display: block; }

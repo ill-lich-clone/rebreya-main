@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { calculateAlchemyInventoryTotals } from "../data/alchemy-tracker.js?v=1.5.71";
-import { calculateActiveReagentTotal } from "../data/alchemy-reagent-service.js?v=1.5.71";
-import { bindPotionTrackerPopover } from "./potion-tracker-popover.js?v=1.5.71";
+import { calculateActiveReagentTotal } from "../data/alchemy-reagent-service.js?v=1.5.72";
+import { bindPotionTrackerPopover } from "./potion-tracker-popover.js?v=1.5.72";
 
 export const UNIVERSAL_BELT_FLAG = "universalBelt";
 export const UNIVERSAL_BELT_ITEM_SLOT_FLAG = "universalBelt.slot";

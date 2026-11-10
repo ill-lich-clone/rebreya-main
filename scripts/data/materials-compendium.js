@@ -4,6 +4,7 @@ import { escapeFoundryHtml as escapeHtml } from "../shared/foundry-values.js";
 import { buildNamedIconLookup, ensurePackSidebarFolder, resolveNamedIcon } from "./compendium-utils.js?v=1.4.327";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { ALCHEMY_ASPECTS, createAlchemyAspectItemData } from "./alchemy-aspects.js";
 
 const PACK_ID = `world.${MATERIALS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -360,25 +361,32 @@ export class MaterialsCompendiumService {
     const pack = await ensureMaterialsPack();
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(MATERIAL_ICON_SEARCH_PATHS);
+    const aspectEntries = Object.keys(ALCHEMY_ASPECTS).map((kind) => ({ aspectItem: createAlchemyAspectItemData(kind) }));
     await syncManagedDocumentsOnActiveGm(game, {
       pack,
-      entries: safeMaterials,
+      entries: [...safeMaterials, ...aspectEntries],
       documents,
-      sourceIdOfEntry: (material) => material.id,
-      sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
-        ? document.getFlag(MODULE_ID, "materialId")
-        : "",
-      signatureOfEntry: (material) => JSON.stringify([
+      sourceIdOfEntry: (material) => material.aspectItem?.flags[MODULE_ID].sourceId ?? material.id,
+      sourceIdOfDocument: (document) => {
+        if (!document.getFlag(MODULE_ID, "managed")) return "";
+        return document.getFlag(MODULE_ID, "sourceType") === "alchemyAspect"
+          ? document.getFlag(MODULE_ID, "sourceId") : document.getFlag(MODULE_ID, "materialId");
+      },
+      documentIdOfEntry: (material) => material.aspectItem?._id,
+      signatureOfEntry: (material) => material.aspectItem ? JSON.stringify([
+        material.aspectItem.flags[MODULE_ID].alchemyAspect, material.aspectItem.name, material.aspectItem.img
+      ]) : JSON.stringify([
         buildMaterialSignature(material),
         resolveNamedIcon(material.name, iconLookup, DEFAULT_ITEM_ICON)
       ]),
-      signatureOfDocument: (document) => JSON.stringify([
+      signatureOfDocument: (document) => document.getFlag(MODULE_ID, "sourceType") === "alchemyAspect"
+        ? JSON.stringify([document.getFlag(MODULE_ID, "alchemyAspect"), document.name, document.img]) : JSON.stringify([
         document.getFlag(MODULE_ID, "signature"),
         String(document.img ?? "").trim() || DEFAULT_ITEM_ICON
       ]),
-      createData: (material) => createDnd5eItemData(material, iconLookup),
+      createData: (material) => material.aspectItem ?? createDnd5eItemData(material, iconLookup),
       updateData: (_document, material) => {
-        const data = createDnd5eItemData(material, iconLookup);
+        const data = material.aspectItem ? structuredClone(material.aspectItem) : createDnd5eItemData(material, iconLookup);
         delete data._id;
         return data;
       }

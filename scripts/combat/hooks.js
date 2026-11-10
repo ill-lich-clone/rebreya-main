@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { canUseCraftedPotion } from "../data/alchemy-crafting-rules.js";
+import { canUseCraftedPotion } from "../data/alchemy-crafting-rules.js?v=1.5.72";
 import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.66";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.70";
@@ -120,9 +120,11 @@ export function registerCombatHooks(moduleApi) {
     };
     Hooks.on("dnd5e.preUseActivity", preventExpiredPotion);
     Hooks.on("dnd5e.preActivityConsumption", preventExpiredPotion);
-    Hooks.on("preDeleteItem", (item) => {
-      if (!item?.flags?.[MODULE_ID]?.alchemyCraft?.pending) return true;
-      globalThis.ui?.notifications?.warn?.("Выдача зелья ещё подтверждается.");
+    Hooks.on("preDeleteItem", (item, options) => {
+      const flags = item?.flags?.[MODULE_ID];
+      if (!flags?.alchemyCraft?.pending && !flags?.alchemyAspectCredit
+        && (!flags?.alchemyPlantDebit || options?.rebreyaAlchemyExtraction)) return true;
+      globalThis.ui?.notifications?.warn?.("Выдача алхимии ещё подтверждается.");
       return false;
     });
   }

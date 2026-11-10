@@ -5,6 +5,28 @@ import { extname } from "node:path";
 
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 
+test("inventory plant inspection opens the held item so the extraction action has an exact source", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { id: "player" } };
+  try {
+    const { openInventoryItemSource } = await import("../scripts/ui/inventory-app.js?plant-inspection");
+    let opened = 0;
+    let referenceOpened = 0;
+    const item = { documentName: "Item", type: "loot", parent: { id: "party", type: "group" },
+      flags: { "rebreya-main": { materialId: "plant" } }, testUserPermission: () => true,
+      system: { quantity: 1 }, sheet: { render: async () => { opened++; } } };
+    const moduleApi = {
+      alchemyExtractionService: {}, getModel: async () => ({ materialById: new Map([["plant", { type: "Растение", alchemyAspects: "42 З" }]]) }),
+      resolveItemSource: () => ({ documentName: "Item", testUserPermission: () => true,
+        sheet: { render: async () => { referenceOpened++; } } })
+    };
+    assert.equal(await openInventoryItemSource(item, { moduleApi }), "sheet");
+    assert.equal(opened, 1);
+    assert.equal(referenceOpened, 0);
+  } finally { globalThis.game = previousGame; restoreFoundry(); }
+});
+
 test("narrative inventory inspection opens the saved instance without resolving its base source", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const previousGame = globalThis.game;

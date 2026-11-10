@@ -2,6 +2,7 @@ import { planItemInstanceMutation } from "../data/item-instance-rules.js?v=1.4.3
 import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
 import { MODULE_ID } from "../constants.js";
 import { canViewItem } from "../infrastructure/foundry/item-source-resolver.js?v=1.4.377";
+import { getPlantExtractionData } from "../data/alchemy-extraction-service.js";
 import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.5.17";
 import {
@@ -16,7 +17,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.71";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.72";
 import { promptStorageTransferQuantity } from "./storage-transfer-ui.js?v=1.5.10";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
@@ -71,6 +72,12 @@ export async function openInventoryItemSource(item, { moduleApi, hints = {}, ope
   if (isJournalRecordItem(item)) return openInventoryItem(item, { moduleApi, openViewer });
   if (item?.flags?.[MODULE_ID]?.narrativeVariantId || item?.getFlag?.(MODULE_ID, "narrativeVariantId")) {
     return canViewItem(item) ? openInventoryItem(item, { moduleApi, openViewer }) : null;
+  }
+  if (moduleApi.alchemyExtractionService && item?.type === "loot" && item.parent && canViewItem(item)) {
+    try {
+      const { materialById } = await moduleApi.getModel();
+      if (getPlantExtractionData(item, materialById)) return openInventoryItem(item, { moduleApi, openViewer });
+    } catch { /* Keep ordinary source inspection available when the economy model cannot be read. */ }
   }
   let source = null;
   try { source = await moduleApi.resolveItemSource?.(item, hints) ?? null; }

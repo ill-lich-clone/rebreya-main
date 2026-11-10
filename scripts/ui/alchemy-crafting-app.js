@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { ALCHEMY_ASPECTS } from "../data/alchemy-aspects.js";
 
 const roleLabels = { base: "Основа", aspect: "Аспект", component: "Компонент" };
 const itemKey = ({ actorId, itemId, role }) => `${actorId}:${itemId}:${role}`;
@@ -18,9 +19,23 @@ export function buildAlchemyCraftingView(snapshot, { mode, productId, selection,
   const allRecipes = snapshot.recipes.filter(({ rank }) => laboratory || rank <= 5)
     .map((row) => ({ ...row, selected: row.id === productId, hidden: !row.name.toLocaleLowerCase("ru-RU").includes(searchKey),
       img: row.icon?.startsWith("modules/") ? row.icon : `modules/${MODULE_ID}/${row.icon}` }));
+  const stock = snapshot.aspectStock ?? {};
+  const needs = quote?.aspectNeeds ?? {};
+  const aspectStock = Object.entries(ALCHEMY_ASPECTS).map(([kind, aspect]) => ({
+    ...aspect, available: stock[kind] ?? 0
+  }));
+  const aspectNeeds = Object.entries(needs).map(([kind, required]) => ({
+    name: ALCHEMY_ASPECTS[kind].name, available: stock[kind] ?? 0, required
+  }));
+  if (quote?.anyAspects) aspectNeeds.push({
+    name: "Любые", required: quote.anyAspects,
+    available: Object.entries(stock).reduce((sum, [kind, quantity]) => sum + Math.max(0, quantity - (needs[kind] ?? 0)), 0)
+  });
   return {
     laboratory, fieldMode: !laboratory, manual, prepared, quote, errors,
     ready: Boolean(quote && !errors.length && !prepared),
+    aspectStock, aspectNeeds,
+    showFieldLoss: Boolean(!laboratory && quote && !errors.length),
     manualWeeks: selection.manualWeeks ?? "",
     manualGoldGp: selection.manualGoldGp ?? option?.goldGp,
     abilityWis: selection.ability === "wis",

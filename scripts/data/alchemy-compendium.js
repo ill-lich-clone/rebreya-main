@@ -8,7 +8,7 @@ import {
   ensurePackSidebarFolder
 } from "./compendium-utils.js?v=1.4.327";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { applyCraftedPotionHealing, resolveCraftedPotionProduct } from "./alchemy-crafting-rules.js";
+import { applyCraftedPotionHealing, resolveCraftedPotionProduct } from "./alchemy-crafting-rules.js?v=1.5.72";
 import { syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {

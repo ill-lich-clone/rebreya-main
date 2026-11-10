@@ -1,6 +1,7 @@
 import { ALCHEMY_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { createAlchemyItemData } from "./alchemy-compendium.js?v=1.5.71";
+import { getAlchemyAspectKind } from "./alchemy-aspects.js";
+import { createAlchemyItemData } from "./alchemy-compendium.js?v=1.5.72";
 import {
   buildInventoryItemQuantityPatch, buildInventoryItemQuantityRestorePatch,
   captureInventoryItemQuantityState, isInventoryMaterialItemData, readInventoryItemQuantity,
@@ -8,10 +9,11 @@ import {
 } from "./inventory-material-quantity.js";
 import {
   applyCraftedPotionHealing, buildPotionCraftQuote, canUseCraftedPotion, describePotionOption, normalizePotionRecipeCatalog, planPotionStock,
-  readAlchemyAspect, resolveAlchemyToolRank, resolveCraftedPotionProduct
-} from "./alchemy-crafting-rules.js";
+  resolveAlchemyToolRank, resolveCraftedPotionProduct
+} from "./alchemy-crafting-rules.js?v=1.5.72";
 
 const JOURNAL = "alchemyCraftJournal";
+export { JOURNAL as ALCHEMY_CRAFT_JOURNAL };
 const CURRENCY = { cp: 1, sp: 10, ep: 50, gp: 100, pp: 1000 };
 const flagsOf = (item) => item?.flags?.[MODULE_ID] ?? {};
 const dataOf = (item) => item?.toObject?.() ?? item;
@@ -134,8 +136,9 @@ export class AlchemyCraftingService {
     const product = model.alchemyProductById.get(intent.productId);
     const stock = [scope.actor, scope.group].flatMap((actor) => itemsOf(actor).flatMap((item) => {
       const flags = flagsOf(item);
+      if (flags.alchemyAspectCredit || flags.alchemyPlantDebit) return [];
       const data = dataOf(item);
-      const aspect = item.type === "loot" ? readAlchemyAspect(item.name) : null;
+      const aspect = getAlchemyAspectKind(item);
       const isMaterial = isInventoryMaterialItemData(data);
       const materialId = isMaterial ? flags.materialId ?? flags.sourceId : null;
       const productId = flags.alchemyProductId;
@@ -170,13 +173,17 @@ export class AlchemyCraftingService {
     if (plan.catalystIndex !== undefined) selection.catalystIndex = plan.catalystIndex;
     const snapshot = this.moduleApi.downtimeService.getSnapshot({ actorId: intent.actorId }, { groupId: intent.groupId });
     const field = this.fieldSnapshot(context.actor);
+    const aspectStock = {};
+    for (const { aspect, quantity } of context.stock) {
+      if (aspect && Number.isSafeInteger(quantity)) aspectStock[aspect] = (aspectStock[aspect] ?? 0) + quantity;
+    }
     return {
       recipes: [...context.recipes.keys()].map((id) => {
         const { name, rank, icon } = context.model.alchemyProductById.get(id);
         return { id, name, rank, icon };
       }),
       options: context.recipe?.options.map((option) => ({ ...option, label: describePotionOption(option, context.recipe) })) ?? [],
-      ...plan, selection,
+      ...plan, selection, aspectStock,
       quote: context.product ? await this.quote({ ...intent, selection }, context) : null,
       toolRank: context.tool?.rank ?? null,
       availableWeeks: snapshot.balance.availableWeeks,

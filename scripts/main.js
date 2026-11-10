@@ -21,12 +21,14 @@ import {
   prepareCompendiumBadgeImages
 } from "./data/icon-badge-build.js?v=1.4.330";
 import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
-import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
+import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.5.72";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.5.70";
-import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.71";
-import { AlchemyCraftingService, registerAlchemyCraftingSettings } from "./data/alchemy-crafting-service.js?v=1.5.71";
+import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.5.72";
+import { AlchemyCraftingService, registerAlchemyCraftingSettings } from "./data/alchemy-crafting-service.js?v=1.5.72";
 import { alchemyCraftCommand, registerAlchemyCraftingCommands } from "./application/alchemy-crafting-commands.js?v=1.5.71";
-import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.71";
+import { AlchemyExtractionService } from "./data/alchemy-extraction-service.js";
+import { ALCHEMY_EXTRACTION_COMMAND, registerAlchemyExtractionCommands } from "./application/alchemy-extraction-commands.js";
+import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.72";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
 import { repairDfredsExhaustionIcons } from "./integrations/dfreds-exhaustion-icons.js?v=1.5.69";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.60";
@@ -105,7 +107,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.5.71";
+} from "./data/inventory-service.js?v=1.5.72";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -324,7 +326,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.48";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.71";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.72";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.66";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -400,7 +402,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.71";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.72";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.48";
 import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.59";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
@@ -414,7 +416,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.45";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.71";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.72";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -1632,6 +1634,7 @@ export class RebreyaMainModule {
     this.gearCompendium = new GearCompendiumService();
     this.alchemyCompendium = new AlchemyCompendiumService();
     this.alchemyCraftingService = new AlchemyCraftingService({ moduleApi: this, repository: this.worldSettingMutationRepository });
+    this.alchemyExtractionService = new AlchemyExtractionService({ moduleApi: this, craftingService: this.alchemyCraftingService });
     this.grapplePlacementPreview = new GrapplePlacementPreview();
     this.magicItemsCompendium = new MagicItemsCompendiumService({
       gearProvider: async () => (await this.getModel()).gear,
@@ -1692,7 +1695,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.5.71"
+          "./ui/inventory-app.js?v=1.5.72"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -2576,6 +2579,7 @@ export class RebreyaMainModule {
     registerAlchemyBombSocketCommand(this);
     registerAlchemyReagentSocketCommand(this.privilegedMutationGateway, this.alchemyReagentService);
     registerAlchemyCraftingCommands(this.privilegedMutationGateway, this.alchemyCraftingService);
+    registerAlchemyExtractionCommands(this.privilegedMutationGateway, this.alchemyExtractionService);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
     const authorizeGlobalEvents = (_payload, { sender }) => sender?.isGM === true;
@@ -6638,6 +6642,14 @@ export class RebreyaMainModule {
     return result;
   }
 
+  async mutateAlchemyExtraction(intent) {
+    const result = await this.privilegedMutationGateway.mutate(ALCHEMY_EXTRACTION_COMMAND, intent);
+    if (this.alchemyCraftingApp?.rendered && this.alchemyCraftingApp.groupId === intent.groupId) {
+      await this.alchemyCraftingApp.render({ force: true });
+    }
+    return result;
+  }
+
   async registerPartyGroup(groupActorId) {
     const result = await this.privilegedMutationGateway.mutate(GROUP_REGISTRY_REGISTER_COMMAND, {
       groupActorId
@@ -8333,7 +8345,7 @@ export class RebreyaMainModule {
 
   async openAlchemyCraftingApp({ actorId } = {}) {
     const { groupId } = this.groupContextService.resolveReferenceForCurrentUser();
-    const { AlchemyCraftingApp } = await import("./ui/alchemy-crafting-app.js?v=1.5.71");
+    const { AlchemyCraftingApp } = await import("./ui/alchemy-crafting-app.js?v=1.5.72");
     if (!this.alchemyCraftingApp || this.alchemyCraftingApp.groupId !== groupId) {
       await this.alchemyCraftingApp?.close();
       this.alchemyCraftingApp = new AlchemyCraftingApp(this, groupId, actorId);
@@ -8348,7 +8360,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.71");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.72");
 
       const secondary = options?.newWindow === true;
       const viewKey = "full:secondary";
@@ -8405,7 +8417,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.71");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.72");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

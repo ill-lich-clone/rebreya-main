@@ -1,10 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { canonicalCatalogId } from "../shared/canonical-catalog-id.js";
+import { ALCHEMY_ASPECTS } from "./alchemy-aspects.js";
 
-const ASPECT_NAMES = {
-  fire: "О", water: "Вд", earth: "З", air: "Вз", positive: "Пэ", negative: "Нэ"
-};
-const ASPECT_BY_CODE = new Map(Object.entries(ASPECT_NAMES).map(([kind, code]) => [code.toLowerCase(), kind]));
+export { readAlchemyAspect } from "./alchemy-aspects.js";
+
+const ASPECT_NAMES = Object.fromEntries(Object.entries(ALCHEMY_ASPECTS).map(([kind, { code }]) => [kind, code]));
 const BASE_ID = "material-4";
 const STOCK_PRECISION = 12;
 
@@ -16,10 +16,6 @@ const count = (values) => Object.values(values).reduce((sum, value) => sum + val
 const isRank = (value) => Number.isSafeInteger(value) && value >= 0;
 const isGold = (value) => Number.isFinite(value) && value >= 0
   && Number.isSafeInteger(Math.round(value * 100)) && Math.abs(value - Math.round(value * 100) / 100) < 1e-9;
-
-export function readAlchemyAspect(name) {
-  return ASPECT_BY_CODE.get(nameKey(name).match(/^аспект\s+(о|вд|з|вз|пэ|нэ)$/u)?.[1]) ?? null;
-}
 
 export function canUseCraftedPotion(item, worldTime) {
   const craft = item?.flags?.[MODULE_ID]?.alchemyCraft;
@@ -292,6 +288,8 @@ export function buildPotionCraftQuote({ recipe, product, mode, selection = {}, s
   for (const [kind, amount] of Object.entries(catalyst?.aspects ?? {})) {
     requiredAspects[kind] = (requiredAspects[kind] ?? 0) + amount;
   }
+  result.aspectNeeds = requiredAspects;
+  result.anyAspects = option.anyAspects ?? 0;
   const aspectRows = debits.filter((row) => row.role === "aspect");
   const totals = {};
   for (const row of aspectRows) {
@@ -301,11 +299,17 @@ export function buildPotionCraftQuote({ recipe, product, mode, selection = {}, s
     }
     totals[row.aspect] = (totals[row.aspect] ?? 0) + row.quantity;
   }
+  let typedShortage = false;
   for (const [kind, amount] of Object.entries(requiredAspects)) {
-    if ((totals[kind] ?? 0) < amount) addError("aspect-shortage", `Нужно ${amount} ${ASPECT_NAMES[kind]}.`);
+    if ((totals[kind] ?? 0) < amount) {
+      typedShortage = true;
+      addError("aspect-shortage", `Нужно ${amount} ${ASPECT_NAMES[kind]}.`);
+    }
   }
-  if (count(totals) !== count(requiredAspects) + (option.anyAspects ?? 0)) {
-    addError("aspect-total", `Нужно аспектов: ${count(requiredAspects) + (option.anyAspects ?? 0)}.`);
+  const expected = count(requiredAspects) + result.anyAspects;
+  const selectedAspects = count(totals);
+  if (selectedAspects !== expected && (result.anyAspects || !typedShortage || selectedAspects > expected)) {
+    addError("aspect-total", `Нужно аспектов: ${expected}.`);
   }
 
   if (field) {

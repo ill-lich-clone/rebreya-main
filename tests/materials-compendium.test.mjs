@@ -130,8 +130,9 @@ test("sync reuses world.rebreya-materials and indexes all materials for search a
       for (const [index, entry] of data.entries()) {
         documents.push({
           ...entry,
-          id: `materialDocument${index + 1}`,
-          _id: `materialDocument${index + 1}`,
+          id: entry._id ?? `materialDocument${index + 1}`,
+          _id: entry._id ?? `materialDocument${index + 1}`,
+          async update(data) { Object.assign(this, data); return this; },
           getFlag(scope, key) {
             return this.flags?.[scope]?.[key];
           },
@@ -218,8 +219,13 @@ test("sync reuses world.rebreya-materials and indexes all materials for search a
     assert.equal(createCompendiumCount, 0);
     assert.equal(createDocumentsCount, 1);
     assert.equal(packs.size, 1);
-    assert.equal(documents.length, materials.length);
-    assert.equal(index.length, materials.length);
+    const materialDocuments = documents.filter((entry) => entry.getFlag("rebreya-main", "materialId"));
+    const aspectDocuments = documents.filter((entry) => entry.getFlag("rebreya-main", "alchemyAspect"));
+    assert.equal(materialDocuments.length, materials.length);
+    assert.equal(aspectDocuments.length, 6);
+    assert.equal(index.length, materials.length + 6);
+    await service.sync(materials);
+    assert.equal(createDocumentsCount, 1);
     assert.ok(indexEntry, "nullable material is present in the index created by sync");
     const document = await pack.getDocument(indexEntry._id);
     assert.equal(await service.openMaterial(material), document);
