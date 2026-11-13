@@ -7,7 +7,7 @@ import { itemInstanceFingerprint } from "../application/item-instance-workflow.j
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
 import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.5.48";
-import { readStorageState } from "./storage-service.js?v=1.5.73";
+import { readStorageState } from "./storage-service.js?v=1.5.74";
 import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,

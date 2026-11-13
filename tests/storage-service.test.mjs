@@ -749,6 +749,37 @@ test("corpse claims preserve the marker and never restore partially or fully cla
   assert.equal(materializations, 1);
 });
 
+test("opening an existing corpse repairs only its remaining misclassified magic loot", async () => {
+  const { CorpseStorageMaterializer } = await import("../scripts/data/corpse-storage-materializer.js");
+  const materializer = new CorpseStorageMaterializer({ inventoryService: { buildLootgenItemData() { throw Error("not called"); } },
+    durabilityService: { getOrBuildBrokenDurability() {} } });
+  const token = makeDeadNpcStorageToken("troll-token", "troll");
+  const oldRow = (id, quantity = 1) => ({ rowId: `corpse-v1:${id}:kinzhal`, sourceType: "gear", sourceId: "kinzhal",
+    name: "Кинжал", quantity, itemData: { name: "Кинжал", type: "weapon", system: { quantity } } });
+  const available = oldRow("magic", 2), claimed = oldRow("claimed"), unrelated = oldRow("ordinary");
+  const trophy = { rowId: "harvest:troll:1", name: "Сердце тролля", quantity: 1 };
+  token.actor.items = ["magic", "claimed"].map(id => ({ id, name: "Кинжал верного удара", type: "weapon",
+    system: { properties: ["mgc"], quantity: 3 } }));
+  token.flags["rebreya-main"] = { storage: buildStorageTokenState({ state: "opened",
+    corpseMaterialization: corpseResult("troll").corpseMaterialization,
+    generatedRows: [available, claimed, unrelated, trophy], claimedRowIds: [claimed.rowId],
+    rowClaimMutations: [{ mutationId: "taken-one", rowId: available.rowId, quantity: 1 }], corpseHarvestReceipt: "harvest-troll" }) };
+  const service = new StorageService({ repairCorpseRows: (doc, state) => materializer.repairRows(doc, state) });
+  const result = await service.open(token);
+  const [repaired, ...unchanged] = result.rows;
+  assert.equal(repaired.name, "Кинжал верного удара");
+  assert.equal(repaired.rowId, available.rowId);
+  assert.equal(repaired.itemData.system.quantity, 2);
+  assert.deepEqual(unchanged, [claimed, unrelated, trophy]);
+  assert.deepEqual(result.state.claimedRowIds, [claimed.rowId]);
+  assert.equal(result.state.rowClaimMutations[0].mutationId, "taken-one");
+  assert.equal(result.state.corpseHarvestReceipt, "harvest-troll");
+  assert.deepEqual((await service.open(token)).rows, result.rows);
+  const taken = await service.claim(token, { kind: "row", rowId: repaired.rowId, quantity: 2 });
+  assert.equal(taken.row.itemData.name, repaired.name);
+  assert.deepEqual((await service.open(token)).state.claimedRowIds, [claimed.rowId, repaired.rowId]);
+});
+
 test("two dead tokens sharing one Actor keep independent corpse materialization state", async () => {
   let materializations = 0;
   const service = new StorageService({

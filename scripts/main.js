@@ -8,7 +8,7 @@ import { SCENE_ACTIVITY_COMMANDS, isValidSceneActivityPayload, authorizeSceneAct
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.396";
 import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.5.23";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.396";
-import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.5.73";
+import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.5.74";
 import { buildJournalRecordItemData } from "./data/journal-record-item.js?v=1.4.217-journal-record-items";
 // @rebreya-role canonical-composition-root
 import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.5.23";
@@ -261,10 +261,10 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.5.73";
+} from "./data/storage-service.js?v=1.5.74";
 import {
   CorpseStorageMaterializer
-} from "./data/corpse-storage-materializer.js?v=1.5.19";
+} from "./data/corpse-storage-materializer.js?v=1.5.74";
 import {
   isCorpseStorageTarget,
   isDeadNpcStorageTarget,
@@ -1742,6 +1742,7 @@ export class RebreyaMainModule {
       materializeFirstOpen: ({ token }) => isDeadNpcStorageTarget(token)
         ? this.corpseStorageMaterializer.materialize(token)
         : null,
+      repairCorpseRows: (token, state) => this.corpseStorageMaterializer.repairRows(token, state),
       onGeneratedOpen: ({ token }) => this.storageOpenSoundService.playForToken(token)
     });
     this.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter({

@@ -1,6 +1,8 @@
 import { GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { resolveRebreyaOrdinaryWeaponGearId } from "./item-classification.js?v=1.5.29";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
+import { preserveItemSourceUuid } from "./item-source-reference.js?v=1.4.377";
+import { isMagicItem } from "../shared/magic-item-classification.js";
 import {
   CORPSE_MATERIALIZATION_VERSION,
   isCorpseStorageTarget,
@@ -16,6 +18,7 @@ export {
 const GEAR_PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const CANONICAL_UUID_PREFIX = `Compendium.${GEAR_PACK_ID}.Item.`;
 const SUPPORTED_ITEM_TYPES = new Set(["weapon", "equipment", "consumable", "tool", "loot", "container"]);
+const MAGIC_LOOT_TYPES = new Set(["weapon", "equipment", "consumable", "tool", "loot"]);
 
 function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -139,6 +142,36 @@ function isBodyArmor(itemData) {
     && normalizeToken(itemData?.system?.type?.value) !== "shield";
 }
 
+function isMagicCorpseItem(item) {
+  return MAGIC_LOOT_TYPES.has(item.type) && isMagicItem(item)
+    && !(item.type === "weapon" && normalizeToken(item.system?.type?.value) === "natural");
+}
+
+function buildMagicCorpseRow(embedded, rowId, quantity) {
+  const itemData = preserveItemSourceUuid(embedded);
+  for (const key of ["_id", "id", "uuid", "_stats", "folder", "sort", "ownership"]) delete itemData[key];
+  itemData.system ??= {};
+  itemData.system.quantity = quantity;
+  if (Object.hasOwn(itemData.system, "equipped")) itemData.system.equipped = false;
+  if (Object.hasOwn(itemData.system, "attuned")) itemData.system.attuned = false;
+  if (Object.hasOwn(itemData.system, "container")) itemData.system.container = null;
+  const flags = itemData.flags?.[MODULE_ID];
+  if (flags) {
+    for (const key of ["held", "isHeld", "heldHands", "inventoryMutation", "inventoryFolderDrag", "inventoryTransfer",
+      "itemInstanceOrigin", "itemInstanceDebit", "itemInstancePlacement"]) delete flags[key];
+  }
+  return {
+    rowId,
+    sourceType: "magicItem",
+    sourceId: cleanId(flags?.magicItemId ?? flags?.itemSourceUuid),
+    name: itemData.name,
+    img: itemData.img,
+    typeLabel: itemData.type,
+    quantity,
+    itemData
+  };
+}
+
 function buildCanonicalIndex(entries) {
   const byDocumentId = new Map();
   const byGearId = new Map();
@@ -203,6 +236,28 @@ export class CorpseStorageMaterializer {
     this.getGearPack = getGearPack;
   }
 
+  repairRows(token, state) {
+    const actor = actorOf(token);
+    if (!isDeadNpcStorageTarget(token) || state.corpseMaterialization?.sourceActorUuid !== actor?.uuid
+      || state.corpseMaterialization?.sourceActorId !== actor?.id) return state.generatedRows;
+    const items = new Map(collectionValues(actor.items).map(item => [cleanId(item._id ?? item.id), item]));
+    const claimed = new Set(state.claimedRowIds);
+    const prefix = `corpse-v${CORPSE_MATERIALIZATION_VERSION}:`;
+    let changed = false;
+    const rows = state.generatedRows.map(row => {
+      if (row.sourceType !== "gear" || !row.sourceId || claimed.has(row.rowId)) return row;
+      const suffix = `:${row.sourceId}`;
+      if (!row.rowId?.startsWith(prefix) || !row.rowId.endsWith(suffix)) return row;
+      const source = items.get(row.rowId.slice(prefix.length, -suffix.length));
+      const embedded = toPlain(source);
+      const quantity = Number(row.quantity);
+      if (!embedded || !isMagicCorpseItem(embedded) || !Number.isSafeInteger(quantity) || quantity < 1) return row;
+      changed = true;
+      return buildMagicCorpseRow(embedded, row.rowId, quantity);
+    });
+    return changed ? rows : state.generatedRows;
+  }
+
   async materialize(token) {
     if (!isDeadNpcStorageTarget(token)) {
       throw new Error("Corpse storage can only be materialized for a dead unmarked NPC token.");
@@ -232,7 +287,12 @@ export class CorpseStorageMaterializer {
     for (const embeddedSource of collectionValues(actor?.items)) {
       const embedded = toPlain(embeddedSource);
       const quantity = readQuantity(embedded);
-      if (!quantity) continue;
+      const embeddedId = cleanId(embedded?._id ?? embedded?.id);
+      if (!quantity || !embeddedId) continue;
+      if (isMagicCorpseItem(embedded)) {
+        rows.push(buildMagicCorpseRow(embedded, `corpse-v${CORPSE_MATERIALIZATION_VERSION}:${embeddedId}:magic`, quantity));
+        continue;
+      }
       const entry = resolveCanonicalEntry(embedded, index);
       if (!entry) continue;
       const canonicalDocument = await pack.getDocument(entry.documentId);
@@ -263,8 +323,6 @@ export class CorpseStorageMaterializer {
         itemData.flags[MODULE_ID].durability = clone(broken);
         itemData.name = formatDurabilityItemName(itemData.name, broken);
       }
-      const embeddedId = cleanId(embedded?._id ?? embedded?.id);
-      if (!embeddedId) continue;
       rows.push({
         rowId: `corpse-v${CORPSE_MATERIALIZATION_VERSION}:${embeddedId}:${entry.gearId}`,
         stackKey: `gear:${entry.gearId}`,

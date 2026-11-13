@@ -551,6 +551,7 @@ export class StorageService {
     generate = async () => ({ rows: [], coins: {} }),
     getOrBuildDurability = async () => null,
     materializeFirstOpen = async () => null,
+    repairCorpseRows = (_token, state) => state.generatedRows,
     onGeneratedOpen = async () => {},
     prepareRows = async (rows) => rows,
     random = Math.random,
@@ -570,6 +571,7 @@ export class StorageService {
     this.random = random;
     this.getOrBuildDurability = getOrBuildDurability;
     this.materializeFirstOpen = materializeFirstOpen;
+    this.repairCorpseRows = repairCorpseRows;
     this.onGeneratedOpen = typeof onGeneratedOpen === "function" ? onGeneratedOpen : async () => {};
     this.logger = logger;
     this.openTasks = new Map();
@@ -847,6 +849,11 @@ export class StorageService {
     if (wrappers) current = await this.#write(token, wrappers.state);
     const migrated = migrateLegacyCoinRowsInState(current);
     if (migrated) current = await this.#write(token, migrated.state);
+    const document = resolveDocument(token);
+    if (!document?.__storageRoot && current.corpseMaterialization?.status === "complete" && isDeadNpcStorageTarget(document)) {
+      const generatedRows = this.repairCorpseRows(document, current);
+      if (generatedRows !== current.generatedRows) current = await this.#write(token, { ...current, generatedRows });
+    }
     if (current.corpseMaterialization?.status === "complete" || current.state !== "unopened") {
       return {
         generatedNow: false,
@@ -857,7 +864,6 @@ export class StorageService {
       };
     }
 
-    const document = resolveDocument(token);
     const materialized = document?.__storageRoot
       ? null
       : await this.materializeFirstOpen({

@@ -9,7 +9,7 @@ import {
   isMaterializedCorpseStorageState,
   storageObjectKind
 } from "../data/storage-object-kind.js?v=1.5.19";
-import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js?v=1.5.73";
+import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js?v=1.5.74";
 import { isDeadNpcStorageTarget } from "../data/storage-corpse-target.js?v=1.5.19";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isNaturalWeapon } from "./held-items.js?v=1.5.29";

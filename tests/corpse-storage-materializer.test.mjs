@@ -77,14 +77,18 @@ function createMaterializer(documents, { brokenFlag = null } = {}) {
 }
 
 function embeddedItem({ id, name, type, system = {}, flags = {}, stats = {} }) {
-  return {
+  const data = {
     id,
     _id: id,
     name,
     type,
     system: clone(system),
     flags: clone(flags),
-    _stats: clone(stats),
+    _stats: clone(stats)
+  };
+  return {
+    ...data,
+    toObject: () => clone(data),
     update() {
       throw new Error("Corpse materialization must not update embedded NPC Items.");
     }
@@ -323,4 +327,22 @@ test("matching is fail-closed except stable gear identity, canonical UUID, and e
     ["corpse-v1:stable-flags:dvuruchnyy-mech", "dvuruchnyy-mech", 2],
     ["corpse-v1:stable-uuid:strely-20", "strely-20", 7]
   ]);
+});
+
+test("a magic dagger keeps its own name, mechanics and origin instead of becoming its base dagger", async () => {
+  const dagger = canonicalDocument({ id: "dagger-doc", gearId: "kinzhal", name: "Кинжал", type: "weapon",
+    system: { type: { value: "simpleM", baseItem: "dagger" }, quantity: 1 } });
+  const embedded = embeddedItem({ id: "magic-dagger", name: "Кинжал верного удара", type: "weapon",
+    system: { type: { value: "simpleM", baseItem: "dagger" }, properties: ["mgc"], rarity: "uncommon", quantity: 1,
+      equipped: true, attuned: true, attunement: "required", activities: { strike: { attack: { bonus: "+1" } } } },
+    stats: { compendiumSource: "Compendium.dnd5e.items.Item.magic-dagger" } });
+  const [row] = (await createMaterializer([dagger]).materialize(npcToken({ items: [embedded] }))).rows;
+  assert.equal(row.name, "Кинжал верного удара");
+  assert.equal(row.sourceType, "magicItem");
+  assert.deepEqual(row.itemData.system.activities, embedded.system.activities);
+  assert.equal(row.itemData.flags[MODULE_ID].itemSourceUuid, "Compendium.dnd5e.items.Item.magic-dagger");
+  assert.equal(row.itemData.system.equipped, false);
+  assert.equal(row.itemData.system.attuned, false);
+  assert.equal(row.itemData.system.attunement, "required");
+  assert.equal(embedded.system.equipped, true);
 });

@@ -143,7 +143,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\{/u);
   assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.5.73",
+    "data/storage-service.js?v=1.5.74",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.5.68",
@@ -161,7 +161,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
     assert.equal(main.includes(importPath), true, importPath);
   }
   for (const importPath of [
-    "storage-service.js?v=1.5.73",
+    "storage-service.js?v=1.5.74",
     "storage-deposit-source.js?v=1.5.48",
     "storage-access.js?v=1.4.197-door-trigger-target"
   ]) {
