@@ -10,7 +10,7 @@ import {
   STORAGE_OBJECT_DURABILITY_FLAG
 } from "./native-object-durability-service.js?v=1.5.48";
 import { storageObjectKind } from "./storage-object-kind.js?v=1.5.19";
-import { buildStorageTokenState } from "./storage-service.js?v=1.5.48";
+import { buildStorageTokenState } from "./storage-service.js?v=1.5.73";
 import { DND5E_STORAGE_SIZE_LOCKS, supportsDnd5eStorageSizeLocks } from "./storage-token-dimensions.js?v=1.5.68";
 
 export const BUILTIN_STORAGE_FOLDER_NAME = "Хранилища";

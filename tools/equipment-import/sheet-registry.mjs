@@ -194,5 +194,12 @@ export const SHEET_REGISTRY = Object.freeze({
     stableKeyHeader: "Название",
     adapter: "transport",
     outputCatalog: "transport"
+  }),
+  monsters: declaration(15, {
+    sheetTitle: "Энциклопедия чудовищ V0",
+    range: "A1:I1000",
+    layout: "raw",
+    adapter: "monsters",
+    outputCatalog: "monsters"
   })
 });

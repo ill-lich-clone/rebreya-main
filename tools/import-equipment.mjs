@@ -163,8 +163,12 @@ async function loadMagicItemDescriptionTableContracts(cwd) {
 
 async function loadCurrentFiles(cwd) {
   const files = new Map();
-  for (const relativePath of Object.values(GENERATED_CATALOG_PATHS)) {
-    files.set(relativePath, await fs.readFile(path.join(cwd, relativePath), "utf8"));
+  for (const [catalog, relativePath] of Object.entries(GENERATED_CATALOG_PATHS)) {
+    try {
+      files.set(relativePath, await fs.readFile(path.join(cwd, relativePath), "utf8"));
+    } catch (error) {
+      if (catalog !== "monsters" || error.code !== "ENOENT") throw error;
+    }
   }
   return files;
 }

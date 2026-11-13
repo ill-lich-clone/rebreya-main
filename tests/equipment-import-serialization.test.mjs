@@ -24,7 +24,7 @@ test("bundle serialization is byte-stable across insertion order", () => {
   const reordered = reverseObjects(fixture);
   for (const records of Object.values(reordered.catalogs)) records.reverse();
   const second = serializeEquipmentBundle(reordered);
-  assert.deepEqual([...first.keys()], Object.values(GENERATED_CATALOG_PATHS).sort());
+  assert.deepEqual([...first.keys()], Object.keys(fixture.catalogs).map(key => GENERATED_CATALOG_PATHS[key]).sort());
   assert.deepEqual(second, first);
   for (const content of first.values()) {
     assert.equal(content.endsWith("\n"), true);

@@ -11,7 +11,8 @@ const ALLOWED_PATHS = new Set(Object.values(GENERATED_CATALOG_PATHS));
 function asFilesMap(filesByPath) {
   const files = filesByPath instanceof Map ? new Map(filesByPath) : new Map(Object.entries(filesByPath ?? {}));
   const keys = [...files.keys()].sort();
-  const expected = [...ALLOWED_PATHS].sort();
+  const expected = [...ALLOWED_PATHS].filter(relative => relative !== GENERATED_CATALOG_PATHS.monsters
+    || files.has(relative)).sort();
   if (JSON.stringify(keys) !== JSON.stringify(expected)) {
     throw new Error(`Generated transaction must contain exactly: ${expected.join(", ")}`);
   }

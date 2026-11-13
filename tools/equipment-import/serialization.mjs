@@ -8,6 +8,7 @@ function catalogId(catalog, entry) {
   switch (catalog) {
     case "gear": return entry?.id;
     case "upgrades": return entry?.productId;
+    case "monsters":
     case "materials": return entry?.id;
     case "implants": return entry?.id;
     case "transport": return entry?.sourceId;
@@ -78,6 +79,7 @@ export function serializeEquipmentBundle(bundle) {
   assertSafeValue(bundle);
   const rendered = new Map();
   for (const [catalog, relativePath] of Object.entries(GENERATED_CATALOG_PATHS)) {
+    if (catalog === "monsters" && !Object.hasOwn(bundle.catalogs, catalog)) continue;
     const records = canonicalCatalog(catalog, bundle?.catalogs?.[catalog]);
     const content = catalog === "magicItems"
       ? renderMagicItemsModule(records)
@@ -92,6 +94,7 @@ export function parseCurrentEquipmentBundle({ filesByPath }) {
   const catalogs = {};
   const fingerprint = createHash("sha256");
   for (const [catalog, relativePath] of Object.entries(GENERATED_CATALOG_PATHS)) {
+    if (catalog === "monsters" && !files.has(relativePath)) continue;
     if (!files.has(relativePath)) throw new Error(`Missing generated catalog file ${relativePath}`);
     const source = String(files.get(relativePath));
     fingerprint.update(relativePath, "utf8").update("\0", "utf8").update(source, "utf8").update("\0", "utf8");

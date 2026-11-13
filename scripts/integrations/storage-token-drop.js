@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { preflightStorageAccess } from "../data/storage-access.js";
 import { parseStorageDepositDragData } from "../data/storage-deposit-source.js?v=1.5.48";
-import { isStorageActor } from "../data/storage-service.js?v=1.5.48";
+import { isStorageActor } from "../data/storage-service.js?v=1.5.73";
 import { promptStorageTransferQuantity } from "../ui/storage-transfer-ui.js?v=1.4.377";
 import {
   StorageTokenOverlayController,

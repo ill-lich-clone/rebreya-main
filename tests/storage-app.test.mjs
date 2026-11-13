@@ -46,6 +46,52 @@ test("storage window uses a template path accepted by Foundry", async () => {
   assert.ok((await readFile(templateFile, "utf8")).trim());
 });
 
+test("harvesting action appears only on the root corpse storage window", async () => {
+  const app = new StorageApp({}, "corpse");
+  app.snapshot = { name: "Гарпия", canHarvest: true, rows: [] };
+  assert.equal((await app._prepareContext()).canHarvest, true);
+  app.path = ["inner"];
+  assert.equal((await app._prepareContext()).canHarvest, false);
+});
+
+test("harvesting dialog passes the analogue and shows the authoritative result", async () => {
+  const { openCreatureHarvestingDialog } = await import("../scripts/ui/creature-harvesting-dialog.js");
+  const record = { id: "harpy", name: "Гарпия", rank: 1 };
+  const calls = [];
+  const dialogs = [];
+  await openCreatureHarvestingDialog(async request => {
+    calls.push(request);
+    if (request.action === "begin") return { outcome: "success", total: 21, dc: 21, loot: [{ name: "Кровь чудовища" }] };
+    return request.name ? { choices: [record], dc: 21, check: "wis:sur" }
+      : { choices: [], reason: "monster", message: "Такого чудовища нет в энциклопедии." };
+  }, { DialogV2: { async wait(dialog) {
+    dialogs.push(dialog);
+    if (dialogs.length === 1) return { action: "search", name: "Гарпия" };
+    if (dialogs.length === 2) return dialog.buttons.find(button => button.action === "begin").callback();
+    return null;
+  } } });
+  assert.deepEqual(calls, [{ action: "read" }, { action: "read", name: "Гарпия" },
+    { action: "begin", monsterId: "harpy", name: "Гарпия" }]);
+  assert.match(dialogs[0].content, /Имя аналога/);
+  assert.match(dialogs[1].content, /Сл 21/);
+  assert.match(dialogs[2].content, /Кровь чудовища/);
+});
+
+test("cancelled harvesting configuration sends no mutation under native dialog fallback", async () => {
+  const { openCreatureHarvestingDialog } = await import("../scripts/ui/creature-harvesting-dialog.js");
+  const actions = [];
+  const chosen = ["configure", "cancel", "close"];
+  await openCreatureHarvestingDialog(async ({ action }) => {
+    actions.push(action);
+    return { choices: [], reason: "freshness", config: {}, now: 100, check: "wis:sur" };
+  }, { DialogV2: { async wait(dialog) {
+    const selected = chosen.shift();
+    const button = dialog.buttons.find(button => button.action === selected);
+    return (await button.callback()) ?? button.action;
+  } } });
+  assert.deepEqual(actions, ["read", "read"]);
+});
+
 test("narrative storage inspection renders saved instance read-only without following its source", async () => {
   const { openStorageRowItem } = await import("../scripts/ui/storage-app.js");
   const rendered = [];

@@ -87,7 +87,8 @@ test("pipeline composes the complete immutable catalog bundle", () => {
     materials: "data/materials.json",
     implants: "data/implants.json",
     transport: "data/rebreya-transport-v01.json",
-    magicItems: "magicItem.js"
+    magicItems: "magicItem.js",
+    monsters: "data/monsters.json"
   });
   const source = workbookSnapshot();
   const before = structuredClone(source);

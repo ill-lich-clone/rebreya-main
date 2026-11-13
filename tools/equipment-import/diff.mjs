@@ -4,13 +4,15 @@ const CATALOG_ORDER = Object.freeze([
   "materials",
   "implants",
   "transport",
-  "magicItems"
+  "magicItems",
+  "monsters"
 ]);
 
 function stableId(catalog, entry) {
   switch (catalog) {
     case "gear": return entry?.id;
     case "upgrades": return entry?.productId;
+    case "monsters":
     case "materials": return entry?.id;
     case "implants": return entry?.id;
     case "transport": return entry?.sourceId;
@@ -142,6 +144,7 @@ function diffCatalog(catalog, currentRecords, nextRecords) {
 export function diffEquipmentBundles({ currentBundle, nextBundle }) {
   const catalogs = {};
   for (const catalog of CATALOG_ORDER) {
+    if (catalog === "monsters" && !Object.hasOwn(nextBundle?.catalogs ?? {}, catalog)) continue;
     catalogs[catalog] = diffCatalog(
       catalog,
       Array.isArray(currentBundle?.catalogs?.[catalog]) ? currentBundle.catalogs[catalog] : [],
@@ -168,6 +171,7 @@ function sourceRowCount(sourceSummary, catalog) {
 export function evaluateDestructiveGuards({ diff, flags = {}, sourceSummary = {} }) {
   const blockers = [];
   for (const catalog of CATALOG_ORDER) {
+    if (catalog === "monsters" && !diff?.catalogs?.[catalog]) continue;
     const catalogDiff = diff?.catalogs?.[catalog] ?? {
       previousCount: 0,
       nextCount: 0,

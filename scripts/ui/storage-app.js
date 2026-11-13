@@ -1,5 +1,5 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.5.48";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.5.73";
 import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { buildNarrativeItemRepairPatch, loadLootgenNarrativeCatalog } from "../data/lootgen-narrative-catalog.js?v=1.4.396";
@@ -7,6 +7,7 @@ import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.392";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
+import { openCreatureHarvestingDialog } from "./creature-harvesting-dialog.js?v=1.5.73";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isDurabilityEligible } from "../data/durability-rules.js?v=1.4.200-storage-broken-presentation";
 import {
@@ -346,6 +347,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       state: clean(this.snapshot?.state) || "unopened",
       isEmpty: this.snapshot?.state === "empty",
       canManage,
+      canHarvest: !this.path.length && this.snapshot?.canHarvest === true,
       rows,
       activePopover,
       breadcrumbs,
@@ -676,6 +678,13 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const rowId = clean(control.dataset.rowId);
     event.preventDefault?.();
     try {
+      if (action === "storage-harvest") {
+        await openCreatureHarvestingDialog(request => this.moduleApi.harvestStorage(this.tokenUuid, {
+          ...request, characterTokenUuid: this.characterTokenUuid
+        }));
+        await this.#refresh();
+        return;
+      }
       if (action === "storage-close-popover") {
         if (this.rowPopover?.element) {
           this.rowPopover.close({ restoreFocus: true });

@@ -478,6 +478,7 @@ export function buildStorageTokenState(input = {}) {
     readJournalRowIds: normalizeReadJournalRowIds(source.readJournalRowIds, [...manualRows, ...generatedRows]),
     coinsClaimed: source.coinsClaimed === true,
     corpseMaterialization: normalizeCorpseMaterialization(source.corpseMaterialization),
+    ...(cleanId(source.corpseHarvestReceipt) ? { corpseHarvestReceipt: cleanId(source.corpseHarvestReceipt) } : {}),
     bulkClaimMutations: normalizeBulkClaimMutations(source.bulkClaimMutations),
     triggers: normalizeStorageTriggerState(source.triggers),
     state,
@@ -655,6 +656,16 @@ export class StorageService {
       globalThis.Hooks?.callAll?.(STORAGE_UPDATED_HOOK, document, clone(normalized));
     }
     return clone(normalized);
+  }
+
+  async writeCorpseHarvest(token, receipt, rows = []) {
+    if (!isDeadNpcStorageTarget(token)) throw new Error("Тело больше нельзя разделать.");
+    const current = readStorageState(token);
+    if (current.corpseHarvestReceipt === receipt) return current;
+    const state = rows.length ? "opened" : current.state;
+    return this.#write(token, { ...current, corpseHarvestReceipt: receipt,
+      generatedRows: [...current.generatedRows, ...rows], state,
+      displayMode: rows.length ? state : current.displayMode });
   }
 
   async configure(token, config = {}, { path = [] } = {}) {

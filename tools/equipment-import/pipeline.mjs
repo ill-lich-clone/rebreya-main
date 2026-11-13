@@ -10,6 +10,7 @@ import { adaptExplosiveProfiles } from "./adapters/explosives.mjs";
 import { adaptImplantsCatalog } from "./adapters/implants.mjs";
 import { adaptMagicItemsCatalog } from "./adapters/magic-items.mjs";
 import { adaptMaterialsCatalog } from "./adapters/materials.mjs";
+import { adaptMonstersCatalog } from "./adapters/monsters.mjs";
 import { adaptTransportCatalog } from "./adapters/transport.mjs";
 import { adaptUpgradeCatalog } from "./adapters/upgrades.mjs";
 import { adaptWeaponProfiles } from "./adapters/weapons.mjs";
@@ -26,7 +27,8 @@ export const GENERATED_CATALOG_PATHS = Object.freeze({
   materials: "data/materials.json",
   implants: "data/implants.json",
   transport: "data/rebreya-transport-v01.json",
-  magicItems: "magicItem.js"
+  magicItems: "magicItem.js",
+  monsters: "data/monsters.json"
 });
 
 const REQUIRED_SHEETS = Object.freeze([
@@ -114,6 +116,7 @@ function catalogId(catalog, entry) {
   switch (catalog) {
     case "gear": return entry?.id;
     case "upgrades": return entry?.productId;
+    case "monsters":
     case "materials": return entry?.id;
     case "implants": return entry?.id;
     case "transport": return entry?.sourceId;
@@ -128,6 +131,7 @@ function sourceIdentity(catalog, entry) {
     case "upgrades": return entry?.upgrade?.sourceSheet && entry?.upgrade?.sourceSheetRow
       ? `${entry.upgrade.sourceSheet}!${entry.upgrade.sourceSheetRow}`
       : "";
+    case "monsters":
     case "materials": return entry?.source?.sheetName && entry?.source?.row
       ? `${entry.source.sheetName}!${entry.source.row}`
       : "";
@@ -142,6 +146,7 @@ function sourceIdentity(catalog, entry) {
 function validateCatalogRecords(bundle, diagnostics) {
   for (const catalog of Object.keys(GENERATED_CATALOG_PATHS)) {
     const records = bundle?.catalogs?.[catalog];
+    if (catalog === "monsters" && records === undefined) continue;
     if (!Array.isArray(records)) {
       diagnostics.push(createImportDiagnostic({
         code: "invalid-catalog-contract",
@@ -247,7 +252,8 @@ export function validateEquipmentBundle({ bundle, workbookSnapshot }) {
     }));
   } else {
     validateCatalogRecords(bundle, diagnostics);
-    if (Object.values(GENERATED_CATALOG_PATHS).length === Object.keys(bundle.catalogs).length) {
+    if (Object.keys(GENERATED_CATALOG_PATHS).filter(key => key !== "monsters")
+      .every(key => Array.isArray(bundle.catalogs[key]))) {
       validateCrossCatalogReferences(bundle, diagnostics);
     }
   }
@@ -356,7 +362,8 @@ export function buildEquipmentBundle({ workbookSnapshot, overrides, descriptionT
       spreadsheetId: workbookSnapshot.spreadsheetId,
       fingerprint: workbookSnapshot.fingerprint
     },
-    catalogs: { gear, upgrades, materials, implants, transport, magicItems },
+    catalogs: { gear, upgrades, materials, implants, transport, magicItems,
+      ...(sheets.monsters ? { monsters: adaptMonstersCatalog(sheets.monsters, workbookSnapshot.spreadsheetId) } : {}) },
     diagnostics: []
   };
   return validateEquipmentBundle({ bundle, workbookSnapshot, overrides: validatedOverrides });

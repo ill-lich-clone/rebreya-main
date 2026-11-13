@@ -8,7 +8,7 @@ import { SCENE_ACTIVITY_COMMANDS, isValidSceneActivityPayload, authorizeSceneAct
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.396";
 import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.5.23";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.396";
-import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.5.48";
+import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.5.73";
 import { buildJournalRecordItemData } from "./data/journal-record-item.js?v=1.4.217-journal-record-items";
 // @rebreya-role canonical-composition-root
 import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.5.23";
@@ -261,7 +261,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.5.48";
+} from "./data/storage-service.js?v=1.5.73";
 import {
   CorpseStorageMaterializer
 } from "./data/corpse-storage-materializer.js?v=1.5.19";
@@ -319,13 +319,14 @@ import {
   isValidStorageJournalRecordPayload,
   isValidStorageConfigurePayload,
   isValidStorageOpenPayload,
+  isValidStorageHarvestPayload,
   isValidStorageTriggerReadPayload,
   isValidStorageTriggerResetPayload,
   isValidStorageTriggerSavePayload,
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.5.48";
+} from "./data/storage-command-service.js?v=1.5.73";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.5.72";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.66";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
@@ -422,6 +423,8 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.70";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.68";
+import { registerCreatureHarvestingHooks } from "./integrations/creature-harvesting-hooks.js?v=1.5.73";
+import { CREATURE_HARVEST_SETTING, CreatureHarvestRepository } from "./infrastructure/foundry/creature-harvest-repository.js?v=1.5.73";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.61";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js?v=1.5.60";
@@ -543,6 +546,7 @@ const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
 const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
+export const STORAGE_HARVEST_COMMAND = "storage.harvest";
 export const STORAGE_CONFIGURE_COMMAND = "storage.configure";
 export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
 export const STORAGE_JOURNAL_RECORD_COMMAND = "storage.journal.record";
@@ -1844,6 +1848,9 @@ export class RebreyaMainModule {
       documents: this.treatWoundsDocuments, gameProvider: () => globalThis.game, isActiveGm: () => isActiveGmClient(globalThis.game),
       publish: record => this.publishTreatWoundsOperation(record) });
     this.disarmDocuments = new DisarmDocuments();
+    this.creatureHarvestRecords = new CreatureHarvestRepository({
+      worldSettings: this.worldSettingMutationRepository
+    });
     this.storageCommandService = new StorageCommandService({
       storageService: this.storageService,
       inventoryService: this.inventoryService,
@@ -1863,6 +1870,32 @@ export class RebreyaMainModule {
       lootgenTemplateItems: this.lootgenTemplateItems,
       triggerTargetCoordinator: this.triggerTargetCoordinator,
       journalReader: this.storageJournalReader,
+      harvestRecords: this.creatureHarvestRecords,
+      assertHarvestAuthority: () => {
+        if (!isActiveGmClient(globalThis.game)) throw new Error("Активный Мастер сменился. Откройте разделку снова.");
+      },
+      getHarvestCatalog: () => {
+        this.harvestCatalogTask ??= fetch(`modules/${MODULE_ID}/data/monsters.json?v=1.5.73`)
+          .then(response => {
+            if (!response.ok) throw new Error("Энциклопедия чудовищ недоступна.");
+            return response.json();
+          }).catch(error => {
+            this.harvestCatalogTask = null;
+            throw error;
+          });
+        return this.harvestCatalogTask;
+      },
+      getHarvestMaterials: async () => (await this.getModel()).materials,
+      notifyHarvest: ({ token, monster, harvester, result, minutes }) => {
+        const gm = getActiveGm(globalThis.game);
+        if (!gm) return;
+        const name = escapeFoundryHtml(readStorageStateAtPath(token).baseName || monster.name);
+        const check = result.total === null ? "Попытка закрыта." : `Результат ${result.total} · Сл ${result.dc}.`;
+        const damage = result.outcome === "severe" ? " Примените урон к разделывавшему персонажу от уместного действия существа." : "";
+        const actor = escapeFoundryHtml(harvester?.name ?? "Персонаж");
+        return globalThis.ChatMessage?.create?.({ whisper: [gm.id],
+          content: `<p>${actor} разделывает тело «${name}». ${check}${damage} Отметьте ${minutes} игровых минут.</p>` });
+      },
       resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
       createChatMessage: (data) => globalThis.ChatMessage?.create?.(data)
@@ -3132,6 +3165,12 @@ export class RebreyaMainModule {
       authorize: (_payload, { sender }) => Boolean(sender),
       scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.storageCommandService.open(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_HARVEST_COMMAND, {
+      validate: isValidStorageHarvestPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(payload => [storageKey(payload.tokenUuid)]),
+      execute: (payload, { sender }) => this.storageCommandService.harvest(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CONFIGURE_COMMAND, {
       validate: isValidStorageConfigurePayload,
@@ -5551,6 +5590,14 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_OPEN_COMMAND, payload);
   }
 
+  async harvestStorage(tokenUuid, request = {}) {
+    const payload = { ...request, tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid) };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.harvest(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_HARVEST_COMMAND, payload);
+  }
+
   getDoorTriggerPreflight(wallUuid) {
     const safeWallUuid = cleanSocketId(wallUuid);
     let wall = globalThis.fromUuidSync?.(safeWallUuid) ?? null;
@@ -6085,6 +6132,7 @@ export class RebreyaMainModule {
       state: state.state,
       rows,
       coins,
+      canHarvest: !path.length && isCorpseStorageTarget(token) && globalThis.game?.system?.id === "dnd5e",
       ...(canManage ? {
         baseName: state.baseName,
         template: foundry.utils.deepClone(state.template),
@@ -6297,7 +6345,7 @@ export class RebreyaMainModule {
         characterTokenUuid: safeCharacterTokenUuid
       });
     }
-    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.67");
+    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.73");
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {
@@ -8627,6 +8675,7 @@ Hooks.once("init", () => {
     registerAlchemyReagentSettings();
     registerAlchemyCraftingSettings();
     registerDurabilitySettings();
+    game.settings.register(MODULE_ID, CREATURE_HARVEST_SETTING, { scope: "world", config: false, type: Object, default: {} });
     registerIconBadgeSettings();
   }
   catch (error) {
@@ -8886,6 +8935,7 @@ Hooks.once("ready", async () => {
 
   try {
     registerStorageTokenHooks(moduleApi, { hooks: Hooks });
+    registerCreatureHarvestingHooks({ hooks: Hooks, records: moduleApi.creatureHarvestRecords });
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register storage token hooks.`, error);

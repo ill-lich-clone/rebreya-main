@@ -7,6 +7,9 @@
       {{/each}}
     </nav>
   {{/if}}
+  {{#if canHarvest}}
+    <button type="button" class="rm-button rm-button--secondary" data-action="storage-harvest"><i class="fa-solid fa-knife" aria-hidden="true"></i>Разделать</button>
+  {{/if}}
   {{#if configuration.enabled}}
     <form class="rm-storage-config">
       <div class="rm-field">
