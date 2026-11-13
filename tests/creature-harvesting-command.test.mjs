@@ -18,14 +18,14 @@ function fixture(type = "beast", { rollTotal = 27, nativeRoll = false } = {}) {
   const storage = new StorageService();
   let rolls = 0;
   const notices = [];
-  let state = { body: { diedAt: 0 } };
+  const state = {};
   const records = new CreatureHarvestRepository({ worldSettings: { readObject: () => structuredClone(state),
     async mutateObject(_key, mutate) { return mutate(state); } } });
   const commands = new StorageCommandService({ storageService: storage, inventoryService: {},
     resolveToken: uuid => ({ body, hero: character }[uuid]), measureDistance: () => 5, isVisibleTo: () => true,
     journalReader: { read() {} }, getHarvestCatalog: () => [{ id: "tick", name: "Клещ", rank: 1, common: ["Хитин"] },
       { id: "dragon", name: "Дракон", rank: 10, common: ["Чешуя"] }],
-    getHarvestMaterials: () => [], getWorldTime: () => 20,
+    getHarvestMaterials: () => [],
     harvestRecords: records,
     ...(nativeRoll ? {} : { rollHarvest: async () => { rolls++; return rollTotal; } }),
     notifyHarvest: async notice => { notices.push(notice); }
@@ -112,14 +112,14 @@ test("only the GM can supply missing rank ten DC and recover a started roll", as
   assert.equal(rolls(), 1);
 });
 
-test("the active GM gets one result and time notice for a player's severe failure", async () => {
+test("the active GM gets one severe failure notice without time tracking", async () => {
   const { command, notices } = fixture("beast", { rollTotal: 16 });
   const result = await command("begin", { monsterId: "tick" });
   await command("begin", { monsterId: "tick" });
   assert.equal(result.outcome, "severe");
   assert.equal(notices.length, 1);
   assert.deepEqual(notices[0].result, result);
-  assert.equal(notices[0].minutes, 10);
+  assert.equal(Object.hasOwn(notices[0], "minutes"), false);
   assert.deepEqual(notices[0].harvester, { tokenUuid: "hero", name: "Следопыт" });
 });
 
@@ -151,9 +151,10 @@ test("a persisted token receipt prevents duplicate rows after a failed completio
 
 test("the native check leaves GM roll evidence for manual recovery", async () => {
   const { command, nativeCalls, records } = fixture("beast", { nativeRoll: true });
-  await command("begin", { monsterId: "tick" });
+  const result = await command("begin", { monsterId: "tick", check: "int:arc", blood: false });
   const [[config, dialog, message]] = nativeCalls;
-  assert.deepEqual(config, { skill: "sur", ability: "wis", target: 21 });
+  assert.deepEqual(config, { skill: "arc", ability: "int", target: 21 });
+  assert.equal(result.loot.some(row => row.name === "Кровь чудовища"), false);
   assert.equal(dialog.configure, false);
   assert.equal(message.rollMode, "gmroll");
   assert.equal(message.data.flags["rebreya-main"].corpseHarvestRoll, records.read("body").attempt.receipt);

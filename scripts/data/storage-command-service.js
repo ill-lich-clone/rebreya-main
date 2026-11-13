@@ -1,17 +1,17 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity } from "./inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.5.74";
+import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.5.75";
 import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.392";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.5.74";
+} from "./storage-service.js?v=1.5.75";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.5.48";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
-import { HARVEST_MINUTES, harvestAvailability, harvestDc, harvestItem, harvestRewards, matchHarvestMonster } from "./creature-harvesting.js?v=1.5.73";
+import { DEFAULT_HARVEST_CHECK, harvestAvailability, harvestChecks, harvestDc, harvestHasBlood, harvestItem, harvestRewards, matchHarvestMonster } from "./creature-harvesting.js?v=1.5.75";
 import {
   isCorpseStorageTarget,
   isMaterializedCorpseStorageState
@@ -205,32 +205,29 @@ export function isValidStorageOpenPayload(payload) {
 
 const HARVEST_REASONS = {
   humanoid: "Разделывать гуманоидов нельзя.", type: "Мастер должен подтвердить тип тела.",
-  freshness: "Мастер должен указать время смерти.", expired: "После смерти прошёл час.",
   monster: "Такого чудовища нет в энциклопедии.", ambiguous: "Выберите запись чудовища.",
   dc: "Мастер должен задать Сл для 10-го ранга.", character: "Выберите персонажа для проверки.",
   rolling: "Мастер должен восстановить результат проверки.", unopened: "Сначала откройте добычу с трупа."
 };
 const harvestText = value => isTrimmedString(value, { required: true, max: 240 });
-const harvestCheck = value => /^(?:[a-z]{3}:[a-z]{3}|[a-z]{3})$/.test(value);
 const harvestConfigValidators = {
-  diedAt: value => value === null || Number.isFinite(value),
   type: value => value === null || harvestText(value),
-  check: value => value === null || (typeof value === "string" && harvestCheck(value)),
-  dc: value => value === null || (Number.isSafeInteger(value) && value > 0),
-  blood: value => value === null || typeof value === "boolean"
+  dc: value => value === null || (Number.isSafeInteger(value) && value > 0)
 };
 
 export function isValidStorageHarvestPayload(payload) {
   if (!payload || !harvestText(payload.tokenUuid) || !isTrimmedString(payload.characterTokenUuid)) return false;
   const base = ["tokenUuid", "characterTokenUuid", "action"];
   const shape = {
-    read: ["name", "monsterId"], begin: ["name", "monsterId"], configure: ["config"], resolve: ["total"]
+    read: ["name", "monsterId"], begin: ["name", "monsterId", "check", "blood"], configure: ["config"], resolve: ["total"]
   };
   if (!Object.hasOwn(shape, payload.action) || !Object.keys(payload).every(key => base.includes(key) || shape[payload.action].includes(key))) return false;
   if (payload.action === "configure") return payload.config && typeof payload.config === "object" && !Array.isArray(payload.config)
     && Object.entries(payload.config).every(([key, value]) => Object.hasOwn(harvestConfigValidators, key) && harvestConfigValidators[key](value));
   if (payload.action === "resolve") return payload.total === null || Number.isFinite(payload.total);
-  if (payload.action === "begin" && !harvestText(payload.monsterId)) return false;
+  if (payload.action === "begin" && (!harvestText(payload.monsterId)
+    || (payload.check !== undefined && !harvestChecks().includes(payload.check))
+    || (payload.blood !== undefined && typeof payload.blood !== "boolean"))) return false;
   return (payload.name === undefined || harvestText(payload.name)) && (payload.monsterId === undefined || harvestText(payload.monsterId));
 }
 
@@ -514,7 +511,7 @@ export class StorageCommandService {
     createChatMessage = (data) => globalThis.ChatMessage?.create?.(data),
     getHarvestCatalog = () => [],
     getHarvestMaterials = () => [],
-    getWorldTime = () => globalThis.game?.time?.worldTime,
+    getHarvestIcons = () => new Map(),
     harvestRecords = null,
     assertHarvestAuthority = () => {},
     notifyHarvest = async () => {},
@@ -546,7 +543,7 @@ export class StorageCommandService {
       throw new TypeError("StorageCommandService lootgenTemplateItems requires buildSnapshot().");
     }
     this.storageService = storageService;
-    Object.assign(this, { getHarvestCatalog, getHarvestMaterials, getWorldTime, rollHarvest, notifyHarvest, harvestRecords, assertHarvestAuthority });
+    Object.assign(this, { getHarvestCatalog, getHarvestMaterials, getHarvestIcons, rollHarvest, notifyHarvest, harvestRecords, assertHarvestAuthority });
     this.inventoryService = inventoryService;
     this.resolveToken = resolveToken;
     this.measureDistance = measureDistance;
@@ -1219,18 +1216,15 @@ export class StorageCommandService {
       const current = await this.harvestRecords.read(storageToken.uuid) ?? {};
       const config = current.config ?? {};
       const attempt = current.attempt;
-      const now = this.getWorldTime();
       const details = storageToken.actor.system?.details?.type;
       const type = typeof details === "string" ? details : details?.value;
       const custom = type === "custom" ? details?.custom : null;
-      const diedAt = current.diedAt ?? config.diedAt;
-      const availability = harvestAvailability({ type, custom, overrideType: config.type, diedAt, now });
+      const availability = harvestAvailability({ type, custom, overrideType: config.type });
       const admin = payload.action === "configure" || payload.action === "resolve";
       if (admin && sender.isGM !== true) throw new Error("Только Мастер может настроить разделку.");
       if (availability === "humanoid" && payload.action !== "read") throw new Error(HARVEST_REASONS.humanoid);
       if (payload.action === "configure") {
         if (attempt) throw new Error("Попытка уже началась.");
-        if (Number.isFinite(payload.config.diedAt) && payload.config.diedAt > now) throw new Error("Время смерти позже текущего.");
         await this.harvestRecords.patch(storageToken.uuid, { config: { ...config, ...payload.config } });
         return { configured: true };
       }
@@ -1254,20 +1248,20 @@ export class StorageCommandService {
       if (payload.action === "begin" && !matches.length) throw new Error("Выберите подходящую запись чудовища.");
       const monster = matches.length === 1 ? matches[0] : null;
       const dc = harvestDc(monster?.rank, config.dc);
-      const check = config.check || "wis:sur";
+      const check = payload.check ?? DEFAULT_HARVEST_CHECK;
+      const effectiveType = (type === "custom" ? custom : type) || config.type;
       const reason = availability ?? (matches.length === 0 ? "monster" : matches.length > 1 ? "ambiguous" : dc === null ? "dc"
           : storage.state === "unopened" ? "unopened" : character?.type !== "character" ? "character" : null);
       if (payload.action === "read") return {
-        reason, message: HARVEST_REASONS[reason] ?? null, dc, check, attempt: null,
+        reason, message: HARVEST_REASONS[reason] ?? null, dc, check, hasBlood: harvestHasBlood(monster, effectiveType), attempt: null,
         choices: matches.map(({ id, name, type: creatureType, rank }) => ({ id, name, type: creatureType, rank })),
-        ...(sender.isGM ? { config, now, diedAt } : {})
+        ...(sender.isGM ? { config } : {})
       };
       if (reason) throw new Error(HARVEST_REASONS[reason]);
-      const effectiveType = type === "custom" ? custom : type;
       const harvester = { tokenUuid: characterToken.uuid, name: characterToken.name || character.name || "Персонаж" };
       const next = { attempt: { status: "rolling", receipt: globalThis.foundry?.utils?.randomID?.() ?? `harvest-${Date.now()}`,
         monster, dc, check, harvester,
-        type: effectiveType || config.type, blood: config.blood ?? null } };
+        type: effectiveType, blood: payload.blood ?? null } };
       await this.harvestRecords.patch(storageToken.uuid, next);
       this.assertHarvestAuthority();
       const total = await this.rollHarvest(character, { dc, check, receipt: next.attempt.receipt, corpseName: storage.baseName || monster.name });
@@ -1289,8 +1283,9 @@ export class StorageCommandService {
   async #grantHarvest(token, current) {
     const { result, monster, harvester, receipt } = current.attempt;
     const materials = result.loot.length ? await this.getHarvestMaterials() : [];
+    const icons = materials.length ? await this.getHarvestIcons() : null;
     const rows = result.loot.map((reward, index) => {
-      const itemData = harvestItem(reward, materials, monster);
+      const itemData = harvestItem(reward, materials, monster, icons);
       return { rowId: `harvest:${receipt}:${index}`, name: itemData.name, img: itemData.img, quantity: 1, itemData,
         sourceType: itemData.flags[MODULE_ID].materialId ? "material" : "manual",
         sourceId: itemData.flags[MODULE_ID].materialId ?? "", typeLabel: "Материал" };
@@ -1299,7 +1294,7 @@ export class StorageCommandService {
     await this.storageService.writeCorpseHarvest(token, receipt, rows);
     await this.harvestRecords.patch(token.uuid, { attempt: { ...current.attempt, status: "complete" } });
     try {
-      await this.notifyHarvest({ token, monster, harvester, result, minutes: HARVEST_MINUTES });
+      await this.notifyHarvest({ token, monster, harvester, result });
     } catch (error) {
       this.logger?.warn?.(`${MODULE_ID} | Harvest notification failed.`, error);
     }

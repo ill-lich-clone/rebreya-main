@@ -67,14 +67,21 @@ test("harvesting dialog passes the analogue and shows the authoritative result",
   }, { DialogV2: { async wait(dialog) {
     dialogs.push(dialog);
     if (dialogs.length === 1) return { action: "search", name: "Гарпия" };
-    if (dialogs.length === 2) return dialog.buttons.find(button => button.action === "begin").callback();
+    if (dialogs.length === 2) {
+      const OriginalFormData = globalThis.FormData;
+      globalThis.FormData = class { get(key) { return { check: "int:arc", blood: "yes" }[key]; } };
+      try { return dialog.buttons.find(button => button.action === "begin").callback(null, { form: {} }); }
+      finally { globalThis.FormData = OriginalFormData; }
+    }
     return null;
   } } });
   assert.deepEqual(calls, [{ action: "read" }, { action: "read", name: "Гарпия" },
-    { action: "begin", monsterId: "harpy", name: "Гарпия" }]);
+    { action: "begin", monsterId: "harpy", check: "int:arc", blood: true, name: "Гарпия" }]);
   assert.match(dialogs[0].content, /Имя аналога/);
   assert.match(dialogs[1].content, /Сл 21/);
+  assert.match(dialogs[1].content, /Есть кровь\?/);
   assert.match(dialogs[2].content, /Кровь чудовища/);
+  assert.doesNotMatch(dialogs.map(dialog => dialog.content).join(""), /минут|время смерти/);
 });
 
 test("cancelled harvesting configuration sends no mutation under native dialog fallback", async () => {
@@ -83,7 +90,7 @@ test("cancelled harvesting configuration sends no mutation under native dialog f
   const chosen = ["configure", "cancel", "close"];
   await openCreatureHarvestingDialog(async ({ action }) => {
     actions.push(action);
-    return { choices: [], reason: "freshness", config: {}, now: 100, check: "wis:sur" };
+    return { choices: [], reason: "type", config: {}, check: "wis:sur" };
   }, { DialogV2: { async wait(dialog) {
     const selected = chosen.shift();
     const button = dialog.buttons.find(button => button.action === selected);

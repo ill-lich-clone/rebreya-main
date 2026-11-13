@@ -49,14 +49,14 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.74");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.74.js"]);
+  assert.equal(manifest.version, "1.5.75");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.75.js"]);
   assert.match(mainSource, /application\/equipment-size-service\.js\?v=1\.5\.63/u);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.61/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.72/u);
-  assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.5\.73/u);
+  assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.5\.75/u);
   assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.5\.72/u);
   assert.match(syncSource, /data\/inventory-service\.js\?v=1\.5\.72/u);
   assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.5\.72/u);

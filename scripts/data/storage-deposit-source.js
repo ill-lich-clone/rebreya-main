@@ -1,5 +1,5 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity, withInventoryItemQuantity, buildInventoryItemQuantityPatch, captureInventoryItemQuantityState, buildInventoryItemQuantityRestorePatch } from "./inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.5.74";
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.5.75";
 import { MODULE_ID } from "../constants.js";
 import { preserveItemSourceUuid, stripItemSourceUuidFromFlags } from "./item-source-reference.js?v=1.4.377";
 import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.5.48";
@@ -8,7 +8,7 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.5.74";
+} from "./storage-service.js?v=1.5.75";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,

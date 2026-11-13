@@ -1,5 +1,5 @@
 import { isInventoryMaterialItemData, readInventoryItemQuantity } from "../data/inventory-material-quantity.js?v=1.4.377";
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.5.74";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.5.75";
 import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { buildNarrativeItemRepairPatch, loadLootgenNarrativeCatalog } from "../data/lootgen-narrative-catalog.js?v=1.4.396";
@@ -7,7 +7,7 @@ import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.392";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
-import { openCreatureHarvestingDialog } from "./creature-harvesting-dialog.js?v=1.5.73";
+import { openCreatureHarvestingDialog } from "./creature-harvesting-dialog.js?v=1.5.75";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isDurabilityEligible } from "../data/durability-rules.js?v=1.4.200-storage-broken-presentation";
 import {

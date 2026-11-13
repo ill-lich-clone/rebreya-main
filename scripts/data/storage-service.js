@@ -851,7 +851,7 @@ export class StorageService {
     if (migrated) current = await this.#write(token, migrated.state);
     const document = resolveDocument(token);
     if (!document?.__storageRoot && current.corpseMaterialization?.status === "complete" && isDeadNpcStorageTarget(document)) {
-      const generatedRows = this.repairCorpseRows(document, current);
+      const generatedRows = await this.repairCorpseRows(document, current);
       if (generatedRows !== current.generatedRows) current = await this.#write(token, { ...current, generatedRows });
     }
     if (current.corpseMaterialization?.status === "complete" || current.state !== "unopened") {
