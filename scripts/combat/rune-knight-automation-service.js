@@ -2,7 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import { whirlwindEffectTargets, isWhirlwindActivity, markWhirlwindDamageRolls, markDamageRollTarget } from "./whirlwind-attack.js?v=1.5.70";
 import { getCreatureTokenFootprint } from "../data/equipment-size-rules.js?v=1.4.393";
 import { isRuneKnightEffectActive } from "../data/rune-knight-automation.js?v=1.5.70";
-import { isCombatActorActive } from "./turn-group-rules.js?v=1.5.66";
+import { isCombatActorActive } from "./turn-group-rules.js?v=1.5.87";
 import { FIRE_RUNE_COMMAND, reserveClassCombatOperation, resolveClassCombatHit } from "../infrastructure/foundry/class-combat-command.js?v=1.5.70";
 import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
 import { cardHitEvidence, usageCardData } from "../integrations/midi-usage-card.js";

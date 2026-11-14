@@ -1,7 +1,7 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
-import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.86";
-import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.86";
+import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.87";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.87";
+import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
@@ -15,7 +15,8 @@ const messages = {
   "combat-blocked": "В бою есть незавершённый шаг эффекта. Требуется проверка GM.", "invalid-combat-target": "Недопустимый переход между группами.",
   "combat-transition-too-large": "Слишком большой переход. Перейдите к нужному раунду несколькими меньшими шагами.",
   "combat-pending-too-large": "Незавершённый переход слишком велик для безопасного восстановления. Обратитесь к разработчику; состояние и журнал боя сохранены.",
-  "initiative-cancelled": "Бросок инициативы не завершён.", "combat-pending": "Общие ходы включатся со следующего раунда."
+  "initiative-cancelled": "Бросок инициативы не завершён.", "combat-pending": "Общие ходы включатся со следующего раунда.",
+  "grouped-combat-disabled": "Общие ходы временно отключены для проверки производительности."
 };
 function notifyResult(result) {
   if (!result?.ok) {
@@ -91,7 +92,7 @@ export async function panToActiveCombatGroup(combat, { canvas = globalThis.canva
 }
 export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hooks, CombatClass = globalThis.CONFIG?.Combat?.documentClass,
   CombatantClass = globalThis.CONFIG?.Combatant?.documentClass, CombatTrackerClass = globalThis.ui?.combat?.constructor } = {}) {
-  if (!CombatClass?.prototype) return () => {};
+  if (moduleApi.groupedCombatService.groupedEnabled === false || !CombatClass?.prototype) return () => {};
   const prototype = CombatClass.prototype;
   if (prototype[REGISTERED]) return prototype[REGISTERED];
   const restores = [], hookIds = [], focusStamps = new Map(), publicStamps = new Map(), observers = new Map(), transitions = new Map(), roundTransitions = new Map();

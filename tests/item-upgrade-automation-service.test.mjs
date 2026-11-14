@@ -4,6 +4,7 @@ import { ItemUpgradeAutomationService } from "../scripts/automation/item-upgrade
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import { CombatAttackService } from "../scripts/combat/attack-service.js";
 import { registerCombatHooks } from "../scripts/combat/hooks.js";
+import { isCombatActorActive } from "../scripts/combat/turn-group-rules.js";
 
 test("one ordinary turn with five participants leaves equipment and world lighting alone", async (t) => {
   const previous = { game: globalThis.game, Hooks: globalThis.Hooks, Actor: globalThis.Actor, Combat: globalThis.Combat, foundry: globalThis.foundry };
@@ -60,7 +61,8 @@ test("one ordinary turn with five participants leaves equipment and world lighti
   assert.deepEqual(counts, { syncs: 0, items: 0, lights: 0 });
   actorWrites.length = 0;
   const memberIds = [actors[2].id, actors[3].id];
-  combat.flags = { [ns]: { groupedCombat: { mode: "active", groups: [{ id: "group", memberIds }] } } };
+  combat.flags = { [ns]: { groupedCombat: { mode: "active", current: { round: 1, groupId: "group" },
+    groups: [{ id: "group", memberIds }] } } };
   combat.turn = 2;
   combat.combatant = combat.combatants[2];
   const phase = { round: 1, groupId: "group", memberIds };
@@ -72,6 +74,17 @@ test("one ordinary turn with five participants leaves equipment and world lighti
     assert.equal(actors[i].getFlag(ns, "reactionState").usesRemaining, 1);
     assert.equal(actors[i].getFlag(ns, "reactionState").lastRefreshTurn, 2);
   }
+  game.rebreyaMain = api;
+  api.groupedCombatService = { groupedEnabled: false };
+  for (const actor of actors) {
+    Object.defineProperty(actor.items, "contents", { get() { assert.fail("diagnostic scanned an inventory on NEXT"); } });
+  }
+  assert.equal(isCombatActorActive(combat, actors[2]), true);
+  assert.equal(isCombatActorActive(combat, actors[3]), false, "stored group does not grant another actor an active turn");
+  actorWrites.length = 0;
+  await fire("combatTurnChange", combat, { round: 1, turn: 1 }, { round: 1, turn: 2 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(actorWrites, [[actors[2].id, ["reactionState"]]]);
   await fire("updateActor", actors[1], { flags: { [ns]: { "==weaponModMovement": { feet: 0 } } } }, {});
   assert.equal(counts.syncs, 0, "legacy replacement syntax is also a turn-only update");
   await fire("updateActor", actors[1], { flags: { [ns]: { reactionState: {} } }, system: { attributes: { hp: { max: 7 } } } }, {});

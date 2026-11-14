@@ -1,6 +1,6 @@
-import { installV14EffectGuards, planV14Expiry, planV14MidiOptionals, planV14RegionEvents } from "./grouped-combat-v14.js";
+import { installV14EffectGuards, planV14Expiry, planV14MidiOptionals, planV14RegionEvents } from "./grouped-combat-v14.js?v=1.5.87";
 import { MODULE_ID } from "../constants.js";
-import { buildPhaseStepKey, combatFlagKey, combatantById, combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
+import { buildPhaseStepKey, combatFlagKey, combatantById, combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.87";
 
 const GUARDED = Symbol.for("rebreya-main.groupedCombatProviderGuard");
 const KNOWN = { dae: "13.0.27", "times-up": "13.1.9", "midi-qol": "13.0.61", effectmacro: "13.0.4" };
@@ -18,7 +18,8 @@ const providerOf = fn => {
   if (fn?.__rebreyaEffectMacroCombatCompatPatched || fn?.name === "rebreyaEffectMacroUpdateCombatCompat" || (fn?.name === "updateCombat" && source.includes("_executeAppliedEffects"))) return "effectmacro";
   return null;
 };
-export const hasGroupedCombatPhases = combat => ["active", "blocked"].includes(combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG]?.mode);
+export const hasGroupedCombatPhases = combat => globalThis.game?.rebreyaMain?.groupedCombatService?.groupedEnabled !== false
+  && ["active", "blocked"].includes(combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG]?.mode);
 
 export function inspectGroupedCombatSupport({ game = globalThis.game, Hooks = globalThis.Hooks } = {}) {
   const issues = [], providers = {};

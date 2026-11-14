@@ -4,6 +4,8 @@
 
 ## Владельцы и маршруты
 
+В 1.5.87 действует диагностический переключатель `REBREYA_GROUPED_COMBAT_ENABLED = false` в `scripts/main.js`. Composition пропускает регистрацию групповых перехватов и восстановление групповых состояний. `GroupedCombatService({groupedEnabled})` направляет макрос в `#startNativeCombat(combat,tokens)`, используя штатную инициативу и старт, и отклоняет групповые переходы и разрешение прерванных шагов. `hasGroupedCombatPhases(combat)` и `isCombatActorActive(combat,actorOrToken,state?)` используют обычные события и текущего участника даже при наличии группового журнала. `handleWeaponModTurnChange` пропускает обход при смене хода. Focused: `tests/grouped-combat-service.test.mjs`, `tests/grouped-combat-runtime.test.mjs`, `tests/item-upgrade-automation-service.test.mjs`.
+
 `controlled Token UUID → публичный ingress → active GM / combat.grouped.start → GroupedCombatService → native Combat/Combatant + groupedCombat flag → awaited phase steps → native tracker + локальная камера`.
 
 Кнопки Next/Previous/Next Round и positional `Combat.update` в управляемом бою используют `combat.grouped.transition`. Next Round у GM последовательно выполняет переходы к живым группам, уступая управление между ними; при ошибке, прерывании или изменении revision другим клиентом останавливается на подтверждённой позиции. Игрок отправляет прежний единый запрос с обычной проверкой прав. Если все участники ходят по одному, макрос оставляет обычный Combat со штатными методами и hooks, без групповых проверок провайдеров. При добавлении реальной общей группы в начатый обычный бой `mode:pending` включает групповые фазы на следующем раунде.

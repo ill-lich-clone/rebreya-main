@@ -1,4 +1,4 @@
-import { combatantsOf } from "./turn-group-rules.js?v=1.5.66";
+import { combatantsOf } from "./turn-group-rules.js?v=1.5.87";
 
 export function planRebreyaCombatAutomation(moduleApi, combat, phase) {
   const steps = [], members = combatantsOf(combat).filter(c => phase.memberIds.includes(c.id));

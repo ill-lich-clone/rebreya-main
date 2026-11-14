@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
-import { buildCombatTurnGroups, planGroupTransition, isGroupTransitionWithinBudget, buildPhaseStepKey, combatantsOf, combatantById } from "../combat/turn-group-rules.js?v=1.5.78";
-import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.86";
+import { buildCombatTurnGroups, planGroupTransition, isGroupTransitionWithinBudget, buildPhaseStepKey, combatantsOf, combatantById } from "../combat/turn-group-rules.js?v=1.5.87";
+import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.87";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js";
 
@@ -33,8 +33,9 @@ function pendingWithinBudget(state) {
 }
 export class GroupedCombatService {
   constructor({ repository, effects, coordinator, resolveToken = uuid => globalThis.fromUuid(uuid), gameProvider = () => globalThis.game,
-    isAuthority = () => isActiveGmClient(gameProvider()), isStorageActor = actor => actor?.getFlag?.(MODULE_ID, "storage")?.enabled === true } = {}) {
-    Object.assign(this, { repository, effects, coordinator, resolveToken, gameProvider, isAuthority, isStorageActor });
+    isAuthority = () => isActiveGmClient(gameProvider()), isStorageActor = actor => actor?.getFlag?.(MODULE_ID, "storage")?.enabled === true,
+    groupedEnabled = true } = {}) {
+    Object.assign(this, { repository, effects, coordinator, resolveToken, gameProvider, isAuthority, isStorageActor, groupedEnabled });
     this.tickets = new Map();
   }
   holdUntilReady() {
@@ -42,6 +43,7 @@ export class GroupedCombatService {
     return this.releaseReady;
   }
   isManaged(combat) {
+    if (!this.groupedEnabled) return false;
     const state = this.repository.readState(combat);
     return Boolean(state && state.mode !== "native");
   }
@@ -88,6 +90,10 @@ export class GroupedCombatService {
       const existing = this.repository.getActiveCombat(request.sceneId);
       const start = async () => {
         if (!this.isAuthority()) return rejection("forbidden");
+        if (!this.groupedEnabled) {
+          const combat = existing ?? await this.repository.createCombat(request.sceneId);
+          return this.#startNativeCombat(combat, tokens);
+        }
         let state = existing ? this.repository.readState(existing) : null;
         if (state?.pendingTransition) return this.recoverPending(existing, state);
         if (state && (state.mode === "blocked" || hasUnsettledReceipts(state))) return rejection("combat-blocked", { combatId: existing.id, state });
@@ -180,10 +186,23 @@ export class GroupedCombatService {
       return existing ? this.coordinator.run(`grouped-combat:${existing.id}`, start) : start();
     });
   }
+  async #startNativeCombat(combat, tokens) {
+    await this.repository.createMissingCombatants(combat, tokens);
+    const sceneId = combat.scene?.id ?? combat.sceneId;
+    const missing = combatantsOf(combat).filter(member => this.eligible(member.token?.document ?? member.token, sceneId)
+      && !Number.isFinite(member.initiative)).map(member => member.id);
+    if (missing.length) {
+      await combat.rollInitiative(missing, { updateTurn: true });
+      if (missing.some(id => !Number.isFinite(combatantById(combat, id)?.initiative))) return rejection("initiative-cancelled");
+    }
+    if (!combat.started) await this.repository.beginCombat(combat);
+    return { ok: true, combatId: combat.id, revision: 0, pending: false };
+  }
   async transition(request, { sender } = {}) {
     if (this.ready && !await this.ready) return rejection("combat-not-ready");
     const combat = this.repository.getCombat(request.combatId);
     if (!combat || !this.isAuthority()) return rejection("forbidden");
+    if (!this.groupedEnabled) return rejection("grouped-combat-disabled");
     if (!isValidGroupedCombatTransitionPayload(request)) return rejection("invalid-combat-request");
     return this.coordinator.runIdempotent(`grouped-combat:${combat.id}`, request.operationId, async () => {
       const state = this.repository.readState(combat);
@@ -227,6 +246,7 @@ export class GroupedCombatService {
     });
   }
   async runPipeline(combat, state, phases, target, operationId, begin = false) {
+    if (!this.groupedEnabled) return rejection("grouped-combat-disabled");
     let resolveTicket, rejectTicket;
     const promise = new Promise((resolve, reject) => { resolveTicket = resolve; rejectTicket = reject; });
     promise.catch(() => {});
@@ -315,6 +335,7 @@ export class GroupedCombatService {
   }
   observeNativeTransition(combat) { return this.tickets.get(combat.id) ?? Promise.resolve(); }
   async recoverPending(combat, state) {
+    if (!this.groupedEnabled) return rejection("grouped-combat-disabled");
     const tooLarge = !pendingWithinBudget(state);
     let changed = false; const uncertainKeys = [];
     for (const [key, receipt] of Object.entries(state.receipts)) if (receipt.status === "running") { receipt.status = "uncertain"; uncertainKeys.push(key); changed = true; }
@@ -329,6 +350,7 @@ export class GroupedCombatService {
     return result.ok ? this.#retireSettledCombat(combat, result) : result;
   }
   async reconcile(combat) {
+    if (!this.groupedEnabled) return;
     if (this.ready && !await this.ready) return rejection("combat-not-ready");
     return this.coordinator.run(`grouped-combat:${combat.id}`, async () => {
       const state = this.repository.readState(combat);
@@ -340,6 +362,7 @@ export class GroupedCombatService {
   async resolveUncertainStep(request, { sender } = {}) {
     if (this.ready && !await this.ready) return rejection("combat-not-ready");
     if (!sender?.isGM || !this.isAuthority()) return rejection("forbidden");
+    if (!this.groupedEnabled) return rejection("grouped-combat-disabled");
     if (!isValidGroupedCombatResolvePayload(request)) return rejection("invalid-combat-request");
     const combat = this.repository.getCombat(request.combatId);
     if (!combat) return rejection("missing-combat");

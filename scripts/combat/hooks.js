@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { canUseCraftedPotion } from "../data/alchemy-crafting-rules.js?v=1.5.72";
-import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.86";
+import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.87";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.81";
 import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";

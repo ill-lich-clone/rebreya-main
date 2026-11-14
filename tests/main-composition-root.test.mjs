@@ -49,11 +49,11 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.86");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.86.js"]);
+  assert.equal(manifest.version, "1.5.87");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.87.js"]);
   assert.match(mainSource, /application\/equipment-size-service\.js\?v=1\.5\.63/u);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
-  assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.79/u);
+  assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.87/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.72/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.5\.77/u);
@@ -608,6 +608,9 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 test("grouped turn interception is installed before publishing the API and releases before recovery", async () => {
   const main = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   const ready = main.slice(main.indexOf('Hooks.once("ready", async'));
+  assert.match(main, /const REBREYA_GROUPED_COMBAT_ENABLED = false;/u);
+  assert.match(main, /groupedEnabled: REBREYA_GROUPED_COMBAT_ENABLED/u);
+  assert.match(ready, /if \(REBREYA_GROUPED_COMBAT_ENABLED\) \{\s*releaseGroupedCombat = moduleApi\.groupedCombatService\.holdUntilReady\(\);\s*registerGroupedCombatRuntime\(moduleApi\);/u);
   const positions = ["groupedCombatService.holdUntilReady()", "registerGroupedCombatRuntime(moduleApi)",
     "game.rebreyaMain = moduleApi", "registerCombatHooks(moduleApi)", "releaseGroupedCombat()", "groupedCombatService.reconcile(combat)"]
     .map(step => ready.indexOf(step));

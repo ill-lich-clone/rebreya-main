@@ -114,6 +114,23 @@ test("normal next advances an entire group once; ordinary combat delegates; regi
   dispose(); delete globalThis.game;
 });
 
+test("diagnostic runtime leaves native prototype and grouped provider wiring alone", async (t) => {
+  const e = fixture(), combat = new e.Combat();
+  const oldGame = globalThis.game;
+  t.after(() => { globalThis.game = oldGame; });
+  globalThis.game = { rebreyaMain: e.moduleApi };
+  const service = e.moduleApi.groupedCombatService;
+  service.groupedEnabled = false;
+  service.effects.installNativeGuards = () => assert.fail("grouped provider guard installed");
+  const originalNext = e.Combat.prototype.nextTurn;
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  assert.equal(e.Combat.prototype.nextTurn, originalNext);
+  assert.equal(e.listeners.size, 0);
+  await combat.nextTurn();
+  await combat._manageTurnEvents();
+  assert.deepEqual(e.calls, ["original-next", "original-lifecycle"]);
+});
+
 test("retired singleton combat delegates navigation, direct updates and effect lifecycle to Foundry", async (t) => {
   const e = fixture(), combat = new e.Combat();
   combat.flags["rebreya-main"].groupedCombat.mode = "native";

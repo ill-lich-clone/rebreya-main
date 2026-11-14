@@ -1,4 +1,4 @@
-import { isCombatActorActive } from "../combat/turn-group-rules.js?v=1.5.66";
+import { isCombatActorActive } from "../combat/turn-group-rules.js?v=1.5.87";
 export const WEAPON_MOD_CONDITION_FIELDS=["movedFeet","prone","targetVisible","usesProficiency","underwater","aimMode"];
 export function getWeaponModAimState(host,combat,contributions=[]){
   const state=host?.flags?.["rebreya-main"]?.weaponModAim ?? host?.getFlag?.("rebreya-main","weaponModAim"),actor=host?.actor??host?.parent;

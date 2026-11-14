@@ -33,6 +33,27 @@ function setup() {
   return { service, combat, calls, positions, repository, tokens, start, setFail: id => { fail = id; }, setGate: value => { gate = value; } };
 }
 
+test("diagnostic start uses native turns even with a shared group and a blocked saved journal", async () => {
+  const e = setup();
+  e.service.groupedEnabled = false;
+  e.service.effects = null;
+  const saved = { mode: "blocked", revision: 3, groups: [{ id: "g", memberIds: ["a", "b"] }],
+    receipts: { old: { status: "uncertain" } }, pendingTransition: { operationId: "old" } };
+  e.combat.flags["rebreya-main"] = { groupedCombat: structuredClone(saved) };
+  assert.equal((await e.start("diagnostic")).ok, true);
+  assert.deepEqual(e.positions, ["1:0"]);
+  assert.deepEqual(e.calls, ["roll:a", "roll:b", "roll:c", "roll:pc"]);
+  assert.deepEqual(e.combat.flags["rebreya-main"].groupedCombat, saved);
+  assert.equal(e.service.isManaged(e.combat), false);
+  const request = { combatId: "fight", expectedRevision: 3, operationId: "diagnostic-denied" };
+  const sender = { isGM: true };
+  assert.equal((await e.service.transition({ ...request, targetRound: 2, targetGroupId: "g" }, { sender })).code, "grouped-combat-disabled");
+  assert.equal((await e.service.resolveUncertainStep({ ...request, stepKey: "old", resolution: "retry" }, { sender })).code, "grouped-combat-disabled");
+  assert.equal((await e.service.recoverPending(e.combat, saved)).code, "grouped-combat-disabled");
+  await e.service.reconcile(e.combat);
+  assert.deepEqual(e.combat.flags["rebreya-main"].groupedCombat, saved);
+});
+
 test("macro starts and extends an all-singleton encounter with native turns and no grouped provider requirement", async () => {
   const e = setup();
   for (const token of e.tokens) token.baseActor = { id: token.id };

@@ -108,8 +108,9 @@ export function getActiveGroupMemberIds(state) {
 }
 
 export function isCombatActorActive(combat, actorOrToken, state = combat?.flags?.["rebreya-main"]?.[GROUPED_COMBAT_FLAG]) {
-  const ids = getActiveGroupMemberIds(state);
-  const active = state?.mode === "active" ? combatantsOf(combat).filter(c => ids.includes(c.id)) : [combat?.combatant].filter(Boolean);
+  const grouped = globalThis.game?.rebreyaMain?.groupedCombatService?.groupedEnabled !== false && state?.mode === "active";
+  const ids = grouped ? getActiveGroupMemberIds(state) : [];
+  const active = grouped ? combatantsOf(combat).filter(c => ids.includes(c.id)) : [combat?.combatant].filter(Boolean);
   const uuid = typeof actorOrToken === "string" ? actorOrToken : actorOrToken?.uuid;
   return active.some(c => c.actor === actorOrToken || c.token === actorOrToken || c.actor?.uuid === uuid || c.token?.uuid === uuid);
 }

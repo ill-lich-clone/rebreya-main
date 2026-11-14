@@ -3,11 +3,11 @@ import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { captureFirearmMisfire, applyFirearmMisfireToRoll, activeFirearmMisfire } from "./firearm-misfire.js?v=1.5.40";
 import { LEGACY_AMMUNITION, captureAmmunition, magazineRounds, validateMagazine, ammunitionFingerprint, getAmmunitionDamage, applyAmmunitionDamage } from "./ammunition-magazine.js?v=1.5.31";
 import { applyFirearmTuning, startFirearmTuning, getFirearmTuningBonus } from "./firearm-tuning.js?v=1.5.61";
-import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js?v=1.5.66";
+import { isCombatActorActive, combatantsOf } from "./turn-group-rules.js?v=1.5.87";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js?v=1.5.70";
 import { getWeaponModAmmoConfiguration, readWeaponMods, weaponModProfileSignature } from "../data/weapon-mod-rules.js?v=1.5.23";
 import { resolveWeaponModActivity, getWeaponModGrenadeCandidate } from "../data/weapon-mod-activities.js?v=1.5.23";
-import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.4.397";
+import { evaluateWeaponModAttack, getWeaponModAimState, resolveWeaponModConditions, WEAPON_MOD_CONDITION_FIELDS, buildWeaponModTargetDecision, resolveWeaponModTargetConditions, WEAPON_MOD_TARGET_FIELDS, buildWeaponModScatterPlan, isValidWeaponModScatterDecision } from "../automation/weapon-mod-roll-modifiers.js?v=1.5.87";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { MOUNTED_CHARGE_DAMAGE_COMMAND, isValidMountedToggle, isValidMountedChargeDamage } from "../infrastructure/foundry/mounted-charge-command.js?v=1.5.58";
@@ -1764,6 +1764,7 @@ export class CombatAttackService {
   }
 
   async handleWeaponModTurnChange(combat, { ended = false, activeCombatants = null } = {}) {
+    if (!ended && this.moduleApi.groupedCombatService?.groupedEnabled === false) return;
     if (!isActiveGmClient(globalThis.game)) return;
     const actors = new Map(combatantsOf(combat).map(({ actor }) => [actor?.uuid, actor]));
     const currentActor = combat?.combatant?.actor;

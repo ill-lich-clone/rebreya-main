@@ -21,9 +21,9 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.86");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.86.js"]);
-  for (const entry of [manifest.esmodules[0], "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
+  assert.equal(manifest.version, "1.5.87");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.87.js"]);
+  for (const entry of [manifest.esmodules[0], "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
   }
 });
@@ -148,8 +148,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.86");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.86.js"]);
+  assert.equal(manifest.version, "1.5.87");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.87.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -160,7 +160,7 @@ test("Lootgen window import uses the current template editing cache version", as
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(entrypointSource, /lootgen-app\.js\?v=1\.5\.69/u);
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.86";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.87";/u);
 });
 
 test("glossary and feat-link owners preserve their released cache key", async () => {
@@ -456,7 +456,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.86.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.87.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -630,7 +630,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.86";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.87";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -675,11 +675,11 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.86(?=["'])/u,
+    /combat\/hooks\.js\?v=1\.5\.87(?=["'])/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.85(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.87(?=["'])/u,
   );
   assert.match(
     entrypointSource,
@@ -734,7 +734,7 @@ test("paladin dogma automation is constructed and routed through the current com
   );
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.86(?=["'])/u
+    /combat\/hooks\.js\?v=1\.5\.87(?=["'])/u
   );
   assert.match(
     entrypointSource,
@@ -781,7 +781,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.85(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.87(?=["'])/u,
   );
   assert.match(
     sheetSource,

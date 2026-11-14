@@ -61,6 +61,8 @@
 
 ## Условия атаки и прицеливание
 
+В диагностической версии 1.5.87 `CombatAttackService.handleWeaponModTurnChange` пропускает очистку на NEXT. Действия прицеливания, снятие прицела при перемещении и очистка при удалении боя продолжают работать. Для замера используйте бой без активного прицела.
+
 - `weapon-mod-roll-modifiers.js:evaluateWeaponModAttack({host,attack,target,contributions,conditions})` читает только проверенные host contributions. Возвращает allowed, attackBonus, rangeMultiplier, ignoreHalfCover, stopMovement, damageRules, diagnostics, needsDecision. AND-условия с известным false не требуют уточнять остальные. Клапан меняет обе дистанции только под водой; без клапана известный underwater запрещает огнестрельную атаку.
 - `WEAPON_MOD_CONDITION_FIELDS`, `isValidWeaponModAttackDecision(value)`, `resolveWeaponModConditions(known,decision,{targetUuid,attackMessageId})` задают bounded exact DTO. Решение заполняет только unknown; текущий aimMode нельзя назначить решением условий атаки. Цель/карточка и изменившиеся известные факты проверяются повторно.
 - `getWeaponModAimState(host,combat,contributions)` возвращает state только для того же Actor/host, проверенного child/mode и собственного текущего combat/round/turn. Завершённый бой, перенос оружия, снятый прицел или новый ход обнуляют вычисленный результат, включая после reload клиента.
