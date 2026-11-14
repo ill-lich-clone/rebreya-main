@@ -1,0 +1,76 @@
+@font-face {
+  font-family: "Rebreya Russo One";
+  src: url("../assets/fonts/russo-one/RussoOne-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+
+.rm-combat-turn-title {
+  position: fixed;
+  z-index: 12;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  max-width: min(420px, 72vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  isolation: isolate;
+  padding: 4px 14px;
+  border: 1px solid #9b776875;
+  border-radius: 3px;
+  background: #241c1bef;
+  color: #f3dfd7;
+  box-shadow: 0 3px 10px #0009;
+  font: 600 14px / 1.2 var(--font-primary, sans-serif);
+  letter-spacing: .04em;
+  animation: rm-turn-opponent 2s both;
+}
+
+.rm-combat-turn-title[data-style="hero"] {
+  padding: 6px 25px 7px;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(13px 0, 100% 0, calc(100% - 13px) 100%, 0 100%);
+  background: linear-gradient(104deg, #b87b29 0 6px, #39231a 7px, #211817 60%, #51341f);
+  color: #fff1cc;
+  box-shadow: inset 0 2px #ffcd78, inset 0 -2px #a37035;
+  font: 400 clamp(20px, 2.5vw, 31px) / 1.12 "Rebreya Russo One", "Arial Black", sans-serif;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  text-shadow: 2px 2px #241811, 0 0 12px #ffd37555;
+  animation-name: rm-turn-hero;
+}
+
+.rm-combat-turn-title[data-style="hero"]::after {
+  content: "";
+  position: absolute;
+  inset: 2px -25%;
+  z-index: -1;
+  background: linear-gradient(106deg, transparent 42%, #ffd58180 50%, transparent 58%);
+  animation: rm-turn-hero-sweep 420ms ease-out both;
+}
+
+@keyframes rm-turn-hero {
+  0% { opacity: 0; transform: translate(calc(-50% - 62px), 8px) skewX(-16deg) scaleX(1.12); }
+  9% { opacity: 1; transform: translate(calc(-50% + 5px), 8px) skewX(-5deg); }
+  15%, 87% { opacity: 1; transform: translate(-50%, 8px); }
+  100% { opacity: 0; transform: translate(calc(-50% + 28px), 8px) skewX(9deg); }
+}
+
+@keyframes rm-turn-hero-sweep {
+  from { opacity: .9; transform: translateX(-48%); }
+  to { opacity: 0; transform: translateX(48%); }
+}
+
+@keyframes rm-turn-opponent {
+  0% { opacity: 0; transform: translate(-50%, 14px); }
+  8%, 88% { opacity: 1; transform: translate(-50%, 8px); }
+  100% { opacity: 0; transform: translate(-50%, 6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rm-combat-turn-title,
+  .rm-combat-turn-title[data-style="hero"],
+  .rm-combat-turn-title[data-style="hero"]::after { animation: none; }
+  .rm-combat-turn-title[data-style="hero"]::after { display: none; }
+}

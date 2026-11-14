@@ -186,3 +186,82 @@ test("camera is local, keeps scale and selection, and skips hidden group members
   await panToActiveCombatGroup(combat, { canvas, game: { user: { isGM: false } }, enabled: false }); assert.equal(pans.length, 1);
   canvas.scene.id = "other"; await panToActiveCombatGroup(combat, { canvas, game: { user: { isGM: true } }, enabled: true }); assert.equal(pans.length, 1);
 });
+
+test("turn title replaces the native name only after camera arrival and restores it after two seconds", async (t) => {
+  const e = fixture(), combat = new e.Combat(), displays = [], timers = new Map();
+  const originals = { canvas: globalThis.canvas, game: globalThis.game, document: globalThis.document, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+  t.after(() => Object.assign(globalThis, originals));
+  const nativeName = { renderable: true, visible: true };
+  const token = { name: "Мира", nameplate: nativeName, center: { x: 12, y: 20 }, bounds: { x: 2, y: 10, width: 20, height: 20 } };
+  combat.combatants[0].token.object = token;
+  combat.combatants[0].actor = { type: "character", hasPlayerOwner: true };
+  let arrive;
+  globalThis.canvas = { ready: true, scene: { id: "s" }, animatePan: () => new Promise(resolve => { arrive = resolve; }),
+    clientCoordinatesFromCanvas: ({ x, y }) => ({ x: x + 200, y: y + 100 }) };
+  globalThis.game = { user: { isGM: true } };
+  globalThis.document = {
+    createElement: () => ({ dataset: {}, style: {}, remove() { displays.splice(displays.indexOf(this), 1); } }),
+    body: { append: element => displays.push(element) }
+  };
+  globalThis.setTimeout = (callback, delay) => { timers.set(callback, delay); return callback; };
+  globalThis.clearTimeout = callback => timers.delete(callback);
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+
+  e.Hooks.callAll("updateCombat", combat);
+  assert.equal(displays.length, 0);
+  assert.equal(nativeName.renderable, true);
+  arrive(true); await Promise.resolve(); await Promise.resolve();
+  assert.equal(displays[0]?.textContent, "Мира");
+  assert.equal(displays[0].dataset.style, "hero");
+  assert.equal(displays[0].style.left, "212px");
+  assert.equal(displays[0].style.top, "130px");
+  assert.equal(nativeName.renderable, false);
+  nativeName.visible = false;
+  const [[finish, delay]] = timers;
+  assert.equal(delay, 2000);
+  finish();
+  assert.equal(displays.length, 0);
+  assert.deepEqual(nativeName, { renderable: true, visible: false });
+
+  const enemyName = { renderable: true };
+  combat.combatants[2].token.object = { ...token, name: "Страж", nameplate: enemyName };
+  combat.flags["rebreya-main"].groupedCombat.current = { round: 1, groupId: "pc" };
+  e.Hooks.callAll("updateCombat", combat);
+  arrive(true); await Promise.resolve();
+  assert.equal(displays[0]?.textContent, "Страж");
+  assert.equal(displays[0].dataset.style, "opponent");
+  assert.equal(enemyName.renderable, false);
+  globalThis.game.user.isGM = false;
+  combat.combatants[2].token.object.isVisible = false;
+  e.Hooks.callAll("sightRefresh");
+  assert.equal(displays.length, 0);
+  assert.equal(enemyName.renderable, true);
+  globalThis.game.user.isGM = true;
+  combat.flags["rebreya-main"].groupedCombat.current = { round: 2, groupId: "pc" };
+  e.Hooks.callAll("updateCombat", combat);
+  arrive(true); await Promise.resolve();
+  assert.equal(enemyName.renderable, false);
+  e.Hooks.callAll("canvasTearDown");
+  assert.equal(displays.length, 0);
+  assert.equal(enemyName.renderable, true);
+});
+
+test("an interrupted or stale camera move cannot show a title", async () => {
+  const e = fixture(), combat = new e.Combat(), names = [];
+  const state = combat.flags["rebreya-main"].groupedCombat;
+  combat.combatants[0].token.object = { isVisible: true, center: { x: 2, y: 3 } };
+  const canvas = { ready: true, scene: { id: "s" }, animatePan: async () => false };
+  const options = { canvas, game: { user: { isGM: false } }, onArrive: value => names.push(value) };
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  combat.combatants[0].token.object.document = { isSecret: true };
+  canvas.animatePan = async () => assert.fail("secret token cannot become a player camera target");
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  combat.combatants[0].token.object.document.isSecret = false;
+  canvas.animatePan = async () => { state.current = { round: 1, groupId: "pc" }; return true; };
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  assert.deepEqual(names, []);
+  state.current = { round: 1, groupId: "g" };
+  canvas.animatePan = async () => { combat.combatants.shift(); return true; };
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  assert.deepEqual(names, []);
+});

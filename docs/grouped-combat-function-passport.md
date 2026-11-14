@@ -105,7 +105,9 @@ Focused: `tests/grouped-combat-provider-contracts.test.mjs`; `tests/helpers/inst
 
 Внутренний `requestTransition(combat,target)` объединяет повторную навигацию/positional update того же клиента в один in-flight Promise на Combat. До окончания ожидаемого workflow второй запрос с устаревающей ревизией не отправляется; после resolve/reject следующий запрос разрешён. Другие поля public update сохраняются после ожидания. Серверные revision/security checks для разных клиентов не ослаблены.
 
-`runStartCombatMacro(moduleApi,options={})` снимает controlled UUID и показывает только нужный recovery Dialog. `panToActiveCombatGroup(combat,{canvas,game,enabled})` после подтверждённого start выбирает первого доступного непобеждённого/видимого member, сохраняет scale/targets/control и не переключает scene. Невидимые player токены не дают координат pan.
+`runStartCombatMacro(moduleApi,options={})` снимает controlled UUID и показывает только нужный recovery Dialog. `panToActiveCombatGroup(combat,{canvas,game,enabled,onArrive})` после подтверждённого start или смены хода выбирает первого доступного непобеждённого/видимого member, сохраняет scale/targets/control и не переключает scene. Callback получает тот же токен только при успешном перелёте и актуальном ходе; скрытые и секретные для игрока токены исключаются.
+
+`registerGroupedCombatRuntime` владеет одной локальной плашкой. `canShowTurnName` проверяет видимость, `positionTitle` помещает плашку под токеном через координаты viewport, `showTitle` скрывает штатный PIXI-текст через `renderable`, а `clearTitle` возвращает исходное значение через 2 секунды или при отмене. `refreshTitle` обновляет положение и видимость при событиях камеры, зрения и токена. `clearFocus` отменяет ожидающий показ при смене хода, удалении боя и выгрузке сцены. Данные сцены не записываются. Focused: `tests/grouped-combat-runtime.test.mjs`.
 
 `SETTINGS_KEYS.COMBAT_AUTO_PAN="combatAutoPan"`, `registerSettings()` — client Boolean default true; localization `REBREYA_MAIN.Settings.CombatAutoPan.Name/Hint`.
 
