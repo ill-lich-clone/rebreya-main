@@ -1,5 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getInstalledUpgradeItems } from "../scripts/data/item-upgrade-service.js";
+
+test("installed upgrades use keyed lookups in slot order and support array actors", () => {
+  const first = {id:"first"}, second = {id:"second"};
+  const host = {actor: {items: {get: id => ({first, second})[id], get contents() {throw Error("scanned items");}}},
+    flags: {"rebreya-main": {itemUpgrades: {installed: [{itemId: "second",slotIndex: 2},{itemId: "first",slotIndex: 1},{itemId:"missing",slotIndex:3}]}}}};
+  assert.deepEqual(getInstalledUpgradeItems(host), [first, second]);
+  host.actor.items = [second, first];
+  assert.deepEqual(getInstalledUpgradeItems(host), [first, second]);
+});
 
 const MODULE_ID = "rebreya-main";
 const UPGRADE_EQUIPMENT_TYPE = "\u0423\u0441\u043e\u0432\u0435\u0440\u0448\u0435\u043d\u0441\u0442\u0432\u043e\u0432\u0430\u043d\u0438\u0435";

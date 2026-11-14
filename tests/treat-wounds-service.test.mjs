@@ -107,6 +107,82 @@ test("cleanup continues after exact already-deleted immunity and preserves unrel
   const wrongId=Error('ActiveEffect "foreign" does not exist!');f.actor.deleteEmbeddedDocuments=async()=>{throw wrongId;};
   await assert.rejects(()=>f.service.cleanupExpiredEffects(4600),error=>error===wrongId);
 });
+
+test("world-time cleanup tracks off-scene immunities without walking the world again", async () => {
+  const f = fixture(), handlers = new Map(), hooks = {on(name, fn) {handlers.set(name, fn);}};
+  const emit = (name, ...args) => handlers.get(name)?.(...args);
+  let reads = 0, active = false;
+  const offScene = {uuid: "Scene.s.Token.t.Actor.npc", effects: [],
+    async deleteEmbeddedDocuments(_type, ids) { this.effects = this.effects.filter(e => !ids.includes(e.id)); }};
+  const token = {uuid: "Scene.s.Token.t", get actor() {reads++; return offScene;}};
+  const game = f.service.gameProvider(); game.scenes.contents.push({tokens: [token]});
+  f.service.isActiveGm = () => active;
+  const immunity = id => ({id, parent: offScene, flags: {"rebreya-main": {treatWounds: true}}, duration: {startTime: 1000, seconds: 3600}});
+  offScene.effects.push(immunity("legacy"));
+  f.service.registerExpiryIndex(hooks);
+  assert.equal(await f.service.cleanupExpiredEffects(4599), 0);
+  active = true;
+  assert.equal(await f.service.cleanupExpiredEffects(4599), 0);
+  assert.equal(reads, 1);
+  assert.equal(await f.service.cleanupExpiredEffects(4600), 1);
+  assert.equal(reads, 1);
+  const newEffect = immunity("later"); offScene.effects.push(newEffect);
+  emit("createActiveEffect", newEffect);
+  offScene.deleteEmbeddedDocuments = async () => {throw Error("temporary error");};
+  await assert.rejects(f.service.cleanupExpiredEffects(4600), /temporary error/);
+  offScene.deleteEmbeddedDocuments = async () => {offScene.effects.length = 0;};
+  assert.equal(await f.service.cleanupExpiredEffects(4600), 1);
+  assert.equal(reads, 1);
+  const imported = {...offScene, uuid: "Scene.new.Token.t.Actor.npc", effects: [immunity("import")]};
+  imported.deleteEmbeddedDocuments = async () => {imported.effects.length = 0;};
+  emit("createScene", {tokens: [{uuid: "Scene.new.Token.t", actor: imported}]});
+  assert.equal(await f.service.cleanupExpiredEffects(4600), 1);
+  const replacement = {...offScene, uuid: "Scene.s.Token.t.Actor.other", effects: [immunity("new-actor")]};
+  replacement.deleteEmbeddedDocuments = async () => {replacement.effects.length = 0;};
+  const stale = immunity("stale"); offScene.effects.push(stale);
+  emit("createActiveEffect", stale);
+  emit("updateToken", {uuid: token.uuid, actor: replacement}, {actorId: "other"});
+  assert.equal(await f.service.cleanupExpiredEffects(4600), 1);
+  assert.deepEqual(offScene.effects, [stale], "expired effect of detached actor is not mutated");
+  const invalid = {...immunity("invalid"), parent: replacement, duration: {startTime: null, seconds: 3600}};
+  replacement.effects.push(invalid);
+  emit("updateActiveEffect", invalid);
+  assert.equal(await f.service.cleanupExpiredEffects(5000), 0);
+  invalid.duration.startTime = 1000;
+  emit("updateActiveEffect", invalid);
+  assert.equal(await f.service.cleanupExpiredEffects(5000), 1);
+  const item = {uuid:"Actor.a.Item.i", documentName:"Item", effects:[immunity("item-effect")],
+    async deleteEmbeddedDocuments() {assert.fail("item effects were never part of the cleanup");}};
+  emit("createActiveEffect", {...item.effects[0],parent:item});
+  const packActor = {uuid:"Compendium.pack.collection.Actor.a", documentName:"Actor", inCompendium:true,
+    effects:[immunity("pack-effect")], async deleteEmbeddedDocuments() {assert.fail("compendium actors are outside the world scan");}};
+  emit("createActor", packActor);
+  emit("createActiveEffect", {...packActor.effects[0],parent:packActor});
+  assert.equal(await f.service.cleanupExpiredEffects(5000), 0);
+  const transferred = {...replacement, uuid:"Scene.new.Token.new.Actor.a", effects:[immunity("replaced-scene")]};
+  transferred.deleteEmbeddedDocuments = async () => {transferred.effects.length = 0;};
+  emit("updateScene", {uuid:"Scene.new",tokens:[{uuid:"Scene.new.Token.new",actor:transferred}]}, {tokens:[]});
+  assert.equal(await f.service.cleanupExpiredEffects(5000), 1);
+  const freshToken = {uuid:"Scene.third.Token.t"};
+  const fresh = {...replacement, uuid:"Scene.third.Token.t.Actor.npc",token:freshToken,effects:[],
+    async deleteEmbeddedDocuments() {assert.fail("the token has already been deleted");}};
+  freshToken.actor = fresh;
+  emit("createToken", freshToken);
+  const granted = {...immunity("granted"), parent:fresh}; fresh.effects.push(granted);
+  emit("createActiveEffect", granted);
+  emit("deleteToken", freshToken);
+  assert.equal(await f.service.cleanupExpiredEffects(5000), 0);
+});
+
+test("native Foundry 14 start time blocks treatment and expires at exactly one hour", async () => {
+  const f = fixture(), effect = {id: "native", start: {time: 1000}, duration: {seconds: 3600},
+    flags: {"rebreya-main": {treatWounds: true}}};
+  f.actor.effects.push(effect); f.setNow(4599);
+  await assert.rejects(f.service.start(f.intent, f.context), error => error.code === "cooldown");
+  assert.equal(await f.service.cleanupExpiredEffects(4599), 0);
+  assert.equal(await f.service.cleanupExpiredEffects(4600), 1);
+  assert.equal(f.actor.effects.length, 0);
+});
 test("journal error just after performed check still publishes exact result and does not reroll",async()=>{
   const f=fixture();const original=f.journal.checkpoint.bind(f.journal);let failed=false;
   f.journal.checkpoint=async(...args)=>{if(args[2]==="medicine-rolled"&&!failed){failed=true;throw Error("checkpoint unavailable");}return original(...args);};

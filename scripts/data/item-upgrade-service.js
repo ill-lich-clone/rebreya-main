@@ -141,9 +141,12 @@ export function getItemUpgradeHostState(hostItem) {
 export function getInstalledUpgradeItems(hostItem) {
   const actor = getItemActor(hostItem);
   const installed = getItemUpgradeHostState(hostItem).installed;
-  return installed
-    .map((entry) => getActorItems(actor).find((item) => getItemId(item) === entry.itemId) ?? null)
-    .filter(Boolean);
+  if (!installed.length) return [];
+  const items = actor?.items;
+  const find = typeof items?.get === "function" ? id => items.get(id) : null;
+  if (find) return installed.map(entry => find(entry.itemId)).filter(Boolean);
+  const owned = getActorItems(actor);
+  return installed.map(entry => owned.find(item => getItemId(item) === entry.itemId)).filter(Boolean);
 }
 
 export function isInstalledUpgradeItem(item) {

@@ -1,5 +1,7 @@
 # Перевязка ран: текущий контракт
 
+`TreatWoundsService.registerExpiryIndex(hooks)` из стартовой композиции отслеживает Actor, Token, Scene и ActiveEffect; `cleanupExpiredEffects(worldTime)` у active GM один раз собирает кандидатов, включая synthetic Token Actor вне текущей сцены. Новые и изменённые эффекты, связка токена и дубликаты отслеживаются по событиям документов. Очистка проверяет живой маркер и точный порог срока, оставляет кандидата после ошибки, сохраняет прежнюю координаторную очередь и не обходит все сцены на каждом тике. Без регистрации индекс не сохраняется между вызовами. Focused: `tests/treat-wounds-service.test.mjs`.
+
 ## Владельцы и интерфейсы
 
 - `scripts/application/treat-wounds-rules.js`: `getTreatWoundsTiers(level)` возвращает все доступные `{dc,bonus}`; пороги 5/11/17, Сл 10/15/20/25, бонусы 0/10/30/50. `resolveTreatWoundsOutcome({total,dc,bonus})` возвращает `{kind,formula,bonus,canContinue}` для четырёх исходов. `TreatWoundsError(code,message)` сохраняет typed code.

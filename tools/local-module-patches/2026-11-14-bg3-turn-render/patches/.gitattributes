@@ -1,0 +1,2 @@
+# Preserve original whitespace inside reversible unified diffs.
+*.patch -whitespace

@@ -2,6 +2,14 @@ import { TreatWoundsError, resolveTreatWoundsOutcome } from "./treat-wounds-rule
 const SCOPE = "rebreya-main";
 const values = c => Array.from(c?.contents ?? c ?? []);
 const flag = (a, k) => a.getFlag?.(SCOPE, k) ?? a.flags?.[SCOPE]?.[k];
+const isImmunity = effect => Boolean(flag(effect, "treatWounds"));
+const immunityDeadline = effect => {
+  if (!isImmunity(effect)) return NaN;
+  const startTime = effect.start?.time ?? effect.duration?.startTime;
+  const seconds = effect.duration?.seconds;
+  return startTime != null && Number.isFinite(Number(startTime)) && seconds != null && Number.isFinite(Number(seconds))
+    ? Number(startTime) + Number(seconds) : NaN;
+};
 const reject = (code, text) => { throw new TreatWoundsError(code, text); };
 function serialize(roll) {
   if (!Number.isFinite(roll?.total)) reject("invalid-roll", "Бросок не вернул подтверждённого результата.");
@@ -11,19 +19,92 @@ function serialize(roll) {
 /** All decisions persist in the existing inventory journal; UI waits occur outside mutation queues. */
 export class TreatWoundsService {
   constructor(options) { Object.assign(this, options); }
+  #expiryIndexed = false;
+  #expiryActors = null;
+  #tokenTargets = new Map();
+
+  registerExpiryIndex(hooks = globalThis.Hooks) {
+    if (this.#expiryIndexed || typeof hooks?.on !== "function") return;
+    this.#expiryIndexed = true;
+    const actorChanged = (actor, dependents = true) => {
+      if (!this.#expiryActors || !actor?.uuid) return;
+      this.#trackExpiryActor(actor);
+      if (dependents && !actor.isToken) for (const token of actor.getDependentTokens?.({concreteOnly: true}) ?? []) this.#trackExpiryToken(token);
+    };
+    hooks.on("createActor", actor => actorChanged(actor));
+    hooks.on("updateActor", (actor, changes) => {
+      if (Object.keys(changes ?? {}).some(key => key === "effects" || key.startsWith("effects."))) actorChanged(actor);
+    });
+    hooks.on("deleteActor", actor => {
+      this.#expiryActors?.delete(actor.uuid);
+      for (const token of actor.getDependentTokens?.({concreteOnly: true}) ?? []) this.#forgetExpiryToken(token);
+    });
+    for (const event of ["createActiveEffect", "updateActiveEffect", "deleteActiveEffect"]) {
+      hooks.on(event, effect => {
+        const actor = effect.parent;
+        if (actor?.effects && (!actor.documentName || actor.documentName === "Actor")
+          && (isImmunity(effect) || this.#expiryActors?.has(actor.uuid))) actorChanged(actor);
+      });
+    }
+    hooks.on("createToken", token => this.#trackExpiryToken(token));
+    hooks.on("updateToken", (token, changes) => {
+      if (Object.keys(changes ?? {}).some(key => ["actorId", "actorLink", "delta", "actorData"].includes(key.split(".")[0]))) this.#trackExpiryToken(token);
+    });
+    hooks.on("deleteToken", token => this.#forgetExpiryToken(token));
+    const refreshScene = scene => {
+      for (const uuid of this.#tokenTargets.keys()) if (uuid.startsWith(`${scene.uuid}.Token.`)) this.#forgetExpiryToken({uuid});
+      for (const token of values(scene.tokens)) this.#trackExpiryToken(token);
+    };
+    hooks.on("createScene", refreshScene);
+    hooks.on("updateScene", (scene, changes) => { if (Object.hasOwn(changes ?? {}, "tokens")) refreshScene(scene); });
+    hooks.on("deleteScene", scene => { for (const token of values(scene.tokens)) this.#forgetExpiryToken(token); });
+  }
+
+  #trackExpiryActor(actor) {
+    if (!actor?.uuid || !this.#expiryActors || actor.inCompendium || actor.pack || actor.token?.parent?.inCompendium) return;
+    if (values(actor.effects).some(isImmunity)) {
+      this.#expiryActors.set(actor.uuid, actor);
+      if (actor.token?.uuid) this.#tokenTargets.set(actor.token.uuid, actor.uuid);
+    } else {
+      this.#expiryActors.delete(actor.uuid);
+      if (actor.token?.uuid) this.#tokenTargets.delete(actor.token.uuid);
+    }
+  }
+
+  #forgetExpiryToken(token) {
+    this.#expiryActors?.delete(this.#tokenTargets.get(token.uuid));
+    this.#tokenTargets.delete(token.uuid);
+  }
+
+  #trackExpiryToken(token) {
+    if (!this.#expiryActors || token.inCompendium || token.pack || token.parent?.inCompendium) return;
+    this.#forgetExpiryToken(token);
+    const actor = token.actor;
+    if (!actor) return;
+    this.#trackExpiryActor(actor);
+    if (token.uuid && (actor.isToken ?? !token.actorLink) && this.#expiryActors.has(actor.uuid)) this.#tokenTargets.set(token.uuid, actor.uuid);
+  }
+
   async cleanupExpiredEffects(worldTime = Number(this.gameProvider().time.worldTime)) {
     if (!Number.isFinite(worldTime) || !this.isActiveGm?.()) return 0;
     return this.coordinator.run("treat-wounds", async () => {
+      if (!this.isActiveGm()) return 0;
       let removed = 0;
-      const game = this.gameProvider(), actors = new Map();
-      for (const actor of values(game.actors)) actors.set(actor.uuid, actor);
-      for (const scene of values(game.scenes)) for (const token of values(scene.tokens)) if (token.actor) actors.set(token.actor.uuid, token.actor);
-      for (const actor of actors.values()) {
+      if (!this.#expiryIndexed || !this.#expiryActors) {
+        this.#expiryActors = new Map();
+        this.#tokenTargets.clear();
+        const game = this.gameProvider();
+        for (const actor of values(game.actors)) this.#trackExpiryActor(actor);
+        for (const scene of values(game.scenes)) for (const token of values(scene.tokens)) this.#trackExpiryToken(token);
+      }
+      for (const actor of [...this.#expiryActors.values()]) {
         if (!this.isActiveGm()) return removed;
-        const expired = values(actor.effects).filter(e => flag(e, "treatWounds") && Number.isFinite(Number(e.duration?.startTime))
-          && Number(e.duration?.startTime) + Number(e.duration?.seconds) <= worldTime).map(e => e.id);
+        const expired = values(actor.effects).filter(e => immunityDeadline(e) <= worldTime).map(e => e.id);
         for (const id of expired) {
           if (!this.isActiveGm()) return removed;
+          if (this.#expiryActors.get(actor.uuid) !== actor) break;
+          const live = actor.effects?.get?.(id) ?? values(actor.effects).find(e => e.id === id);
+          if (!live || !(immunityDeadline(live) <= worldTime)) continue;
           try {
             await actor.deleteEmbeddedDocuments("ActiveEffect", [id]);
             removed++;
@@ -31,6 +112,7 @@ export class TreatWoundsService {
             if (error?.message !== `ActiveEffect "${id}" does not exist!`) throw error;
           }
         }
+        if (this.#expiryActors.get(actor.uuid) === actor) this.#trackExpiryActor(actor);
       }
       return removed;
     });
@@ -86,7 +168,7 @@ export class TreatWoundsService {
       const prepared = await this.documents.prepare(intent, sender);
       const target = prepared.target.actor, now = Number(this.gameProvider().time.worldTime);
       if (!Number.isFinite(now)) reject("invalid-time", "Не удалось прочитать мировое время.");
-      const immunity = values(target.effects).find(e => flag(e, "treatWounds") && Number(e.duration?.startTime) + Number(e.duration?.seconds) > now);
+      const immunity = values(target.effects).some(e => immunityDeadline(e) > now);
       if (immunity) reject("cooldown", "Цель иммунна к перевязке до окончания часового эффекта.");
       const pending = (await this.journal.listPending()).find(r => r.kind === "treat-wounds" && !["completed", "cancelled"].includes(r.phase)
         && (r.targetActorUuid === target.uuid || r.sourceActorUuid === prepared.source.actor.uuid));
@@ -158,6 +240,7 @@ export class TreatWoundsService {
           origin: record.sourceActorUuid, duration: { seconds: 3600, startTime: record.startTime }, changes: [],
           flags: { [SCOPE]: { treatWounds: { operationId: record.intent.operationId } } }
         }]));
+        this.#trackExpiryActor(target);
         record = await this.#phase(record, "effect-created", {}, context);
       }
       if (record.phase === "effect-created") {

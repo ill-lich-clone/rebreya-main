@@ -249,6 +249,7 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (curseUpgrades) {
+    curseUpgrades.registerWorldExpiryIndex?.(Hooks);
     const report = error => console.error(`${MODULE_ID} | Curse upgrade automation failed.`, error);
     const run = promise => Promise.resolve(promise).catch(report);
     Hooks.on("preUpdateActor", (actor, changed, options) => curseUpgrades.preUpdateActor(actor, changed, options));

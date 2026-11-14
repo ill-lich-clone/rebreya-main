@@ -1,6 +1,6 @@
 import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
-import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.23";
+import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.84";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { CurseUpgradeSaveAdapter } from "./curse-upgrade-saves.js";
 import { CurseUpgradeDamageAdapter } from "./curse-upgrade-damage.js?v=1.4.386";
@@ -21,6 +21,21 @@ const clone = value => structuredClone(value);
 const change = (key, value) => ({ key, value: String(value), mode: 2, priority: 20 });
 const escape = text => String(text ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const getChanged = (patch, path) => Object.hasOwn(patch, path) ? patch[path] : path.split(".").reduce((o, k) => o?.[k], patch);
+const turnFlagPath = new RegExp(`^flags\\.${MODULE_ID}\\.(?:==)?(?:weaponModMovement|reactionState)(?:\\..+)?$`, "u");
+function isTurnFlagOnlyUpdate(changed) {
+  let found = false;
+  for (const [key, value] of Object.entries(changed ?? {})) {
+    if (key === "_id" || key === "_stats" || key.startsWith("_stats.")) continue;
+    if (turnFlagPath.test(key)) { found = true; continue; }
+    if (key !== "flags" || !value || Object.keys(value).some(namespace => namespace !== MODULE_ID)) return false;
+    const own = value[MODULE_ID];
+    if (!own || typeof own !== "object" || Array.isArray(own)) return false;
+    const keys = Object.keys(own);
+    if (keys.some(flag => !turnFlagPath.test(`flags.${MODULE_ID}.${flag}`))) return false;
+    found ||= keys.length > 0;
+  }
+  return found;
+}
 
 export function collectCurseUpgradeSources(actor, catalog = new Map()) {
   const slots = flag(actor, "heroDoll")?.slots ?? {};
@@ -65,6 +80,15 @@ export function buildCurseUpgradeEffect(source, actor, state = {}) {
     description: `<p>${escape(source.profile.effect).replace(/\n/g, "<br />")}</p>`,
     origin: source.upgrade.uuid, disabled: false, transfer: false, changes,
     flags: { [MODULE_ID]: { [FLAG]: { managed: true, sourceId: source.upgrade.id, hostId: source.host.id, key: source.key } } } };
+}
+
+function curseEffectDiffers(effect, data) {
+  const current = effect.toObject?.() ?? effect;
+  return Object.keys(data).some(key => {
+    if (key === "changes") return JSON.stringify(comparableEffectChanges(current)) !== JSON.stringify(comparableEffectChanges(data));
+    if (key === "flags") return JSON.stringify(current.flags?.[MODULE_ID]?.[FLAG]) !== JSON.stringify(data.flags[MODULE_ID][FLAG]);
+    return JSON.stringify(current[key]) !== JSON.stringify(data[key]);
+  });
 }
 
 export class CurseUpgradeAutomationService {
@@ -142,6 +166,7 @@ export class CurseUpgradeAutomationService {
   }
   async initialize() {
     this.catalog = (await this.moduleApi.getModel?.())?.gearById ?? new Map();
+    this._worldExpiry = null;
     if (this.isAuthority()) for (const actor of values(globalThis.game?.actors)) {
       for (const source of this.ownedSources(actor, "chains")) await this.recoverPendingChains(source);
       await this.syncActor(actor);
@@ -180,12 +205,7 @@ export class CurseUpgradeAutomationService {
         if (!data) { remove.push(effect.id); continue; }
         desired.delete(own.sourceId);
         const current = effect.toObject?.() ?? effect;
-        const changed = Object.keys(data).some(key => {
-          if (key === "changes") return JSON.stringify(comparableEffectChanges(current)) !== JSON.stringify(comparableEffectChanges(data));
-          if (key === "flags") return JSON.stringify(current.flags?.[MODULE_ID]?.[FLAG]) !== JSON.stringify(data.flags[MODULE_ID][FLAG]);
-          return JSON.stringify(current[key]) !== JSON.stringify(data[key]);
-        });
-        if (changed) update.push({ _id: effect.id, ...nativeEffectUpdate(data, current) });
+        if (curseEffectDiffers(current, data)) update.push({ _id: effect.id, ...nativeEffectUpdate(data, current) });
       }
       if (remove.length) await actor.deleteEmbeddedDocuments("ActiveEffect", remove, syncOptions());
       if (update.length) await actor.updateEmbeddedDocuments("ActiveEffect", update, syncOptions());
@@ -208,7 +228,7 @@ export class CurseUpgradeAutomationService {
     if (temp !== undefined) options.rebreyaCurseTempBefore = Number(hp?.temp ?? 0);
   }
   async actorUpdated(actor, changed, options = {}) {
-    if (options.rebreyaCurseUpgradeSync || !this.isAuthority()) return;
+    if (options.rebreyaCurseUpgradeSync || !this.isAuthority() || isTurnFlagOnlyUpdate(changed)) return;
     const temp = getChanged(changed, "system.attributes.hp.temp");
     if (temp !== undefined) {
       for (const source of this.ownedSources(actor, "burden")) {
@@ -311,25 +331,39 @@ export class CurseUpgradeAutomationService {
     const previousActor = context ? context.previousActor : combat.turns?.[previous.turn]?.actor;
     const stamp = `${combat.id}:${combat.round}:${combat.turn}`;
     const eventKey = context?.eventKey ?? stamp;
-    for (const actor of new Set(values(combat.combatants).map(c => c.actor).filter(Boolean))) {
+    const affected = new Set([currentActor?.id, previousActor?.id].filter(Boolean));
+    for (const actor of new Set(values(combat.combatants).map(c => c.actor).filter(actor => actor && affected.has(actor.id)))) {
       const deletes = []; const updates = [];
+      const sources = this.sources(actor);
+      const installed = new Map(sources.map(source => [source.upgrade.id, source]));
+      let reconcile = false;
       for (const effect of values(actor.effects)) {
         const own = flag(effect, FLAG);
+        if (own?.managed && own.kind !== "chains") {
+          const source = installed.get(own.sourceId);
+          if (!source || curseEffectDiffers(effect, buildCurseUpgradeEffect(source, actor, this.state(source)))) reconcile = true;
+          installed.delete(own.sourceId);
+        }
         if (own?.kind !== "chains" || own.createdTurn === stamp) continue;
         if (actor.id === previousActor?.id && own.waitingForTurn === false) deletes.push(effect.id);
         else if (actor.id === currentActor?.id && own.waitingForTurn) updates.push({ _id: effect.id, [`flags.${MODULE_ID}.${FLAG}.waitingForTurn`]: false });
       }
+      reconcile ||= installed.size > 0;
       if (deletes.length) await actor.deleteEmbeddedDocuments("ActiveEffect", deletes, syncOptions());
       if (updates.length) await actor.updateEmbeddedDocuments("ActiveEffect", updates, syncOptions());
-      for (const source of this.sources(actor, "obsidian")) {
-        if (this.state(source).combatEvent === eventKey) continue;
-        if (actor.id === currentActor?.id) await this.writeState(source, { ac: 0, attackAction: false, combatEvent: eventKey });
+      for (const source of sources.filter(source => source.key === "obsidian")) {
+        if (this.state(source).combatEvent === eventKey) { reconcile = true; continue; }
+        if (actor.id === currentActor?.id) {
+          await this.writeState(source, { ac: 0, attackAction: false, combatEvent: eventKey });
+          reconcile = true;
+        }
         else if (actor.id === previousActor?.id && !this.state(source).attackAction) {
           const didAttack = await this.prompt(source, { title: "Проклятье обсидиана", body: "В завершившийся ход вы совершали действие Атака? Отдельная атака реакцией или бонусным действием не считается." });
           await this.writeState(source, { ac: didAttack ? this.state(source).ac ?? 0 : -1, attackAction: didAttack, combatEvent: eventKey });
+          reconcile = true;
         }
       }
-      await this.syncActor(actor);
+      if (reconcile) await this.syncActor(actor);
     }
   }
   async attackOccurred(actor, host, eventId) {
@@ -376,16 +410,52 @@ export class CurseUpgradeAutomationService {
     if (receipt && this.isAuthority()) updates[`flags.${MODULE_ID}.curseBloodReceipts.${receipt.sourceId}`] = { eventId: receipt.eventId, turn: receipt.turn };
     return true;
   }
+  registerWorldExpiryIndex(hooks = globalThis.Hooks) {
+    if (this._worldExpiryEnabled || typeof hooks?.on !== "function") return;
+    this._worldExpiryEnabled = true;
+    const refresh = actor => {
+      if (this._worldExpiry && actor?.id && !actor.isToken && globalThis.game?.actors?.get?.(actor.id) === actor) {
+        this.#refreshWorldExpiryActor(actor);
+      }
+    };
+    hooks.on("createActor", refresh);
+    hooks.on("deleteActor", actor => { if (!actor.isToken) this._worldExpiry?.delete(actor.id); });
+    hooks.on("updateActor", (actor, changed) => { if (!isTurnFlagOnlyUpdate(changed)) refresh(actor); });
+    for (const event of ["createItem", "updateItem", "deleteItem", "createActiveEffect", "updateActiveEffect", "deleteActiveEffect"]) {
+      hooks.on(event, document => refresh(document.actor ?? document.parent));
+    }
+  }
+  #refreshWorldExpiryActor(actor) {
+    if (values(actor.effects).some(effect => flag(effect, FLAG)?.kind === "chains") || this.sources(actor, "obsidian").length) {
+      this._worldExpiry.set(actor.id, actor);
+    } else this._worldExpiry.delete(actor.id);
+  }
   async expireOutsideCombat() {
     if (!this.isAuthority()) return;
-    const now = Number(globalThis.game?.time?.worldTime ?? 0);
-    for (const actor of values(globalThis.game?.actors)) {
-      if (values(globalThis.game?.combat?.combatants).some(c => c.actor?.id === actor.id) && globalThis.game?.combat?.started) continue;
+    const game = globalThis.game;
+    const now = Number(game?.time?.worldTime ?? 0);
+    if (this._worldExpiryEnabled && (!this._worldExpiry || this._worldExpiryCollection !== game?.actors)) {
+      this._worldExpiryCollection = game?.actors;
+      this._worldExpiry = new Map();
+      for (const actor of values(game?.actors)) this.#refreshWorldExpiryActor(actor);
+    }
+    const participants = new Set(game?.combat?.started ? values(game.combat.combatants).map(c => c.actor?.id) : []);
+    for (const actor of this._worldExpiry ? [...this._worldExpiry.values()] : values(game?.actors)) {
+      if (!this.isAuthority()) return;
+      if (participants.has(actor.id) || (game?.actors?.get && game.actors.get(actor.id) !== actor)) continue;
       const ids = values(actor.effects).filter(e => flag(e, FLAG)?.kind === "chains" && flag(e, FLAG).expiresAt <= now).map(e => e.id);
       if (ids.length) await actor.deleteEmbeddedDocuments("ActiveEffect", ids, syncOptions());
-      for (const source of this.sources(actor, "obsidian")) if (this.state(source).ac && Number(this.state(source).acExpiresAt ?? 0) <= now) {
-        await this.writeState(source, { ac: 0 }); await this.syncActor(actor);
-      }
+      const sources = this.sources(actor, "obsidian");
+      const expired = sources.filter(source => this.state(source).ac && Number(this.state(source).acExpiresAt ?? 0) <= now);
+      for (const source of expired) await this.writeState(source, { ac: 0 });
+      const reset = new Set(sources.filter(source => !this.state(source).ac).map(source => source.upgrade.id));
+      const stale = reset.size && values(actor.effects).some(effect => {
+        const own = flag(effect, FLAG);
+        return own?.managed && own.key === "obsidian" && reset.has(own.sourceId)
+          && comparableEffectChanges(effect).some(change => change.key === "system.attributes.ac.bonus");
+      });
+      if (expired.length || stale) await this.syncActor(actor);
+      if (ids.length && this._worldExpiry) this.#refreshWorldExpiryActor(actor);
     }
   }
 }

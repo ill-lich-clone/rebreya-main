@@ -183,6 +183,135 @@ test("obsidian concurrent duplicate turn notifications prompt only once", async 
   assert.equal(prompts, 1);
 });
 
+test("Next and its two service flags leave unrelated curse projections alone", async () => {
+  const f = fixture(), other = fixture("tsepey", "other").actor;
+  await f.service.syncActor(f.actor);
+  await f.service.syncActor(other);
+  const combat = combatFor(f.actor, other), syncs = [];
+  combat.turn = 1; combat.combatant = combat.combatants[1];
+  f.service.syncActor = async actor => syncs.push(actor.id);
+  await f.service.combatChanged(combat, {round: 1, turn: 0}, {round: 1, turn: 1});
+  for (const change of [
+    {_id: f.actor.id, _stats: {modifiedTime: 1}, flags: {[NS]: {"==weaponModMovement": {feet: 0}}}},
+    {[`flags.${NS}.reactionState`]: {usesRemaining: 1}},
+    {[`flags.${NS}.reactionState.usesRemaining`]: 1, flags: {[NS]: {weaponModMovement: {feet: 0}}}}
+  ]) await f.service.actorUpdated(f.actor, change);
+  assert.deepEqual(syncs, []);
+  await f.service.actorUpdated(f.actor, {flags: {[NS]: {reactionState: {}, heroDoll: {}}}});
+  await f.service.actorUpdated(f.actor, {flags: {[NS]: {reactionState: {}}, midi: {}}, system: {attributes: {hp: {temp: 1}}}});
+  await f.service.actorUpdated(f.actor, {flags: {[NS]: null}, [`flags.${NS}.reactionState`]: {usesRemaining: 1}});
+  assert.deepEqual(syncs, [f.actor.id, f.actor.id, f.actor.id]);
+});
+
+test("a failed obsidian reconciliation is retried without repeating the prompt", async () => {
+  const f = fixture("obsidiana"), other = fixture("tsepey", "other").actor;
+  const combat = combatFor(f.actor, other);
+  combat.turn = 1; combat.combatant = combat.combatants[1];
+  const previous = {round: 1, turn: 0}, next = {round: 1, turn: 1};
+  let prompts = 0, failures = 0;
+  f.service.prompt = async () => { prompts++; return false; };
+  const real = f.service.syncActor.bind(f.service);
+  f.service.syncActor = async actor => { if (!failures++) throw Error("temporary write error"); return real(actor); };
+  await assert.rejects(f.service.combatChanged(combat, previous, next), /temporary write error/);
+  await f.service.combatChanged(combat, previous, next);
+  assert.equal(prompts, 1);
+  assert.equal(f.state().ac, -1);
+  assert.deepEqual([...f.actor.effects.values()][0].changes.find(c => c.key.endsWith("ac.bonus")).value, "-1");
+});
+
+test("Next removes an orphaned curse effect on the acting character", async () => {
+  const f = fixture("voli-k-zhizni"), other = fixture("tsepey", "other").actor;
+  const combat = combatFor(other, f.actor);
+  await f.service.syncActor(f.actor);
+  assert.equal(f.actor.effects.size, 1);
+  f.actor.items.delete("curse"); // Simulates a missed item notification or an imported synthetic actor.
+  combat.turn = 1; combat.combatant = combat.combatants[1];
+  await f.service.combatChanged(combat, {round: 1, turn: 0}, {round: 1, turn: 1});
+  assert.equal(f.actor.effects.size, 0);
+});
+
+test("Next repairs an acting character with an installed curse but no projected effect", async () => {
+  const f = fixture("voli-k-zhizni"), other = fixture("tsepey", "other").actor;
+  const combat = combatFor(other, f.actor);
+  combat.turn = 1; combat.combatant = combat.combatants[1];
+  await f.service.combatChanged(combat, {round: 1, turn: 0}, {round: 1, turn: 1});
+  assert.equal(f.actor.effects.size, 1);
+  assert.equal(other.effects.size, 1);
+});
+
+test("clock expiry seeds world curses once then follows item and effect events", async () => {
+  const f = fixture("obsidiana"), other = fixture("tsepey", "other"), hooks = new Map();
+  let scans = 0, authority = false, now = 10;
+  const actors = new Map([[f.actor.id, f.actor], [other.actor.id, other.actor]]);
+  const rawValues = actors.values.bind(actors);
+  actors.values = () => {scans++; return rawValues();};
+  const before = globalThis.game;
+  globalThis.game = {actors, time: {get worldTime() {return now;}}};
+  f.service.options.isAuthority = () => authority;
+  try {
+    f.service.registerWorldExpiryIndex({on(name, fn) {hooks.set(name, fn);}});
+    await f.service.expireOutsideCombat();
+    assert.equal(scans, 0);
+    authority = true;
+    await f.service.expireOutsideCombat();
+    await f.service.expireOutsideCombat();
+    assert.equal(scans, 1);
+    const source = f.service.sources(f.actor, "obsidian")[0];
+    await f.service.writeState(source, {ac: 1, acExpiresAt: 20});
+    hooks.get("updateItem")(source.upgrade);
+    const chain = {id: "chain", parent: other.actor, flags: {[NS]: {curseUpgrade: {kind: "chains", expiresAt: 20}}}};
+    other.actor.effects.set(chain.id, chain); hooks.get("createActiveEffect")(chain);
+    await f.service.expireOutsideCombat();
+    assert.equal(f.state().ac, 1); assert.ok(other.actor.effects.has(chain.id));
+    now = 20;
+    globalThis.game.combat = {started: true, combatants: [{actor: f.actor}]};
+    const remove = other.actor.deleteEmbeddedDocuments;
+    other.actor.deleteEmbeddedDocuments = async () => {throw Error("temporary delete failure");};
+    await assert.rejects(f.service.expireOutsideCombat(), /temporary delete failure/);
+    other.actor.deleteEmbeddedDocuments = remove;
+    await f.service.expireOutsideCombat();
+    assert.equal(f.state().ac, 1); assert.equal(other.actor.effects.has(chain.id), false);
+    globalThis.game.combat = null;
+    await f.service.expireOutsideCombat();
+    assert.equal(f.state().ac, 0); assert.equal(scans, 1);
+  } finally {globalThis.game = before;}
+});
+
+test("an expired obsidian bonus repairs its effect after a failed clock reconciliation", async () => {
+  const f = fixture("obsidiana"), source = f.service.sources(f.actor, "obsidian")[0];
+  const before = globalThis.game;
+  globalThis.game = {actors: new Map([[f.actor.id, f.actor]]),time: {worldTime: 20}};
+  try {
+    await f.service.writeState(source, {ac: 1, acExpiresAt: 20});
+    await f.service.syncActor(f.actor);
+    const real = f.service.syncActor.bind(f.service);
+    f.service.syncActor = async () => {throw Error("temporary sync failure");};
+    await assert.rejects(f.service.expireOutsideCombat(), /temporary sync failure/);
+    assert.equal(f.state().ac, 0);
+    f.service.syncActor = real;
+    await f.service.expireOutsideCombat();
+    assert.ok([...f.actor.effects.values()].every(e => e.changes.every(c => !c.key.endsWith("ac.bonus"))));
+  } finally {globalThis.game = before;}
+});
+
+test("world expiry reindexes legacy curse sources when the catalog finishes loading", async () => {
+  const f = fixture("obsidiana"), upgrade = f.actor.items.get("curse");
+  const profile = upgrade.flags[NS].upgrade;
+  delete upgrade.flags[NS].upgrade;
+  upgrade.flags[NS].curseUpgradeState = {ac: 1, acExpiresAt: 20};
+  f.service.moduleApi.getModel = async () => ({gearById: new Map([[upgrade.flags[NS].gearId, {upgrade: profile}]])});
+  const before = globalThis.game;
+  globalThis.game = {actors: new Map([[f.actor.id, f.actor]]), time: {worldTime: 20}};
+  try {
+    f.service.registerWorldExpiryIndex({on(){}});
+    await f.service.expireOutsideCombat();
+    assert.equal(f.state().ac, 1);
+    await f.service.initialize();
+    await f.service.expireOutsideCombat();
+    assert.equal(f.state().ac, 0);
+  } finally {globalThis.game = before;}
+});
+
 test("native roll wrapper awaits save resolution and registers once", async () => {
   const f = fixture();
   const calls = [];

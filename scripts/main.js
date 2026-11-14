@@ -126,12 +126,12 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.23";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.84";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.23";
 import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.79";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
-import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.16";
+import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.84";
 import { TreatWoundsDnd5eAdapter } from "./integrations/treat-wounds-dnd5e-adapter.js?v=1.5.16";
 import { TreatWoundsDocuments } from "./infrastructure/foundry/treat-wounds-documents.js?v=1.5.16";
 import { TREAT_WOUNDS_ACTIONS, isValidTreatWoundsPayload, authorizeTreatWoundsSender } from "./infrastructure/foundry/treat-wounds-command-contract.js?v=1.5.16";
@@ -327,7 +327,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.77";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.81";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.84";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.78";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.79";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -348,7 +348,7 @@ import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.70";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.61";
-import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.61";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.84";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js?v=1.5.60";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.5.61";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
@@ -538,7 +538,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.5.83";
+const MODULE_STYLE_VERSION = "1.5.84";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -3626,6 +3626,7 @@ export class RebreyaMainModule {
         publishDecayingRecoveryPrompt(effect, { active: () => isActiveGmClient(globalThis.game), create: data => ChatMessage.create(data) })
           .catch(error => console.error(`${MODULE_ID} | Failed to publish decaying damage prompt.`, error));
       });
+      this.treatWoundsService.registerExpiryIndex(Hooks);
       Hooks.on("updateWorldTime", worldTime => this.treatWoundsService.cleanupExpiredEffects(worldTime)
         .catch(error => console.error(`${MODULE_ID} | Failed to expire treat wounds immunity.`, error)));
       await this.treatWoundsService.cleanupExpiredEffects();

@@ -1,6 +1,6 @@
 import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { MODULE_ID } from "../constants.js";
-import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.23";
+import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.84";
 
 export const CURSE_EATER_RARITY = Object.freeze({
   common: 0,

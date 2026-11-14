@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "moduleId": "bg3-inspired-hotbar",
+  "beforeVersion": "3.4.8",
+  "afterVersion": "3.4.9",
+  "backupRoot": "C:\\Users\\ill_lich\\.codex\\backups\\bg3-turn-render-20261114T135805Z",
+  "files": [
+    {
+      "path": "module.json",
+      "beforeSha256": "572a86638aa21910a13de59fe9a05b3b6b1c68202096c228e52c7185cdd0df8b",
+      "afterSha256": "19bfc69eaa61a3004ef9d4a5d2f72b83860072e73e8e97fe71d1d6e63dc64cb4"
+    },
+    {
+      "path": "scripts/bg3-hotbar.js",
+      "beforeSha256": "2603173c39619c3e63af6fb6e095f3b5928869f001ecbf70b6ee227485ad3063",
+      "afterSha256": "c5b0d2282be7d367fae70ab4cccd054603737a85c588bd68d5f6487a8e305fa9"
+    },
+    {
+      "path": "scripts/components/buttons/BaseButton.js",
+      "beforeSha256": "6602731bebb9f7d7101af7171d663869b1ab6886e4a74aa74bc0e9695bc259dd",
+      "afterSha256": "308c222f0ec00cb3d1af2ed7c4a5c8c564d54e1c5c17a4551b4a08f0ce940084"
+    },
+    {
+      "path": "scripts/components/buttons/activeButton.js",
+      "beforeSha256": "5391fc6714bcbed3e49e6d2c7c5997b0a7e2ff6160d99b9996bb7aa5f524c8b5",
+      "afterSha256": "45d3720cc15a0168d1d227ebce802659f65352d1e65eddea5684b1b85cd4c615"
+    },
+    {
+      "path": "scripts/components/buttons/filterButton.js",
+      "beforeSha256": "afd79b9e2101405623ad1b182af8b6e9042c48a8fc6f4b6a784a5cf9c34106d2",
+      "afterSha256": "fded77d73a24a6ace87fa47070fcef670e2ae9509807b53ea769cba441ef4e63"
+    },
+    {
+      "path": "scripts/components/buttons/itemButton.js",
+      "beforeSha256": "0dc9710363549a7fbb5a8652b1525f0112eca0c238db2e0987175f802f7c2fc2",
+      "afterSha256": "4bde377afd3e9ba4576595fbb0cc230e6611e91e325605c14882a1ccf2bea8ef"
+    },
+    {
+      "path": "scripts/components/buttons/passiveButton.js",
+      "beforeSha256": "15eda15e522dd94f76084368e79e773e741459cf0e7f066faa878687546eb786",
+      "afterSha256": "e6a353ae04e987cdd4d81af1119e54bd18ae62f891d769386f18ad6198fb6793"
+    },
+    {
+      "path": "scripts/components/component.js",
+      "beforeSha256": "3e3f5593d90c528e51b98a68ff0b11aee96723506ae3e5864495bbbd44db8642",
+      "afterSha256": "cb4bb22e7ef3dfa4ee6a6df728979c27a714e944bdeb942593cf1e24555b603d"
+    },
+    {
+      "path": "scripts/components/containers/AbilityContainer.js",
+      "beforeSha256": "957ce8f05adce570d70c1547db478e55c224aac2be3139f18984775a0d9f0df7",
+      "afterSha256": "6892998dbf98789d1829d8a7edf118292cf8ac4759d7c2967e54e18e692101f8"
+    },
+    {
+      "path": "scripts/components/containers/ActiveContainer.js",
+      "beforeSha256": "30178de2626e14e4dc8b0e73fcbb8bc0aa979c899ab02920f8e4e83c8e08ce43",
+      "afterSha256": "5ad63f981d633fd7603e70615d6b3ed9b467834b729305df953625680caf366e"
+    },
+    {
+      "path": "scripts/components/containers/AdvContainer.js",
+      "beforeSha256": "96c785d1c3d94296ae03c0a01d56c4c3af4813c1ad000eeacd16fe9f915baaa8",
+      "afterSha256": "9fc3d8cce473c61f4af092d7f26b3e619c57114fed6a4c182de0db3134f49b23"
+    },
+    {
+      "path": "scripts/components/containers/ContainerPopover.js",
+      "beforeSha256": "ce22b18183c38d30756a840adb27e660d3e1161942732052b46805058937ff5e",
+      "afterSha256": "9389ee38addc7d7bf0b09493063c447d5de4856b877f4e366ed597587f09997c"
+    },
+    {
+      "path": "scripts/components/containers/ControlContainer.js",
+      "beforeSha256": "bdeaa560199fb6c2c6984178f7916935a60987118b56eda643bef582e8c7ab45",
+      "afterSha256": "167957e236d80c44b68a0b7a83f28494ef80b369d5dc039dcf954034afd4a62e"
+    },
+    {
+      "path": "scripts/components/containers/DeathSavesContainer.js",
+      "beforeSha256": "d54c27c2da8cf94b7ce224a201ef437e074f09743403606846d7ce7b6632895d",
+      "afterSha256": "3b6fa1d4baab04f00ffe97c23b9ec9a8f609b6b8007e47ea6f49192e46b77500"
+    },
+    {
+      "path": "scripts/components/containers/DragBar.js",
+      "beforeSha256": "d6ec74ca78a66644851ce6c1223e5469473359ddb81d60256831fa82690cbea1",
+      "afterSha256": "eb9ca9b847b9b2027bce2a4861729142218c836308e6fd439d40f544a3d834c6"
+    },
+    {
+      "path": "scripts/components/containers/FilterContainer.js",
+      "beforeSha256": "fc6e8041ebf66250a748b9aa8dff78aef69509441411c905689bc727bcc867c0",
+      "afterSha256": "e7be56ee88bbb0116c892b90c89078d32c500a8404d715f88d3313687a5e084b"
+    },
+    {
+      "path": "scripts/components/containers/GridCell.js",
+      "beforeSha256": "2b558f979881014f3d2d3feda0cb8cbd46db64175e26208c8877fc9d6a1410ae",
+      "afterSha256": "23d7e67021ce0e0c88c8bfb44fec6fb0cd123fe2f7ea54a4b5e05913cefea5b8"
+    },
+    {
+      "path": "scripts/components/containers/GridContainer.js",
+      "beforeSha256": "eff56c2c70bcea1bcde1d61a6bd044edc641a391b32f83c3eac9220b314bacf6",
+      "afterSha256": "aeb09884fab76fd4cb91c2e6f73d14a160fb206d9694f655bd7082ea41625e9b"
+    },
+    {
+      "path": "scripts/components/containers/HotbarContainer.js",
+      "beforeSha256": "55ffb5f855b3ad107b01e624a9c5d605a1868a393aa851231fd6105457a79c6a",
+      "afterSha256": "808ae971f350dff2be867158a4e41cfc303b57e8fb618b5faa3fb9a1cf99fa2b"
+    },
+    {
+      "path": "scripts/components/containers/MenuContainer.js",
+      "beforeSha256": "c804f2f8a941968993276a54562f5e5dd4e8a28dc5202d386c82335207ffc2b1",
+      "afterSha256": "7911411bbe0039e41e543f8ff5168989438fda57867e664c24c5e1ed73525098"
+    },
+    {
+      "path": "scripts/components/containers/PassiveContainer.js",
+      "beforeSha256": "5aa1e71cd9525e64184997bac9e4d7b2c020eb914e97d4545e5ada7c25b27a13",
+      "afterSha256": "97aa2fa6482248faf8ccd3c73b91a76775e10e14bb09f968992acfeee0fcf708"
+    },
+    {
+      "path": "scripts/components/containers/PortraitContainer.js",
+      "beforeSha256": "374eb309c5a70351e7a8af81ef54e3471ddb7d2487c72da4cb9a91c07292e27e",
+      "afterSha256": "36542665f4e0f564eedef012f162215af1c5fc82f75232d026459ee5f6107698"
+    },
+    {
+      "path": "scripts/components/containers/PortraitHealth.js",
+      "beforeSha256": "be76dc21b94df0f7d145c749bc69b4678289235f0081f1ea945054a8fc600f9b",
+      "afterSha256": "82803978e6f2ef93eeadf4a626f6dce112874a6a44827b16ac0ea7ded38827e2"
+    },
+    {
+      "path": "scripts/components/containers/RestTurnContainer.js",
+      "beforeSha256": "1aa890798c89569512792e96dd59fe00e2c7b8a598ee0a234bbcb03eaa9f6aee",
+      "afterSha256": "0c22b160fdc9eae862f6992c44c7b1ac4fe6fae44dc06c10beb32937f242e1ed"
+    },
+    {
+      "path": "scripts/components/containers/WeaponContainer.js",
+      "beforeSha256": "baea4d27a98622deb38640e61121e99cda035022afd9b47695c8455e63fa886e",
+      "afterSha256": "697809e4e9e6d03a770b8fd6108a8544978bb8b6975a0fc198ebaed9dca457bc"
+    },
+    {
+      "path": "scripts/components/dialog/CPRActionsDialog.js",
+      "beforeSha256": "538b5abdfcb59c23b0b517eb7f58ebc4db5bd5685ba9115c053a9733b3c57d6e",
+      "afterSha256": "a3178464b885dd3247ec5f6eed3863cb8621c920038fc20212c8902363ca2b4d"
+    },
+    {
+      "path": "scripts/components/dialog/ExtraInfosDialog.js",
+      "beforeSha256": "430ea116fdb730bf5957c36d8ade3761c14fae97c7f3e10dc0d2e05e36bdb7f0",
+      "afterSha256": "2b4a3067dc11930e1fc43cf4332e6cffc87f3e4add063b89dd3ffa32b0d7b322"
+    },
+    {
+      "path": "scripts/components/dialog/SettingDialog.js",
+      "beforeSha256": "7d87012bc7854e9744c014615dfdcde2be6d1c63d65980a8f1192bb13c0e3daa",
+      "afterSha256": "88457270f690989a4543bf48a17aee2248ccfa8ead6c3fdf2b72ca3b722c2a47"
+    },
+    {
+      "path": "scripts/components/dialog/ThemeSettingDialog.js",
+      "beforeSha256": "0933934fce170759c08670925136107bcd73e0e96e62f17bec5326c1532c5a06",
+      "afterSha256": "0bb5dcb412d3b2355e2ad720a2bbff2f0c09deb072f21a9aa0edd77bd50eae5f"
+    },
+    {
+      "path": "scripts/features/AutoPopulateContainer.js",
+      "beforeSha256": "d91a17d0c5d528aee77ca62575a148ba1c40b2e2f61a54dbbde5b9ee72c34002",
+      "afterSha256": "ac1bc65189d3263e96cba094d32632f45b8a1548387b6408ee985bfdc5a5f6a1"
+    },
+    {
+      "path": "scripts/features/AutoPopulateCreateToken.js",
+      "beforeSha256": "cf23d652ba7caa883f9584bb6a7404923ad6e7134f60bf7bb9460ce6be091315",
+      "afterSha256": "8461315f8c65f1aae7e547355710e21386e217ff8c4f65f0c75d48985a652f2d"
+    },
+    {
+      "path": "scripts/features/AutoSort.js",
+      "beforeSha256": "1635272f84eb36c585c6159cca756a524b8b5ec066f830ded3dc3bf2bf51d343",
+      "afterSha256": "5f09b65e341607fa10f386c49ee033b927cfafaea01a373b22739b095b48f363"
+    },
+    {
+      "path": "scripts/managers/ControlsManager.js",
+      "beforeSha256": "f3aba9746d823373787320206de054913d217f01688dc24e6826317798d4995f",
+      "afterSha256": "f8dc428f1901153948def40f3317564992e74b087497ead12269a066e7029059"
+    },
+    {
+      "path": "scripts/managers/DragDropManager.js",
+      "beforeSha256": "f9363ed3e79958c827555d9f3aa9a5c6b6f395bd563a8cbf31ccd30ff1a56102",
+      "afterSha256": "7e741b760bae7921636a6c62397e48494d3351599efbabae175cae91a82a3901"
+    },
+    {
+      "path": "scripts/managers/HotbarManager.js",
+      "beforeSha256": "4ff741133319e6ea18addc92b259fecaac96965f46be2a136917a0129207aed5",
+      "afterSha256": "7bc2a64500bc6d44f7b759618efffd8a09c1dbe247baf54d76b7ab4aa55ddcac"
+    },
+    {
+      "path": "scripts/managers/ItemUpdateManager.js",
+      "beforeSha256": "25bdd6920b377ca19dd624c656e86d2e2a5e7015368fa487953b17f1bf7518c7",
+      "afterSha256": "9e99114ec0abaaa28fb7fea469a09d6b7ab66679b189d16bfa1df9b15bda9152"
+    },
+    {
+      "path": "scripts/managers/TargetSelector.js",
+      "beforeSha256": "99ff363fd7e0d991a81e16b27c0bd8173bc1019399f39c2d799b46ebd0caf03c",
+      "afterSha256": "a2d070f3bd7bdf7d7f2b97151387d4409b85a87f97c30cc646bb295942540ad2"
+    },
+    {
+      "path": "scripts/managers/TooltipManager.js",
+      "beforeSha256": "351e4f36c2b74030f17455a3effb5733a0b1cb29504e8020e50b57905c96ed2f",
+      "afterSha256": "e61c923738d2c4ae02f44ecd8f2208aaee65458722bdbed26bda6d8cb5a8c59c"
+    },
+    {
+      "path": "scripts/module-3.4.9.js",
+      "beforeSha256": null,
+      "afterSha256": "8160984c6e296fa8a3b6a5023b3198ff919cbc45884721634597c31ed02be4e4"
+    },
+    {
+      "path": "scripts/module.js",
+      "beforeSha256": "09cf58f33a433ba2df89565a58b2c5a5c0e2c568e966c4a9abb45fd64e99169e",
+      "afterSha256": "928a7c78bc2e72e23bcefe115a621b5b46fee5088e4c899ca6ee61e3bf41d2fa"
+    },
+    {
+      "path": "scripts/utils/config.js",
+      "beforeSha256": "3339365cc721edd547291784ccafb7ba14f1e838f5f98ffca5bcaf78215051ca",
+      "afterSha256": "8b95be5421be6ff95b4317237493129b2f1c4dc76e96d2c211f958b404a562f6"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # BG3 HUD: функции и границы совместимости
 
+В установленном BG3 **3.4.9** `BG3Hotbar._onUpdateActor(actor, changes, options, userId)` один раз пересобирает портрет текущего актёра на обновление, включая flags хода и `system`; фильтр слотов, пассивы, очистка предметов и загрузка HUD флагов удалённого владельца идут прежними путями. Обратимый патч и actual-source тест: `tools/local-module-patches/2026-11-14-bg3-turn-render/`.
+
 Текущее состояние: локальный `bg3-inspired-hotbar` 3.4.7, Foundry 13.351, dnd5e 5.2.5. Runtime принадлежит sibling-модулю BG3; records — `tools/local-module-patches/2026-10-25-bg3-hud-recovery/` и `tools/local-module-patches/2026-10-25-console-followup-fixes/`. Midi-QOL и DAE source не изменяются.
 
 ## Lifecycle и контекст
