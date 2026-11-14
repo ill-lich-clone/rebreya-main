@@ -1,6 +1,6 @@
 import { escapeFoundryHtml as escape } from "../shared/foundry-values.js";
 import { HARVEST_DCS, harvestChecks } from "../data/creature-harvesting.js?v=1.5.75";
-import { harvestCheckLabel } from "../integrations/creature-harvesting-chat.js?v=1.5.76";
+import { harvestCheckLabel, promptHarvestRoll } from "../integrations/creature-harvesting-chat.js?v=1.5.77";
 
 const button = (action, label, callback = () => ({ action })) => ({ action, label, callback });
 const values = control => new FormData(control.form);
@@ -13,7 +13,10 @@ const rules = `<details><summary>Правила разделки</summary>
   <p>Провал на 5 и более — урон от действия существа. Провал на 1–4 — один случайный материал. Успех — обычные трофеи. Успех на 5 и более — ещё и уникальный трофей.</p>
   <p><a href="https://docs.google.com/document/d/1a2k-CnJxJWiX7aC3nPbLt3TIaQD5_0cGsl0I1Iihy3E/edit" target="_blank" rel="noopener">БЕТА-заметки</a></p></details>`;
 
-export async function openCreatureHarvestingDialog(request, { DialogV2 = globalThis.foundry.applications.api.DialogV2 } = {}) {
+const openRolls = new Set();
+
+export async function openCreatureHarvestingDialog(request, { DialogV2 = globalThis.foundry.applications.api.DialogV2,
+  resolveActor = uuid => globalThis.fromUuid(uuid) } = {}) {
   const wait = (content, buttons) => DialogV2.wait({ window: { title: "Разделка" }, content, buttons,
     rejectClose: false, close: () => null });
   const showResult = async ({ outcome, total, dc, loot }) => {
@@ -23,9 +26,19 @@ export async function openCreatureHarvestingDialog(request, { DialogV2 = globalT
     const items = loot.length ? `<ul>${loot.map(item => `<li>${escape(item.name)}</li>`).join("")}</ul>` : "";
     await wait(`${roll}<p>${message}</p>${items}`, [button("close", "Закрыть")]);
   };
-  const showResponse = response => response.pending
-    ? globalThis.ui?.notifications?.info?.("Запрос проверки отправлен в чат.")
-    : showResult(response);
+  const showResponse = async response => {
+    const attempt = response.roll;
+    if (!attempt) return showResult(response);
+    if (openRolls.has(attempt.receipt)) return;
+    openRolls.add(attempt.receipt);
+    try {
+      const actor = await resolveActor(attempt.actorUuid);
+      if (!actor?.isOwner) throw new Error("Персонаж для проверки недоступен.");
+      await promptHarvestRoll(actor, attempt);
+    } finally {
+      openRolls.delete(attempt.receipt);
+    }
+  };
   let selection = {};
   for (;;) {
     const info = await request({ action: "read", ...selection });
@@ -38,13 +51,13 @@ export async function openCreatureHarvestingDialog(request, { DialogV2 = globalT
     if (!info.reason && info.attempt === "resolved") {
       buttons.push(button("begin", "Завершить выдачу", () => ({ action: "begin", monsterId: info.attemptMonsterId })));
     } else if (!info.reason && info.attempt === "requested") {
-      content += "<p>Проверка ожидает броска в чате.</p>";
-      if (info.canRequest) buttons.push(button("begin", "Проверить запрос в чате", () => ({ action: "begin", monsterId: info.attemptMonsterId })));
+      content += `<p>${escape(harvestCheckLabel(info.check))} · Сл ${info.dc}</p>`;
+      if (info.canRequest) buttons.push(button("begin", "Бросить", () => ({ action: "begin", monsterId: info.attemptMonsterId })));
     } else if (!info.reason && monster) {
       const options = harvestChecks().map(check => `<option value="${escape(check)}"${check === info.check ? " selected" : ""}>${escape(harvestCheckLabel(check))}</option>`).join("");
       content += `<label>Проверка<select name="check">${options}</select></label>
         <label>Есть кровь?<select name="blood"><option value="yes"${info.hasBlood ? " selected" : ""}>Да</option><option value="no"${info.hasBlood ? "" : " selected"}>Нет</option></select></label>`;
-      buttons.push(button("begin", "Запросить проверку", (_event, control) => {
+      buttons.push(button("begin", "Бросить", (_event, control) => {
         const form = values(control);
         return { action: "begin", monsterId: monster.id, check: str(form, "check"), blood: str(form, "blood") === "yes",
           ...(selection.name ? { name: selection.name } : {}) };

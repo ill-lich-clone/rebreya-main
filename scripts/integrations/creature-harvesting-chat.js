@@ -1,7 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
 
-export const HARVEST_ABILITY_REQUEST = "rebreyaHarvestAbility";
 const template = `modules/${MODULE_ID}/templates/creature-harvesting-chat.hbs`;
 
 export function harvestCheckLabel(check) {
@@ -14,36 +13,23 @@ export function harvestCheckLabel(check) {
   return skillLabel ? `${abilityLabel} (${localize(skillLabel)})` : abilityLabel;
 }
 
-export function harvestRequestData(attempt, gmId) {
+export async function promptHarvestRoll(actor, attempt) {
   const [ability, skill] = attempt.check.split(":");
-  return {
-    _id: attempt.receipt,
-    type: "request",
-    flavor: "Запрос проверки разделки",
-    content: `<p><strong>${escapeFoundryHtml(attempt.corpseName)}</strong> · ${escapeFoundryHtml(harvestCheckLabel(attempt.check))} · Сл ${attempt.dc}</p>`,
-    whisper: [...new Set([attempt.requesterId, gmId].filter(Boolean))],
-    system: {
-      handler: skill ? "skill" : HARVEST_ABILITY_REQUEST,
-      data: { ability, ...(skill ? { skill } : {}), target: attempt.dc },
-      button: { label: "Проверка разделки", icon: "fa-solid fa-dice-d20" },
-      targets: [{ actor: attempt.actorUuid, user: attempt.requesterId }]
-    },
-    flags: { [MODULE_ID]: { harvestRequest: { tokenUuid: attempt.tokenUuid, receipt: attempt.receipt } } }
-  };
-}
-
-export async function rollHarvestAbilityRequest(actor, request, config, { event } = {}) {
-  const data = { flags: { dnd5e: { requestResult: { actorUuid: actor.uuid, requestId: request.id } } } };
-  const [roll] = await actor.rollAbilityCheck({ ...config, event }, {}, { data }) ?? [];
-  return roll?.parent ?? null;
+  const config = { ability, target: attempt.dc };
+  const message = { rollMode: "gmroll", data: {
+    flavor: `Разделка · ${escapeFoundryHtml(attempt.corpseName)} · Сл ${attempt.dc}`,
+    flags: { [MODULE_ID]: { harvestRoll: { tokenUuid: attempt.tokenUuid, receipt: attempt.receipt, actorUuid: actor.uuid } } }
+  } };
+  const dialog = { configure: true };
+  return skill ? actor.rollSkill({ ...config, skill }, dialog, message) : actor.rollAbilityCheck(config, dialog, message);
 }
 
 export function harvestReplyTotal(message, attempt) {
-  const reply = message?.flags?.dnd5e?.requestResult;
+  const reply = message?.flags?.[MODULE_ID]?.harvestRoll ?? message?.flags?.dnd5e?.requestResult;
   const author = message?.author;
   const [ability, skill] = attempt.check.split(":");
   if (!author || (author.id !== attempt.requesterId && !author.isGM)
-      || reply?.requestId !== attempt.receipt || reply.actorUuid !== attempt.actorUuid
+      || (reply?.receipt ?? reply?.requestId) !== attempt.receipt || reply.actorUuid !== attempt.actorUuid
       || message.type !== "check" || (skill ? message.system?.skill !== skill || message.system?.tool
         : message.system?.ability !== ability || message.system?.skill || message.system?.tool)) return null;
   const roll = message.rolls?.[0];

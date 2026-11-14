@@ -11,7 +11,7 @@ import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.5.4
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
-import { harvestReplyTotal } from "../integrations/creature-harvesting-chat.js?v=1.5.76";
+import { harvestReplyTotal } from "../integrations/creature-harvesting-chat.js?v=1.5.77";
 import { DEFAULT_HARVEST_CHECK, harvestAvailability, harvestChecks, harvestDc, harvestHasBlood, harvestItem, harvestRewards, matchHarvestMonster } from "./creature-harvesting.js?v=1.5.75";
 import {
   isCorpseStorageTarget,
@@ -516,7 +516,6 @@ export class StorageCommandService {
     harvestRecords = null,
     assertHarvestAuthority = () => {},
     notifyHarvest = async () => {},
-    publishHarvestRequest = async () => { throw new Error("Запрос проверки недоступен."); },
     logger = console
   } = {}) {
     if (!storageService || !inventoryService) {
@@ -535,7 +534,7 @@ export class StorageCommandService {
       throw new TypeError("StorageCommandService lootgenTemplateItems requires buildSnapshot().");
     }
     this.storageService = storageService;
-    Object.assign(this, { getHarvestCatalog, getHarvestMaterials, getHarvestIcons, publishHarvestRequest, notifyHarvest, harvestRecords, assertHarvestAuthority });
+    Object.assign(this, { getHarvestCatalog, getHarvestMaterials, getHarvestIcons, notifyHarvest, harvestRecords, assertHarvestAuthority });
     this.inventoryService = inventoryService;
     this.resolveToken = resolveToken;
     this.measureDistance = measureDistance;
@@ -1236,11 +1235,13 @@ export class StorageCommandService {
       if (attempt?.status === "rolling") throw new Error(HARVEST_REASONS.rolling);
       if (attempt?.status === "requested") {
         if (attempt.requesterId !== sender.id && sender.isGM !== true) throw new Error("Запрос адресован другому игроку.");
-        const request = globalThis.game?.messages?.get(attempt.receipt);
-        const reply = request?.system?.targets?.[0]?.result;
+        const messages = globalThis.game?.messages;
+        const oldRequest = messages?.get(attempt.receipt);
+        const reply = messages?.find(message => message.flags?.[MODULE_ID]?.harvestRoll?.receipt === attempt.receipt
+          && harvestReplyTotal(message, attempt) !== null) ?? oldRequest?.system?.targets?.[0]?.result;
         const total = reply ? harvestReplyTotal(reply, attempt) : null;
         if (total !== null) return this.#resolveHarvest(storageToken, current, total, reply.id);
-        return this.#publishHarvestRequest(attempt);
+        return this.#harvestRollOptions(attempt);
       }
       const catalog = await this.getHarvestCatalog();
       const actual = matchHarvestMonster(catalog, [storage.baseName || storageToken.name, storageToken.actor.name]);
@@ -1265,19 +1266,19 @@ export class StorageCommandService {
         tokenUuid: storageToken.uuid, corpseName: storage.baseName || monster.name,
         type: effectiveType, blood: payload.blood ?? null } };
       await this.harvestRecords.patch(storageToken.uuid, next);
-      return this.#publishHarvestRequest(next.attempt);
+      return this.#harvestRollOptions(next.attempt);
     });
   }
 
-  async #publishHarvestRequest(attempt) {
-    this.assertHarvestAuthority();
-    await this.publishHarvestRequest(attempt);
-    return { pending: true };
+  #harvestRollOptions({ actorUuid, tokenUuid, receipt, check, dc, corpseName }) {
+    return { roll: { actorUuid, tokenUuid, receipt, check, dc, corpseName } };
   }
 
   async acceptHarvestReply(message, request) {
-    const ref = request?.flags?.[MODULE_ID]?.harvestRequest;
-    if (!ref || !request.author?.isGM || request.id !== ref.receipt) return;
+    const native = message?.flags?.[MODULE_ID]?.harvestRoll;
+    const legacy = request?.flags?.[MODULE_ID]?.harvestRequest;
+    const ref = native ?? (request?.author?.isGM && request.id === legacy?.receipt ? legacy : null);
+    if (!ref?.tokenUuid || !ref.receipt) return;
     return this.#enqueue([storageQueueKey(ref.tokenUuid)], async () => {
       this.assertHarvestAuthority();
       const current = await this.harvestRecords.read(ref.tokenUuid);

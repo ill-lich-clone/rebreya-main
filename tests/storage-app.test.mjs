@@ -104,6 +104,26 @@ test("cancelled harvesting configuration sends no mutation under native dialog f
   assert.deepEqual(actions, ["read", "read"]);
 });
 
+test("retrying the harvest after cancelling opens the same native roll directly", async () => {
+  const { openCreatureHarvestingDialog } = await import("../scripts/ui/creature-harvesting-dialog.js");
+  const roll = { actorUuid: "Actor.hero", tokenUuid: "corpse", receipt: "same", check: "wis:sur", dc: 21, corpseName: "Гарпия" };
+  const calls = [];
+  const request = async ({ action }) => action === "read"
+    ? { choices: [], attempt: "requested", attemptMonsterId: "harpy", check: roll.check, dc: roll.dc, canRequest: true }
+    : { roll };
+  const options = { DialogV2: { async wait({ buttons }) {
+    const button = buttons.find(button => button.action === "begin");
+    assert.equal(button.label, "Бросить");
+    return button.callback();
+  } }, resolveActor: async uuid => ({ uuid, isOwner: true, async rollSkill(config, dialog) {
+    calls.push([uuid, config, dialog]);
+    return null;
+  } }) };
+  await openCreatureHarvestingDialog(request, options);
+  await openCreatureHarvestingDialog(request, options);
+  assert.deepEqual(calls, Array(2).fill(["Actor.hero", { ability: "wis", target: 21, skill: "sur" }, { configure: true }]));
+});
+
 test("narrative storage inspection renders saved instance read-only without following its source", async () => {
   const { openStorageRowItem } = await import("../scripts/ui/storage-app.js");
   const rendered = [];

@@ -3,7 +3,7 @@ import test from "node:test";
 import { StorageService, readStorageState } from "../scripts/data/storage-service.js";
 import { StorageCommandService, isValidStorageHarvestPayload } from "../scripts/data/storage-command-service.js";
 import { CreatureHarvestRepository } from "../scripts/infrastructure/foundry/creature-harvest-repository.js";
-import { harvestRequestData, renderHarvestChat, rollHarvestAbilityRequest } from "../scripts/integrations/creature-harvesting-chat.js";
+import { promptHarvestRoll, renderHarvestChat } from "../scripts/integrations/creature-harvesting-chat.js";
 
 function fixture(type = "beast", { rollTotal = 27 } = {}) {
   const parent = { id: "scene" };
@@ -17,7 +17,6 @@ function fixture(type = "beast", { rollTotal = 27 } = {}) {
   const storage = new StorageService();
   let rolls = 0;
   const notices = [];
-  const requests = new Map();
   const state = {};
   const records = new CreatureHarvestRepository({ worldSettings: { readObject: () => structuredClone(state),
     async mutateObject(_key, mutate) { return mutate(state); } } });
@@ -27,11 +26,6 @@ function fixture(type = "beast", { rollTotal = 27 } = {}) {
       { id: "dragon", name: "Дракон", rank: 10, common: ["Чешуя"] }],
     getHarvestMaterials: () => [],
     harvestRecords: records,
-    publishHarvestRequest: async attempt => {
-      if (requests.has(attempt.receipt)) return;
-      const data = harvestRequestData(attempt, "gm");
-      requests.set(attempt.receipt, { ...data, id: data._id, author: { id: "gm", isGM: true } });
-    },
     notifyHarvest: async notice => { notices.push(notice); }
   });
   const command = (action, extra = {}, sender = { id: "owner" }) => commands.harvest({
@@ -42,10 +36,10 @@ function fixture(type = "beast", { rollTotal = 27 } = {}) {
     const [ability, skill] = attempt.check.split(":");
     rolls++;
     return commands.acceptHarvestReply({ type: "check", system: { ability, skill },
-      flags: { dnd5e: { requestResult: { requestId: attempt.receipt, actorUuid: attempt.actorUuid } } },
-      author: { id: "owner" }, rolls: [{ total: rollTotal, validD20Roll: true }], ...overrides }, requests.get(attempt.receipt));
+      flags: { "rebreya-main": { harvestRoll: { tokenUuid: "body", receipt: attempt.receipt, actorUuid: attempt.actorUuid } } },
+      author: { id: "owner" }, rolls: [{ total: rollTotal, validD20Roll: true }], ...overrides });
   };
-  return { body, command, rolls: () => rolls, notices, records, requests, reply };
+  return { body, command, rolls: () => rolls, notices, records, reply };
 }
 
 test("typed command refuses spoofed rules and enforces actual actor access and type", async () => {
@@ -59,12 +53,11 @@ test("typed command refuses spoofed rules and enforces actual actor access and t
 });
 
 test("unknown names allow an analogue and simultaneous attempts grant once beside existing gear", async () => {
-  const { body, command, requests, reply } = fixture();
+  const { body, command, reply } = fixture();
   body.name = "Неизвестный";
   assert.equal((await command("read")).reason, "monster");
   assert.equal((await command("read", { name: "Клещ" })).dc, 21);
   const results = await Promise.all([command("begin", { monsterId: "tick", name: "Клещ" }), command("begin", { monsterId: "tick", name: "Клещ" })]);
-  assert.equal(requests.size, 1);
   assert.deepEqual(results[0], results[1]);
   const resolved = await Promise.all([reply(), reply()]);
   assert.equal(resolved.filter(Boolean).length, 1);
@@ -168,14 +161,11 @@ test("a persisted token receipt prevents duplicate rows after a failed completio
   assert.equal(notices.length, 1);
 });
 
-test("native request uses the selected check and accepts only a matching reply from its player", async () => {
-  const { command, requests, reply, notices } = fixture();
-  await command("begin", { monsterId: "tick", check: "int:arc", blood: false });
-  const [request] = requests.values();
-  assert.equal(request.type, "request");
-  assert.equal(request.system.handler, "skill");
-  assert.deepEqual(request.system.data, { skill: "arc", ability: "int", target: 21 });
-  assert.deepEqual(request.whisper, ["owner", "gm"]);
+test("accepts only a matching native check from its player", async () => {
+  const { command, reply, notices } = fixture();
+  const { roll } = await command("begin", { monsterId: "tick", check: "int:arc", blood: false });
+  assert.equal(roll.check, "int:arc");
+  assert.equal(roll.dc, 21);
   assert.equal(await reply({ author: { id: "stranger" } }), undefined);
   assert.equal(await reply({ system: { ability: "wis", skill: "sur" } }), undefined);
   assert.equal(await reply({ rolls: [{ total: 99 }] }), undefined);
@@ -189,21 +179,24 @@ test("native request uses the selected check and accepts only a matching reply f
   });
 });
 
-test("an ability request uses the normal roll dialog and links the result", async () => {
-  const result = { id: "result" };
-  const actor = { uuid: "Actor.hero", async rollAbilityCheck(config, dialog, message) {
-    assert.equal(config.ability, "str");
-    assert.deepEqual(dialog, {});
-    assert.deepEqual(message.data.flags.dnd5e.requestResult, { actorUuid: "Actor.hero", requestId: "request" });
-    return [{ parent: result }];
-  } };
-  assert.equal(await rollHarvestAbilityRequest(actor, { id: "request" }, { ability: "str" }), result);
+test("ability and skill checks both open the native roll dialog and tag their eventual message", async () => {
+  const calls = [];
+  const actor = { uuid: "Actor.hero", rollAbilityCheck: (...args) => calls.push(args), rollSkill: (...args) => calls.push(args) };
+  const attempt = { dc: 21, tokenUuid: "body", receipt: "receipt", corpseName: "Клещ" };
+  await promptHarvestRoll(actor, { ...attempt, check: "str" });
+  await promptHarvestRoll(actor, { ...attempt, check: "int:arc" });
+  assert.deepEqual(calls.map(([config]) => config), [{ ability: "str", target: 21 }, { ability: "int", skill: "arc", target: 21 }]);
+  for (const [, dialog, message] of calls) {
+    assert.deepEqual(dialog, { configure: true });
+    assert.deepEqual(message.data.flags["rebreya-main"].harvestRoll, { actorUuid: "Actor.hero", tokenUuid: "body", receipt: "receipt" });
+  }
 });
 
-test("begin publishes a request without a roll or loot", async () => {
+test("begin returns the native roll parameters without publishing a chat request", async () => {
   const { body, command, records } = fixture();
   const pending = await command("begin", { monsterId: "tick", check: "int:arc", blood: false });
-  assert.equal(pending.pending, true);
+  assert.equal(pending.roll.check, "int:arc");
+  assert.equal(pending.roll.dc, 21);
   assert.equal(records.read("body").attempt.status, "requested");
   assert.deepEqual(readStorageState(body).generatedRows.map(row => row.name), ["Сумка"]);
 });
