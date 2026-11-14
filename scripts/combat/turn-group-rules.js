@@ -35,7 +35,36 @@ export function buildCombatTurnGroups(members, previousGroups = []) {
   }).sort((a, b) => (b.initiative ?? -Infinity) - (a.initiative ?? -Infinity) || a.id.localeCompare(b.id));
 }
 
+export function isGroupTransitionWithinBudget(state, target, groups, skippedGroupIds = new Set()) {
+  const from = state.current;
+  if (!from || target.round < from.round) return true;
+  const fromIndex = groups.findIndex(g => g.id === from.groupId);
+  const toIndex = groups.findIndex(g => g.id === target.groupId);
+  if (fromIndex < 0 || toIndex < 0) return true;
+  const rounds = target.round - from.round;
+  if (rounds > 1001) return false;
+  const steps = rounds * groups.length + toIndex - fromIndex;
+  if (steps <= 0) return true;
+  if (steps > 1000) return false;
+  const participants = groups.reduce((sum, group) => sum + group.memberIds.length, 0);
+  const cycles = Math.floor(steps / groups.length), remainder = steps % groups.length;
+  let eachTurns = 0, groupReferences = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const size = groups[i].memberIds.length;
+    const sourceOffset = (i - fromIndex + groups.length) % groups.length;
+    groupReferences += size * (cycles + Number(sourceOffset < remainder));
+    if (skippedGroupIds.has(groups[i].id)) continue;
+    const distance = (i - fromIndex + groups.length - 1) % groups.length + 1;
+    const visits = cycles + Number(distance <= remainder);
+    eachTurns += visits; groupReferences += size * visits;
+  }
+  if (skippedGroupIds.has(target.groupId)) { eachTurns++; groupReferences += groups[toIndex].memberIds.length; }
+  return participants * eachTurns <= Math.max(400, participants)
+    && groupReferences + participants * (eachTurns + 2 * rounds) <= 1_000_000;
+}
+
 export function planGroupTransition(state, target, groups, skippedGroupIds = new Set()) {
+  if (!isGroupTransitionWithinBudget(state, target, groups, skippedGroupIds)) throw new RangeError("combat-transition-too-large");
   const all = groups.flatMap(g => g.memberIds), phases = [];
   const phase = (kind, round, group, memberIds = group?.memberIds ?? all) => phases.push({ kind, round, groupId: group?.id ?? null, memberIds: [...memberIds] });
   const targetIndex = groups.findIndex(g => g.id === target.groupId);
@@ -55,9 +84,9 @@ export function planGroupTransition(state, target, groups, skippedGroupIds = new
     phase("turn-start", target.round, groups[targetIndex]);
     return phases;
   }
-  const end = target.round * groups.length + targetIndex;
-  for (let position = from.round * groups.length + fromIndex; position < end; position++) {
-    const round = Math.floor(position / groups.length), index = position % groups.length;
+  const distance = (target.round - from.round) * groups.length + targetIndex - fromIndex;
+  for (let offset = 0; offset < distance; offset++) {
+    const relative = fromIndex + offset, round = from.round + Math.floor(relative / groups.length), index = relative % groups.length;
     const nextIndex = (index + 1) % groups.length, nextRound = round + (nextIndex === 0 ? 1 : 0);
     phase("turn-end", round, groups[index]);
     if (nextRound !== round) { phase("round-end", round); phase("round-start", nextRound); }

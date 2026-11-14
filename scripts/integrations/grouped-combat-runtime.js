@@ -1,7 +1,7 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
 import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
 import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.66";
-import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
+import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.78";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
@@ -13,6 +13,8 @@ const messages = {
   "stale-combat": "Положение боя уже изменилось. Повторите действие.", "unsupported-combat-effects": "Общий ход недоступен: проверьте совместимость активных модулей эффектов.",
   "combat-phase-failed": "Обработка эффекта прервана. Запустите «Начать сражение» для проверки незавершённого шага.",
   "combat-blocked": "В бою есть незавершённый шаг эффекта. Требуется проверка GM.", "invalid-combat-target": "Недопустимый переход между группами.",
+  "combat-transition-too-large": "Слишком большой переход. Перейдите к нужному раунду несколькими меньшими шагами.",
+  "combat-pending-too-large": "Незавершённый переход слишком велик для безопасного восстановления. Обратитесь к разработчику; состояние и журнал боя сохранены.",
   "initiative-cancelled": "Бросок инициативы не завершён.", "combat-pending": "Общие ходы включатся со следующего раунда."
 };
 function notifyResult(result) {
@@ -59,7 +61,7 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   if (!CombatClass?.prototype) return () => {};
   const prototype = CombatClass.prototype;
   if (prototype[REGISTERED]) return prototype[REGISTERED];
-  const restores = [], hookIds = [], focusStamps = new Map(), publicStamps = new Map(), observers = new Map(), transitions = new Map();
+  const restores = [], hookIds = [], focusStamps = new Map(), publicStamps = new Map(), observers = new Map(), transitions = new Map(), roundTransitions = new Map();
   const progressUpdates = new WeakSet();
   const patch = (target, name, factory) => {
     if (!target || typeof target[name] !== "function") return;
@@ -85,7 +87,8 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
     const live = groups.filter(g => g.memberIds.some(id => liveIds.has(id)));
     return live.length ? live : groups;
   };
-  const requestTransition = (combat, target) => {
+  const requestTransition = (combat, target, roundStep = false) => {
+    if (!roundStep && roundTransitions.has(combat.id)) return roundTransitions.get(combat.id);
     if (transitions.has(combat.id)) return transitions.get(combat.id);
     const pending = send(moduleApi, "transition", { combatId: combat.id, expectedRevision: stateOf(combat).revision,
       targetRound: target.round, targetGroupId: target.groupId, operationId: operationId() }).finally(() => { if (transitions.get(combat.id) === pending) transitions.delete(combat.id); });
@@ -105,7 +108,33 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   for (const [method, direction] of [["nextRound", 1], ["previousRound", -1]]) patch(prototype, method, original => async function (...args) {
     const state = stateOf(this), round = this.round + direction;
     if (!state || (state.mode === "pending" && round < state.activateAtRound)) return original.apply(this, args);
-    const groups = usableGroups(this); return round >= 1 && groups.length ? navigate(this, { round, groupId: groups[0].id }) : this;
+    const groups = usableGroups(this);
+    if (round < 1 || !groups.length) return this;
+    if (direction < 0 || state.mode === "pending" || !globalThis.game?.user?.isGM) return navigate(this, { round, groupId: groups[0].id });
+    if (roundTransitions.has(this.id)) { await roundTransitions.get(this.id); return this; }
+    if (transitions.has(this.id)) { await transitions.get(this.id); return this; }
+    const combat = this;
+    const progress = (async () => {
+      let expected = { ...state.current, revision: state.revision };
+      while (stateOf(combat)?.current?.round < round) {
+        const now = stateOf(combat), current = now.current, live = usableGroups(combat);
+        if (now.revision !== expected.revision || current.round !== expected.round || current.groupId !== expected.groupId) return { ok: false, code: "stale-combat" };
+        if (!live.length) return { ok: false, code: "invalid-combat-target" };
+        const index = now.groups.findIndex(g => g.id === current.groupId), liveIds = new Set(live.map(g => g.id));
+        const next = now.groups.findIndex((group, i) => i > index && liveIds.has(group.id));
+        const target = next < 0 ? { round: current.round + 1, groupId: live[0].id } : { round: current.round, groupId: now.groups[next].id };
+        const result = await requestTransition(combat, target, true);
+        if (!result.ok) return result;
+        const reached = stateOf(combat)?.current;
+        if (reached?.round !== target.round || reached?.groupId !== target.groupId) return { ok: false, code: "stale-combat" };
+        expected = { ...reached, revision: stateOf(combat).revision };
+        if (target.round < round) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      return { ok: true };
+    })();
+    roundTransitions.set(combat.id, progress);
+    try { notifyResult(await progress); } finally { roundTransitions.delete(combat.id); }
+    return this;
   });
   patch(prototype, "update", original => async function (data, options = {}) {
     const state = stateOf(this);

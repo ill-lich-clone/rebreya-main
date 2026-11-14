@@ -61,3 +61,18 @@ test("receipt patches preserve native flags/CAS and their size does not grow wit
   await repository.writeState(combat, state, { expectedRevision: state.revision });
   assert.equal(repository.readState(combat).pendingTransition, undefined);
 });
+
+test("blocking oversized recovery patches only its status and uncertain receipts", async () => {
+  const updates = [], combat = { id: "fight", flags: {}, async update(data, options) { updates.push({ data, options }); mergeObject(this, expandObject(data), mergeOptions); } };
+  const repository = new GroupedCombatRepository();
+  const state = { version: 1, mode: "active", revision: 0, groups: [], receipts: { a: { status: "running", provider: "dae" }, old: { status: "done" } }, pendingTransition: { phases: Array.from({ length: 2000 }, (_, i) => ({ memberIds: [String(i)] })) } };
+  await repository.writeState(combat, state);
+  state.mode = "blocked"; state.receipts.a.status = "uncertain";
+  await repository.writeBlocked(combat, state, ["a"], { expectedRevision: state.revision });
+  const patch = updates.at(-1);
+  assert.ok(Buffer.byteLength(JSON.stringify(patch.data)) < 1000);
+  const live = repository.readState(combat);
+  assert.equal(live.mode, "blocked"); assert.equal(live.receipts.a.status, "uncertain");
+  assert.equal(live.receipts.old.status, "done"); assert.equal(live.pendingTransition.phases.length, 2000);
+  await assert.rejects(repository.writeBlocked(combat, state, [], { expectedRevision: 0 }), /stale-combat/);
+});

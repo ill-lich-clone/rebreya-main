@@ -1,10 +1,21 @@
 import { MODULE_ID } from "../constants.js";
-import { buildCombatTurnGroups, planGroupTransition, buildPhaseStepKey, combatantsOf, combatantById } from "../combat/turn-group-rules.js?v=1.5.66";
+import { buildCombatTurnGroups, planGroupTransition, isGroupTransitionWithinBudget, buildPhaseStepKey, combatantsOf, combatantById } from "../combat/turn-group-rules.js?v=1.5.78";
 import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.66";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js";
 
 const rejection = (code, details = {}) => ({ ok: false, code, details });
+function pendingWithinBudget(state) {
+  const participants = state.groups.reduce((sum, group) => sum + group.memberIds.length, 0);
+  let references = 0, turnReferences = 0, largestTurn = 0, turns = 0;
+  for (const phase of state.pendingTransition?.phases ?? []) {
+    references += phase.memberIds.length;
+    if (phase.kind === "each-turn") { turnReferences += phase.memberIds.length; largestTurn = Math.max(largestTurn, phase.memberIds.length); }
+    if (phase.kind === "turn-end") turns++;
+    if (references > 1_000_000 || turns > 1000) return false;
+  }
+  return turnReferences <= Math.max(400, participants, largestTurn);
+}
 export class GroupedCombatService {
   constructor({ repository, effects, coordinator, resolveToken = uuid => globalThis.fromUuid(uuid), gameProvider = () => globalThis.game,
     isAuthority = () => isActiveGmClient(gameProvider()), isStorageActor = actor => actor?.getFlag?.(MODULE_ID, "storage")?.enabled === true } = {}) {
@@ -16,10 +27,11 @@ export class GroupedCombatService {
     return this.releaseReady;
   }
   isManaged(combat) { return Boolean(this.repository.readState(combat)); }
-  async save(combat, state, { receiptKey = null } = {}) {
+  async save(combat, state, { receiptKey = null, blockedKeys = null } = {}) {
     if (!this.isAuthority()) throw new Error("active-gm-changed");
     if (!this.repository.getCombat(combat.id)) throw new Error("combat-unavailable");
     const options = { expectedRevision: state.revision ?? 0 };
+    if (blockedKeys) return this.repository.writeBlocked(combat, state, blockedKeys, options);
     return receiptKey === null ? this.repository.writeState(combat, state, options) : this.repository.writeReceipt(combat, state, receiptKey, options);
   }
   members(combat) {
@@ -137,6 +149,8 @@ export class GroupedCombatService {
       }
       let phases;
       if (state.mode === "pending" && target.round < state.activateAtRound) return rejection("combat-pending");
+      const skipped = new Set(combat.settings?.skipDefeated ? state.groups.filter(g => g.memberIds.every(id => byId.get(id).isDefeated)).map(g => g.id) : []);
+      if (state.mode !== "pending" && !isGroupTransitionWithinBudget(state, target, state.groups, skipped)) return rejection("combat-transition-too-large");
       if (state.mode === "pending") {
         state.mode = "active";
         const all = state.groups.flatMap(g => g.memberIds), incoming = state.groups.find(g => g.id === target.groupId);
@@ -145,7 +159,6 @@ export class GroupedCombatService {
           { kind: "round-start", round: target.round, groupId: null, memberIds: all },
           { kind: "each-turn", ...target, memberIds: all }, { kind: "turn-start", ...target, memberIds: incoming.memberIds }];
       } else {
-        const skipped = new Set(combat.settings?.skipDefeated ? state.groups.filter(g => g.memberIds.every(id => byId.get(id).isDefeated)).map(g => g.id) : []);
         phases = planGroupTransition(state, target, state.groups, skipped);
       }
       return this.runPipeline(combat, state, phases, target, request.operationId);
@@ -240,9 +253,12 @@ export class GroupedCombatService {
   }
   observeNativeTransition(combat) { return this.tickets.get(combat.id) ?? Promise.resolve(); }
   async recoverPending(combat, state) {
-    let changed = false;
-    for (const receipt of Object.values(state.receipts)) if (receipt.status === "running") { receipt.status = "uncertain"; changed = true; }
-    if (changed) { state.mode = "blocked"; await this.save(combat, state); }
+    const tooLarge = !pendingWithinBudget(state);
+    let changed = false; const uncertainKeys = [];
+    for (const [key, receipt] of Object.entries(state.receipts)) if (receipt.status === "running") { receipt.status = "uncertain"; uncertainKeys.push(key); changed = true; }
+    if (tooLarge && state.mode !== "blocked") { state.mode = "blocked"; changed = true; }
+    if (changed) { state.mode = "blocked"; await this.save(combat, state, tooLarge ? { blockedKeys: uncertainKeys } : {}); }
+    if (tooLarge) return rejection("combat-pending-too-large", { combatId: combat.id });
     if (state.mode === "blocked") return rejection("combat-blocked", { combatId: combat.id, state });
     const support = this.effects.inspect(combat.scene, combatantsOf(combat).map(c => c.actor));
     if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
@@ -267,6 +283,7 @@ export class GroupedCombatService {
       const state = this.repository.readState(combat);
       if (state?.revision !== request.expectedRevision) return rejection("stale-combat");
       if (state.receipts[request.stepKey]?.status !== "uncertain" || !["completed", "retry"].includes(request.resolution)) return rejection("invalid-combat-step");
+      if (state.pendingTransition && !pendingWithinBudget(state)) return rejection("combat-pending-too-large", { combatId: combat.id });
       const support = this.effects.inspect(combat.scene, combatantsOf(combat).map(c => c.actor));
       if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
       if (request.resolution === "completed") state.receipts[request.stepKey].status = "done"; else delete state.receipts[request.stepKey];

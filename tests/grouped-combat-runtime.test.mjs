@@ -25,6 +25,84 @@ function fixture() {
     async transition(request) { calls.push(request); return { ok: true }; }, reconcile: async () => {} } };
   return { Hooks, Combat, Combatant, moduleApi, calls, listeners };
 }
+test("an oversized jump tells the GM to use smaller transitions", async (t) => {
+  const e = fixture(), warnings = [];
+  const oldGame = globalThis.game, oldUi = globalThis.ui;
+  t.after(() => { globalThis.game = oldGame; globalThis.ui = oldUi; });
+  globalThis.game = { user: { id: "gm", isGM: true } };
+  globalThis.ui = { notifications: { warn: message => warnings.push(message) } };
+  e.moduleApi.groupedCombatService.transition = async () => ({ ok: false, code: "combat-transition-too-large" });
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  await new e.Combat().nextTurn();
+  assert.match(warnings[0], /несколькими меньшими шагами/);
+});
+test("next round advances through each live group in order and stops on failure", async (t) => {
+  const e = fixture(), combat = new e.Combat(), state = combat.flags["rebreya-main"].groupedCombat;
+  const oldGame = globalThis.game, oldUi = globalThis.ui;
+  t.after(() => { globalThis.game = oldGame; globalThis.ui = oldUi; });
+  globalThis.game = { user: { id: "gm", isGM: true } }; globalThis.ui = { notifications: { warn() {} } };
+  combat.combatants.push({ id: "d", actor: { uuid: "Actor.d" } }); combat.turns = combat.combatants;
+  state.groups.push({ id: "d", memberIds: ["d"] });
+  let fail = false;
+  e.moduleApi.groupedCombatService.transition = async request => {
+    e.calls.push([request.targetRound, request.targetGroupId]);
+    if (fail && request.targetGroupId === "d") return { ok: false, code: "combat-phase-failed" };
+    state.current = { round: request.targetRound, groupId: request.targetGroupId }; state.revision++;
+    combat.round = request.targetRound; return { ok: true };
+  };
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  await combat.nextRound();
+  assert.deepEqual(e.calls, [[1, "pc"], [1, "d"], [2, "g"]]);
+  e.calls.length = 0; fail = true;
+  await combat.nextRound();
+  assert.deepEqual(e.calls, [[2, "pc"], [2, "d"]]);
+  assert.deepEqual(state.current, { round: 2, groupId: "pc" });
+});
+test("next round joins an already running transition without starting another", async (t) => {
+  const e = fixture(), combat = new e.Combat(); let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const oldGame = globalThis.game;
+  globalThis.game = { user: { id: "gm", isGM: true } };
+  t.after(() => { globalThis.game = oldGame; });
+  e.moduleApi.groupedCombatService.transition = async request => { e.calls.push(request); await gate; return { ok: true }; };
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  const turn = combat.nextTurn(), round = combat.nextRound();
+  assert.equal(e.calls.length, 1); release(); await Promise.all([turn, round]);
+  assert.equal(e.calls.length, 1);
+});
+test("a player's next round is checked as one request without ending intermediate turns", async (t) => {
+  const e = fixture(), combat = new e.Combat(), oldGame = globalThis.game, oldUi = globalThis.ui;
+  t.after(() => { globalThis.game = oldGame; globalThis.ui = oldUi; });
+  globalThis.game = { user: { id: "player", isGM: false } }; globalThis.ui = { notifications: { warn() {} } };
+  e.moduleApi.groupedCombatService.transition = async request => { e.calls.push(request); return { ok: false, code: "forbidden" }; };
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  await combat.nextRound();
+  assert.equal(e.calls.length, 1); assert.equal(e.calls[0].targetRound, 2); assert.equal(e.calls[0].targetGroupId, "g");
+  assert.deepEqual(combat.flags["rebreya-main"].groupedCombat.current, { round: 1, groupId: "g" });
+});
+test("next round stops if another client changes the combat between steps", async (t) => {
+  const e = fixture(), combat = new e.Combat(), state = combat.flags["rebreya-main"].groupedCombat;
+  const oldGame = globalThis.game, oldUi = globalThis.ui, oldTimeout = globalThis.setTimeout;
+  t.after(() => { globalThis.game = oldGame; globalThis.ui = oldUi; globalThis.setTimeout = oldTimeout; });
+  globalThis.game = { user: { id: "gm", isGM: true } }; globalThis.ui = { notifications: { warn() {} } };
+  combat.combatants.push({ id: "d", actor: { uuid: "Actor.d" } }); combat.turns = combat.combatants;
+  state.groups.push({ id: "d", memberIds: ["d"] });
+  e.moduleApi.groupedCombatService.transition = async request => { e.calls.push(request); state.current = { round: request.targetRound, groupId: request.targetGroupId }; state.revision++; return { ok: true }; };
+  globalThis.setTimeout = callback => { state.current = { round: 1, groupId: "d" }; state.revision++; callback(); };
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  await combat.nextRound();
+  assert.equal(e.calls.length, 1); assert.equal(state.current.groupId, "d");
+});
+test("next round does not rewind when the current last group is defeated", async (t) => {
+  const e = fixture(), combat = new e.Combat(), state = combat.flags["rebreya-main"].groupedCombat;
+  const oldGame = globalThis.game; t.after(() => { globalThis.game = oldGame; });
+  globalThis.game = { user: { id: "gm", isGM: true } };
+  combat.combatants[2].isDefeated = true; state.current.groupId = "pc"; combat.turn = 2;
+  e.moduleApi.groupedCombatService.transition = async request => { e.calls.push(request); state.current = { round: request.targetRound, groupId: request.targetGroupId }; state.revision++; return { ok: true }; };
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  await combat.nextRound();
+  assert.equal(e.calls.length, 1); assert.equal(e.calls[0].targetRound, 2); assert.equal(e.calls[0].targetGroupId, "g");
+});
 test("normal next advances an entire group once; ordinary combat delegates; registration is idempotent", async () => {
   const e = fixture();
   const dispose = registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat, CombatantClass: e.Combatant });

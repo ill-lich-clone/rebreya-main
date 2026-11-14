@@ -16,6 +16,7 @@ function setup() {
       combat.flags["rebreya-main"] = { groupedCombat: structuredClone(state) }; return state;
     },
     async writeReceipt(combat, state, _key, options) { return this.writeState(combat, state, options); },
+    async writeBlocked(combat, state, _keys, options) { return this.writeState(combat, state, options); },
     async createMissingCombatants(_combat, selection) {
       for (const token of selection) if (!combat.combatants.some(c => c.token?.id === token.id)) combat.combatants.push({ id: token.id, token, actor: token.actor, initiative: null });
       combat.turns = combat.combatants;
@@ -31,6 +32,28 @@ function setup() {
   const start = operationId => service.start({ sceneId: "s", tokenUuids: tokens.map(t => t.uuid), operationId }, { sender: { id: "gm", isGM: true } });
   return { service, combat, calls, positions, repository, tokens, start, setFail: id => { fail = id; }, setGate: value => { gate = value; } };
 }
+
+test("large forward jumps are rejected before phase execution or persistent writes", async () => {
+  const e = setup(); await e.start("start");
+  const before = e.repository.readState(), calls = e.calls.length, positions = e.positions.length;
+  let pipelineCalls = 0;
+  e.service.runPipeline = async () => { pipelineCalls++; return { ok: true }; };
+  const result = await e.service.transition({ combatId: "fight", expectedRevision: before.revision, targetRound: 502, targetGroupId: before.groups[0].id, operationId: "huge" }, { sender: { isGM: true } });
+  assert.equal(result.code, "combat-transition-too-large");
+  assert.deepEqual(e.repository.readState(), before);
+  assert.equal(e.calls.length, calls); assert.equal(e.positions.length, positions); assert.equal(pipelineCalls, 0);
+  const extreme = await e.service.transition({ combatId: "fight", expectedRevision: before.revision, targetRound: Number.MAX_SAFE_INTEGER, targetGroupId: before.groups[0].id, operationId: "extreme" }, { sender: { isGM: true } });
+  assert.equal(extreme.code, "combat-transition-too-large");
+  assert.deepEqual(e.repository.readState(), before); assert.equal(pipelineCalls, 0);
+});
+
+test("a forward transition at the participant-work limit is accepted", async () => {
+  const e = setup(); await e.start("start"); const state = e.repository.readState();
+  let phases;
+  e.service.runPipeline = async (_combat, _state, planned) => { phases = planned; return { ok: true }; };
+  const result = await e.service.transition({ combatId: "fight", expectedRevision: state.revision, targetRound: 51, targetGroupId: state.groups[0].id, operationId: "boundary" }, { sender: { isGM: true } });
+  assert.equal(result.ok, true); assert.equal(phases.filter(p => p.kind === "turn-end").length, 100);
+});
 
 test("phase checkpoints precede partial receipts and keep full-history writes off the step hot path", async () => {
   const e = setup(), full = e.repository.writeState.bind(e.repository); let snapshots = 0, patches = 0;
@@ -67,6 +90,34 @@ test("reconcile resumes a persisted transition only through confirmed receipts",
   await e.service.reconcile(e.combat);
   assert.equal(e.repository.readState().pendingTransition, undefined);
   assert.equal(e.calls.length, before);
+});
+
+test("recovery refuses an oversized old pending transition without replaying or deleting its receipts", async () => {
+  const e = setup(); await e.start("start");
+  const state = e.repository.readState(), calls = e.calls.length;
+  state.pendingTransition = { phases: Array.from({ length: 101 }, () => ({ kind: "each-turn", round: 1, groupId: state.groups[0].id, memberIds: ["a", "b", "c", "pc"] })), target: state.current, operationId: "old" };
+  state.receipts.interrupted = { status: "running", operationId: "old" };
+  await e.repository.writeState(e.combat, state, { expectedRevision: state.revision });
+  const before = e.repository.readState();
+  const result = await e.service.reconcile(e.combat);
+  assert.equal(result.code, "combat-pending-too-large");
+  const blocked = e.repository.readState();
+  assert.equal(blocked.mode, "blocked"); assert.equal(blocked.receipts.interrupted.status, "uncertain");
+  assert.deepEqual(blocked.pendingTransition, before.pendingTransition); assert.equal(e.calls.length, calls);
+  const resolution = await e.service.resolveUncertainStep({ combatId: "fight", expectedRevision: blocked.revision, stepKey: "interrupted", resolution: "completed", operationId: "resolve" }, { sender: { isGM: true } });
+  assert.equal(resolution.code, "combat-pending-too-large");
+  assert.deepEqual(e.repository.readState(), blocked); assert.equal(e.calls.length, calls);
+});
+
+test("recovery keeps an originally valid large pending turn after a participant is removed", async () => {
+  const e = setup(); await e.start("start");
+  const state = e.repository.readState(), ids = Array.from({ length: 500 }, (_, i) => `c${i}`);
+  state.groups = [{ id: "g", memberIds: ids.slice(0, 499) }];
+  state.pendingTransition = { phases: [{ kind: "each-turn", round: 1, groupId: "g", memberIds: ids }], target: { round: 1, groupId: "g" }, operationId: "old" };
+  await e.repository.writeState(e.combat, state, { expectedRevision: state.revision });
+  let invoked = false; e.service.runPipeline = async () => { invoked = true; return { ok: true }; };
+  const result = await e.service.reconcile(e.combat);
+  assert.equal(result.ok, true); assert.equal(invoked, true);
 });
 
 test("a new GM cannot overwrite and replay the previous GM's running receipt through a fresh transition", async () => {

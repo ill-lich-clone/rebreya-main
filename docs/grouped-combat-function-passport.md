@@ -6,14 +6,15 @@
 
 `controlled Token UUID → публичный ingress → active GM / combat.grouped.start → GroupedCombatService → native Combat/Combatant + groupedCombat flag → awaited phase steps → native tracker + локальная камера`.
 
-Кнопки Next/Previous/Next Round и positional `Combat.update` в управляемом бою используют `combat.grouped.transition`. Обычный Combat без module flag сохраняет исходные методы и hooks. Начатый обычный бой получает `mode:pending` до следующего раунда; текущие индивидуальные события не переигрываются.
+Кнопки Next/Previous/Next Round и positional `Combat.update` в управляемом бою используют `combat.grouped.transition`. Next Round у GM последовательно выполняет переходы к живым группам, уступая управление между ними; при ошибке, прерывании или изменении revision другим клиентом останавливается на подтверждённой позиции. Игрок отправляет прежний единый запрос с обычной проверкой прав. Обычный Combat без module flag сохраняет исходные методы и hooks. Начатый обычный бой получает `mode:pending` до следующего раунда; текущие индивидуальные события не переигрываются.
 
 ## Domain: `scripts/combat/turn-group-rules.js`
 
 - `GROUPED_COMBAT_FLAG = "groupedCombat"`; `combatantsOf(combat) -> Combatant[]` нормализует Foundry Collection/array.
 - `combatFlagKey(value) -> string` кодирует JSON в ключ без точек и update-directives; Foundry expandObject не превращает UUID внутри receipts/durationAnchors в вложенные пути.
 - `buildCombatTurnGroups(members, previousGroups=[]) -> Group[]`: исходный Actor + disposition + подтверждённый native initiative profile + установленное значение инициативы. Linked/character/unverifiable записи индивидуальны; unrolled участник может присоединиться к единственному established score. HP/имя не входят в identity. Stable IDs переиспользуются после удаления представителя.
-- `planGroupTransition(state,target,groups,skippedGroupIds=new Set()) -> Phase[]`: end → round-end/round-start при границе → each-turn → start; crossed groups перечисляются последовательно, backward не создаёт effect phases. Полностью defeated intermediate группы при skipDefeated не получают each-turn/start. У `each-turn` свой groupId при общем memberIds; удалённая группа не блокирует следующий живой ход.
+- `isGroupTransitionWithinBudget(state,target,groups,skippedGroupIds=new Set()) -> boolean` ограничивает прямой переход 1000 пересечёнными группами, консервативной оценкой в 1 000 000 ссылок участников в фазах и оценкой общих обработок существ в 400, либо одним проходом всех участников при бо́льшем их количестве. Проверка учитывает пропущенные побеждённые группы и не перечисляет промежуточные ходы. Отсутствие текущей группы и обратный переход сохраняют прежний fallback.
+- `planGroupTransition(state,target,groups,skippedGroupIds=new Set()) -> Phase[]`: end → round-end/round-start при границе → each-turn → start; crossed groups перечисляются последовательно с относительной арифметикой. Переход сверх бюджета отклоняется до выделения фаз. Backward не создаёт effect phases. Полностью defeated intermediate группы при skipDefeated не получают each-turn/start. У `each-turn` свой groupId при общем memberIds; удалённая группа не блокирует следующий живой ход.
 - `buildPhaseStepKey(combatId,phase,combatantId,provider,stepId) -> string`: encoded JSON tuple с раундом/group/Combatant/phase/provider/effect, поэтому linked Actor alias не поглощает отдельный ход.
 - `getActiveGroupMemberIds(state) -> string[]`, `isCombatActorActive(combat,actorOrToken,state?) -> boolean`: активное множество группы либо native individual fallback. Во время перехода учитывается executionPosition.
 
@@ -26,23 +27,25 @@ Focused: `tests/grouped-combat-rules.test.mjs`.
 | Метод | Контракт |
 | --- | --- |
 | `isManaged(combat)` | Наличие versioned flag; mode отличает pending от active/blocked |
-| `save(combat,state,{receiptKey=null}={})` | Authority/live Combat recheck; полный checkpoint либо partial receipt+revision через repository CAS |
+| `save(combat,state,{receiptKey=null,blockedKeys=null}={})` | Authority/live Combat recheck; полный checkpoint, partial receipt+revision либо blocked-mode patch с uncertain receipts через repository CAS |
 | `eligible(token,sceneId)` | Только same-scene character/npc, без storage/mapObject/system object и actorless tokens |
 | `members(combat)` | Live eligible snapshots и native initiative profiles; не доверяет client Member |
 | `holdUntilReady() → release(error?)` | До публикации API composition устанавливает перехват навигации и удерживает start, transition, resolve и reconcile за пределами очереди транзакций. После регистрации обработчиков они продолжаются. Ошибка запуска возвращает combat-not-ready и сохраняет позицию боя. |
 | `start(request,{sender})` | GM, exact request/preflight до изменений; idempotent Combatant, native grouped initiative, сохранение раунда/хода/старых scores; новый member открытой группы получает только свой start |
-| `transition(request,{sender})` | Exact live target/revision; GM либо OWNER solo character, player может только закончить текущий собственный ход; прунит удалённых участников |
+| `transition(request,{sender})` | Exact live target/revision; GM либо OWNER solo character, player может только закончить текущий собственный ход; прунит удалённых участников. До планирования и записи отклоняет избыточный переход с `combat-transition-too-large`; GM может выполнить его меньшими переходами. Pending/recovery сохраняют прежний маршрут |
 | `runPipeline(combat,state,phases,target,operationId,begin=false)` | Phase checkpoint после планирования сохраняет metadata/anchors; partial running receipt → awaited step → partial done. Native позиции имеют отдельные checkpoints; history/recovery/логический time delta сохранены |
 | `observeNativeTransition(combat)` | Promise существующей операции, без повторной очереди и повторных effects |
-| `recoverPending(combat,state)` | Остаточный running становится uncertain/blocked перед новым ingress; только подтверждённые done steps можно пропустить при продолжении pending operation |
+| `recoverPending(combat,state)` | Старый избыточный план не исполняется: running становится uncertain, состояние blocked сохраняется, возвращается `combat-pending-too-large`; план и квитанции остаются для ручного восстановления. Иначе остаточный running становится uncertain/blocked перед новым ingress; только подтверждённые done steps можно пропустить при продолжении pending operation |
 | `reconcile(combat)` | На active GM после reload/handover под общим lock восстанавливает pending; неоднозначный шаг не повторяет |
-| `resolveUncertainStep(request,{sender})` | GM + revision + exact uncertain key; completed сохраняет done, retry разрешает конкретный повтор и продолжение |
+| `resolveUncertainStep(request,{sender})` | GM + revision + exact uncertain key; избыточный сохранённый план отклоняется без изменений; иначе completed сохраняет done, retry разрешает конкретный повтор и продолжение |
 
 Flag schema: `{version:1,mode,activateAtRound,revision,groups,current,receipts,memberStarts}`; transient executionPosition/pendingTransition и durationAnchors также сериализованы. Receipt сохраняет provider, Combatant, effect UUID, phase и operation ID. Executable closures/Document references в flags отсутствуют. История done receipts нужна для rewind→forward; урон и исчезнувшие эффекты назад не восстанавливаются.
 
+`pendingWithinBudget(state)` оценивает сохранённые фазы перед восстановлением, учитывая исходный размер каждой фазы даже после удаления участника; oversized recovery сохраняет план без повторного исполнения.
+
 При ошибке следующая группа не начинается; повтор macro показывает native DialogV2 с существом/эффектом/фазой и решениями «Шаг уже выполнен», «Повторить шаг», «Отмена». Решение не отменяет уже проведённый workflow.
 
-Focused: `tests/grouped-combat-service.test.mjs` (включая concurrent/stale clicks, native lifecycle ticket, reload/uncertain, group deletion и turnTime).
+Focused: `tests/grouped-combat-service.test.mjs` (включая concurrent/stale clicks, native lifecycle ticket, reload/uncertain, group deletion и turnTime). `node tools/benchmark-grouped-combat.mjs` измеряет синтетический старт и переходы на 200 существах; репозиторий, документы и эффекты провайдеров заменены локальными имитациями, поэтому это не измерение Foundry/FPS.
 
 ## Infrastructure и composition
 
@@ -52,6 +55,7 @@ Focused: `tests/grouped-combat-service.test.mjs` (включая concurrent/stal
 - `readState(combat)` возвращает detached flag. `writeState(combat,state,{expectedRevision})` проверяет live revision и атомарно заменяет flag, удаляя завершённые transient fields и retry receipt.
 - `replaceField(parentPath,key,value)` формирует update с копией значения для полной замены поля. В Foundry v14 использует нативный оператор `_replace`, в v13 — путь `==key`. Контракт замены проверяет `tests/grouped-combat-repository.test.mjs` через нативные expandObject/mergeObject.
 - `writeReceipt(combat,state,key,{expectedRevision})` проверяет live revision и наличие pending checkpoint, сохраняет только revision и заменённое поле `receipts[key]`. Прочая history/anchors/memberStarts не клонируется и не отправляется. `stateOf` читает live flag для CAS; `progressOptions` помечает active pending writes как `options[MODULE_ID].groupedCombatProgress:true` с render/turnEvents false.
+- `writeBlocked(combat,state,keys,{expectedRevision})` проверяет live revision и pending checkpoint, записывает только blocked mode, revision и конкретные uncertain receipts. План и история повторно не отправляются; обновление видимо клиентам, ожидающим окончания перехода.
 - `isGroupedCombatProgressUpdate(combat,changed,options)` принимает только явно помеченный active pending write одного module flag; разрешает native backend `_id` этого Combat, отвергает position/foreign/mixed fields. Это UI optimization, не authorization bypass.
 - `withNativeChanges(combat,operation)` ограничивает внутренний native ingress; `createMissingCombatants(combat,tokens)` не создаёт повторных Token combatants.
 - `commitNativePosition(combat,position,options)` сохраняет нативные round/turn и time delta; emits один native pre-change combatTurn/combatRound. `beginCombat(combat,position)` сохраняет native startCombat/encounter recovery и выбирает первую подходящую позицию через combatStart hook.

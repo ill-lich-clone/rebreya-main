@@ -52,6 +52,17 @@ export class GroupedCombatRepository {
     await combat.update({ [`${path}.revision`]: state.revision, ...replaceField(`${path}.receipts`, key, state.receipts[key]) }, progressOptions(state));
     return state;
   }
+  async writeBlocked(combat, state, keys, { expectedRevision = 0 } = {}) {
+    const live = stateOf(combat);
+    if ((live?.revision ?? 0) !== expectedRevision) throw new Error("stale-combat");
+    if (!live?.pendingTransition) throw new Error("missing-combat-checkpoint");
+    state.revision = expectedRevision + 1;
+    const path = `flags.${MODULE_ID}.${GROUPED_COMBAT_FLAG}`;
+    const patch = { [`${path}.revision`]: state.revision, [`${path}.mode`]: "blocked" };
+    for (const key of keys) Object.assign(patch, replaceField(`${path}.receipts`, key, state.receipts[key]));
+    await combat.update(patch, { render: false, turnEvents: false });
+    return state;
+  }
   async createMissingCombatants(combat, tokens) {
     const existing = combatantsOf(combat);
     const data = tokens.filter(t => !existing.some(c => c.tokenId === t.id || c.token?.id === t.id)).map(t => ({ tokenId: t.id, actorId: t.actor.id, sceneId: t.parent.id, hidden: t.hidden === true }));
