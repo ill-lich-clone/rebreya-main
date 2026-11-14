@@ -50,8 +50,13 @@ test("harvesting action appears only on the root corpse storage window", async (
   const app = new StorageApp({}, "corpse");
   app.snapshot = { name: "Гарпия", canHarvest: true, rows: [] };
   assert.equal((await app._prepareContext()).canHarvest, true);
+  app.snapshot.harvested = true;
+  assert.equal((await app._prepareContext()).harvested, true);
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /disabled>Уже разделан/);
   app.path = ["inner"];
   assert.equal((await app._prepareContext()).canHarvest, false);
+  assert.equal((await app._prepareContext()).harvested, false);
 });
 
 test("harvesting dialog passes the analogue and shows the authoritative result", async () => {
@@ -1290,6 +1295,7 @@ test("newer snapshot requests win and hook subscriptions are removed on close", 
     assert.deepEqual(removed.map(([name]) => name).sort(), [
       "deleteToken",
       "rebreya-main.storageUpdated",
+      "updateSetting",
       "updateToken"
     ]);
   }

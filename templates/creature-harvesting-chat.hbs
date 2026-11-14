@@ -1,0 +1,22 @@
+<section class="dnd5e2 chat-card rm-harvest-chat">
+  <h3><i class="fa-solid fa-knife" aria-hidden="true"></i> Разделка</h3>
+  <p><strong>{{harvester}}</strong> · {{corpse}}</p>
+  {{#if rolled}}
+    <p>{{check}} · <strong>{{total}}</strong> против Сл {{dc}}</p>
+  {{/if}}
+  <p><strong>{{outcome}}</strong></p>
+  {{#if loot.length}}
+    <h4>Добыто</h4>
+    <ul class="action-list unlist">
+      {{#each loot}}
+        <li class="flexrow">
+          {{#if img}}<img class="gold-icon" src="{{img}}" alt="" width="24" height="24">{{/if}}
+          <span>{{name}}{{#if unique}} <small>(уникальный трофей)</small>{{/if}}</span>
+        </li>
+      {{/each}}
+    </ul>
+  {{else}}
+    <p>Добычи нет.</p>
+  {{/if}}
+  {{#if severe}}<p>Мастер применяет к персонажу урон от уместного действия существа.</p>{{/if}}
+</section>

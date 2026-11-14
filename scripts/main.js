@@ -326,7 +326,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.5.75";
+} from "./data/storage-command-service.js?v=1.5.76";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.5.72";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.66";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.59";
@@ -424,6 +424,7 @@ import { registerRationFoodConversionHook } from "./integrations/ration-food-con
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.70";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.68";
 import { getHarvestMaterialIcons, repairHarvestIcons } from "./data/creature-harvesting.js?v=1.5.75";
+import { HARVEST_ABILITY_REQUEST, harvestRequestData, renderHarvestChat, rollHarvestAbilityRequest } from "./integrations/creature-harvesting-chat.js?v=1.5.76";
 import { CREATURE_HARVEST_SETTING, CreatureHarvestRepository } from "./infrastructure/foundry/creature-harvest-repository.js?v=1.5.73";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.61";
@@ -1889,15 +1890,19 @@ export class RebreyaMainModule {
       },
       getHarvestMaterials: async () => (await this.getModel()).materials,
       getHarvestIcons: getHarvestMaterialIcons,
-      notifyHarvest: ({ token, monster, harvester, result }) => {
+      publishHarvestRequest: attempt => {
+        if (game.messages.get(attempt.receipt)) return;
+        return ChatMessage.create(harvestRequestData(attempt, game.user.id), { keepId: true });
+      },
+      notifyHarvest: async payload => {
         const gm = getActiveGm(globalThis.game);
         if (!gm) return;
-        const name = escapeFoundryHtml(readStorageStateAtPath(token).baseName || monster.name);
-        const check = result.total === null ? "Попытка закрыта." : `Результат ${result.total} · Сл ${result.dc}.`;
-        const damage = result.outcome === "severe" ? " Примените урон к разделывавшему персонажу от уместного действия существа." : "";
-        const actor = escapeFoundryHtml(harvester?.name ?? "Персонаж");
-        return globalThis.ChatMessage?.create?.({ whisper: [gm.id],
-          content: `<p>${actor} разделывает тело «${name}». ${check}${damage}</p>` });
+        const whisper = [...new Set([gm.id, payload.attempt.requesterId].filter(Boolean))];
+        const request = game.messages.get(payload.attempt.receipt);
+        if (request?.type === "request" && !payload.attempt.replyId) {
+          await request.update({ "system.targets": [] }).catch(error => console.warn(`${MODULE_ID} | Harvest request close failed`, error));
+        }
+        return ChatMessage.create({ whisper, content: await renderHarvestChat(payload) });
       },
       resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
@@ -6136,6 +6141,8 @@ export class RebreyaMainModule {
       rows,
       coins,
       canHarvest: !path.length && isCorpseStorageTarget(token) && globalThis.game?.system?.id === "dnd5e",
+      harvested: !path.length && isCorpseStorageTarget(token)
+        && this.creatureHarvestRecords?.read(token.uuid)?.attempt?.status === "complete",
       ...(canManage ? {
         baseName: state.baseName,
         template: foundry.utils.deepClone(state.template),
@@ -6348,7 +6355,7 @@ export class RebreyaMainModule {
         characterTokenUuid: safeCharacterTokenUuid
       });
     }
-    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.75");
+    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.76");
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {
@@ -8938,6 +8945,25 @@ Hooks.once("ready", async () => {
 
   try {
     registerStorageTokenHooks(moduleApi, { hooks: Hooks });
+    if (globalThis.CONFIG?.DND5E?.requests) {
+      CONFIG.DND5E.requests[HARVEST_ABILITY_REQUEST] = rollHarvestAbilityRequest;
+      Hooks.on("createChatMessage", message => {
+        const requestId = message.flags?.dnd5e?.requestResult?.requestId;
+        if (!requestId || !isActiveGmClient(game)) return;
+        const request = game.messages.get(requestId);
+        moduleApi.storageCommandService.acceptHarvestReply(message, request).catch(error => {
+          console.warn(`${MODULE_ID} | Harvest reply failed`, error);
+          globalThis.ui?.notifications?.error?.(error.message);
+        });
+      });
+      Hooks.on("updateChatMessage", (request, changes) => {
+        if (!changes.system?.targets || !request.flags?.[MODULE_ID]?.harvestRequest || !isActiveGmClient(game)) return;
+        const reply = request.system.targets?.[0]?.result;
+        if (reply) moduleApi.storageCommandService.acceptHarvestReply(reply, request).catch(error => {
+          console.warn(`${MODULE_ID} | Harvest reply recovery failed`, error);
+        });
+      });
+    }
     Hooks.on("deleteToken", token => {
       if (isActiveGmClient(globalThis.game) && moduleApi.creatureHarvestRecords.read(token.uuid)) {
         moduleApi.creatureHarvestRecords.remove(token.uuid).catch(error => console.warn(`${MODULE_ID} | Harvest cleanup failed`, error));

@@ -11,6 +11,7 @@ import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.5.4
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.396";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
+import { harvestReplyTotal } from "../integrations/creature-harvesting-chat.js?v=1.5.76";
 import { DEFAULT_HARVEST_CHECK, harvestAvailability, harvestChecks, harvestDc, harvestHasBlood, harvestItem, harvestRewards, matchHarvestMonster } from "./creature-harvesting.js?v=1.5.75";
 import {
   isCorpseStorageTarget,
@@ -515,16 +516,7 @@ export class StorageCommandService {
     harvestRecords = null,
     assertHarvestAuthority = () => {},
     notifyHarvest = async () => {},
-    rollHarvest = async (actor, { check, dc, receipt, corpseName }) => {
-      const [ability, skill] = check.split(":");
-      const config = { ability, target: dc };
-      const message = { rollMode: "gmroll", data: { flavor: `Разделка тела «${escapeFoundryHtml(corpseName)}» · Сл ${dc}`,
-        flags: { [MODULE_ID]: { corpseHarvestRoll: receipt } } } };
-      const rolls = skill
-        ? await actor.rollSkill({ ...config, skill }, { configure: false }, message)
-        : await actor.rollAbilityCheck(config, { configure: false }, message);
-      return rolls?.[0]?.total;
-    },
+    publishHarvestRequest = async () => { throw new Error("Запрос проверки недоступен."); },
     logger = console
   } = {}) {
     if (!storageService || !inventoryService) {
@@ -543,7 +535,7 @@ export class StorageCommandService {
       throw new TypeError("StorageCommandService lootgenTemplateItems requires buildSnapshot().");
     }
     this.storageService = storageService;
-    Object.assign(this, { getHarvestCatalog, getHarvestMaterials, getHarvestIcons, rollHarvest, notifyHarvest, harvestRecords, assertHarvestAuthority });
+    Object.assign(this, { getHarvestCatalog, getHarvestMaterials, getHarvestIcons, publishHarvestRequest, notifyHarvest, harvestRecords, assertHarvestAuthority });
     this.inventoryService = inventoryService;
     this.resolveToken = resolveToken;
     this.measureDistance = measureDistance;
@@ -1232,15 +1224,24 @@ export class StorageCommandService {
         const reason = availability === "humanoid" ? availability : attempt.status === "rolling" ? "rolling" : null;
         return { reason, message: HARVEST_REASONS[reason] ?? null, dc: attempt.dc, check: attempt.check,
           attempt: attempt.status, attemptMonsterId: attempt.monster.id, choices: [],
+          canRequest: attempt.requesterId === sender.id || sender.isGM === true,
           result: attempt.status === "complete" ? attempt.result : null, ...(sender.isGM ? { config } : {}) };
       }
       if (attempt?.status === "complete") return attempt.result;
       if (attempt?.status === "resolved") return this.#grantHarvest(storageToken, current);
       if (payload.action === "resolve") {
-        if (attempt?.status !== "rolling") throw new Error("Нет попытки для восстановления.");
+        if (!["rolling", "requested"].includes(attempt?.status)) throw new Error("Нет попытки для восстановления.");
         return this.#resolveHarvest(storageToken, current, payload.total);
       }
       if (attempt?.status === "rolling") throw new Error(HARVEST_REASONS.rolling);
+      if (attempt?.status === "requested") {
+        if (attempt.requesterId !== sender.id && sender.isGM !== true) throw new Error("Запрос адресован другому игроку.");
+        const request = globalThis.game?.messages?.get(attempt.receipt);
+        const reply = request?.system?.targets?.[0]?.result;
+        const total = reply ? harvestReplyTotal(reply, attempt) : null;
+        if (total !== null) return this.#resolveHarvest(storageToken, current, total, reply.id);
+        return this.#publishHarvestRequest(attempt);
+      }
       const catalog = await this.getHarvestCatalog();
       const actual = matchHarvestMonster(catalog, [storage.baseName || storageToken.name, storageToken.actor.name]);
       const candidates = actual.length ? actual : matchHarvestMonster(catalog, [payload.name]);
@@ -1259,23 +1260,43 @@ export class StorageCommandService {
       };
       if (reason) throw new Error(HARVEST_REASONS[reason]);
       const harvester = { tokenUuid: characterToken.uuid, name: characterToken.name || character.name || "Персонаж" };
-      const next = { attempt: { status: "rolling", receipt: globalThis.foundry?.utils?.randomID?.() ?? `harvest-${Date.now()}`,
-        monster, dc, check, harvester,
+      const next = { attempt: { status: "requested", receipt: globalThis.foundry?.utils?.randomID?.() ?? `harvest-${Date.now()}`,
+        monster, dc, check, harvester, requesterId: sender.id, actorUuid: character.uuid,
+        tokenUuid: storageToken.uuid, corpseName: storage.baseName || monster.name,
         type: effectiveType, blood: payload.blood ?? null } };
       await this.harvestRecords.patch(storageToken.uuid, next);
-      this.assertHarvestAuthority();
-      const total = await this.rollHarvest(character, { dc, check, receipt: next.attempt.receipt, corpseName: storage.baseName || monster.name });
-      if (!Number.isFinite(total)) throw new Error(HARVEST_REASONS.rolling);
-      return this.#resolveHarvest(storageToken, next, total);
+      return this.#publishHarvestRequest(next.attempt);
     });
   }
 
-  async #resolveHarvest(token, current, total) {
+  async #publishHarvestRequest(attempt) {
+    this.assertHarvestAuthority();
+    await this.publishHarvestRequest(attempt);
+    return { pending: true };
+  }
+
+  async acceptHarvestReply(message, request) {
+    const ref = request?.flags?.[MODULE_ID]?.harvestRequest;
+    if (!ref || !request.author?.isGM || request.id !== ref.receipt) return;
+    return this.#enqueue([storageQueueKey(ref.tokenUuid)], async () => {
+      this.assertHarvestAuthority();
+      const current = await this.harvestRecords.read(ref.tokenUuid);
+      const attempt = current?.attempt;
+      if (!attempt || attempt.receipt !== ref.receipt || attempt.status !== "requested") return;
+      const total = harvestReplyTotal(message, attempt);
+      if (total === null) return;
+      const token = tokenDocument(await this.resolveToken(ref.tokenUuid));
+      if (!isCorpseStorageTarget(token)) return;
+      return this.#resolveHarvest(token, current, total, message.id);
+    });
+  }
+
+  async #resolveHarvest(token, current, total, replyId = null) {
     const { monster, dc, type, blood } = current.attempt;
     const rewards = total === null ? { outcome: "closed", loot: [] }
       : harvestRewards(monster, { total, dc, type, bloodOverride: blood });
     const result = { total, dc, ...rewards };
-    const next = { attempt: { ...current.attempt, status: "resolved", result } };
+    const next = { attempt: { ...current.attempt, status: "resolved", result, replyId } };
     await this.harvestRecords.patch(token.uuid, next);
     return this.#grantHarvest(token, next);
   }
@@ -1294,7 +1315,7 @@ export class StorageCommandService {
     await this.storageService.writeCorpseHarvest(token, receipt, rows);
     await this.harvestRecords.patch(token.uuid, { attempt: { ...current.attempt, status: "complete" } });
     try {
-      await this.notifyHarvest({ token, monster, harvester, result });
+      await this.notifyHarvest({ token, monster, harvester, result, attempt: current.attempt, rows });
     } catch (error) {
       this.logger?.warn?.(`${MODULE_ID} | Harvest notification failed.`, error);
     }

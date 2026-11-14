@@ -7,7 +7,7 @@ import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.392";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
-import { openCreatureHarvestingDialog } from "./creature-harvesting-dialog.js?v=1.5.75";
+import { openCreatureHarvestingDialog } from "./creature-harvesting-dialog.js?v=1.5.76";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isDurabilityEligible } from "../data/durability-rules.js?v=1.4.200-storage-broken-presentation";
 import {
@@ -348,6 +348,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       isEmpty: this.snapshot?.state === "empty",
       canManage,
       canHarvest: !this.path.length && this.snapshot?.canHarvest === true,
+      harvested: !this.path.length && this.snapshot?.harvested === true,
       rows,
       activePopover,
       breadcrumbs,
@@ -535,6 +536,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     subscribe("updateToken", (token) => (
       this.#matchesToken(token) ? this.scheduleSnapshotRefresh() : undefined
     ));
+    subscribe("updateSetting", setting => {
+      if (setting.key === `${MODULE_ID}.creatureHarvestRecords` && this.snapshot?.canHarvest) this.scheduleSnapshotRefresh();
+    });
     subscribe("deleteToken", (token) => (
       this.#matchesToken(token) ? this.close?.() : undefined
     ));

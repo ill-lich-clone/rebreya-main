@@ -1,19 +1,11 @@
 import { escapeFoundryHtml as escape } from "../shared/foundry-values.js";
 import { HARVEST_DCS, harvestChecks } from "../data/creature-harvesting.js?v=1.5.75";
+import { harvestCheckLabel } from "../integrations/creature-harvesting-chat.js?v=1.5.76";
 
 const button = (action, label, callback = () => ({ action })) => ({ action, label, callback });
 const values = control => new FormData(control.form);
 const str = (form, key) => String(form.get(key) ?? "").trim();
 const num = (form, key) => str(form, key) === "" ? null : Number(str(form, key));
-const checkLabel = check => {
-  const [ability, skill] = check.split(":");
-  const labels = globalThis.CONFIG?.DND5E;
-  const abilityLabel = labels?.abilities?.[ability]?.label ?? ({ str: "Сила", dex: "Ловкость", con: "Телосложение",
-    int: "Интеллект", wis: "Мудрость", cha: "Харизма" })[ability];
-  const skillLabel = labels?.skills?.[skill]?.label ?? ({ sur: "Выживание", arc: "Магия", slt: "Ловкость рук", ath: "Атлетика" })[skill];
-  const localize = label => globalThis.game?.i18n?.localize(label) ?? label;
-  return skillLabel ? `${localize(abilityLabel)} (${localize(skillLabel)})` : localize(abilityLabel ?? check);
-};
 
 const rules = `<details><summary>Правила разделки</summary>
   <p>Одна попытка на тело. Гуманоидов разделывать нельзя.</p>
@@ -31,6 +23,9 @@ export async function openCreatureHarvestingDialog(request, { DialogV2 = globalT
     const items = loot.length ? `<ul>${loot.map(item => `<li>${escape(item.name)}</li>`).join("")}</ul>` : "";
     await wait(`${roll}<p>${message}</p>${items}`, [button("close", "Закрыть")]);
   };
+  const showResponse = response => response.pending
+    ? globalThis.ui?.notifications?.info?.("Запрос проверки отправлен в чат.")
+    : showResult(response);
   let selection = {};
   for (;;) {
     const info = await request({ action: "read", ...selection });
@@ -42,11 +37,14 @@ export async function openCreatureHarvestingDialog(request, { DialogV2 = globalT
     const buttons = [];
     if (!info.reason && info.attempt === "resolved") {
       buttons.push(button("begin", "Завершить выдачу", () => ({ action: "begin", monsterId: info.attemptMonsterId })));
+    } else if (!info.reason && info.attempt === "requested") {
+      content += "<p>Проверка ожидает броска в чате.</p>";
+      if (info.canRequest) buttons.push(button("begin", "Проверить запрос в чате", () => ({ action: "begin", monsterId: info.attemptMonsterId })));
     } else if (!info.reason && monster) {
-      const options = harvestChecks().map(check => `<option value="${escape(check)}"${check === info.check ? " selected" : ""}>${escape(checkLabel(check))}</option>`).join("");
+      const options = harvestChecks().map(check => `<option value="${escape(check)}"${check === info.check ? " selected" : ""}>${escape(harvestCheckLabel(check))}</option>`).join("");
       content += `<label>Проверка<select name="check">${options}</select></label>
         <label>Есть кровь?<select name="blood"><option value="yes"${info.hasBlood ? " selected" : ""}>Да</option><option value="no"${info.hasBlood ? "" : " selected"}>Нет</option></select></label>`;
-      buttons.push(button("begin", "Бросить", (_event, control) => {
+      buttons.push(button("begin", "Запросить проверку", (_event, control) => {
         const form = values(control);
         return { action: "begin", monsterId: monster.id, check: str(form, "check"), blood: str(form, "blood") === "yes",
           ...(selection.name ? { name: selection.name } : {}) };
@@ -64,7 +62,7 @@ export async function openCreatureHarvestingDialog(request, { DialogV2 = globalT
       }
     }
     if (admin && !info.attempt && (info.reason === "type" || monster?.rank === 10)) buttons.push(button("configure", "Настроить"));
-    if (admin && info.reason === "rolling") buttons.push(button("resolve", "Восстановить"));
+    if (admin && (info.reason === "rolling" || info.attempt === "requested")) buttons.push(button("resolve", "Восстановить"));
     buttons.push(button("close", "Закрыть"));
     const next = await wait(`${content}${rules}`, buttons);
     if (!next || next.action === "close") return;
@@ -92,6 +90,6 @@ export async function openCreatureHarvestingDialog(request, { DialogV2 = globalT
       if (resolved) return showResult(await request(resolved));
       continue;
     }
-    return showResult(await request(next));
+    return showResponse(await request(next));
   }
 }
