@@ -77,6 +77,7 @@ export class GroupedCombatRepository {
     finally { GROUPED_NATIVE_WRITES.delete(combat); }
   }
   async beginCombat(combat, position) {
+    if (!position) return combat.startCombat();
     const hook = globalThis.Hooks?.on?.("combatStart", (document, update) => { if (document === combat) Object.assign(update, position); });
     GROUPED_NATIVE_WRITES.add(combat);
     try { await combat.startCombat(); }

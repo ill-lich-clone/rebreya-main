@@ -1,10 +1,25 @@
 import { MODULE_ID } from "../constants.js";
 import { buildCombatTurnGroups, planGroupTransition, isGroupTransitionWithinBudget, buildPhaseStepKey, combatantsOf, combatantById } from "../combat/turn-group-rules.js?v=1.5.78";
-import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.66";
+import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.86";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js";
 
 const rejection = (code, details = {}) => ({ ok: false, code, details });
+const hasSharedGroup = groups => groups.some(group => group.memberIds.length > 1);
+const hasSharedHistory = state => state?.mode === "active" && (state.hadSharedTurns
+  || hasSharedGroup(state.groups) || Object.values(state.memberStarts ?? {}).some(ids => ids.length > 1));
+const hasUnsettledReceipts = state => Object.values(state.receipts ?? {})
+  .some(receipt => receipt.status === "running" || receipt.status === "uncertain");
+const canRetire = state => ["active", "pending"].includes(state?.mode) && !state.pendingTransition
+  && !hasSharedHistory(state) && !hasSharedGroup(state.groups) && !hasUnsettledReceipts(state);
+const retire = state => ({ ...state, mode: "native", preserveTieOrder: state.mode === "active" });
+const memberOf = (token, combatant) => {
+  const actor = combatant?.actor ?? token.actor, profile = describeInitiative(actor);
+  return { combatantId: combatant?.id ?? token.uuid, tokenUuid: token.uuid, actorUuid: actor?.uuid,
+    baseActorId: token.baseActor?.id ?? token.actorId, disposition: token.disposition, initiative: combatant?.initiative,
+    initiativeKey: profile.key, groupable: actor?.type === "npc" && token.actorLink !== true && profile.canShare,
+    defeated: combatant?.isDefeated === true };
+};
 function pendingWithinBudget(state) {
   const participants = state.groups.reduce((sum, group) => sum + group.memberIds.length, 0);
   let references = 0, turnReferences = 0, largestTurn = 0, turns = 0;
@@ -26,7 +41,10 @@ export class GroupedCombatService {
     if (!this.ready) this.ready = new Promise(resolve => { this.releaseReady = error => resolve(!error); });
     return this.releaseReady;
   }
-  isManaged(combat) { return Boolean(this.repository.readState(combat)); }
+  isManaged(combat) {
+    const state = this.repository.readState(combat);
+    return Boolean(state && state.mode !== "native");
+  }
   async save(combat, state, { receiptKey = null, blockedKeys = null } = {}) {
     if (!this.isAuthority()) throw new Error("active-gm-changed");
     if (!this.repository.getCombat(combat.id)) throw new Error("combat-unavailable");
@@ -34,14 +52,20 @@ export class GroupedCombatService {
     if (blockedKeys) return this.repository.writeBlocked(combat, state, blockedKeys, options);
     return receiptKey === null ? this.repository.writeState(combat, state, options) : this.repository.writeReceipt(combat, state, receiptKey, options);
   }
-  members(combat) {
-    return combatantsOf(combat).filter(c => this.eligible(c.token?.document ?? c.token, combat.scene?.id ?? combat.sceneId)).map(c => {
-      const token = c.token?.document ?? c.token, actor = c.actor;
-      const profile = describeInitiative(actor);
-      return { combatantId: c.id, tokenUuid: token?.uuid, actorUuid: actor?.uuid, baseActorId: token?.baseActor?.id ?? token?.actorId,
-        disposition: token?.disposition, initiative: c.initiative, initiativeKey: profile.key,
-        groupable: actor?.type === "npc" && token?.actorLink !== true && profile.canShare, defeated: c.isDefeated === true };
+  async #retireSettledCombat(combat, result) {
+    const state = this.repository.readState(combat);
+    if (!this.isAuthority() || !canRetire(state)) return result;
+    const retired = retire(state);
+    await this.save(combat, retired);
+    return result && { ...result, revision: retired.revision };
+  }
+  members(combat, tokens = [], sceneId = combat?.scene?.id ?? combat?.sceneId) {
+    const existing = combatantsOf(combat).flatMap(c => {
+      const token = c.token?.document ?? c.token;
+      return this.eligible(token, sceneId) ? [memberOf(token, c)] : [];
     });
+    const seen = new Set(existing.map(member => member.tokenUuid));
+    return [...existing, ...tokens.filter(token => !seen.has(token.uuid)).map(token => memberOf(token))];
   }
   eligible(token, sceneId) {
     const actor = token?.actor;
@@ -62,16 +86,29 @@ export class GroupedCombatService {
       }
       if (!tokens.length) return rejection("no-creatures");
       const existing = this.repository.getActiveCombat(request.sceneId);
-      const actors = [...tokens.map(t => t.actor), ...combatantsOf(existing).map(c => c.actor)];
-      const support = this.effects.inspect(tokens[0].parent, actors);
-      if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
-      const combat = existing ?? await this.repository.createCombat(request.sceneId);
-      return this.coordinator.run(`grouped-combat:${combat.id}`, async () => {
+      const start = async () => {
         if (!this.isAuthority()) return rejection("forbidden");
-        let state = this.repository.readState(combat);
-        if (state?.pendingTransition) return this.recoverPending(combat, state);
-        if (state?.mode === "blocked") return rejection("combat-blocked", { combatId: combat.id, state });
+        let state = existing ? this.repository.readState(existing) : null;
+        if (state?.pendingTransition) return this.recoverPending(existing, state);
+        if (state && (state.mode === "blocked" || hasUnsettledReceipts(state))) return rejection("combat-blocked", { combatId: existing.id, state });
+        const sharedHistory = hasSharedHistory(state);
+        const proposedGroups = buildCombatTurnGroups(this.members(existing, tokens, request.sceneId), state?.groups);
+        const checkedGroups = Boolean(sharedHistory || hasSharedGroup(proposedGroups));
+        if (checkedGroups) {
+          const support = inspect(existing);
+          if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
+        }
+        const combat = existing ?? await this.repository.createCombat(request.sceneId);
+        if (existing) return prepare(combat, state, sharedHistory, checkedGroups);
+        return this.coordinator.run(`grouped-combat:${combat.id}`, () => prepare(combat, state, sharedHistory, checkedGroups));
+      };
+      const inspect = combat => this.effects.inspect(tokens[0].parent, [...tokens.map(t => t.actor), ...combatantsOf(combat).map(c => c.actor)]);
+      const prepare = async (combat, state, sharedHistory, checkedGroups) => {
         const previousActiveId = combat.combatant?.id;
+        if (canRetire(state)) {
+          state = retire(state);
+          await this.save(combat, state);
+        }
         await this.repository.createMissingCombatants(combat, tokens);
         const oldGroups = state?.groups ?? [];
         let groups = buildCombatTurnGroups(this.members(combat), oldGroups);
@@ -95,11 +132,32 @@ export class GroupedCombatService {
           for (const c of missing) if (c.id !== rolledId) await c.recoverCombatUses?.(["initiative"]);
         }
         groups = buildCombatTurnGroups(this.members(combat), groups);
-        if (!state) {
+        const shared = hasSharedGroup(groups);
+        // The last roll can join one of several existing initiative buckets.
+        const unsupportedTie = shared && !checkedGroups && !inspect(combat).supported;
+        if (!sharedHistory && (!shared || unsupportedTie)) {
+          if (state?.mode === "pending") {
+            state = retire(state);
+            await this.save(combat, state);
+          }
+          if (!combat.started) await this.repository.beginCombat(combat);
+          else if (previousActiveId) {
+            combat.setupTurns?.();
+            const turn = combat.turns.findIndex(c => c.id === previousActiveId);
+            if (turn >= 0 && turn !== combat.turn) await this.repository.commitNativePosition(combat, { round: combat.round, turn }, { turnEvents: false, worldTime: { delta: 0 } });
+          }
+          return { ok: true, combatId: combat.id, revision: state?.revision ?? 0, pending: false };
+        }
+        if (!state || state.mode === "native") {
+          const nativeTieGroups = state?.preserveTieOrder ? state.groups : state?.nativeTieGroups;
           state = { version: 1, mode: combat.started ? "pending" : "active", activateAtRound: combat.started ? combat.round + 1 : 1,
-            revision: 0, groups, current: null, receipts: {}, memberStarts: {} };
-          if (combat.started) state.current = { round: combat.round, groupId: groups.find(g => g.memberIds.includes(combat.combatant?.id))?.id ?? groups[0].id };
+            revision: state?.revision ?? 0, groups, current: null, receipts: {}, memberStarts: {} };
+          if (combat.started) {
+            state.current = { round: combat.round, groupId: groups.find(g => g.memberIds.includes(previousActiveId))?.id ?? groups[0].id };
+            if (nativeTieGroups) state.nativeTieGroups = nativeTieGroups;
+          }
         } else state.groups = groups;
+        if (state.mode === "active") state.hadSharedTurns = true;
         await this.save(combat, state);
         combat.setupTurns?.();
         if (combat.started) {
@@ -118,7 +176,8 @@ export class GroupedCombatService {
           if (newIds.length) return this.runPipeline(combat, state, [{ kind: "turn-start", ...state.current, memberIds: newIds }], state.current, request.operationId);
         }
         return { ok: true, combatId: combat.id, revision: state.revision, pending: state.mode === "pending" };
-      });
+      };
+      return existing ? this.coordinator.run(`grouped-combat:${existing.id}`, start) : start();
     });
   }
   async transition(request, { sender } = {}) {
@@ -128,7 +187,8 @@ export class GroupedCombatService {
     if (!isValidGroupedCombatTransitionPayload(request)) return rejection("invalid-combat-request");
     return this.coordinator.runIdempotent(`grouped-combat:${combat.id}`, request.operationId, async () => {
       const state = this.repository.readState(combat);
-      if (!state || !this.isAuthority()) return rejection("forbidden");
+      if (!state || state.mode === "native" || !this.isAuthority()) return rejection("forbidden");
+      if (hasSharedHistory(state)) state.hadSharedTurns = true;
       const combatants = combatantsOf(combat);
       const byId = new Map(combatants.map(c => [c.id, c]));
       state.groups = state.groups.map(g => ({ ...g, memberIds: g.memberIds.filter(id => byId.has(id)) })).filter(g => g.memberIds.length);
@@ -153,6 +213,8 @@ export class GroupedCombatService {
       if (state.mode !== "pending" && !isGroupTransitionWithinBudget(state, target, state.groups, skipped)) return rejection("combat-transition-too-large");
       if (state.mode === "pending") {
         state.mode = "active";
+        delete state.nativeTieGroups;
+        if (hasSharedGroup(state.groups)) state.hadSharedTurns = true;
         const all = state.groups.flatMap(g => g.memberIds), incoming = state.groups.find(g => g.id === target.groupId);
         phases = [{ kind: "turn-end", ...state.current, memberIds: [combat.combatant?.id].filter(Boolean), legacy: true },
           { kind: "round-end", round: state.current.round, groupId: null, memberIds: all },
@@ -263,7 +325,8 @@ export class GroupedCombatService {
     const support = this.effects.inspect(combat.scene, combatantsOf(combat).map(c => c.actor));
     if (!support.supported) return rejection("unsupported-combat-effects", { issues: support.issues });
     const pending = state.pendingTransition;
-    return this.runPipeline(combat, state, pending.phases, pending.target, pending.operationId);
+    const result = await this.runPipeline(combat, state, pending.phases, pending.target, pending.operationId);
+    return result.ok ? this.#retireSettledCombat(combat, result) : result;
   }
   async reconcile(combat) {
     if (this.ready && !await this.ready) return rejection("combat-not-ready");
@@ -271,6 +334,7 @@ export class GroupedCombatService {
       const state = this.repository.readState(combat);
       if (!state || !this.isAuthority()) return;
       if (state.pendingTransition) return this.recoverPending(combat, state);
+      return this.#retireSettledCombat(combat);
     });
   }
   async resolveUncertainStep(request, { sender } = {}) {
@@ -290,7 +354,8 @@ export class GroupedCombatService {
       if (Object.values(state.receipts).some(r => r.status === "uncertain")) { await this.save(combat, state); return rejection("combat-blocked", { combatId: combat.id, state }); }
       state.mode = "active";
       const pending = state.pendingTransition;
-      return this.runPipeline(combat, state, pending.phases, pending.target, request.operationId);
+      const result = await this.runPipeline(combat, state, pending.phases, pending.target, request.operationId);
+      return result.ok ? this.#retireSettledCombat(combat, result) : result;
     });
   }
 }

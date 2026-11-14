@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { canUseCraftedPotion } from "../data/alchemy-crafting-rules.js?v=1.5.72";
-import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.66";
+import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.86";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.81";
 import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";
@@ -1266,8 +1266,11 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("midi-qol.preAttackRoll", workflow => runFlourish("applyMidiBladeFlourishPreAttack", workflow));
     Hooks.on("midi-qol.DamageRollComplete", workflow => runFlourish("applyMidiBladeFlourishDamage", workflow));
     Hooks.on("dnd5e.preCalculateDamage", (actor, damages, options) => bard.applyBladeFlourishPreCalculateDamage?.(actor, damages, options) ?? true);
-    Hooks.on("updateCombat", (combat, changes) => Object.hasOwn(changes ?? {}, "round") || Object.hasOwn(changes ?? {}, "turn")
-      ? runFlourish("handleBladeFlourishCombatTurn", combat) : true);
+    Hooks.on("updateCombat", (combat, changes, options) => {
+      if (options?.turnEvents === false && options[MODULE_ID]?.groupedNative === true) return true;
+      return Object.hasOwn(changes ?? {}, "round") || Object.hasOwn(changes ?? {}, "turn")
+        ? runFlourish("handleBladeFlourishCombatTurn", combat) : true;
+    });
     Hooks.on("deleteCombat", combat => runFlourish("handleBladeFlourishCombatEnd", combat));
     Hooks.on("deleteCombatant", combatant => runFlourish("handleBladeFlourishCombatantRemoved", combatant));
     const reconcileFlourish = scene => {

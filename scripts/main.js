@@ -327,12 +327,12 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.77";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.84";
-import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.78";
-import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.79";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.86";
+import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.86";
+import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.86";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
-import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.66";
-import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.83";
+import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.86";
+import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.86";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.70";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.5.85";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
@@ -427,14 +427,14 @@ import { getHarvestMaterialIcons, repairHarvestIcons } from "./data/creature-har
 import { renderHarvestChat } from "./integrations/creature-harvesting-chat.js?v=1.5.77";
 import { CREATURE_HARVEST_SETTING, CreatureHarvestRepository } from "./infrastructure/foundry/creature-harvest-repository.js?v=1.5.73";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
-import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.61";
+import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js?v=1.5.86";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js?v=1.5.60";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js?v=1.5.71";
 import {
   registerImplantDataModelPatch,
   registerImplantHooks
 } from "./integrations/implant-hooks.js";
-import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.5.61";
+import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.5.86";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerAntagonizeCommand } from "./combat/antagonize.js?v=1.5.59";
@@ -538,7 +538,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.5.85";
+const MODULE_STYLE_VERSION = "1.5.86";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -8803,7 +8803,7 @@ Hooks.once("ready", async () => {
 
   if (game.system?.id === "dnd5e" && game.modules?.get("midi-qol")?.active && !game.modules?.get("chris-premades")?.active) {
     try {
-      const { registerWorldCardAutomations } = await import("./integrations/world-card-automations/setup.js?v=1.5.61");
+      const { registerWorldCardAutomations } = await import("./integrations/world-card-automations/setup.js?v=1.5.86");
       registerWorldCardAutomations({ Hooks, game });
     } catch (error) {
       releaseGroupedCombat(error);

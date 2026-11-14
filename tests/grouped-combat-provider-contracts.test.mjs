@@ -50,6 +50,10 @@ test("source durations expire on the source member, Any repeats include suppress
   assert.equal(ordinaryCalls, 1);
   Hooks.events.updateCombat[0].fn({ flags: { "rebreya-main": { groupedCombat: { mode: "pending" } } } }, { turn: 2 });
   assert.equal(ordinaryCalls, 2, "pending native round must keep its original provider handler");
+  Hooks.events.updateCombat[0].fn({ flags: {} }, { turn: 3 }, { turnEvents: false, "rebreya-main": { groupedNative: true } });
+  assert.equal(ordinaryCalls, 2, "position repair does not replay provider turn effects");
+  Hooks.events.updateCombat[0].fn({ flags: {} }, { turn: 3 }, { turnEvents: false });
+  assert.equal(ordinaryCalls, 3, "unrelated native updates retain their original hooks");
   for (const step of api.plan(combat, { kind: "turn-start", round: 2, groupId: "g", memberIds: ["a", "b", "c"] })) await step.run();
   assert.equal(calls.some(c => c[0] === "a" && c[1] === "startTurn"), false);
   assert.equal(calls.some(c => c[0] === "b" && c[1] === "startTurn"), true);

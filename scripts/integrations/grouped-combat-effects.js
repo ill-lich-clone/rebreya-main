@@ -117,6 +117,8 @@ export function createGroupedCombatEffects(dependencies = {}) {
         if (!provider || original[GUARDED]) continue;
         const wrapped = function (...args) {
           if (hasGroupedCombatPhases(args[0])) return;
+          const options = args[2];
+          if (name === "updateCombat" && options?.turnEvents === false && options[MODULE_ID]?.groupedNative === true) return;
           return original.apply(this, args);
         };
         Object.defineProperty(wrapped, GUARDED, { value: provider });

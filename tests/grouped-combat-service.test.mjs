@@ -22,7 +22,7 @@ function setup() {
       combat.turns = combat.combatants;
     },
     async commitNativePosition(_combat, position) { positions.push(`${position.round}:${position.turn}`); Object.assign(combat, position, { started: position.round > 0 }); combat.combatant = combat.turns[combat.turn]; },
-    async beginCombat(_combat, position) { return this.commitNativePosition(_combat, position); }
+    async beginCombat(_combat, position = { round: 1, turn: 0 }) { return this.commitNativePosition(_combat, position); }
   };
   combat.rollInitiative = async ids => { for (const id of ids) { combat.combatants.find(c => c.id === id).initiative = id === "pc" ? 10 : 15; calls.push(`roll:${id}`); } };
   combat.updateEmbeddedDocuments = async (_type, updates) => { for (const update of updates) Object.assign(combat.combatants.find(c => c.id === update._id), update); };
@@ -32,6 +32,131 @@ function setup() {
   const start = operationId => service.start({ sceneId: "s", tokenUuids: tokens.map(t => t.uuid), operationId }, { sender: { id: "gm", isGM: true } });
   return { service, combat, calls, positions, repository, tokens, start, setFail: id => { fail = id; }, setGate: value => { gate = value; } };
 }
+
+test("macro starts and extends an all-singleton encounter with native turns and no grouped provider requirement", async () => {
+  const e = setup();
+  for (const token of e.tokens) token.baseActor = { id: token.id };
+  let inspected = 0;
+  e.service.effects.inspect = () => { inspected++; return { supported: false }; };
+  assert.equal((await e.start("native")).ok, true);
+  assert.deepEqual(e.positions, ["1:0"]);
+  assert.deepEqual(e.calls, ["roll:a", "roll:b", "roll:c", "roll:pc"]);
+  assert.equal(e.repository.readState(), null);
+  Object.assign(e.combat, { round: 4, turn: 2, combatant: e.combat.combatants[2] });
+  assert.equal((await e.start("extend-native")).ok, true);
+  assert.equal(e.combat.round, 4);
+  assert.equal(e.combat.turn, 2);
+  assert.equal(e.combat.combatant.id, "c");
+  assert.equal(e.repository.readState(), null);
+  assert.equal(inspected, 0);
+});
+
+test("GM reconciliation retires an old singleton journal without changing position or receipts", async () => {
+  const e = setup();
+  await e.repository.createMissingCombatants(e.combat, e.tokens);
+  Object.assign(e.combat, { started: true, round: 4, turn: 2, combatant: e.combat.turns[2] });
+  const state = { mode: "active", groups: e.tokens.map(t => ({ id: t.id, memberIds: [t.id] })),
+    current: { round: 4, groupId: "c" }, memberStarts: {}, receipts: { old: { status: "done" } } };
+  await e.repository.writeState(e.combat, state);
+  await e.service.reconcile(e.combat);
+  const retired = e.repository.readState();
+  assert.deepEqual(retired, { ...state, mode: "native", preserveTieOrder: true, revision: state.revision + 1 });
+  assert.equal(e.combat.combatant.id, "c");
+  assert.equal(e.combat.turn, 2);
+  assert.deepEqual(e.positions, []);
+  assert.deepEqual(e.calls, []);
+  assert.equal(e.service.isManaged(e.combat), false);
+  const stale = await e.service.transition({ combatId: "fight", expectedRevision: retired.revision, targetRound: 4, targetGroupId: "pc", operationId: "stale" }, { sender: { isGM: true } });
+  assert.equal(stale.ok, false);
+  await e.service.reconcile(e.combat);
+  assert.equal(e.repository.readState().revision, retired.revision);
+});
+
+test("reconcile keeps shared history and blocked recovery in the grouped lifecycle", async () => {
+  const e = setup();
+  for (const fields of [
+    { mode: "active", hadSharedTurns: true },
+    { mode: "active", groups: [{ id: "a", memberIds: ["a", "b"] }] },
+    { mode: "active", memberStarts: { old: ["a", "b"] } },
+    { mode: "active", receipts: { running: { status: "running" } } },
+    { mode: "blocked", receipts: { uncertain: { status: "uncertain" } } }
+  ]) {
+    e.combat.flags = {};
+    const state = { mode: "active", groups: [{ id: "a", memberIds: ["a"] }], receipts: {}, memberStarts: {}, ...fields };
+    await e.repository.writeState(e.combat, state);
+    await e.service.reconcile(e.combat);
+    assert.deepEqual(e.repository.readState(), state);
+    assert.equal(e.service.isManaged(e.combat), true);
+  }
+});
+
+test("adding a true group to a retired encounter reuses pending round activation", async () => {
+  const e = setup();
+  await e.repository.createMissingCombatants(e.combat, [e.tokens[0], e.tokens[3]]);
+  const [a, pc] = e.combat.combatants;
+  a.initiative = 15; pc.initiative = 10;
+  Object.assign(e.combat, { started: true, round: 4, turn: 1, combatant: pc });
+  const retired = { mode: "native", current: { round: 3, groupId: "a" }, groups: [{ id: "a", memberIds: ["a"] }],
+    receipts: { old: { status: "done" } }, memberStarts: {} };
+  await e.repository.writeState(e.combat, retired);
+  assert.equal((await e.start("add-group")).pending, true);
+  const pending = e.repository.readState();
+  assert.equal(pending.revision, retired.revision + 1);
+  assert.equal(pending.activateAtRound, 5);
+  assert.deepEqual(pending.current, { round: 4, groupId: "group:pc" });
+  assert.deepEqual(pending.groups[0].memberIds, ["a", "b", "c"]);
+  assert.deepEqual(e.calls, []);
+  assert.equal(e.combat.combatant.id, "pc");
+});
+
+test("adding a higher-initiative singleton preserves the acting combatant without replaying effects", async () => {
+  const e = setup();
+  await e.repository.createMissingCombatants(e.combat, [e.tokens[3]]);
+  const pc = e.combat.combatants[0];
+  pc.initiative = 10;
+  Object.assign(e.combat, { started: true, round: 4, turn: 0, combatant: pc });
+  e.combat.setupTurns = () => {
+    e.combat.turns = [...e.combat.combatants].sort((a, b) => b.initiative - a.initiative);
+    e.combat.combatant = e.combat.turns[e.combat.turn];
+  };
+  const nativeRoll = e.combat.rollInitiative;
+  e.combat.rollInitiative = async ids => { await nativeRoll(ids); e.combat.setupTurns(); };
+  const result = await e.service.start({ sceneId: "s", tokenUuids: [e.tokens[0].uuid], operationId: "add-single" }, { sender: { isGM: true } });
+  assert.equal(result.ok, true);
+  assert.equal(e.combat.combatant, pc);
+  assert.deepEqual(e.positions, ["4:1"]);
+  assert.deepEqual(e.calls, ["roll:a"]);
+  assert.equal(e.repository.readState(), null);
+});
+
+test("checks provider compatibility when the last roll unexpectedly ties an existing groupable NPC", async () => {
+  const e = setup();
+  await e.repository.createMissingCombatants(e.combat, [e.tokens[0], e.tokens[1]]);
+  e.combat.combatants[0].initiative = 15; e.combat.combatants[1].initiative = 12;
+  let inspections = 0;
+  e.service.effects.inspect = () => { inspections++; return { supported: false }; };
+  const result = await e.service.start({ sceneId: "s", tokenUuids: [e.tokens[2].uuid], operationId: "tied-roll" }, { sender: { isGM: true } });
+  assert.equal(result.ok, true);
+  assert.equal(inspections, 1);
+  assert.equal(e.repository.readState(), null);
+  assert.deepEqual(e.calls, ["roll:c"]);
+});
+
+test("reconciles a completed singleton recovery into native mode without replaying effects", async () => {
+  const e = setup();
+  await e.repository.createMissingCombatants(e.combat, [e.tokens[0]]);
+  const current = { round: 3, groupId: "a" };
+  const state = { mode: "active", groups: [{ id: "a", memberIds: ["a"] }], current, memberStarts: {},
+    receipts: { old: { status: "done" } }, pendingTransition: { target: current, phases: [], operationId: "old",
+      committedPositions: [JSON.stringify(current)], lastPosition: current } };
+  Object.assign(e.combat, { started: true, round: 3, turn: 0, combatant: e.combat.turns[0] });
+  await e.repository.writeState(e.combat, state);
+  assert.equal((await e.service.reconcile(e.combat)).ok, true);
+  assert.equal(e.repository.readState().mode, "native");
+  assert.equal(e.repository.readState().receipts.old.status, "done");
+  assert.deepEqual(e.positions, []);
+  assert.deepEqual(e.calls, []);
+});
 
 test("large forward jumps are rejected before phase execution or persistent writes", async () => {
   const e = setup(); await e.start("start");

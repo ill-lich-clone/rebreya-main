@@ -349,7 +349,8 @@ export function registerCprCardHandlers({ Hooks, game, definitions }) {
     });
   }
   if (["turnEnd", "everyTurn", "turnStartNear"].some((pass) => used.has("combat." + pass)))
-    register("updateCombat", async (combat, changes) => {
+    register("updateCombat", async (combat, changes, options) => {
+      if (options?.turnEvents === false && options["rebreya-main"]?.groupedNative === true) return;
       if (grouped && ["active", "blocked"].includes(combat.flags?.["rebreya-main"]?.groupedCombat?.mode)) return;
       if (!combat.started || !combat.isActive || !("turn" in changes || "round" in changes)) return;
       const cur = combat.current,

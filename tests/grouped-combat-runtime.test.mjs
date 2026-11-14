@@ -114,6 +114,25 @@ test("normal next advances an entire group once; ordinary combat delegates; regi
   dispose(); delete globalThis.game;
 });
 
+test("retired singleton combat delegates navigation, direct updates and effect lifecycle to Foundry", async (t) => {
+  const e = fixture(), combat = new e.Combat();
+  combat.flags["rebreya-main"].groupedCombat.mode = "native";
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat, CombatantClass: e.Combatant }));
+  await combat.nextTurn();
+  await combat.previousTurn();
+  await combat.nextRound();
+  await combat.update({ round: 2, turn: 1 });
+  await combat._manageTurnEvents();
+  assert.deepEqual(e.calls, ["original-next", "original-previous", "original-round", "original-lifecycle"]);
+  assert.equal(combat.turn, 1);
+  assert.equal(combat.round, 2);
+  assert.equal(new e.Combatant().getGroupingKey.call({ parent: combat }), "original");
+  const state = combat.flags["rebreya-main"].groupedCombat;
+  state.mode = "pending";
+  state.nativeTieGroups = [{ id: "early", memberIds: ["b"] }, { id: "late", memberIds: ["a"] }];
+  assert.ok(combat._sortCombatants(combat.combatants[0], combat.combatants[1]) > 0);
+});
+
 test("skipping defeated groups reads the combatant collection once per navigation", async (t) => {
   const e = fixture(), combat = new e.Combat();
   t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));

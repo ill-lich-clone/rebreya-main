@@ -1,7 +1,7 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
 import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
-import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.66";
-import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.79";
+import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.86";
+import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.86";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
@@ -182,7 +182,7 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   });
   for (const [method, direction] of [["nextRound", 1], ["previousRound", -1]]) patch(prototype, method, original => async function (...args) {
     const state = stateOf(this), round = this.round + direction;
-    if (!state || (state.mode === "pending" && round < state.activateAtRound)) return original.apply(this, args);
+    if (!state || state.mode === "native" || (state.mode === "pending" && round < state.activateAtRound)) return original.apply(this, args);
     const groups = usableGroups(this);
     if (round < 1 || !groups.length) return this;
     if (direction < 0 || state.mode === "pending" || !globalThis.game?.user?.isGM) return navigate(this, { round, groupId: groups[0].id });
@@ -213,7 +213,7 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   });
   patch(prototype, "update", original => async function (data, options = {}) {
     const state = stateOf(this);
-    if (!state || GROUPED_NATIVE_WRITES.has(this) || (data.round === undefined && data.turn === undefined)
+    if (!state || state.mode === "native" || GROUPED_NATIVE_WRITES.has(this) || (data.round === undefined && data.turn === undefined)
       || (state.mode === "pending" && (data.round ?? this.round) < state.activateAtRound)) return original.call(this, data, options);
     const group = state.groups.find(g => g.memberIds.includes(this.turns?.[data.turn ?? this.turn]?.id)), round = data.round ?? this.round;
     if (!group || round < 1) throw new Error("Завершите бой перед сбросом общего порядка ходов.");
@@ -241,18 +241,20 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
   });
   patch(prototype, "_sortCombatants", original => function (a, b) {
     const state = stateOf(a.parent ?? b.parent);
-    if (!state || state.mode === "pending" || a.initiative !== b.initiative) return original.call(this, a, b);
-    const left = state.groups.find(g => g.memberIds.includes(a.id)), right = state.groups.find(g => g.memberIds.includes(b.id));
+    const groups = state?.mode === "pending" || (state?.mode === "native" && !state.preserveTieOrder)
+      ? state?.nativeTieGroups : state?.groups;
+    if (!groups || a.initiative !== b.initiative) return original.call(this, a, b);
+    const left = groups.find(g => g.memberIds.includes(a.id)), right = groups.find(g => g.memberIds.includes(b.id));
     const leftKey = left?.id ?? `single:${a.id}`, rightKey = right?.id ?? `single:${b.id}`;
     return leftKey !== rightKey ? leftKey.localeCompare(rightKey) : original.call(this, a, b);
   });
   patch(CombatantClass?.prototype, "getGroupingKey", original => function (...args) {
-    const state = stateOf(this.parent); if (!state || state.mode === "pending") return original.apply(this, args);
+    const state = stateOf(this.parent); if (!hasGroupedCombatPhases(this.parent)) return original.apply(this, args);
     const group = state.groups.find(g => g.memberIds.includes(this.id)); return group?.memberIds.length > 1 ? group.id : null;
   });
   patch(CombatTrackerClass?.prototype, "renderGroups", original => function (html, ...args) {
     const result = original.call(this, html, ...args), state = stateOf(this.viewed);
-    if (state && state.mode !== "pending") for (const row of html.querySelectorAll(".combatant-group[data-group-key]")) {
+    if (hasGroupedCombatPhases(this.viewed)) for (const row of html.querySelectorAll(".combatant-group[data-group-key]")) {
       const group = state.groups.find(g => g.id === row.dataset.groupKey), count = row.querySelector(".group-numbers");
       if (count && group) count.textContent = `${combatantsOf(this.viewed).filter(c => group.memberIds.includes(c.id)).length} · Общий ход`;
     }
