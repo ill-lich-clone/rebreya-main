@@ -242,7 +242,7 @@ export function registerCombatHooks(moduleApi) {
       Hooks.on(event, (document, options) => run(simpleUpgrades.handleChanged(document, options)));
     }
     for (const event of ["updateActor", "updateItem", "updateActiveEffect"]) {
-      Hooks.on(event, (document, _changed, options) => run(simpleUpgrades.handleChanged(document, options)));
+      Hooks.on(event, (document, changed, options) => run(simpleUpgrades.handleChanged(document, options, changed)));
     }
   }
 

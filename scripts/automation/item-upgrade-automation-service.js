@@ -179,8 +179,26 @@ export class ItemUpgradeAutomationService {
       }
     }
   }
-  handleChanged(document, options = {}) {
+  async clearExpiredAimEffects(actor) {
+    if (!this.isAuthority()) return;
+    const expired = effect => {
+      const marker = getFlag(effect, FLAG);
+      return marker?.managed === true && marker.hostItemId && /:aim-movement:(walk|fly|swim|climb|burrow)$/u.test(marker.key)
+        && !getFlag(actor.items?.get?.(marker.hostItemId), "weaponModAim");
+    };
+    if (!values(actor.effects).some(expired)) return;
+    await this.moduleApi.worldMutationCoordinator.run(`simple-upgrades:${actor.uuid}`, async () => {
+      if (!this.isAuthority()) return;
+      const ids = values(actor.effects).filter(expired).map(effect => effect.id);
+      if (ids.length) await actor.deleteEmbeddedDocuments("ActiveEffect", ids, { rebreyaSimpleUpgradeSync: true });
+    });
+  }
+  handleChanged(document, options = {}, changed = null) {
     if (options.rebreyaSimpleUpgradeSync) return Promise.resolve();
+    const own = changed?.flags?.[MODULE_ID], keys = Object.keys(own ?? {});
+    if (document?.documentName === "Actor" && keys.length && Object.keys(changed.flags).length === 1
+      && Object.keys(changed).every(key => ["_id", "_stats", "flags"].includes(key))
+      && keys.every(key => ["weaponModMovement", "reactionState"].includes(key.replace(/^==/u, "")))) return Promise.resolve();
     return this.requestSync(document?.actor ?? (document?.parent?.items ? document.parent : document));
   }
   #createWeaponModBayonetItem(activity){

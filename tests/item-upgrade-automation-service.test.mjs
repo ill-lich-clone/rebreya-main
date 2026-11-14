@@ -2,6 +2,64 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ItemUpgradeAutomationService } from "../scripts/automation/item-upgrade-automation-service.js";
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
+import { CombatAttackService } from "../scripts/combat/attack-service.js";
+import { registerCombatHooks } from "../scripts/combat/hooks.js";
+
+test("one ordinary turn with five participants leaves equipment and world lighting alone", async (t) => {
+  const previous = { game: globalThis.game, Hooks: globalThis.Hooks, Actor: globalThis.Actor, Combat: globalThis.Combat, foundry: globalThis.foundry };
+  t.after(() => Object.assign(globalThis, previous));
+  const hooks = new Map();
+  globalThis.Hooks = { on(name, fn) { (hooks.get(name) ?? hooks.set(name, []).get(name)).push(fn); } };
+  const fire = (name, ...args) => Promise.all((hooks.get(name) ?? []).map(fn => fn(...args)));
+  const counts = { syncs: 0, items: 0, lights: 0 };
+  const scenes = Array.from({ length: 20 }, () => ({
+    lights: Array.from({ length: 50 }, () => ({ getFlag() { counts.lights++; } }))
+  }));
+  const ns = "rebreya-main", gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = { user: gm, release: { generation: 14 }, scenes };
+  globalThis.foundry = { utils: { deepClone: structuredClone } };
+  globalThis.Combat = class Combat {};
+  globalThis.Actor = class Actor {
+    documentName = "Actor";
+    constructor(i) {
+      this.id = `a${i}`; this.uuid = `Actor.${this.id}`; this.type = "npc";
+      this.flags = {}; this.effects = new Map();
+      this.items = Array.from({ length: 20 }, () => ({ toObject() { counts.items++; return {}; } }));
+      this.items.contents = [...this.items];
+    }
+    getFlag(module, key) { return this.flags[module]?.[key]; }
+    async update(patch) {
+      const path = `flags.${ns}.==weaponModMovement`;
+      if (path in patch) (this.flags[ns] ??= {}).weaponModMovement = patch[path];
+      return fire("updateActor", this, { _id: this.id, _stats: { modifiedTime: 1 }, flags: { [ns]: { weaponModMovement: patch[path] } } }, {});
+    }
+    async setFlag(module, key, value) {
+      (this.flags[module] ??= {})[key] = value;
+      return fire("updateActor", this, { _id: this.id, flags: { [module]: { [key]: value } } }, {});
+    }
+    async createEmbeddedDocuments() {}
+  };
+  const actors = Array.from({ length: 5 }, (_, i) => new Actor(i));
+  const coordinator = new WorldMutationCoordinator();
+  const api = { worldMutationCoordinator: coordinator, inventoryService: { mutationCoordinator: coordinator } };
+  api.combatAttackService = new CombatAttackService(api);
+  api.itemUpgradeAutomationService = new ItemUpgradeAutomationService(api, { readActor(uuid) {
+    counts.syncs++;
+    return actors.find(actor => actor.uuid === uuid);
+  } });
+  registerCombatHooks(api);
+  const combat = Object.assign(new Combat(), { id: "fight", round: 1, turn: 1, combatants: actors.map(actor => ({ actor })) });
+  combat.combatant = combat.combatants[1];
+  game.combat = combat;
+  await api.combatAttackService.handleCombatTurnChange(combat, { round: 1, turn: 1 });
+  assert.equal(actors[1].getFlag(ns, "weaponModMovement").feet, 0);
+  assert.equal(actors[1].getFlag(ns, "reactionState").usesRemaining, 1);
+  assert.deepEqual(counts, { syncs: 0, items: 0, lights: 0 });
+  await fire("updateActor", actors[1], { flags: { [ns]: { "==weaponModMovement": { feet: 0 } } } }, {});
+  assert.equal(counts.syncs, 0, "legacy replacement syntax is also a turn-only update");
+  await fire("updateActor", actors[1], { flags: { [ns]: { reactionState: {} } }, system: { attributes: { hp: { max: 7 } } } }, {});
+  assert.equal(counts.syncs, 1, "a mixed Actor update still refreshes equipment");
+});
 
 function fixture() {
   const effects = new Map(); let writes = 0, authority = true;
@@ -26,6 +84,38 @@ test("sync is idempotent; remove preserves unrelated and curse effects", async (
   await f.service.requestSync(f.actor.uuid, "repeat"); assert.equal(f.writes(), writes);
   f.setContributions([]); await f.service.requestSync(f.actor.uuid, "remove");
   assert.deepEqual([...f.effects.keys()], ["user", "curse"]);
+});
+
+test("expired aim clears only its movement effects without a full equipment sync", async (t) => {
+  const previous = globalThis.game;
+  t.after(() => { globalThis.game = previous; });
+  globalThis.game = { user: { id: "gm", isGM: true, active: true } };
+  const f = fixture(), ns = "rebreya-main";
+  f.actor.id = "a";
+  const host = { id: "host", aim: { combatId: "fight", round: 1, turn: 0 },
+    getFlag(_module, key) { return key === "weaponModAim" ? this.aim : undefined; },
+    async update(_patch, options) { this.aim = undefined; await f.service.handleChanged(this, options); },
+    actor: f.actor
+  };
+  f.actor.items = new Map([[host.id, host]]);
+  f.actor.items.contents = [host];
+  const managed = (id, key, hostItemId) => ({ id, flags: { [ns]: { simpleItemUpgrade: { managed: true, key, hostItemId } } } });
+  f.effects.set("aim", managed("aim", "weapon:aim-movement:walk", host.id));
+  f.effects.set("armor", managed("armor", "armor:passive", host.id));
+  f.actor.items.set("other", { aim: true, getFlag() { return this.aim; } });
+  f.effects.set("other", managed("other", "other:aim-movement:walk", "other"));
+  f.service.syncActor = async () => { throw new Error("full equipment sync"); };
+  const api = { inventoryService: { mutationCoordinator: new WorldMutationCoordinator() }, itemUpgradeAutomationService: f.service };
+  const attack = new CombatAttackService(api);
+  const combat = { id: "fight", round: 1, turn: 1, combatants: [{ actor: f.actor }] };
+  const deleteEffects = f.actor.deleteEmbeddedDocuments;
+  f.actor.deleteEmbeddedDocuments = async () => { throw new Error("temporary delete failure"); };
+  await assert.rejects(attack.handleWeaponModTurnChange(combat), /temporary delete failure/);
+  assert.equal(host.aim, undefined);
+  assert.ok(f.effects.has("aim"));
+  f.actor.deleteEmbeddedDocuments = deleteEffects;
+  await attack.handleWeaponModTurnChange(combat);
+  assert.deepEqual([...f.effects.keys()], ["armor", "other"]);
 });
 test("identical item contributions remain separate and loss of authority prevents writes", async () => {
   const f = fixture();

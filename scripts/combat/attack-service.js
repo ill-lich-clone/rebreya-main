@@ -1777,9 +1777,10 @@ export class CombatAttackService {
           const aim=host.getFlag?.(MODULE_ID,"weaponModAim");
           if(aim && (ended || aim.combatId!==combat.id || aim.round!==combat.round || aim.turn!==combat.turn || !active.has(actor.uuid))){
             if(!isActiveGmClient(globalThis.game))return;
-            await host.update({[`flags.${MODULE_ID}.-=weaponModAim`]:null},{render:false});
+            await host.update({[`flags.${MODULE_ID}.-=weaponModAim`]:null},{render:false, rebreyaSimpleUpgradeSync:true});
           }
         }
+        await this.moduleApi.itemUpgradeAutomationService?.clearExpiredAimEffects?.(actor);
         if(!ended && active.has(actor.uuid)){
           const token=active.get(actor.uuid).token,current=actor.getFlag?.(MODULE_ID,"weaponModMovement");
           if(current?.combatId===combat.id && current.round===combat.round && current.turn===combat.turn)return;
@@ -1788,7 +1789,6 @@ export class CombatAttackService {
             tokenId:token?.id??null,position:token?{x:token.x,y:token.y}:null,lastMovementId:null}});
         }
       });
-      await this.moduleApi.itemUpgradeAutomationService?.requestSync?.(actor);
     }
   }
 

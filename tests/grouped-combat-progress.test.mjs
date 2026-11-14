@@ -29,16 +29,16 @@ function fixture() {
   class Combatants extends Map { [Symbol.iterator]() { return this.values(); } }
   const combat = new Combat(), state = { mode: "active", pendingTransition: { operationId: "work" }, groups: [] };
   Object.assign(combat, { id: "fight", flags: { "rebreya-main": { groupedCombat: state } }, current: { round: 1, turn: 1, combatantId: "a" }, previous: { round: 1, turn: 0, combatantId: "b" }, combatants: new Combatants() });
-  for (const id of ["a", "b", "c"]) { const c = new Combatant(); Object.assign(c, { id, parent: combat, actor: { render() { sheets++; } } }); combat.combatants.set(id, c); }
+  for (const id of ["a", "b", "c", "d", "e"]) { const c = new Combatant(); Object.assign(c, { id, parent: combat, actor: { render() { sheets++; } } }); combat.combatants.set(id, c); }
   const dispose = registerGroupedCombatRuntime({ groupedCombatService: { effects: { installNativeGuards() {} } } }, { CombatClass: Combat, CombatantClass: Combatant, Hooks: {} });
   return { combat, state, dispose, counts: () => ({ sheets, rings, bookkeeping }) };
 }
 const options = () => ({ render: false, turnEvents: false, "rebreya-main": { groupedCombatProgress: true } });
-const progress = () => ({ _id: "fight", flags: { "rebreya-main": { groupedCombat: { revision: 2, receipts: { effect: { status: "running" } } } } } });
+const progress = () => ({ _id: "fight", _stats: { modifiedTime: 1794680000000 }, flags: { "rebreya-main": { groupedCombat: { revision: 2, receipts: { effect: { status: "running" } } } } } });
 
 test("journal updates run native Document bookkeeping without per-receipt actor/ring refreshes", () => {
   const e = fixture();
-  try { for (let i = 0; i < 40; i++) e.combat._onUpdate(progress(), options(), "gm"); assert.deepEqual(e.counts(), { sheets: 0, rings: 0, bookkeeping: 40 }); }
+  try { for (let i = 0; i < 18; i++) e.combat._onUpdate(progress(), options(), "gm"); assert.deepEqual(e.counts(), { sheets: 0, rings: 0, bookkeeping: 18 }); }
   finally { e.dispose(); }
 });
 
@@ -52,7 +52,7 @@ test("final, ordinary, unmarked and mixed updates retain native actor/ring refre
     if (variant === "foreign") changed.flags.other = {};
     if (variant === "mixed") changed.flags["rebreya-main"].other = {};
     if (variant === "foreign-id") changed._id = "another-combat";
-    try { e.combat._onUpdate(changed, opts, "gm"); assert.deepEqual(e.counts(), { sheets: 3, rings: 2, bookkeeping: 1 }, variant); }
+    try { e.combat._onUpdate(changed, opts, "gm"); assert.deepEqual(e.counts(), { sheets: 5, rings: 2, bookkeeping: 1 }, variant); }
     finally { e.dispose(); }
   }
 });

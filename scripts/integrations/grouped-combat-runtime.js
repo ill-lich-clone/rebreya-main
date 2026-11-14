@@ -1,7 +1,7 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js?v=1.4.397";
 import { combatantsOf, GROUPED_COMBAT_FLAG } from "../combat/turn-group-rules.js?v=1.5.66";
 import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.66";
-import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.78";
+import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.79";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];

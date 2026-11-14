@@ -16,7 +16,7 @@ export function isGroupedCombatProgressUpdate(combat, changed, options = {}) {
   if (options[MODULE_ID]?.groupedCombatProgress !== true || options.render !== false || options.turnEvents !== false) return false;
   const state = stateOf(combat), flags = changed?.flags, own = flags?.[MODULE_ID];
   return state?.mode === "active" && Boolean(state.pendingTransition) && (changed._id === undefined || changed._id === combat.id)
-    && Object.keys(changed).every(key => key === "flags" || key === "_id")
+    && Object.keys(changed).every(key => key === "flags" || key === "_id" || key === "_stats")
     && Object.keys(flags ?? {}).length === 1 && Object.keys(own ?? {}).length === 1
     && [GROUPED_COMBAT_FLAG, `==${GROUPED_COMBAT_FLAG}`].includes(Object.keys(own ?? {})[0]);
 }

@@ -128,7 +128,7 @@ import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.23";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.23";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.61";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.79";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.16";
@@ -327,14 +327,14 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.77";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.72";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.79";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.78";
-import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.78";
+import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.79";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.66";
-import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.78";
+import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.79";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.70";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.70";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.79";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.5.61";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.5.63";
