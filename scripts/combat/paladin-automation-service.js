@@ -729,6 +729,16 @@ export class PaladinAutomationService {
     return true;
   }
 
+  registerMagistrateEffectIndex(hooks = globalThis.Hooks) {
+    if (this._magistrateIndexEnabled || typeof hooks?.on !== "function") return;
+    this._magistrateIndexEnabled = true;
+    const invalidate = () => { this._magistrateWorldTargets = null; };
+    for (const event of ["createActiveEffect", "updateActiveEffect", "deleteActiveEffect", "createActor", "deleteActor"]) hooks.on(event, invalidate);
+    hooks.on("updateActor", (_actor, changes) => {
+      if (Object.hasOwn(changes ?? {}, "effects")) invalidate();
+    });
+  }
+
   registerLongRestSteps(pipeline) {
     if (typeof pipeline?.registerStep !== "function") return false;
     pipeline.registerStep({
@@ -1121,7 +1131,13 @@ export class PaladinAutomationService {
         actors.add(combatant.actor);
       }
     }
-    for (const actor of collectionValues(game.actors)) {
+    if (!this._magistrateIndexEnabled || !this._magistrateWorldTargets || this._magistrateWorldCollection !== game.actors) {
+      this._magistrateWorldCollection = game.actors;
+      this._magistrateWorldTargets = collectionValues(game.actors).filter(actor => actor instanceof Actor && collectionValues(actor.effects).some(effect =>
+        effectFlag(effect, "paladinAutomation.kind") === "magistrateEffect"
+        && effectFlag(effect, "paladinAutomation.duration") === "sourceNextTurn"));
+    }
+    for (const actor of this._magistrateWorldTargets) {
       if (actor instanceof Actor) {
         actors.add(actor);
       }

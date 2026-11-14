@@ -793,3 +793,26 @@ test("twisted auras remain visible for every link outside combat and follow thei
     "rebreya-main.twisted-aura.twisted-2"
   ]);
 });
+
+test("twisted aura refresh avoids empty end operations and preserves exact aura filters", async () => {
+  const ended = [], queries = [];
+  let existing = [];
+  const manager = {
+    getEffects(filter) { queries.push(filter); return existing; },
+    async endEffects(filter) { ended.push(filter); }
+  };
+  const env = environment({serviceOverrides: {
+    gameProvider: () => ({modules: new Map([["sequencer", {active: true}]])}),
+    effectManagerProvider: () => manager
+  }});
+  await env.service.refreshTwistedAura({combatant: {token: env.target}}, env.scene);
+  assert.equal(queries.length, 1);
+  assert.deepEqual(ended, []);
+  existing = [
+    {id: "a", data: {name: "rebreya-main.twisted-turn-aura"}},
+    {id: "b", data: {name: "rebreya-main.twisted-aura.abc"}},
+    {id: "c", data: {name: "rebreya-main.twisted-other"}}
+  ];
+  await env.service.refreshTwistedAura({combatant: {token: env.target}}, env.scene);
+  assert.deepEqual(ended, [{effects: ["a", "b"], sceneId: "scene"}]);
+});

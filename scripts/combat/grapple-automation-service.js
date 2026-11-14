@@ -462,7 +462,12 @@ export class GrappleAutomationService {
     const combatTarget = combat?.combatant?.token?.document ?? combat?.combatant?.token ?? null;
     const activeScene = scene ?? combatTarget?.parent ?? globalThis.canvas?.scene ?? game?.scenes?.active ?? null;
     const sceneId = clean(activeScene?.id);
-    if (typeof effectManager?.endEffects === "function") {
+    if (typeof effectManager?.endEffects === "function" && typeof effectManager?.getEffects === "function") {
+      const effects = effectManager.getEffects({ name: `${MODULE_ID}.twisted-*`, ...(sceneId ? { sceneId } : {}) })
+        .filter(effect => effect.data?.name === `${MODULE_ID}.twisted-turn-aura` || effect.data?.name?.startsWith(`${MODULE_ID}.twisted-aura.`))
+        .map(effect => effect.id);
+      if (effects.length) await effectManager.endEffects({ effects, ...(sceneId ? { sceneId } : {}) });
+    } else if (typeof effectManager?.endEffects === "function") {
       await effectManager.endEffects({ name: `${MODULE_ID}.twisted-turn-aura`, ...(sceneId ? { sceneId } : {}) });
       await effectManager.endEffects({ name: `${MODULE_ID}.twisted-aura.*`, ...(sceneId ? { sceneId } : {}) });
     }

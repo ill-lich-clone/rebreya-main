@@ -327,7 +327,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.77";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.79";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.81";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.78";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.79";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
@@ -372,7 +372,7 @@ import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automa
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
-} from "./combat/paladin-automation-service.js?v=1.5.70";
+} from "./combat/paladin-automation-service.js?v=1.5.81";
 import { PaladinDogmaAutomationService } from "./combat/paladin-dogma-automation-service.js?v=1.4.111-paladin-dogmas";
 import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.5.70";
 import {
@@ -384,7 +384,7 @@ import { registerBardicInspirationCommand, registerBladeFlourishCommand, registe
 import { MOUNTED_TOGGLE_COMMAND, registerMountedToggleCommand, registerMountedChargeDamageCommand } from "./infrastructure/foundry/mounted-charge-command.js?v=1.5.58";
 import { registerClassCombatCommands } from "./infrastructure/foundry/class-combat-command.js?v=1.5.70";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.70";
-import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js?v=1.5.70";
+import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js?v=1.5.81";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.58";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.5.59";
 import { getActorHandReservations } from "./integrations/held-items.js?v=1.5.29";

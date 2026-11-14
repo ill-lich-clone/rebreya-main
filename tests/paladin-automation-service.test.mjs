@@ -2005,3 +2005,50 @@ test("v14 ordinary turn effects use the committed combatant on round rollover an
     assert.deepEqual(calls,[["first",2,0]]);
   } finally {globalThis.game=previousGame;globalThis.Hooks=previousHooks;}
 });
+
+test("v14 fighter start automation runs once for a forward turn", async () => {
+  const previousGame = globalThis.game, previousHooks = globalThis.Hooks;
+  const gm = {id: "gm", active: true, isGM: true}, listeners = new Map(), calls = [];
+  globalThis.game = {user: gm, users: {activeGM: gm}, release: {generation: 14}};
+  globalThis.Hooks = {on(name, fn) { listeners.set(name, [...(listeners.get(name) ?? []), fn]); }};
+  try {
+    registerCombatHooks({fighterAutomationService: {
+      async handleCombatTurnChange(_combat, current) { calls.push(current.combatantId); },
+      async handleCombatTurnEnd() {}
+    }});
+    const previous = {round: 1, turn: 0, combatantId: "a"};
+    const current = {round: 1, turn: 1, combatantId: "b"};
+    for (const fn of listeners.get("combatTurnChange") ?? []) fn({}, previous, current);
+    assert.deepEqual(calls, ["b"]);
+    for (const fn of listeners.get("combatTurnChange") ?? []) fn({}, current, previous);
+    assert.deepEqual(calls, ["b", "a"], "backward turn retains its existing fighter check");
+  } finally { globalThis.game = previousGame; globalThis.Hooks = previousHooks; }
+});
+
+test("world magistrate targets are cached and invalidated on effect and actor changes", async () => {
+  const oldGame = globalThis.game;
+  const source = new TestActor({id: "source"}), target = new TestActor({id: "remote"});
+  let reads = 0, deleted = 0;
+  const hooks = new Map();
+  const service = new PaladinAutomationService({});
+  const events = {on(name, fn) { hooks.set(name, fn); }};
+  const actors = {get contents() { reads++; return [target]; }};
+  globalThis.game = {...oldGame, actors};
+  try {
+    service.registerMagistrateEffectIndex(events);
+    const combat = {combatants: {contents: [{actor: source}]}};
+    const turn = () => service.handleCombatTurnChange(combat, {current: {actor: source}});
+    await turn(); await turn();
+    assert.equal(reads, 2, "unchanged world is scanned once");
+    target.effects.contents.push({flags: {"rebreya-main": {paladinAutomation: {
+      kind: "magistrateEffect", duration: "sourceNextTurn", sourceActorUuid: source.uuid
+    }}}, async delete() { deleted++; }});
+    hooks.get("createActiveEffect")({parent: target});
+    await turn();
+    assert.equal(deleted, 1, "newly added world effect expires");
+    assert.equal(reads, 4);
+    hooks.get("deleteActor")(target);
+    await turn();
+    assert.equal(reads, 6);
+  } finally { globalThis.game = oldGame; }
+});

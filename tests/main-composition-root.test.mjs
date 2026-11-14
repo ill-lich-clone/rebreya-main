@@ -9,7 +9,7 @@ import { PrivilegedMutationGateway } from "../scripts/application/privileged-mut
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.5.61";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.5.68";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
-import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js?v=1.5.70";
+import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js?v=1.5.81";
 import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.5.58";
 import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.5.59";
 import {
@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.80");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.80.js"]);
+  assert.equal(manifest.version, "1.5.81");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.81.js"]);
   assert.match(mainSource, /application\/equipment-size-service\.js\?v=1\.5\.63/u);
   assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.7/u);
   assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.79/u);

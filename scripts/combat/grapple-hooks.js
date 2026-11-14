@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient as defaultIsActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { getActorHandReservations } from "../integrations/held-items.js?v=1.5.29";
-import { GRAPPLE_BYPASS_OPTION, GRAPPLE_LINK_FLAG } from "./grapple-automation-service.js?v=1.5.70";
+import { GRAPPLE_BYPASS_OPTION, GRAPPLE_LINK_FLAG } from "./grapple-automation-service.js?v=1.5.81";
 
 const patchedDragConstrainPrototypes = new WeakSet();
 
