@@ -1217,12 +1217,11 @@ export class CombatAttackService {
   getWeaponModAttackConditions(activity,target,config={}) {
     const host=activity?.item,actor=host?.actor??host?.parent,combat=globalThis.game?.combat;
     const contributions=this.moduleApi.itemUpgradeAutomationService?.project?.(actor,host)?.contributions??[];
-    const aim=getWeaponModAimState(host,combat,contributions),movement=actor?.getFlag?.(MODULE_ID,"weaponModMovement")??actor?.flags?.[MODULE_ID]?.weaponModMovement;
-    const movingNow=Boolean(combat && isCombatActorActive(combat,actor) && movement?.combatId===combat.id && movement.round===combat.round && movement.turn===combat.turn);
+    const aim=getWeaponModAimState(host,combat,contributions);
     const nativeProficiency=this.moduleApi.itemUpgradeAutomationService?.getWeaponModActivityProficiency?.(activity)??host?.system?.prof?.hasProficiency,legacyProficiency=host?.system?.proficient;
     const targetUuid=target?.document?.uuid??target?.uuid??null,visibility=config.workflow?.targetVisibility?.get?.(targetUuid);
     const water=actor?.getFlag?.(MODULE_ID,"underwater")??actor?.flags?.[MODULE_ID]?.underwater??globalThis.canvas?.scene?.getFlag?.(MODULE_ID,"underwater");
-    const known={movedFeet:movingNow && Number.isFinite(movement.feet)?movement.feet:aim?.movedFeet??null,
+    const known={movedFeet:aim?.movedFeet??null,
       prone:actor?.statuses?.has?actor.statuses.has("prone"):null,targetVisible:typeof visibility==="boolean"?visibility:null,
       usesProficiency:typeof nativeProficiency==="boolean"?nativeProficiency:typeof legacyProficiency==="boolean"?legacyProficiency:null,
       underwater:actor?.statuses?.has?.("underwater")?true:typeof water==="boolean"?water:null,aimMode:aim?.mode??null};
@@ -1764,55 +1763,37 @@ export class CombatAttackService {
     }
   }
 
-  async handleWeaponModTurnChange(combat,{ended=false,activeCombatants=null}={}) {
-    if(!isActiveGmClient(globalThis.game))return;
-    const actors=new Map(Array.from(combat?.combatants?.contents??combat?.combatants??[]).map(combatant=>[combatant.actor?.uuid,combatant.actor]));
-    if(combat?.combatant?.actor)actors.set(combat.combatant.actor.uuid,combat.combatant.actor);
-    const active = new Map((activeCombatants ?? [combat?.combatant]).filter(Boolean).map(c => [c.actor?.uuid, c]));
-    for(const actor of actors.values()){
-      if(!actor?.uuid)continue;
-      await this.moduleApi.inventoryService?.mutationCoordinator.run(`inventory-organization:${actor.id}`,async()=>{
-        if(!isActiveGmClient(globalThis.game))return;
-        for(const host of actor.items?.contents??[]){
-          const aim=host.getFlag?.(MODULE_ID,"weaponModAim");
-          if(aim && (ended || aim.combatId!==combat.id || aim.round!==combat.round || aim.turn!==combat.turn || !active.has(actor.uuid))){
-            if(!isActiveGmClient(globalThis.game))return;
-            await host.update({[`flags.${MODULE_ID}.-=weaponModAim`]:null},{render:false, rebreyaSimpleUpgradeSync:true});
-          }
-        }
-        await this.moduleApi.itemUpgradeAutomationService?.clearExpiredAimEffects?.(actor);
-        if(!ended && active.has(actor.uuid)){
-          const token=active.get(actor.uuid).token,current=actor.getFlag?.(MODULE_ID,"weaponModMovement");
-          if(current?.combatId===combat.id && current.round===combat.round && current.turn===combat.turn)return;
-          if(!isActiveGmClient(globalThis.game))return;
-          await actor.update({[`flags.${MODULE_ID}.==weaponModMovement`]:{combatId:combat.id,round:combat.round,turn:combat.turn,feet:0,
-            tokenId:token?.id??null,position:token?{x:token.x,y:token.y}:null,lastMovementId:null}});
-        }
-      });
+  async handleWeaponModTurnChange(combat, { ended = false, activeCombatants = null } = {}) {
+    if (!isActiveGmClient(globalThis.game)) return;
+    const actors = new Map(combatantsOf(combat).map(({ actor }) => [actor?.uuid, actor]));
+    const currentActor = combat?.combatant?.actor;
+    if (currentActor) actors.set(currentActor.uuid, currentActor);
+    const active = new Set((activeCombatants ?? [combat?.combatant]).map(c => c?.actor?.uuid));
+    for (const actor of actors.values()) {
+      if (!actor?.uuid) continue;
+      await this.#clearWeaponModAim(actor, aim => ended || aim.combatId !== combat.id
+        || aim.round !== combat.round || aim.turn !== combat.turn || !active.has(actor.uuid));
     }
   }
 
-  async handleWeaponModTokenMove(token,changed={}) {
-    if(!isActiveGmClient(globalThis.game) || !["x","y","elevation"].some(key=>Object.hasOwn(changed,key)))return;
-    const actor=token?.actor,combat=globalThis.game?.combat;
-    if(!actor?.uuid || !isCombatActorActive(combat,actor))return;
-    // Native v13 movement measures the entire travelled path, including intermediate waypoints.
-    const movement=token.movement,passed=movement?.passed,increment=passed?.waypoints?.some(point=>point.action==="displace" || globalThis.CONFIG?.Token?.movement?.actions?.[point.action]?.teleport)
-      ?null:Number.isFinite(passed?.distance)?convertUnitsToFeet(passed.distance,token.parent?.grid?.units??"ft"):null;
-    await this.moduleApi.inventoryService?.mutationCoordinator.run(`inventory-organization:${actor.id}`,async()=>{
-      if(!isActiveGmClient(globalThis.game))return;
-      const previous=actor.getFlag?.(MODULE_ID,"weaponModMovement"),sameTurn=previous?.combatId===combat.id && previous.round===combat.round && previous.turn===combat.turn;
-      if(movement?.id && sameTurn && previous.lastMovementId===movement.id)return;
-      const feet=sameTurn && previous.tokenId===token.id && Number.isFinite(previous.feet) && increment!==null?previous.feet+increment:null;
-      await actor.update({[`flags.${MODULE_ID}.==weaponModMovement`]:{combatId:combat.id,round:combat.round,turn:combat.turn,feet,
-        tokenId:token.id,position:{x:token.x,y:token.y},lastMovementId:movement?.id??null}});
-      for(const host of actor.items?.contents??[]){
-        if(!host.getFlag?.(MODULE_ID,"weaponModAim"))continue;
-        if(!isActiveGmClient(globalThis.game))return;
-        await host.update({[`flags.${MODULE_ID}.-=weaponModAim`]:null},{render:false});
+  async handleWeaponModTokenMove(token, changed = {}) {
+    if (!isActiveGmClient(globalThis.game) || !["x", "y", "elevation"].some(key => Object.hasOwn(changed, key))) return;
+    const actor = token?.actor;
+    if (!actor?.uuid || !isCombatActorActive(globalThis.game?.combat, actor)) return;
+    await this.#clearWeaponModAim(actor, () => true);
+  }
+
+  async #clearWeaponModAim(actor, shouldClear) {
+    await this.moduleApi.inventoryService?.mutationCoordinator.run(`inventory-organization:${actor.id}`, async () => {
+      if (!isActiveGmClient(globalThis.game)) return;
+      for (const host of actor.items?.contents ?? []) {
+        const aim = host.getFlag?.(MODULE_ID, "weaponModAim");
+        if (!aim || !shouldClear(aim)) continue;
+        if (!isActiveGmClient(globalThis.game)) return;
+        await host.update({ [`flags.${MODULE_ID}.-=weaponModAim`]: null }, { render: false, rebreyaSimpleUpgradeSync: true });
       }
+      await this.moduleApi.itemUpgradeAutomationService?.clearExpiredAimEffects?.(actor);
     });
-    await this.moduleApi.itemUpgradeAutomationService?.requestSync?.(actor);
   }
 
   async initialize() {

@@ -12,6 +12,7 @@ test("one ordinary turn with five participants leaves equipment and world lighti
   globalThis.Hooks = { on(name, fn) { (hooks.get(name) ?? hooks.set(name, []).get(name)).push(fn); } };
   const fire = (name, ...args) => Promise.all((hooks.get(name) ?? []).map(fn => fn(...args)));
   const counts = { syncs: 0, items: 0, lights: 0 };
+  const actorWrites = [];
   const scenes = Array.from({ length: 20 }, () => ({
     lights: Array.from({ length: 50 }, () => ({ getFlag() { counts.lights++; } }))
   }));
@@ -30,10 +31,12 @@ test("one ordinary turn with five participants leaves equipment and world lighti
     getFlag(module, key) { return this.flags[module]?.[key]; }
     async update(patch) {
       const path = `flags.${ns}.==weaponModMovement`;
+      actorWrites.push([this.id, Object.keys(patch)]);
       if (path in patch) (this.flags[ns] ??= {}).weaponModMovement = patch[path];
       return fire("updateActor", this, { _id: this.id, _stats: { modifiedTime: 1 }, flags: { [ns]: { weaponModMovement: patch[path] } } }, {});
     }
     async setFlag(module, key, value) {
+      actorWrites.push([this.id, [key]]);
       (this.flags[module] ??= {})[key] = value;
       return fire("updateActor", this, { _id: this.id, flags: { [module]: { [key]: value } } }, {});
     }
@@ -48,13 +51,27 @@ test("one ordinary turn with five participants leaves equipment and world lighti
     return actors.find(actor => actor.uuid === uuid);
   } });
   registerCombatHooks(api);
-  const combat = Object.assign(new Combat(), { id: "fight", round: 1, turn: 1, combatants: actors.map(actor => ({ actor })) });
+  const combat = Object.assign(new Combat(), { id: "fight", round: 1, turn: 1, combatants: actors.map(actor => ({ id: actor.id, actor })) });
   combat.combatant = combat.combatants[1];
   game.combat = combat;
   await api.combatAttackService.handleCombatTurnChange(combat, { round: 1, turn: 1 });
-  assert.equal(actors[1].getFlag(ns, "weaponModMovement").feet, 0);
+  assert.deepEqual(actorWrites, [[actors[1].id, ["reactionState"]]]);
   assert.equal(actors[1].getFlag(ns, "reactionState").usesRemaining, 1);
   assert.deepEqual(counts, { syncs: 0, items: 0, lights: 0 });
+  actorWrites.length = 0;
+  const memberIds = [actors[2].id, actors[3].id];
+  combat.flags = { [ns]: { groupedCombat: { mode: "active", groups: [{ id: "group", memberIds }] } } };
+  combat.turn = 2;
+  combat.combatant = combat.combatants[2];
+  const phase = { round: 1, groupId: "group", memberIds };
+  await api.combatAttackService.handleGroupedCombatPhase(combat, { ...phase, kind: "each-turn" });
+  assert.deepEqual(actorWrites, []);
+  await api.combatAttackService.handleGroupedCombatPhase(combat, { ...phase, kind: "turn-start" });
+  assert.deepEqual(actorWrites, memberIds.map(id => [id, ["reactionState"]]));
+  for (const i of [2, 3]) {
+    assert.equal(actors[i].getFlag(ns, "reactionState").usesRemaining, 1);
+    assert.equal(actors[i].getFlag(ns, "reactionState").lastRefreshTurn, 2);
+  }
   await fire("updateActor", actors[1], { flags: { [ns]: { "==weaponModMovement": { feet: 0 } } } }, {});
   assert.equal(counts.syncs, 0, "legacy replacement syntax is also a turn-only update");
   await fire("updateActor", actors[1], { flags: { [ns]: { reactionState: {} } }, system: { attributes: { hp: { max: 7 } } } }, {});
@@ -86,7 +103,7 @@ test("sync is idempotent; remove preserves unrelated and curse effects", async (
   assert.deepEqual([...f.effects.keys()], ["user", "curse"]);
 });
 
-test("expired aim clears only its movement effects without a full equipment sync", async (t) => {
+test("turn end and token movement clear only expired aim effects without a full equipment sync", async (t) => {
   const previous = globalThis.game;
   t.after(() => { globalThis.game = previous; });
   globalThis.game = { user: { id: "gm", isGM: true, active: true } };
@@ -108,6 +125,8 @@ test("expired aim clears only its movement effects without a full equipment sync
   const api = { inventoryService: { mutationCoordinator: new WorldMutationCoordinator() }, itemUpgradeAutomationService: f.service };
   const attack = new CombatAttackService(api);
   const combat = { id: "fight", round: 1, turn: 1, combatants: [{ actor: f.actor }] };
+  combat.combatant = combat.combatants[0];
+  globalThis.game.combat = combat;
   const deleteEffects = f.actor.deleteEmbeddedDocuments;
   f.actor.deleteEmbeddedDocuments = async () => { throw new Error("temporary delete failure"); };
   await assert.rejects(attack.handleWeaponModTurnChange(combat), /temporary delete failure/);
@@ -115,6 +134,12 @@ test("expired aim clears only its movement effects without a full equipment sync
   assert.ok(f.effects.has("aim"));
   f.actor.deleteEmbeddedDocuments = deleteEffects;
   await attack.handleWeaponModTurnChange(combat);
+  assert.deepEqual([...f.effects.keys()], ["armor", "other"]);
+
+  host.aim = { combatId: "fight", round: 1, turn: 1 };
+  f.effects.set("aim", managed("aim", "weapon:aim-movement:walk", host.id));
+  await attack.handleWeaponModTokenMove({ actor: f.actor }, { x: 100 });
+  assert.equal(host.aim, undefined);
   assert.deepEqual([...f.effects.keys()], ["armor", "other"]);
 });
 test("identical item contributions remain separate and loss of authority prevents writes", async () => {

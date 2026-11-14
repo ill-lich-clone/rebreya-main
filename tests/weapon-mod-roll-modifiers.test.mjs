@@ -120,8 +120,10 @@ test("managed aim validates actual installed child, own turn and atomic replay",
     await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"mount-optic",mountId:"top"});
     const projection=await fx.service.getWeaponModsProjection(fx.host),activities=build({hostId:fx.host.id,mods:projection}),aim=activities.find(activity=>activity.flags["rebreya-main"].weaponModActivity.action==="aim");
     fx.host.system.activities=new Map([[aim._id,aim]]);game.combat={id:"fight",round:2,turn:0,combatant:{actor:fx.group}};
-    fx.group.flags["rebreya-main"].weaponModMovement={combatId:"fight",round:2,turn:0,feet:10};
-    const payload={actorUuid:fx.group.uuid,hostItemId:fx.host.id,childItemId:fx.component.id,activityId:aim._id,operationId:"aim",decision:null};
+    fx.group.flags["rebreya-main"].weaponModMovement={combatId:"fight",round:2,turn:0,feet:20};
+    const decision={kind:"attack-conditions",targetUuid:null,attackMessageId:null,movedFeet:10,prone:null,targetVisible:null,usesProficiency:null,underwater:null,aimMode:null};
+    const payload={actorUuid:fx.group.uuid,hostItemId:fx.host.id,childItemId:fx.component.id,activityId:aim._id,operationId:"aim",decision};
+    await assert.rejects(fx.service.useWeaponModActivity({...payload,operationId:"too-far",decision:{...decision,movedFeet:11}},{sender:fx.sender}),/Превышено допустимое перемещение/u);
     await fx.service.useWeaponModActivity(payload,{sender:fx.sender});
     const state=structuredClone(fx.host.flags["rebreya-main"].weaponModAim);assert.equal(state.mode,"collimator");assert.equal(state.movedFeet,10);
     const again=await fx.service.useWeaponModActivity(payload,{sender:fx.sender});assert.equal(again.replayed,true);assert.deepEqual(fx.host.flags["rebreya-main"].weaponModAim,state);
@@ -132,19 +134,20 @@ test("managed aim validates actual installed child, own turn and atomic replay",
   }finally{fx.restore();}
 });
 
-test("turn lifecycle records native path distance once and clears aim after movement or turn end",async()=>{
+test("movement and turn end clear aim without creating or updating a distance counter",async()=>{
   const fx=await makeWeaponModMutationFixture(),combat={id:"fight",round:2,turn:0,combatants:{contents:[{actor:fx.group},{actor:fx.hero}]}};
   combat.combatant={actor:fx.group,token:{id:"token",x:0,y:0}};game.combat=combat;
   try{
     const service=fx.api.combatAttackService;
     await service.handleWeaponModTurnChange(combat);
-    assert.equal(fx.group.getFlag("rebreya-main","weaponModMovement").feet,0);
+    assert.equal(fx.group.getFlag("rebreya-main","weaponModMovement"),undefined);
     const token={id:"token",actor:fx.group,parent:{grid:{units:"ft"}},x:100,y:0,movement:{id:"path1",passed:{distance:10,waypoints:[]}}};
     await service.handleWeaponModTokenMove(token,{x:100});await service.handleWeaponModTokenMove(token,{x:100});
-    assert.equal(fx.group.getFlag("rebreya-main","weaponModMovement").feet,10);
+    assert.equal(fx.group.getFlag("rebreya-main","weaponModMovement"),undefined);
     fx.host.data.flags["rebreya-main"].weaponModAim={combatId:"fight",round:2,turn:0};
     token.x=200;token.movement.id="path2";token.movement.passed.distance=5;
     await service.handleWeaponModTokenMove(token,{x:200});assert.equal(fx.host.getFlag("rebreya-main","weaponModAim"),undefined);
+    assert.equal(fx.group.getFlag("rebreya-main","weaponModMovement"),undefined);
     fx.host.data.flags["rebreya-main"].weaponModAim={combatId:"fight",round:2,turn:0};
     combat.turn=1;combat.combatant={actor:fx.hero};await service.handleWeaponModTurnChange(combat);
     assert.equal(fx.host.getFlag("rebreya-main","weaponModAim"),undefined);
