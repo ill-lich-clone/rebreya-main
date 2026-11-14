@@ -332,7 +332,7 @@ import { GroupedCombatService } from "./application/grouped-combat-service.js?v=
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.79";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.66";
-import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.80";
+import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.83";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.70";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.5.79";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
@@ -538,7 +538,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.5.65";
+const MODULE_STYLE_VERSION = "1.5.83";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;

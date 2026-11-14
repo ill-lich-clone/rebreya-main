@@ -7,19 +7,18 @@
       "name": "ill_lich"
     }
   ],
-  "version": "1.5.82",
+  "version": "1.5.83",
   "persistentStorage": true,
   "compatibility": {
     "minimum": "13",
     "verified": "14"
   },
   "esmodules": [
-    "scripts/main-1.5.82.js"
+    "scripts/main-1.5.83.js"
   ],
   "socket": true,
   "styles": [
-    "styles/main.css",
-    "styles/combat-turn-title.css"
+    "styles/main.css"
   ],
   "languages": [
     {

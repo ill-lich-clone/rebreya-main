@@ -46,30 +46,47 @@ export async function runStartCombatMacro(moduleApi, { canvas = globalThis.canva
   }
   return notifyResult(result);
 }
-function canShowTurnName(combatant, token, game) {
-  return game?.user?.isGM || (!combatant.hidden && !token.document?.hidden
-    && !token.document?.isSecret && token.isVisible === true);
+function activeCameraGroup(combat, canvas) {
+  const state = stateOf(combat);
+  const sceneId = combat.scene?.id ?? combat.sceneId;
+  if (!sceneId || !canvas?.ready || canvas.scene?.id !== sceneId || combat.active === false
+    || state?.mode !== "active" || state.pendingTransition || !state.current) return null;
+  return state.groups.find(group => group.id === state.current.groupId) ?? null;
+}
+
+function canFocusCombatant(combatant, token, canvas, game) {
+  const tokenDocument = combatant.token;
+  if (!Number.isFinite(combatant.initiative) || tokenDocument?.parent?.id !== canvas.scene.id
+    || !token?.center || token.destroyed || tokenDocument.object !== token
+    || !Number.isFinite(token.center.x) || !Number.isFinite(token.center.y)) return false;
+  return game?.user?.isGM || (combatant.visible === true && !combatant.hidden
+    && !tokenDocument.hidden && !tokenDocument.isSecret && token.isVisible === true);
+}
+
+function isCurrentCameraTarget(combat, turn, combatant, token, canvas, game) {
+  const group = activeCameraGroup(combat, canvas);
+  const current = stateOf(combat)?.current;
+  if (!group?.memberIds.includes(combatant.id) || current.round !== turn.round
+    || current.groupId !== turn.groupId || !combat.turns?.includes(combatant)) return false;
+  const members = combat.combatants;
+  const live = typeof members?.get === "function" ? members.get(combatant.id) === combatant
+    : combatantsOf(combat).includes(combatant);
+  return live && canFocusCombatant(combatant, token, canvas, game);
 }
 
 export async function panToActiveCombatGroup(combat, { canvas = globalThis.canvas, game = globalThis.game, enabled = true, onArrive } = {}) {
-  const state = stateOf(combat);
-  const sceneId = combat.scene?.id ?? combat.sceneId, turn = state?.current;
-  if (!enabled || !canvas?.ready || canvas.scene?.id !== sceneId || combat.active === false
-    || state?.mode !== "active" || state.pendingTransition || !turn) return false;
-  const group = state.groups.find(g => g.id === state.current?.groupId);
-  const visible = combatantsOf(combat).filter(c => group?.memberIds.includes(c.id)).map(c => ({ c, token: c.token?.object ?? c.token }))
-    .filter(({ c, token }) => token?.center && canShowTurnName(c, token, game));
+  const group = enabled && activeCameraGroup(combat, canvas);
+  if (!group) return false;
+  const turn = { ...stateOf(combat).current };
+  const memberIds = new Set(group.memberIds), initiative = new Set(combat.turns);
+  const visible = combatantsOf(combat).filter(c => memberIds.has(c.id) && initiative.has(c))
+    .map(c => ({ c, token: c.token?.object })).filter(({ c, token }) => canFocusCombatant(c, token, canvas, game));
   const candidate = visible.find(({ c }) => !c.isDefeated) ?? visible[0];
-  if (!candidate || !Number.isFinite(candidate.token.center.x) || !Number.isFinite(candidate.token.center.y)) return false;
-  const { c, token } = candidate, { round, groupId } = turn;
+  if (!candidate) return false;
+  const { c, token } = candidate;
   const arrived = await canvas.animatePan({ x: token.center.x, y: token.center.y, duration: 400 });
-  const current = stateOf(combat);
-  if (arrived === false || !canvas.ready || canvas.scene?.id !== sceneId || combat.active === false
-    || current?.mode !== "active" || current.pendingTransition || current.current?.round !== round
-    || current.current?.groupId !== groupId || token.destroyed || !canShowTurnName(c, token, game)) return false;
-  if (onArrive && (!combatantsOf(combat).some(member => member.id === c.id)
-    || !current.groups.find(group => group.id === groupId)?.memberIds.includes(c.id))) return false;
-  onArrive?.(candidate);
+  if (arrived === false || !isCurrentCameraTarget(combat, turn, c, token, canvas, game)) return false;
+  onArrive?.({ ...candidate, turn });
   return true;
 }
 export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hooks, CombatClass = globalThis.CONFIG?.Combat?.documentClass,
@@ -92,12 +109,14 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
     if (token.destroyed || !bounds) return false;
     const point = canvas.clientCoordinatesFromCanvas?.({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height });
     if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return false;
+    const { clientWidth, clientHeight } = document.documentElement;
+    if (point.x <= 0 || point.x >= clientWidth || point.y <= 0 || point.y + 8 >= clientHeight) return false;
     element.style.left = `${point.x}px`;
     element.style.top = `${point.y}px`;
     return true;
   };
-  const showTitle = ({ c, token }, canvas, game) => {
-    const name = game?.user?.isGM ? token.name ?? c.name : c.name ?? token.name;
+  const showTitle = ({ c, token, turn }, combat, canvas, game) => {
+    const name = game?.user?.isGM ? token.name ?? c.name : c.name;
     if (!name || !globalThis.document?.body) return;
     const element = document.createElement("div");
     element.className = "rm-combat-turn-title";
@@ -105,13 +124,17 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
     element.textContent = name;
     if (!positionTitle(element, token, canvas)) return;
     document.body.append(element);
+    if (globalThis.getComputedStyle(element).position !== "fixed") {
+      element.remove();
+      return;
+    }
     const nameplate = token.nameplate, renderable = nameplate?.renderable;
     if (nameplate) nameplate.renderable = false;
-    title = { element, token, combatant: c, nameplate, renderable, timeout: setTimeout(clearTitle, 2000) };
+    title = { element, token, combat, turn, combatant: c, nameplate, renderable, timeout: setTimeout(clearTitle, 2000) };
   };
   const clearFocus = () => { focus = undefined; clearTitle(); };
   const refreshTitle = (canvas = globalThis.canvas) => {
-    if (title && (!canShowTurnName(title.combatant, title.token, globalThis.game)
+    if (title && (!isCurrentCameraTarget(title.combat, title.turn, title.combatant, title.token, canvas, globalThis.game)
       || !positionTitle(title.element, title.token, canvas))) clearTitle();
   };
   const progressUpdates = new WeakSet();
@@ -241,14 +264,19 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
       if (focus?.combatId === combat.id) clearFocus();
       return;
     }
-    const stamp = JSON.stringify(state.current); if (focusStamps.get(combat.id) === stamp) return; focusStamps.set(combat.id, stamp);
+    const stamp = JSON.stringify(state.current);
+    if (focusStamps.get(combat.id) === stamp) {
+      if (title?.combat === combat) refreshTitle();
+      return;
+    }
+    focusStamps.set(combat.id, stamp);
     const canvas = globalThis.canvas, game = globalThis.game;
     if (canvas?.scene?.id !== (combat.scene?.id ?? combat.sceneId)) return;
     clearTitle();
     const request = focus = { combatId: combat.id };
     const enabled = game?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.COMBAT_AUTO_PAN) ?? true;
     panToActiveCombatGroup(combat, { canvas, game, enabled, onArrive(candidate) {
-      if (focus === request && (game?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.COMBAT_AUTO_PAN) ?? true)) showTitle(candidate, canvas, game);
+      if (focus === request && (game?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.COMBAT_AUTO_PAN) ?? true)) showTitle(candidate, combat, canvas, game);
     } }).catch(error => console.warn(`${MODULE_ID} | Camera pan failed`, error));
   });
   hook("canvasPan", canvas => refreshTitle(canvas));

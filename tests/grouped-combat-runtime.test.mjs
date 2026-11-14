@@ -8,8 +8,8 @@ function fixture() {
   class Combat {
     constructor(managed = true) {
       this.id = "fight"; this.round = 1; this.turn = 0; this.started = true; this.scene = { id: "s" }; this.settings = { skipDefeated: true };
-      this.combatants = ["a", "b", "pc"].map(id => ({ id, parent: this, actor: { uuid: `Actor.${id}` }, token: { id, uuid: `Scene.s.Token.${id}` }, initiative: id === "pc" ? 10 : 15 }));
-      this.turns = this.combatants; this.combatant = this.turns[0];
+      this.combatants = ["a", "b", "pc"].map(id => ({ id, parent: this, visible: true, actor: { uuid: `Actor.${id}` }, token: { id, parent: this.scene, uuid: `Scene.s.Token.${id}` }, initiative: id === "pc" ? 10 : 15 }));
+      this.turns = [...this.combatants]; this.combatant = this.turns[0];
       this.flags = managed ? { "rebreya-main": { groupedCombat: { version: 1, mode: "active", revision: 2, current: { round: 1, groupId: "g" }, groups: [{ id: "g", memberIds: ["a", "b"], initiative: 15 }, { id: "pc", memberIds: ["pc"], initiative: 10 }] } } } : {};
     }
     async nextTurn() { calls.push("original-next"); return this; }
@@ -187,9 +187,37 @@ test("camera is local, keeps scale and selection, and skips hidden group members
   canvas.scene.id = "other"; await panToActiveCombatGroup(combat, { canvas, game: { user: { isGM: true } }, enabled: true }); assert.equal(pans.length, 1);
 });
 
+test("camera requires a live and eligible entry in initiative for the current group", async () => {
+  const e = fixture(), combat = new e.Combat(), pans = [], arrivals = [];
+  const [a, b, other] = combat.combatants;
+  a.token.object = { isVisible: true, center: { x: 10, y: 20 } };
+  b.token.object = { isVisible: true, center: { x: 30, y: 40 } };
+  other.token.object = { isVisible: true, center: { x: 50, y: 60 } };
+  const canvas = { ready: true, scene: combat.scene, animatePan: async point => pans.push(point) };
+  const player = { isGM: false };
+  const options = { canvas, game: { user: player }, onArrive: candidate => arrivals.push(candidate.c.id) };
+  a.initiative = null;
+  b.visible = false;
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  assert.deepEqual(pans, []);
+  b.visible = true;
+  b.initiative = 0;
+  assert.equal(await panToActiveCombatGroup(combat, options), true);
+  assert.deepEqual(arrivals, ["b"]);
+  combat.turns = [a, other];
+  player.isGM = true;
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  a.initiative = NaN;
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  a.initiative = 15;
+  a.token.parent = { id: "elsewhere" };
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  assert.equal(pans.length, 1);
+});
+
 test("turn title replaces the native name only after camera arrival and restores it after two seconds", async (t) => {
   const e = fixture(), combat = new e.Combat(), displays = [], timers = new Map();
-  const originals = { canvas: globalThis.canvas, game: globalThis.game, document: globalThis.document, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+  const originals = { canvas: globalThis.canvas, game: globalThis.game, document: globalThis.document, getComputedStyle: globalThis.getComputedStyle, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
   t.after(() => Object.assign(globalThis, originals));
   const nativeName = { renderable: true, visible: true };
   const token = { name: "Мира", nameplate: nativeName, center: { x: 12, y: 20 }, bounds: { x: 2, y: 10, width: 20, height: 20 } };
@@ -201,8 +229,11 @@ test("turn title replaces the native name only after camera arrival and restores
   globalThis.game = { user: { isGM: true } };
   globalThis.document = {
     createElement: () => ({ dataset: {}, style: {}, remove() { displays.splice(displays.indexOf(this), 1); } }),
+    documentElement: { clientWidth: 500, clientHeight: 300 },
     body: { append: element => displays.push(element) }
   };
+  let cssPosition = "fixed";
+  globalThis.getComputedStyle = () => ({ position: cssPosition });
   globalThis.setTimeout = (callback, delay) => { timers.set(callback, delay); return callback; };
   globalThis.clearTimeout = callback => timers.delete(callback);
   t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
@@ -244,6 +275,31 @@ test("turn title replaces the native name only after camera arrival and restores
   e.Hooks.callAll("canvasTearDown");
   assert.equal(displays.length, 0);
   assert.equal(enemyName.renderable, true);
+
+  const current = combat.flags["rebreya-main"].groupedCombat.current;
+  current.round = 3;
+  cssPosition = "static";
+  e.Hooks.callAll("updateCombat", combat);
+  arrive(true); await Promise.resolve();
+  assert.equal(displays.length, 0);
+  assert.equal(enemyName.renderable, true);
+  current.round = 4;
+  cssPosition = "fixed";
+  e.Hooks.callAll("updateCombat", combat);
+  arrive(true); await Promise.resolve();
+  assert.equal(displays.length, 1);
+  combat.combatants[2].initiative = null;
+  e.Hooks.callAll("updateCombatant", combat.combatants[2]);
+  assert.equal(displays.length, 0);
+  assert.equal(enemyName.renderable, true);
+
+  current.round = 5;
+  combat.combatants[2].initiative = 10;
+  globalThis.canvas.clientCoordinatesFromCanvas = () => ({ x: 550, y: 100 });
+  e.Hooks.callAll("updateCombat", combat);
+  arrive(true); await Promise.resolve();
+  assert.equal(displays.length, 0);
+  assert.equal(enemyName.renderable, true);
 });
 
 test("an interrupted or stale camera move cannot show a title", async () => {
@@ -253,14 +309,20 @@ test("an interrupted or stale camera move cannot show a title", async () => {
   const canvas = { ready: true, scene: { id: "s" }, animatePan: async () => false };
   const options = { canvas, game: { user: { isGM: false } }, onArrive: value => names.push(value) };
   assert.equal(await panToActiveCombatGroup(combat, options), false);
-  combat.combatants[0].token.object.document = { isSecret: true };
+  combat.combatants[0].token.isSecret = true;
   canvas.animatePan = async () => assert.fail("secret token cannot become a player camera target");
   assert.equal(await panToActiveCombatGroup(combat, options), false);
-  combat.combatants[0].token.object.document.isSecret = false;
+  combat.combatants[0].token.isSecret = false;
   canvas.animatePan = async () => { state.current = { round: 1, groupId: "pc" }; return true; };
   assert.equal(await panToActiveCombatGroup(combat, options), false);
   assert.deepEqual(names, []);
   state.current = { round: 1, groupId: "g" };
+  const a = combat.combatants[0];
+  canvas.animatePan = async () => { a.initiative = null; return true; };
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
+  a.initiative = 15;
+  canvas.animatePan = async () => { a.token.object = { ...a.token.object }; return true; };
+  assert.equal(await panToActiveCombatGroup(combat, options), false);
   canvas.animatePan = async () => { combat.combatants.shift(); return true; };
   assert.equal(await panToActiveCombatGroup(combat, options), false);
   assert.deepEqual(names, []);
