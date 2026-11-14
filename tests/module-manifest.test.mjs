@@ -21,10 +21,10 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.81");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.81.js"]);
+  assert.equal(manifest.version, "1.5.82");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.82.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.5.81.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.5.82.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -52,9 +52,14 @@ test("clock and inventory runtime owners each share one canonical module URL", a
     }
   }
   assert.ok(imports >= 12);
-  for(const [owner,keys] of cacheKeys)assert.deepEqual(keys,new Set([
-    ["inventory-app.js", "inventory-service.js", "inventory-sync.js"].includes(owner) ? "1.5.72" : owner === "group-context-service.js" ? "1.5.17" : "1.4.377"
-  ]),owner);
+  const updatedKeys = new Map([
+    ["inventory-app.js", "1.5.72"],
+    ["inventory-service.js", "1.5.72"],
+    ["inventory-sync.js", "1.5.72"],
+    ["group-context-service.js", "1.5.17"],
+    ["smalltime-compat.js", "1.5.82"]
+  ]);
+  for (const [owner, keys] of cacheKeys) assert.deepEqual(keys, new Set([updatedKeys.get(owner) ?? "1.4.377"]), owner);
 });
 
 test("cached 1.4 manifests retain loadable entrypoints after the 1.5 upgrade", async () => {
@@ -144,8 +149,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.81");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.81.js"]);
+  assert.equal(manifest.version, "1.5.82");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.82.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -452,7 +457,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.81.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.5.82.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

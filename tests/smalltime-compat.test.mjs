@@ -7,7 +7,7 @@ import {
   buildSmallTimeDateDisplay,
   countWorldTimeDayDelta,
   handleSmallTimeWorldTimeUpdate,
-  patchSmallTimeCalendarTimeSource,
+  patchSmallTimeCalendarHelpers,
   patchSmallTimeDateDisplay,
   refreshSmallTimeDateDisplay,
   syncSmallTimeToCalendarTime
@@ -53,7 +53,7 @@ test("smalltime explicit date refresh can skip the sun helper while refreshing t
   let sunCalls = 0, dateCalls = 0;
   // Execute the real adapter function with only its Foundry/browser boundaries replaced.
   const refresh = runInNewContext(`(${refreshSmallTimeDateDisplay.toString()})`, {
-    activeModuleApi: {}, patchSmallTimeDateDisplay() {}, patchSmallTimeCalendarTimeSource() {},
+    activeModuleApi: {}, patchSmallTimeDateDisplay() {},
     refreshSmallTimeSunTimes: async () => { sunCalls++; },
     getSmallTimeAppClass: () => ({ updateDate: async () => { dateCalls++; } })
   });
@@ -466,7 +466,48 @@ test("smalltime calendar adapter maps Rebreya date and time into calendar compon
   assert.equal(components.second, 1);
 });
 
-test("smalltime calendar adapter lets sunrise and sunset read the Rebreya date", () => {
+test("smalltime integration leaves Foundry effect durations on the native calendar", () => {
+  const previousGame = globalThis.game;
+  const worldTime = 600;
+  const calendar = {
+    years: { yearZero: 0 },
+    timeToComponents: seconds => ({ minute: Math.floor(seconds / 60), second: seconds % 60 }),
+    difference(end, start = worldTime) {
+      return this.timeToComponents(end - start);
+    },
+    componentsToUnit({ year = 0, day = 0, hour = 0, minute, second }, unit, { roundFn }) {
+      assert.equal(unit, "minute");
+      return year * 525600 + day * 1440 + hour * 60 + minute + Math[roundFn](second / 60);
+    }
+  };
+  globalThis.game = { time: { worldTime, calendar } };
+
+  try {
+    const Helpers = { getDate: () => calendar.timeToComponents(worldTime) };
+    patchSmallTimeCalendarHelpers(Helpers, {
+      getCalendarSnapshot: () => ({ isoDate: "1200-02-03", timeOfDaySeconds: 3661 })
+    });
+    assert.equal(Helpers.getDate().year, 1200);
+    function remainingMinutes(startTime) {
+      const end = startTime + 600;
+      const secondsRemaining = end - worldTime;
+      const components = secondsRemaining < 0 ? calendar.difference(worldTime, end) : calendar.difference(end);
+      return Math.sign(secondsRemaining) * calendar.componentsToUnit(components, "minute", {
+        roundFn: secondsRemaining < 0 ? "floor" : "ceil"
+      });
+    }
+
+    assert.equal(remainingMinutes(worldTime), 10);
+    assert.equal(remainingMinutes(6), 1);
+    assert.equal(remainingMinutes(0), 0);
+    assert.equal(remainingMinutes(-60), -1);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("smalltime calendar helpers use the Rebreya date only inside synchronous calls", () => {
   const previousGame = globalThis.game;
   const calendar = {
     constructor: { name: "CalendarData" },
@@ -495,23 +536,50 @@ test("smalltime calendar adapter lets sunrise and sunset read the Rebreya date",
     }
   };
 
-  try {
-    const patched = patchSmallTimeCalendarTimeSource({
-      getCalendarSnapshot: () => ({
-        isoDate: "1200-02-03",
-        year: 1200,
-        month: 2,
-        day: 3,
-        timeOfDaySeconds: 3661
-      })
-    });
+  const readCurrent = () => calendar.timeToComponents(0);
+  const original = calendar.timeToComponents;
+  const Helpers = {
+    getSunriseSunsetProvider(mode) {
+      if (mode) return mode;
+      const components = readCurrent();
+      return [calendar.sunrise(components), calendar.sunset(components)];
+    },
+    getDate(variant) {
+      if (variant === "throw") throw new Error("date format failed");
+      if (variant === "system") return this.getSystemDateByVariant();
+      return readCurrent().year;
+    },
+    getSystemDateByVariant() { return readCurrent().month; }
+  };
+  let reads = 0;
+  const api = {
+    getCalendarSnapshot() {
+      reads++;
+      return { isoDate: "1200-02-03", timeOfDaySeconds: 3661 };
+    }
+  };
 
-    assert.equal(patched, true);
-    const components = calendar.timeToComponents(0);
-    assert.equal(components.year, 1200);
-    assert.equal(components.month, 1);
-    assert.equal(calendar.sunrise(components), 6);
-    assert.equal(calendar.sunset(components), 15);
+  try {
+    assert.equal(patchSmallTimeCalendarHelpers(Helpers, api), true);
+    assert.equal(calendar.timeToComponents, original);
+    assert.deepEqual(Helpers.getSunriseSunsetProvider(), [6, 15]);
+    assert.equal(Helpers.getSunriseSunsetProvider("manual"), "manual");
+    assert.equal(Helpers.getSunriseSunsetProvider("module"), "module");
+    assert.equal(Helpers.getDate("local"), 1200);
+    const wrappedDate = Helpers.getDate;
+    patchSmallTimeCalendarHelpers(Helpers, api);
+    assert.equal(Helpers.getDate, wrappedDate);
+    const readsBeforeNested = reads;
+    assert.equal(Helpers.getDate("system"), 1);
+    assert.equal(reads, readsBeforeNested + 1);
+    assert.equal(Helpers.getSystemDateByVariant(), 1);
+    assert.equal(readCurrent().year, 999);
+    assert.throws(() => Helpers.getDate("throw"), /date format failed/);
+    assert.equal(calendar.timeToComponents, original);
+    assert.equal(Helpers.getDate("local"), 1200);
+    patchSmallTimeCalendarHelpers(Helpers, { getCalendarSnapshot: () => null });
+    assert.equal(Helpers.getDate("local"), 999);
+    assert.equal(calendar.timeToComponents, original);
   }
   finally {
     globalThis.game = previousGame;

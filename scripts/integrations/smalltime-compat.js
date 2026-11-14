@@ -3,7 +3,7 @@ import { MODULE_ID } from "../constants.js";
 const SMALLTIME_MODULE_ID = "smalltime";
 const SECONDS_PER_DAY = 86400;
 const UPDATE_DATE_PATCH = Symbol.for(`${MODULE_ID}.smalltime.updateDatePatch`);
-const TIME_COMPONENTS_PATCH = Symbol.for(`${MODULE_ID}.smalltime.timeComponentsPatch`);
+const CALENDAR_HELPERS_PATCH = Symbol.for(`${MODULE_ID}.smalltime.calendarHelpersPatch`);
 
 let activeModuleApi = null;
 let worldTimeHookRegistered = false;
@@ -151,40 +151,52 @@ export function countWorldTimeDayDelta(worldTime, deltaSeconds, secondsPerDay = 
   return Math.floor(safeWorldTime / safeSecondsPerDay) - Math.floor(previousWorldTime / safeSecondsPerDay);
 }
 
-export function patchSmallTimeCalendarTimeSource(moduleApi = activeModuleApi) {
-  const calendar = globalThis.game?.time?.calendar ?? null;
-  if (!calendar || typeof calendar.timeToComponents !== "function") {
-    return false;
-  }
-
+export function patchSmallTimeCalendarHelpers(Helpers, moduleApi = activeModuleApi) {
+  if (!Helpers) return false;
   activeModuleApi = moduleApi ?? activeModuleApi;
-  if (calendar[TIME_COMPONENTS_PATCH]) {
-    return true;
+  if (Helpers[CALENDAR_HELPERS_PATCH]) return true;
+
+  // SmallTime's synchronous date and sun helpers read today's components directly.
+  // A permanent calendar override also replaces the intervals used by ActiveEffect.
+  let usingRebreyaDate = false;
+  for (const method of ["getSunriseSunsetProvider", "getDate", "getSystemDateByVariant"]) {
+    const original = Helpers[method];
+    if (typeof original !== "function") continue;
+    Helpers[method] = function rebreyaSmallTimeCalendarHelper(...args) {
+      const time = globalThis.game?.time;
+      const calendar = time?.calendar;
+      const timeToComponents = calendar?.timeToComponents;
+      if (usingRebreyaDate || typeof timeToComponents !== "function") return original.apply(this, args);
+
+      const hadOwnMethod = Object.hasOwn(calendar, "timeToComponents");
+      const worldTime = time.worldTime;
+      let snapshot;
+      calendar.timeToComponents = function rebreyaSmallTimeCurrentDate(seconds, ...options) {
+        const components = timeToComponents.call(this, seconds, ...options);
+        if (seconds !== worldTime) return components;
+        if (snapshot === undefined) {
+          try {
+            snapshot = activeModuleApi?.getCalendarSnapshot?.() ?? null;
+          }
+          catch (error) {
+            snapshot = null;
+            console.warn(`${MODULE_ID} | Failed to read Rebreya calendar for SmallTime.`, error);
+          }
+        }
+        return snapshot ? buildRebreyaCalendarTimeComponents(snapshot, this, components) : components;
+      };
+      usingRebreyaDate = true;
+      try {
+        return original.apply(this, args);
+      }
+      finally {
+        usingRebreyaDate = false;
+        if (hadOwnMethod) calendar.timeToComponents = timeToComponents;
+        else delete calendar.timeToComponents;
+      }
+    };
   }
-
-  const originalTimeToComponents = calendar.timeToComponents;
-  calendar.timeToComponents = function rebreyaSmallTimeToComponents(...args) {
-    const api = activeModuleApi ?? moduleApi;
-    const fallbackComponents = originalTimeToComponents.apply(this, args);
-    let snapshot = null;
-
-    try {
-      snapshot = api?.getCalendarSnapshot?.() ?? null;
-    }
-    catch (error) {
-      console.warn(`${MODULE_ID} | Failed to read Rebreya calendar for SmallTime sun calculations.`, error);
-    }
-
-    if (!snapshot) {
-      return fallbackComponents;
-    }
-
-    return buildRebreyaCalendarTimeComponents(snapshot, this, fallbackComponents);
-  };
-  calendar.timeToComponents[TIME_COMPONENTS_PATCH] = {
-    originalTimeToComponents
-  };
-  calendar[TIME_COMPONENTS_PATCH] = true;
+  Helpers[CALENDAR_HELPERS_PATCH] = true;
   return true;
 }
 
@@ -238,11 +250,13 @@ export async function refreshSmallTimeSunTimes() {
 
   try {
     const helpersModule = await import("/modules/smalltime/scripts/helpers.mjs");
-    if (typeof helpersModule?.Helpers?.updateSunriseSunsetTimes !== "function") {
+    const Helpers = helpersModule?.Helpers;
+    if (typeof Helpers?.updateSunriseSunsetTimes !== "function") {
       return false;
     }
 
-    await helpersModule.Helpers.updateSunriseSunsetTimes();
+    patchSmallTimeCalendarHelpers(Helpers);
+    await Helpers.updateSunriseSunsetTimes();
     return true;
   }
   catch (error) {
@@ -253,7 +267,6 @@ export async function refreshSmallTimeSunTimes() {
 
 export async function refreshSmallTimeDateDisplay({ refreshSunTimes = true } = {}) {
   patchSmallTimeDateDisplay(activeModuleApi);
-  patchSmallTimeCalendarTimeSource(activeModuleApi);
   if (refreshSunTimes) await refreshSmallTimeSunTimes();
   const SmallTimeApp = getSmallTimeAppClass();
   if (typeof SmallTimeApp?.updateDate !== "function") {
@@ -433,7 +446,6 @@ export function registerSmallTimeIntegration(moduleApi) {
   }
 
   patchSmallTimeDateDisplay(moduleApi);
-  patchSmallTimeCalendarTimeSource(moduleApi);
 
   if (!worldTimeHookRegistered && globalThis.Hooks?.on) {
     worldTimeHookRegistered = true;
@@ -448,7 +460,6 @@ export function registerSmallTimeIntegration(moduleApi) {
     renderHookRegistered = true;
     Hooks.on("renderSmallTimeApp", (app) => {
       patchSmallTimeDateDisplay(activeModuleApi);
-      patchSmallTimeCalendarTimeSource(activeModuleApi);
       bindRebreyaCalendarOpen(app);
       refreshSmallTimeDateDisplay().catch((error) => {
         console.warn(`${MODULE_ID} | Failed to refresh SmallTime date display.`, error);

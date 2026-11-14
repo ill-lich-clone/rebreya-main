@@ -419,7 +419,7 @@ import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-comp
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.72";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
-import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.4.377";
+import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.5.82";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.70";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.68";

@@ -7,14 +7,14 @@
       "name": "ill_lich"
     }
   ],
-  "version": "1.5.81",
+  "version": "1.5.82",
   "persistentStorage": true,
   "compatibility": {
     "minimum": "13",
     "verified": "14"
   },
   "esmodules": [
-    "scripts/main-1.5.81.js"
+    "scripts/main-1.5.82.js"
   ],
   "socket": true,
   "styles": [
