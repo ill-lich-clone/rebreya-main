@@ -36,7 +36,7 @@ import {
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
-import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.4.399";
+import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.5.94";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
 import {
   getInventoryDismantleBlockReason,
@@ -74,7 +74,7 @@ import {
   selectInventoryFolderItemIds,
   setInventoryFolderColor as setInventoryFolderColorState,
   renameInventoryFolder as renameInventoryFolderState
-} from "./inventory-folder-tree.js?v=1.4.318";
+} from "./inventory-folder-tree.js?v=1.5.94";
 import {
   appendInventoryAcquisitionEntry,
   readInventoryAcquisitionHistory,
@@ -5536,6 +5536,7 @@ export class InventoryService {
       isMaterial: material,
       weightEach,
       totalWeight,
+      weightUnits: material ? "lb" : itemData.system?.weight?.units ?? "lb",
       priceLabel: formatPriceLabel(unitPrice),
       priceCopper,
       sourceType,

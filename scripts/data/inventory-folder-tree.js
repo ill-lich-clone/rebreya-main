@@ -186,7 +186,7 @@ function normalizeSearchText(value) {
 
 function itemMatchesType(item, typeFilter) {
   if (!typeFilter || typeFilter === "all") return true;
-  return [item?.type, item?.itemType, item?.inventoryType, item?.category]
+  return [item?.sourceType, item?.type, item?.itemType, item?.inventoryType, item?.category]
     .some((value) => String(value ?? "") === typeFilter);
 }
 
@@ -557,7 +557,9 @@ export function projectInventoryFolderRows({
   rootFolderId = null,
   expandedFolderIds = [],
   search = "",
-  typeFilter = "all"
+  typeFilter = "all",
+  hideFolders = false,
+  compareItems = (left, right) => String(left.name ?? "").localeCompare(String(right.name ?? ""), "ru")
 } = {}) {
   const normalizedRootFolderId = cleanNullableId(rootFolderId);
   const rootFolder = normalizedRootFolderId === null
@@ -582,13 +584,35 @@ export function projectInventoryFolderRows({
     };
   }
 
+  const query = normalizeSearchText(search);
+  const itemEntries = searchIndex?.itemEntries ?? new Map();
+  const matchesItem = (item) => itemMatchesType(item, typeFilter)
+    && (!query || itemEntries.get(item.itemId)?.text.includes(query));
+  const toItemRow = (item, depth) => ({
+    ...item,
+    key: `item:${item.itemId}`,
+    depth,
+    breadcrumb: [...(itemEntries.get(item.itemId)?.breadcrumb ?? [])]
+  });
+
+  if (hideFolders) {
+    const items = [];
+    const collect = (node) => {
+      for (const item of node.items) {
+        if (matchesItem(item)) items.push(item);
+      }
+      for (const folder of node.folders) collect(folder);
+    };
+    collect(scope);
+    const rows = items.sort(compareItems).map(item => toItemRow(item, 0));
+    return { rows, visibleItemCount: rows.length, rootFolder, rootFolderMissing: false };
+  }
+
   const expanded = new Set(normalizeExpandedFolderIds(expandedFolderIds, {
     folderIds: [...tree.foldersById.keys()]
   }));
-  const query = normalizeSearchText(search);
   const criteriaActive = Boolean(query) || (typeFilter && typeFilter !== "all");
   const folderEntries = searchIndex?.folderEntries ?? new Map();
-  const itemEntries = searchIndex?.itemEntries ?? new Map();
   const includedFolderIds = new Set();
   const includedItemIds = new Set();
 
@@ -619,9 +643,7 @@ export function projectInventoryFolderRows({
       const insideScope = normalizedRootFolderId === null
         || folderId === normalizedRootFolderId
         || (folderId !== null && isFolderInScope(folderId));
-      if (!insideScope || !itemMatchesType(item, typeFilter)) continue;
-      const entry = itemEntries.get(itemId);
-      if (query && !entry?.text.includes(query)) continue;
+      if (!insideScope || !matchesItem(item)) continue;
       includedItemIds.add(itemId);
       if (folderId !== null) addFolderPath(folderId);
     }
@@ -660,16 +682,8 @@ export function projectInventoryFolderRows({
     }
     for (const item of node.items) {
       if (criteriaActive && !includedItemIds.has(item.itemId)) continue;
-      const entry = itemEntries.get(item.itemId);
-      rows.push({
-        ...item,
-        key: `item:${item.itemId}`,
-        kind: "item",
-        itemId: item.itemId,
-        folderId: item.folderId,
-        depth: node.kind === "root" ? popoutItemDepthOffset : folderDepth - 1 + popoutItemDepthOffset,
-        breadcrumb: [...(entry?.breadcrumb ?? [])]
-      });
+      const depth = node.kind === "root" ? popoutItemDepthOffset : folderDepth - 1 + popoutItemDepthOffset;
+      rows.push(toItemRow(item, depth));
       visibleItemCount += 1;
     }
   };

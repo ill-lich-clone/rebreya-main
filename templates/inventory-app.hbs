@@ -191,6 +191,11 @@
           <span>{{rmNum inventoryCount precision=0}} поз.</span>
           <span aria-hidden="true">·</span>
           <span>Стоимость вещей: <strong>{{summary.totalItemValueLabel}}</strong></span>
+          {{#unless inventoryFiltersActive}}
+            <button type="button" class="rm-button rm-button--small rm-inventory-folder-view-toggle" data-action="toggle-inventory-folders">
+              {{#if hideInventoryFolders}}Показать папки{{else}}Скрыть папки{{/if}}
+            </button>
+          {{/unless}}
         </div>
 
         <section class="rm-compact-toolbar">
@@ -223,11 +228,13 @@
             <button type="button" class="rm-icon-button {{#if inventoryFiltersActive}}is-active{{/if}}" data-action="toggle-inventory-filters" title="Фильтры входящего лута" aria-label="Фильтры входящего лута" aria-pressed="{{inventoryFiltersActive}}">
               <i class="fa-solid fa-filter" aria-hidden="true"></i>
             </button>
-            {{#if canOrganizeInventory}}
-              <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
-                <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
-              </button>
-            {{/if}}
+            {{#unless hideInventoryFolders}}
+              {{#if canOrganizeInventory}}
+                <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
+                  <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
+                </button>
+              {{/if}}
+            {{/unless}}
           </div>
         </section>
 
@@ -344,11 +351,16 @@
                     <strong class="rm-inventory-folder-row__name">{{name}}</strong>
                     <span class="rm-inventory-folder-row__count">{{rmNum recursiveItemCount precision=0}} поз.</span>
                   </div>
-                  {{#if ../canOrganizeInventory}}
-                    <button type="button" class="rm-icon-button rm-inventory-folder-row__menu" data-action="open-inventory-folder-menu" title="Действия с папкой" aria-label="Действия с папкой">
-                      <i class="fa-solid fa-ellipsis" aria-hidden="true"></i>
+                  <div class="rm-inventory-folder-row__actions">
+                    <button type="button" class="rm-icon-button" data-action="show-inventory-folder-info" data-folder-id="{{folderId}}" title="Информация о папке" aria-label="Информация о папке">
+                      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                     </button>
-                  {{/if}}
+                    {{#if ../canOrganizeInventory}}
+                      <button type="button" class="rm-icon-button rm-inventory-folder-row__menu" data-action="open-inventory-folder-menu" title="Действия с папкой" aria-label="Действия с папкой">
+                        <i class="fa-solid fa-ellipsis" aria-hidden="true"></i>
+                      </button>
+                    {{/if}}
+                  </div>
                 </article>
               {{else}}
                 <article

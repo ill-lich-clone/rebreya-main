@@ -5638,6 +5638,12 @@ summary:focus-visible {
   font-weight: 600;
 }
 
+.rm-inventory-folder-view-toggle {
+  margin-inline-start: auto;
+  width: auto;
+  white-space: nowrap;
+}
+
 .rebreya-inventory-app .rm-inventory-book__tabs {
   position: absolute;
   z-index: -1;
@@ -6251,7 +6257,7 @@ summary:focus-visible {
 
 .rm-inventory-folder-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 34px;
@@ -6271,8 +6277,13 @@ summary:focus-visible {
   padding-inline-start: var(--rm-inventory-tree-indent);
 }
 
+.rm-inventory-folder-row__actions {
+  display: flex;
+  gap: 4px;
+}
+
 .rm-inventory-folder-row__toggle,
-.rm-inventory-folder-row__menu {
+.rm-inventory-folder-row__actions .rm-icon-button {
   width: 26px;
   height: 26px;
   min-height: 26px;

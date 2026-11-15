@@ -15,9 +15,10 @@ import {
   normalizePinnedFolderIds,
   projectInventoryFolderRows,
   resolveInventoryDropFolderId
-} from "../data/inventory-folder-tree.js?v=1.4.318";
+} from "../data/inventory-folder-tree.js?v=1.5.94";
+import { inventoryWeightToPounds } from "../data/inventory-weight.js?v=1.5.94";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.72";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.94";
 import { promptStorageTransferQuantity } from "./storage-transfer-ui.js?v=1.5.10";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
@@ -3497,6 +3498,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.inventoryViewKey = cleanText(inventoryViewKey) || "main";
     this.expandedFolderIds = new Set();
     this.pinnedFolderIds = new Set();
+    this.hideInventoryFolders = false;
     this.inventorySnapshotCache = null;
     this.inventoryFolderTreeCache = null;
     this.inventorySearchIndexCache = null;
@@ -4077,6 +4079,34 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return null;
     }
     return this.moduleApi.openInventoryFolderPopout(groupActorId, folderId);
+  }
+
+  #showInventoryFolderInfo(folderId) {
+    const folder = this.inventoryFolderTreeCache?.foldersById.get(folderId);
+    if (!folder) return;
+
+    let weightLb = 0;
+    let valueCopper = 0;
+    const addContents = (node) => {
+      for (const item of node.items) {
+        weightLb += inventoryWeightToPounds(item.totalWeight, item.weightUnits);
+        valueCopper += getInventoryEntryItemValueCopper(item);
+      }
+      for (const child of node.folders) addContents(child);
+    };
+    addContents(folder);
+
+    return foundry.applications.api.DialogV2.wait({
+      window: { title: "Информация о папке" },
+      content: `<p><strong>${escapeHtml(folder.name)}</strong></p>
+        <dl>
+          <dt>Общий вес</dt><dd>${formatNumber(weightLb, 12)} фнт.</dd>
+          <dt>Оценка при продаже за 100%</dt><dd>${formatCopperValue(valueCopper)}</dd>
+          <dt>Оценка при продаже за 50%</dt><dd>${formatCopperValue(valueCopper / 2)}</dd>
+        </dl>`,
+      buttons: [{ action: "close", label: "Закрыть", default: true }],
+      rejectClose: false
+    });
   }
 
   async #promptInventoryFolderBatch(folderId, folderName, action) {
@@ -4807,14 +4837,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     this.sortMode = normalizeInventorySortMode(this.sortMode);
-    sortInventoryFolderTreeItems(this.inventoryFolderTreeCache.root, this.sortMode);
+    if (!this.hideInventoryFolders) sortInventoryFolderTreeItems(this.inventoryFolderTreeCache.root, this.sortMode);
     const projection = projectInventoryFolderRows({
       tree: this.inventoryFolderTreeCache,
       searchIndex: this.inventorySearchIndexCache,
       rootFolderId: this.rootFolderId,
       expandedFolderIds: [...this.expandedFolderIds],
       search: this.search,
-      typeFilter: this.typeFilter
+      typeFilter: this.typeFilter,
+      hideFolders: this.hideInventoryFolders,
+      compareItems: (left, right) => compareInventoryEntries(left, right, this.sortMode)
     });
     const inventoryRows = projection.rows.map((row) => ({
       ...row,
@@ -4833,7 +4865,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       : null;
 
-    const pinnedInventoryFolders = this.rootFolderId === null && this.inventoryMode === "items"
+    const pinnedInventoryFolders = !this.hideInventoryFolders && this.rootFolderId === null && this.inventoryMode === "items"
       ? [...this.pinnedFolderIds].flatMap((folderId) => {
           const folder = this.inventoryFolderTreeCache.foldersById.get(folderId);
           return folder ? [{
@@ -4849,6 +4881,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       ...this.#inventoryRuleContext(),
       search: this.search,
       typeFilter: this.typeFilter,
+      hideInventoryFolders: this.hideInventoryFolders,
       inventoryActorId: this.inventoryActorId,
       inventoryRootFolder,
       inventoryRootFolderMissing: projection.rootFolderMissing,
@@ -7728,6 +7761,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
+    element.querySelectorAll("[data-action='show-inventory-folder-info']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        return this.#showInventoryFolderInfo(event.currentTarget.dataset.folderId);
+      }, listenerOptions);
+    });
+
     element.querySelectorAll("[data-action='open-inventory-folder-menu']").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();
@@ -7771,6 +7812,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }, listenerOptions);
       });
     }
+
+    element.querySelector("[data-action='toggle-inventory-folders']")?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      this.hideInventoryFolders = !this.hideInventoryFolders;
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
 
     element.querySelectorAll("[data-action='toggle-inventory-folder']").forEach((button) => {
       button.addEventListener("click", async (event) => {
@@ -8645,6 +8693,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.inventoryContextCache = null;
     this.expandedFolderIds.clear();
     this.pinnedFolderIds.clear();
+    this.hideInventoryFolders = false;
     this.craftSearchRenderTimeout = null;
     this.actionFeedbackTimeout = null;
     this.renderListenersAbortController?.abort();

@@ -757,6 +757,7 @@ test("getInventorySnapshot marks only exact Journal record Items as readable lin
 
 test("getInventorySnapshot projects normalized Actor folder state without writing it", async () => {
   const sword = createItem({ id: "sword", name: "Sword", type: "weapon", quantity: 2, weight: 3 });
+  sword.system.weight.units = "kg";
   const torch = createItem({ id: "torch", name: "Torch", quantity: 4, weight: 1 });
   const groupActor = createActor({
     id: "group-a",
@@ -813,6 +814,8 @@ test("getInventorySnapshot projects normalized Actor folder state without writin
     assert.equal(snapshot.folderStateVersion, 1);
     assert.equal(snapshot.allItems.find((row) => row.itemId === "sword").folderId, "weapons");
     assert.equal(snapshot.allItems.find((row) => row.itemId === "torch").folderId, null);
+    assert.equal(snapshot.allItems.find((row) => row.itemId === "sword").weightUnits, "kg");
+    assert.equal(snapshot.allItems.find((row) => row.itemId === "torch").weightUnits, "lb");
     assert.equal(groupActor.setFlagCalls.length, 0);
 
     const summaryBefore = clone(snapshot.summary);

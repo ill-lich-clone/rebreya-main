@@ -5,7 +5,7 @@ function nonnegative(value, fallback = 0) {
   return Number.isFinite(number) ? Math.max(0, number) : fallback;
 }
 
-function pounds(value, units = "lb") {
+export function inventoryWeightToPounds(value, units = "lb") {
   const conversions = globalThis.CONFIG?.DND5E?.weightUnits;
   const factor = conversions?.[units]?.conversion ?? DEFAULT_WEIGHT_CONVERSIONS[units] ?? 1;
   const poundFactor = conversions?.lb?.conversion ?? 1;
@@ -82,9 +82,9 @@ export function buildActorInventoryWeightSnapshot(actor) {
   const currencyDeltas = new Map();
   const ownCurrencyWeight = (item) => item.system?.currency && typeof item.system.currency === "object"
     ? currencyWeightLb(item.system.currency)
-    : pounds(readNativeWeight(() => item.system?.currencyWeight) ?? 0, item.system?.weight?.units);
+    : inventoryWeightToPounds(readNativeWeight(() => item.system?.currencyWeight) ?? 0, item.system?.weight?.units);
   const contentsCurrencyDelta = (item) => ownCurrencyWeight(item)
-    - pounds(readNativeWeight(() => item.system?.currencyWeight) ?? 0, item.system?.weight?.units)
+    - inventoryWeightToPounds(readNativeWeight(() => item.system?.currencyWeight) ?? 0, item.system?.weight?.units)
     + children.get(item).reduce((sum, child) => sum + carriedCurrencyDelta(child), 0);
   const carriedCurrencyDelta = (item) => {
     if (!currencyDeltas.has(item)) currencyDeltas.set(item,
@@ -95,7 +95,7 @@ export function buildActorInventoryWeightSnapshot(actor) {
     const nativeContents = nativeHierarchyValid
       ? readNativeWeight(() => item.system?.contentsWeight)
       : null;
-    if (nativeContents !== null) return pounds(nativeContents, item.system?.weight?.units) + contentsCurrencyDelta(item);
+    if (nativeContents !== null) return inventoryWeightToPounds(nativeContents, item.system?.weight?.units) + contentsCurrencyDelta(item);
     return children.get(item).reduce((sum, child) => sum + itemWeight(child), 0)
       + ownCurrencyWeight(item);
   };
@@ -109,7 +109,7 @@ export function buildActorInventoryWeightSnapshot(actor) {
       weights.set(item, weight);
       return weight;
     }
-    const ownWeight = pounds(item.system?.weight?.value, item.system?.weight?.units);
+    const ownWeight = inventoryWeightToPounds(item.system?.weight?.value, item.system?.weight?.units);
     const weight = item.type === "container"
       ? ownWeight + (hasWeightlessContents(item) ? 0 : contentsWeight(item))
       : ownWeight * nonnegative(item.system?.quantity, 1);
@@ -125,7 +125,7 @@ export function buildActorInventoryWeightSnapshot(actor) {
       itemId: String(item.id ?? item._id ?? ""),
       name: String(item.name ?? ""),
       contentsWeightLb: roundWeight(contentsWeight(item)),
-      capacityLb: roundWeight(pounds(capacity?.value, capacity?.units)),
+      capacityLb: roundWeight(inventoryWeightToPounds(capacity?.value, capacity?.units)),
       hasWeightCapacity: capacity?.value != null && capacity.value !== "" && Number.isFinite(Number(capacity.value)) && Number(capacity.value) >= 0
     };
   });

@@ -945,6 +945,129 @@ test("InventoryApp builds folder-first rows, preserves totals on collapse and is
   }
 });
 
+test("InventoryApp toggles the flat list per window using the cached snapshot and restores folder display", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const snapshot = createFolderInventorySnapshot();
+  const calls = [];
+  const moduleApi = createModuleApi({
+    calls,
+    inventorySnapshot: snapshot,
+    inventoryFolderUiState: { expandedFolderIds: ["beta"], pinnedFolderIds: ["alpha"] }
+  });
+  let snapshotCalls = 0;
+  moduleApi.getInventorySnapshot = async () => { snapshotCalls += 1; return snapshot; };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?flat-inventory=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const secondApp = new InventoryApp(moduleApi, { inventoryViewKey: "secondary" });
+  const toggle = createFakeControl();
+  const root = createFakeElement();
+  root.querySelector = (selector) => selector === "[data-action='toggle-inventory-folders']" ? toggle : null;
+  root.querySelectorAll = () => [];
+  app.element = root;
+  app.sortMode = "quantity-desc";
+  let context;
+  app.render = async () => { context = await app._prepareContext(); };
+
+  try {
+    const original = await app._prepareContext();
+    const writesBeforeToggle = calls.length;
+    assert.deepEqual(original.pinnedInventoryFolders.map(folder => folder.folderId), ["alpha"]);
+    await app._onRender({}, {});
+    await dispatchClick(toggle);
+
+    assert.equal(context.hideInventoryFolders, true);
+    assert.deepEqual(context.inventoryRows.map(row => row.key), ["item:beta-item", "item:deep-item", "item:alpha-item", "item:root-item"]);
+    assert.equal(context.inventoryCount, 4);
+    assert.equal(Object.hasOwn(context, "pinnedInventoryFolders"), false);
+    assert.equal(secondApp.hideInventoryFolders, false);
+    app.typeFilter = "material";
+    app.inventorySearchRenderPending = true;
+    const filtered = await app._prepareContext();
+    assert.deepEqual(filtered.inventoryRows.map(row => row.key), ["item:deep-item"]);
+    app.typeFilter = "all";
+    await dispatchClick(toggle);
+
+    assert.equal(context.hideInventoryFolders, false);
+    assert.deepEqual(context.inventoryRows, original.inventoryRows);
+    assert.deepEqual(context.pinnedInventoryFolders, original.pinnedInventoryFolders);
+    assert.deepEqual([...app.expandedFolderIds], ["beta"]);
+    assert.equal(snapshotCalls, 1);
+    assert.equal(calls.length, writesBeforeToggle);
+
+    await dispatchClick(toggle);
+    await app._preClose({});
+    const reopened = await app._prepareContext();
+    assert.equal(reopened.hideInventoryFolders, false);
+    assert.deepEqual(reopened.inventoryRows, original.inventoryRows);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp shows recursive folder estimates from the unfiltered snapshot to a viewer", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const dialogs = [];
+  foundry.applications.api.DialogV2.wait = async (config) => { dialogs.push(config); };
+  const snapshot = createFolderInventorySnapshot();
+  snapshot.canDropInventoryItems = false;
+  snapshot.folders.find(folder => folder.id === "alpha").name = "<Альфа>";
+  snapshot.folders.push({ id: "empty", name: "Пустая", parentId: null });
+  Object.assign(snapshot.allItems.find(item => item.itemId === "alpha-item"), { totalWeight: 2.4, weightUnits: "kg" });
+  Object.assign(snapshot.allItems.find(item => item.itemId === "deep-item"), {
+    quantity: 0.125, totalWeight: 0.75, priceCopper: 48
+  });
+  snapshot.allItems.push({
+    itemId: "magic-item", name: "Амулет", folderId: "alpha-3", sourceType: "magicItem",
+    quantity: 1, totalWeight: 0, priceCopper: 7, canSell: false
+  });
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot });
+  let snapshotCalls = 0;
+  moduleApi.getInventorySnapshot = async () => { snapshotCalls += 1; return snapshot; };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-info=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const info = createFakeControl({ dataset: { folderId: "alpha" } });
+  const empty = createFakeControl({ dataset: { folderId: "empty" } });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='show-inventory-folder-info']" ? [info, empty] : [];
+  app.element = root;
+  app.search = "альфа";
+  app.typeFilter = "gear";
+
+  try {
+    const context = await app._prepareContext();
+    assert.equal(context.canOrganizeInventory, false);
+    assert.deepEqual(context.inventoryRows.map(row => row.key), ["folder:alpha"]);
+    assert.equal(context.inventoryRows[0].expanded, false);
+    await app._onRender({}, {});
+    await dispatchClick(info);
+
+    assert.match(dialogs[0].content, /&lt;Альфа&gt;/u);
+    assert.match(dialogs[0].content, /Общий вес<\/dt>\s*<dd>6,75 фнт\./u);
+    assert.match(dialogs[0].content, /100%<\/dt>\s*<dd>3 зм 1 см 3 мм/u);
+    assert.match(dialogs[0].content, /50%<\/dt>\s*<dd>1 зм 5 см 6 мм/u);
+    assert.deepEqual(dialogs[0].buttons.map(button => button.action), ["close"]);
+
+    app.search = "";
+    app.typeFilter = "all";
+    app.inventorySearchRenderPending = true;
+    const unfiltered = await app._prepareContext();
+    assert.ok(unfiltered.inventoryRows.some(row => row.key === "folder:empty"));
+    await dispatchClick(empty);
+    assert.match(dialogs[1].content, /Общий вес<\/dt>\s*<dd>0 фнт\./u);
+    assert.equal((dialogs[1].content.match(/<dd>0 мм<\/dd>/gu) ?? []).length, 2);
+    assert.equal(snapshotCalls, 1);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp popout context and cached search stay inside the selected folder subtree", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const snapshot = createFolderInventorySnapshot();
@@ -1107,6 +1230,9 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.match(template, /data-action="create-inventory-item"[^>]*title="Добавить предмет"[^>]*aria-label="Добавить предмет"/u);
   assert.match(template, /\{\{#if canDropInventoryItems\}\}[\s\S]*data-action="create-inventory-item"[\s\S]*\{\{\/if\}\}/u);
   assert.match(template, /data-action="toggle-inventory-filters"[^>]*title="Фильтры входящего лута"[^>]*aria-label="Фильтры входящего лута"/u);
+  assert.match(template, /data-action="toggle-inventory-folders"[^>]*>\s*\{\{#if hideInventoryFolders\}\}Показать папки\{\{else\}\}Скрыть папки\{\{\/if\}\}/u);
+  assert.match(template, /\{\{#unless inventoryFiltersActive\}\}\s*<button[^>]*data-action="toggle-inventory-folders"/u);
+  assert.match(template, /\{\{#unless hideInventoryFolders\}\}\s*\{\{#if canOrganizeInventory\}\}\s*<button[^>]*data-action="create-inventory-folder"/u);
   assert.match(template, /data-action="create-inventory-folder"[^>]*title="Создать папку"[^>]*aria-label="Создать папку"/u);
   assert.match(template, /\{\{#if canOrganizeInventory\}\}[\s\S]*data-action="create-inventory-folder"[\s\S]*\{\{\/if\}\}/u);
   assert.doesNotMatch(template, /Корень склада/u);
@@ -1132,6 +1258,7 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.equal((folderBranch.match(/fa-(?:solid|regular) fa-folder\b/gu) ?? []).length, 1);
   assert.ok(folderBranch.includes("{{name}}"));
   assert.ok(folderBranch.includes("{{rmNum recursiveItemCount precision=0}} поз."));
+  assert.match(folderBranch, /data-action="show-inventory-folder-info"[^>]*aria-label="Информация о папке"[\s\S]*\{\{#if \.\.\/canOrganizeInventory\}\}\s*<button[^>]*data-action="open-inventory-folder-menu"/u);
   assert.match(folderBranch, /data-action="open-inventory-folder-menu"/u);
   assert.doesNotMatch(folderBranch, />\s*(?:Кол-во|Вес|Цена)\s*</u);
   assert.match(template.slice(folderBranchEnd), /class="[^"]*rm-compact-item[^"]*"[^>]*data-depth=/su);

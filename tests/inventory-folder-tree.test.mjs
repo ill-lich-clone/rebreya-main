@@ -17,6 +17,7 @@ import {
   normalizePinnedFolderIds,
   normalizeInventoryFolderState,
   projectInventoryFolderRows,
+  resolveInventoryDropFolderId,
   renameInventoryFolder,
   selectInventoryFolderItemIds
 } from "../scripts/data/inventory-folder-tree.js";
@@ -355,6 +356,29 @@ test("projectInventoryFolderRows respects expansion and exposes folders before I
   assert.equal(projection.visibleItemCount, 2);
   assert.equal(projection.rootFolder, null);
   assert.equal(projection.rootFolderMissing, false);
+});
+
+test("flat inventory projects all stacks in global order without changing their folders", () => {
+  const { tree, searchIndex } = buildProjectionFixture();
+  const options = {
+    tree,
+    searchIndex,
+    hideFolders: true,
+    compareItems: (left, right) => right.quantity - left.quantity
+  };
+  const projection = projectInventoryFolderRows(options);
+  assert.deepEqual(projection.rows.map(({ key, depth, folderId }) => [key, depth, folderId]), [
+    ["item:sword", 0, "melee"], ["item:torch", 0, null], ["item:armor", 0, "b"]
+  ]);
+  assert.equal(projection.visibleItemCount, 3);
+  assert.equal(resolveInventoryDropFolderId({
+    target: { kind: "item", id: projection.rows[0].itemId }, state: tree.state, itemIds: tree.itemsById
+  }), "melee");
+  assert.deepEqual(projectInventoryFolderRows({ ...options, search: "меч", typeFilter: "weapon" }).rows.map(row => row.key), ["item:sword"]);
+  assert.deepEqual(projectInventoryFolderRows({ ...options, search: "меч", typeFilter: "equipment" }).rows, []);
+  assert.deepEqual(projectInventoryFolderRows({ ...options, search: "арсенал" }).rows, []);
+  assert.deepEqual(projectInventoryFolderRows({ ...options, rootFolderId: "a" }).rows.map(row => row.key), ["item:sword"]);
+  assert.equal(projectInventoryFolderRows({ ...options, rootFolderId: "gone" }).rootFolderMissing, true);
 });
 
 test("search reveals only matching paths and never mutates stored expansion", () => {

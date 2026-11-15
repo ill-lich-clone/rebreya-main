@@ -107,7 +107,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.5.72";
+} from "./data/inventory-service.js?v=1.5.94";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -418,7 +418,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.45";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.72";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.94";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.5.82";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -539,7 +539,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.5.87";
+const MODULE_STYLE_VERSION = "1.5.94";
 const REBREYA_GROUPED_COMBAT_ENABLED = false; // Temporary native NEXT comparison.
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
@@ -1702,7 +1702,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.5.72"
+          "./ui/inventory-app.js?v=1.5.94"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -8428,7 +8428,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.72");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.94");
 
       const secondary = options?.newWindow === true;
       const viewKey = "full:secondary";
@@ -8485,7 +8485,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.72");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.94");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,
