@@ -787,13 +787,10 @@ export class FighterAutomationService {
     if (!target && hasDamage && !SUBSEQUENT_ATTACK_MANEUVERS.has(key)) return false;
     if (target && lastAttack && this.#attackUsedForManeuver(lastAttack.workflow)) return false;
 
-    if ((await this.#consumeDominanceDieIfNeeded(actor, activity, results)) === false) {
-      return false;
-    }
-
     if (!target && hasDamage) {
       const ally = key === "удар командующего" ? resolveActorFromTarget(selected) : null;
       if (key === "удар командующего" && !ally) return false;
+      if (!await this.#consumeDominanceDieIfNeeded(actor, activity, results)) return false;
       const timestamp = Date.now();
       const turn = this.#combatTurnKey(game.combat);
       if (ally) {
@@ -812,25 +809,37 @@ export class FighterAutomationService {
       return true;
     }
 
-    if (target && lastAttack) this._usedAttackWorkflows.add(lastAttack.workflow);
+    const workflow = target ? lastAttack?.workflow : null;
     if (target && !game.user?.isGM && target.isOwner === false) {
       const hit = lastAttack?.targets.find(entry => this.#isSameActor(resolveActorFromTarget(entry), target)
         && (!selected || this.#sameManeuverTarget(entry, selected)));
       const targetTokenUuid = hit?.document?.uuid ?? hit?.uuid;
-      const attackId = lastAttack?.workflow?.chatCard?.id ?? lastAttack?.workflow?.itemCardId;
+      const attackId = workflow?.chatCard?.id ?? workflow?.itemCardId;
       const maneuverId = results?.message?.id;
       if (!attackId || !maneuverId || !targetTokenUuid || !this.moduleApi?.socketCommandBus?.request) {
         globalThis.ui?.notifications?.warn("Воинский приём: мастер должен подтвердить попадание по карточке атаки.");
         return false;
       }
+      const resourceId = documentId(this.#findDominanceItem(actor));
+      if (!resourceId || !this.#messageHasConsumedItemUse(results, resourceId)) {
+        globalThis.ui?.notifications?.warn("Воинский приём: карточка применения не подтвердила расход кости доминирования.");
+        return false;
+      }
+      this._usedAttackWorkflows.add(workflow);
       const disadvantage = Boolean(fighterAutomation.saveAbility && this.#hasIronWillNextSave(actor)
         && await this.#confirmIronWillDisadvantage(actor, target));
-      await this.moduleApi.socketCommandBus.request(FIGHTER_MANEUVER_COMMAND, {
+      const result = await this.moduleApi.socketCommandBus.request(FIGHTER_MANEUVER_COMMAND, {
         attackId, maneuverId, targetTokenUuid, disadvantage
       });
+      if (!result?.applied) return false;
     }
-    else if (target) {
-      await this.#applyConfirmedManeuver(actor, target, activity, fighterAutomation, lastAttack?.damageType);
+    else {
+      if (workflow) this._usedAttackWorkflows.add(workflow);
+      if (!await this.#consumeDominanceDieIfNeeded(actor, activity, results)) {
+        if (workflow) this._usedAttackWorkflows.delete(workflow);
+        return false;
+      }
+      if (target) await this.#applyConfirmedManeuver(actor, target, activity, fighterAutomation, lastAttack?.damageType);
     }
     await this.#postManeuverChat(actor, activity, fighterAutomation, target);
     return true;

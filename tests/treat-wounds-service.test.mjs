@@ -90,6 +90,50 @@ test("expired immunity removed exactly on world hour; unrelated effects preserve
   f.service.isActiveGm=()=>false;assert.equal(await f.service.cleanupExpiredEffects(5000),0);
 });
 
+function nativeExpiry(t, f, action) {
+  f.service.gameProvider().release = { generation: 14 };
+  const previous = globalThis.CONFIG;
+  globalThis.CONFIG = { ActiveEffect: { expiryAction: action } };
+  t.after(() => { globalThis.CONFIG = previous; });
+}
+
+for (const action of ["update", "delete"]) {
+  test(`native ${action} owns v14 expiry without a competing Rebreya deletion`, async t => {
+    const f = fixture();
+    nativeExpiry(t, f, action);
+    await f.service.start(f.intent, f.context);
+    f.actor.deleteEmbeddedDocuments = async () => assert.fail("Rebreya must leave persisted expiry to Foundry");
+    assert.equal(await f.service.cleanupExpiredEffects(4600), 0);
+  });
+}
+
+test("v14 immunity stores a time-only duration and does not block treatment at the exact deadline", async t => {
+  const f = fixture();
+  nativeExpiry(t, f, "update");
+  await f.service.start(f.intent, f.context);
+  assert.deepEqual(f.actor.effects[0].start, { time: 1000 });
+  assert.deepEqual(f.actor.effects[0].duration, { value: 3600, units: "seconds", expiry: null });
+  f.setNow(4599);
+  await assert.rejects(f.service.start({ ...f.intent, operationId: "op2" }, f.context), { code: "cooldown" });
+  f.setNow(4600);
+  await f.service.start({ ...f.intent, operationId: "op2" }, f.context);
+  assert.equal(f.counts().rolls, 2);
+});
+
+test("v14 none falls back to cleanup without racing explicit DAE expiry", async t => {
+  const f = fixture();
+  nativeExpiry(t, f, null);
+  f.service.gameProvider().modules = new Map([["dae", { active: true }]]);
+  const stored = { start: { time: 1000 }, duration: { value: 3600, units: "seconds" }, flags: { "rebreya-main": { treatWounds: true } } };
+  f.actor.effects.push({ ...stored, id: "fallback" });
+  for (const expiryMode of ["delete", "suppress"]) {
+    f.actor.effects.push({ ...stored, id: expiryMode, flags: { ...stored.flags, dae: { expiryMode } } });
+  }
+  assert.equal(await f.service.cleanupExpiredEffects(4599), 0);
+  assert.equal(await f.service.cleanupExpiredEffects(4600), 1);
+  assert.deepEqual(f.actor.effects.map(effect => effect.id), ["delete", "suppress"]);
+});
+
 test("cleanup continues after exact already-deleted immunity and preserves unrelated errors",async()=>{
   const f=fixture();await f.service.start(f.intent,f.context);
   f.actor.effects.push({id:"second",flags:{"rebreya-main":{treatWounds:true}},duration:{startTime:1000,seconds:3600}});

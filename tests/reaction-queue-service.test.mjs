@@ -434,6 +434,18 @@ test("reaction providers receive the payment transaction while applying an accep
   assert.equal(observedPayment?.marker, "paid-once");
 });
 
+test("a disconnected owner settles the pending Rebreya reaction without a payment or timeout", async () => {
+  const gm = { id: "gm", active: true, isGM: true };
+  const owner = { id: "owner", active: false };
+  const queue = new ReactionQueueService({}, { isCoordinator: () => true, idFactory: () => "pending",
+    gameProvider: () => ({ user: gm, users: [gm, owner], socket: { emit() {} } }) });
+  const signal = new AbortController();
+  const pending = queue._requestRemotePrompt({ candidate: {}, forUserId: owner.id, prompt: {}, signal: signal.signal });
+  await queue.recoverExpiredReactionMessages(owner.id);
+  assert.equal(queue._pendingPromptRequests.size, 0);
+  assert.deepEqual(await pending, { accepted: false, reason: "disconnected" });
+});
+
 test("active GM routes one reaction prompt to the active actor owner", async () => {
   const reactor = {
     ...candidate("owned"),

@@ -4,6 +4,7 @@ import { hasGroupedCombatPhases } from "./grouped-combat-effects.js?v=1.5.87";
 import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
+export const END_COMBAT_TURN_COMMAND = "combat.endTurn";
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
 const operationId = () => globalThis.crypto?.randomUUID?.() ?? `combat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const escape = value => String(value ?? "").replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -16,6 +17,8 @@ const messages = {
   "combat-transition-too-large": "Слишком большой переход. Перейдите к нужному раунду несколькими меньшими шагами.",
   "combat-pending-too-large": "Незавершённый переход слишком велик для безопасного восстановления. Обратитесь к разработчику; состояние и журнал боя сохранены.",
   "initiative-cancelled": "Бросок инициативы не завершён.", "combat-pending": "Общие ходы включатся со следующего раунда.",
+  "no-current-turn": "На сцене нет начатого хода.", "unchanged-turn": "Положение боя не изменилось.",
+  "turn-announcement-failed": "Ход завершён, но сообщение в чат создать не удалось.",
   "grouped-combat-disabled": "Общие ходы временно отключены для проверки производительности."
 };
 function notifyResult(result) {
@@ -46,6 +49,61 @@ export async function runStartCombatMacro(moduleApi, { canvas = globalThis.canva
     result = await send(moduleApi, "resolve", { combatId: result.details.combatId, expectedRevision: state.revision, stepKey, resolution, operationId: operationId() });
   }
   return notifyResult(result);
+}
+
+function combatTurnPosition(combat) {
+  if (!combat?.started || combat.active === false || !combat.combatant) return null;
+  const groupId = hasGroupedCombatPhases(combat) ? stateOf(combat)?.current?.groupId ?? null : null;
+  return { combatId: combat.id, round: combat.round, turn: combat.turn, combatantId: combat.combatant.id, groupId };
+}
+
+const matchesTurn = (expected, position) => position && Object.keys(position).every(key => expected[key] === position[key]);
+
+function turnNames(combat, group) {
+  const members = group ? group.memberIds.map(id => combat.combatants.get(id)) : [combat.combatant];
+  return members.filter(Boolean).map(member => member.hidden || member.token?.hidden || member.token?.isSecret
+    ? "Скрытый участник" : escape(member.name || "Участник")).join(", ");
+}
+
+function currentGroup(combat, { groupId }) {
+  return groupId ? stateOf(combat)?.groups.find(group => group.id === groupId) : null;
+}
+
+export async function endExpectedCombatTurn(expected, { sender } = {}, { game = globalThis.game, ChatMessage = globalThis.ChatMessage } = {}) {
+  const combat = game?.combats?.get(expected.combatId) ?? game?.combat;
+  const before = combatTurnPosition(combat);
+  if (!matchesTurn(expected, before)) return { ok: false, code: "stale-combat" };
+  const group = currentGroup(combat, before);
+  const actor = combat.combatant.actor;
+  if (!sender?.isGM && !(sender && (!group || group.memberIds.length === 1) && actor?.type === "character"
+    && actor.testUserPermission?.(sender, "OWNER"))) return { ok: false, code: "forbidden" };
+
+  const ended = turnNames(combat, group);
+  await combat.nextTurn();
+  const after = combatTurnPosition(combat);
+  if (!after || matchesTurn(before, after)) return { ok: false, code: "unchanged-turn" };
+  try {
+    const started = turnNames(combat, currentGroup(combat, after));
+    await ChatMessage.create({ content: `<p>Ход завершили — ${ended}</p><p>Ход начали — ${started}</p>` });
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Не удалось сообщить о смене хода.`, error);
+    return { ok: true, code: "turn-announcement-failed" };
+  }
+  return { ok: true };
+}
+
+export async function runEndCombatTurnMacro(moduleApi, { game = globalThis.game } = {}) {
+  const expected = combatTurnPosition(game?.combat);
+  if (!expected) return notifyResult({ ok: false, code: "no-current-turn" });
+  try {
+    const result = await moduleApi.socketCommandBus.request(END_COMBAT_TURN_COMMAND, expected);
+    if (result?.code === "turn-announcement-failed") globalThis.ui?.notifications?.warn?.(messages[result.code]);
+    return notifyResult(result);
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Не получено подтверждение окончания хода.`, error);
+    globalThis.ui?.notifications?.warn?.("Не удалось подтвердить окончание хода. Проверьте текущий ход в трекере.");
+    return { ok: false, code: "turn-not-confirmed" };
+  }
 }
 function activeCameraGroup(combat, canvas) {
   const state = stateOf(combat);

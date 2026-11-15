@@ -21,7 +21,7 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.94");
+  assert.equal(manifest.version, "1.5.95");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   for (const entry of [manifest.esmodules[0], "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
@@ -150,7 +150,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.94");
+  assert.equal(manifest.version, "1.5.95");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
@@ -162,7 +162,7 @@ test("Lootgen window import uses the current template editing cache version", as
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(entrypointSource, /lootgen-app\.js\?v=1\.5\.69/u);
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.94";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.95";/u);
 });
 
 test("glossary and feat-link owners preserve their released cache key", async () => {
@@ -383,7 +383,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/inventory-sync.js?v=1.5.94",
     "ui/lootgen-chat.js?v=1.5.69",
     "integrations/dfreds-exhaustion-icons.js?v=1.5.69",
-    "data/gear-compendium.js?v=1.5.70",
+    "data/gear-compendium.js?v=1.5.95",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.5.75",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
@@ -632,7 +632,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.94";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.5\.95";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -655,9 +655,9 @@ test("module entrypoint cache-busts the shared magic weapon icon graph", async (
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
   assert.match(
     entrypointSource,
-    /magic-weapon-template\.js\?v=1\.5\.70/u,
+    /magic-weapon-template\.js\?v=1\.5\.95/u,
   );
-  assert.match(templateSource, /data\/gear-compendium\.js\?v=1\.5\.70/u);
+  assert.match(templateSource, /data\/gear-compendium\.js\?v=1\.5\.95/u);
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
@@ -666,7 +666,7 @@ test("gear compendium import uses the current clothing projection cache bust", a
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.5\.70/u,
+    /gear-compendium\.js\?v=1\.5\.95/u,
   );
 });
 
@@ -677,11 +677,11 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.87(?=["'])/u,
+    /combat\/hooks\.js\?v=1\.5\.95(?=["'])/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.88(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.95(?=["'])/u,
   );
   assert.match(
     entrypointSource,
@@ -736,7 +736,7 @@ test("paladin dogma automation is constructed and routed through the current com
   );
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.87(?=["'])/u
+    /combat\/hooks\.js\?v=1\.5\.95(?=["'])/u
   );
   assert.match(
     entrypointSource,
@@ -783,7 +783,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.88(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.95(?=["'])/u,
   );
   assert.match(
     sheetSource,
@@ -804,7 +804,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.5\.60/u
+    /magic-items-compendium\.js\?v=1\.5\.95/u
   );
   assert.match(
     entrypointSource,
@@ -824,7 +824,7 @@ test("item upgrade service and sheet integration preserve their released cache b
 
   assert.match(
     entrypointSource,
-    /item-upgrade-service\.js\?v=1\.5\.84/u,
+    /item-upgrade-service\.js\?v=1\.5\.95/u,
   );
   assert.match(entrypointSource, /this\.itemUpgradeService = new ItemUpgradeService\(this\)/u);
   assert.match(entrypointSource, /installItemUpgrade\(hostItem, upgradeItem, options = \{\}\)/u);

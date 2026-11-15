@@ -1,0 +1,275 @@
+diff --git a/midi-qol/midi-qol.js b/midi-qol/midi-qol.js
+index 5d23bb3..214bd93 100644
+--- a/midi-qol/midi-qol.js
++++ b/midi-qol/midi-qol.js
+@@ -12979,6 +12979,7 @@ var init_GMAction = __esm({
+       socketlibSocket.register("bonusCheck", _bonusCheck);
+       socketlibSocket.register("chooseReactions", localDoReactions);
+       socketlibSocket.register("pauseReactionTimer", _pauseReactionTimer);
++      socketlibSocket.register("extendReactionTimer", _extendReactionTimer);
+       socketlibSocket.register("completeItemUse", _completeItemUse);
+       socketlibSocket.register("completeItemUseV2", _completeItemUse);
+       socketlibSocket.register("completeActivityUse", _completeActivityUse);
+@@ -20454,7 +20455,7 @@ function uncannyDodgeSourceIcon(actor) {
+ async function processDamageRoll(workflow, defaultDamageType) {
+   if (debugEnabled > 0) warn("processDamageRoll |", workflow);
+   let hitTargets = /* @__PURE__ */ new Set([...workflow.hitTargets ?? [], ...workflow.hitTargetsEC ?? []]);
+-  let theTargets = new Set(workflow.targets);
++  const theTargets = workflow.unresolvedSaveTargets?.size ? workflow.targets.difference(workflow.unresolvedSaveTargets) : new Set(workflow.targets);
+   let effectsToExpire = [];
+   if (hitTargets.size > 0 && workflow.activity.attack) effectsToExpire.push("1Hit");
+   if (hitTargets.size > 0 && workflow.activity.damage) effectsToExpire.push("DamageDealt");
+@@ -23724,6 +23725,7 @@ async function bonusDialog(bonusFlags, flagSelector, showRoll, title, roll, roll
+     if (forcedCondition !== void 0) {
+       forcedCondition = await evalCondition(forcedCondition, conditionData, { errorReturn: true, async: true });
+       if (forcedCondition) {
++        if (flagSelector === "ac" && typeof options.rebreyaBeforeForcedAc === "function" && await options.rebreyaBeforeForcedAc() === false) continue;
+         const altFlag = flagSelector.split(".").slice(0, -1).join(".") + ".all";
+         await callback(void 0, {
+           key: flagName,
+@@ -23743,7 +23745,7 @@ async function bonusDialog(bonusFlags, flagSelector, showRoll, title, roll, roll
+     if (card?.uuid && this instanceof Workflow && configSettings.undoWorkflow) await unTimedExecuteAsGM("addUndoChatCards", { id: this.id, chatCardUuids: [card.uuid] });
+   }
+   if (validFlags.length === 0) return roll;
+-  let timeout = options.timeout ?? configSettings.reactionTimeout ?? defaultTimeout;
++  let timeout = options.timeout ?? options.rebreyaReactionTimeout ?? configSettings.reactionTimeout ?? defaultTimeout;
+   return new Promise((resolve, reject) => {
+     async function onClose() {
+       if (timeoutId) clearTimeout(timeoutId);
+@@ -24113,11 +24115,21 @@ async function doReactions(targetRef, triggerTokenUuid, triggeringRoll, triggerT
+     }
+     let result = await new Promise((resolve) => {
+       const request2 = { id: foundry.utils.randomID(), userId: game.user.id };
+-      startReactionTimer(request2.id, (configSettings.reactionTimeout ?? defaultTimeout) * 1e3 * 2, () => resolve(noResult));
+-      options.reactionRequest = request2;
+-      player && requestReactions(target, player, triggerTokenUuid, content ?? "", triggerType, reactionActivityList, resolve, chatMessage, options).then((result2) => {
++      let settled = false;
++      const finish = (result2) => {
++        if (settled) return;
++        settled = true;
+         endReactionTimer(request2.id);
+-      });
++        resolve(result2);
++        if (chatMessage) {
++          void Promise.resolve().then(() => chatMessage.delete()).catch((err) => {
++            TroubleShooter.recordError(err, "midi-qol | could not delete reaction prompt");
++          });
++        }
++      };
++      startReactionTimer(request2.id, (configSettings.reactionTimeout ?? defaultTimeout) * 1e3 * 2, () => finish(noResult), player);
++      options.reactionRequest = request2;
++      requestReactions(target, player, triggerTokenUuid, content ?? "", triggerType, reactionActivityList, options).then(finish, () => finish(noResult));
+     });
+     if (result?.name) {
+       let count = 100;
+@@ -24135,8 +24147,8 @@ async function doReactions(targetRef, triggerTokenUuid, triggeringRoll, triggerT
+     throw err;
+   }
+ }
+-function startReactionTimer(id, ms, onTimeout) {
+-  const timer = { remaining: ms, started: Date.now(), onTimeout };
++function startReactionTimer(id, ms, onTimeout, recipient) {
++  const timer = { remaining: ms, started: Date.now(), onTimeout, recipientId: recipient.id, recipientIsGM: recipient.isGM };
+   timer.timeoutId = setTimeout(() => {
+     reactionTimers.delete(id);
+     onTimeout();
+@@ -24168,7 +24180,26 @@ async function pauseReactionTimeout(request2, pause) {
+   if (request2.userId === game.user?.id) return _pauseReactionTimer({ id: request2.id, pause });
+   return socketlibSocket.executeAsUser("pauseReactionTimer", request2.userId, { id: request2.id, pause });
+ }
+-async function requestReactions(target, player, triggerTokenUuid, reactionFlavor, triggerType, reactionActivityList, resolve, chatPromptMessage, options = {}) {
++function _extendReactionTimer({ id }) {
++  const timer = reactionTimers.get(id);
++  const senderId = this?.socketdata?.userId ?? game.user?.id;
++  if (!timer || timer.selectionExtended || !senderId) return false;
++  // Native GM routing can choose a different GM than the initial recipient.
++  if (senderId !== timer.recipientId && !(timer.recipientIsGM && game.users?.get(senderId)?.isGM)) return false;
++  const running = timer.timeoutId !== void 0;
++  if (timer.remaining <= (running ? Date.now() - timer.started : 0)) return false;
++  if (running) _pauseReactionTimer({ id, pause: true });
++  timer.remaining = Math.max(timer.remaining, 130_000);
++  timer.selectionExtended = true;
++  if (running) _pauseReactionTimer({ id, pause: false });
++  return true;
++}
++async function extendReactionTimeout(request2) {
++  if (!request2?.id || !request2?.userId) return false;
++  if (request2.userId === game.user?.id) return _extendReactionTimer({ id: request2.id });
++  return socketlibSocket.executeAsUser("extendReactionTimer", request2.userId, { id: request2.id });
++}
++async function requestReactions(target, player, triggerTokenUuid, reactionFlavor, triggerType, reactionActivityList, options = {}) {
+   try {
+     const startTime = Date.now();
+     if (options.item && options.item instanceof CONFIG.Item.documentClass) {
+@@ -24202,8 +24233,7 @@ async function requestReactions(target, player, triggerTokenUuid, reactionFlavor
+     }
+     const endTime = Date.now();
+     if (debugEnabled > 0) warn("requestReactions | returned after ", endTime - startTime, result);
+-    resolve(result);
+-    if (chatPromptMessage) chatPromptMessage.delete();
++    return result;
+   } catch (err) {
+     const message = `requestReactions | error ${triggerType} for ${target?.name} ${triggerTokenUuid}`;
+     TroubleShooter.recordError(err, message);
+@@ -24212,6 +24242,12 @@ async function requestReactions(target, player, triggerTokenUuid, reactionFlavor
+   }
+ }
+ async function promptReactions(tokenUuid, reactionActivityList, triggerTokenUuid, reactionFlavor, triggerType, options = {}) {
++  const beforeForcedAc = typeof options.rebreyaBeforeForcedAc === "function" ? options.rebreyaBeforeForcedAc : void 0;
++  if (beforeForcedAc) {
++    // The callback stays on this client and outside native activity/workflow options.
++    options = { ...options };
++    delete options.rebreyaBeforeForcedAc;
++  }
+   try {
+     const startTime = Date.now();
+     const target = fromUuidSync(tokenUuid);
+@@ -24265,7 +24301,15 @@ async function promptReactions(tokenUuid, reactionActivityList, triggerTokenUuid
+       };
+       let displayBonusRolls = validFlags.reduce((acc, flag2) => acc || foundry.utils.getProperty(actor ?? {}, `${flag2}.displayBonusRolls`), void 0);
+       if (!displayBonusRolls) displayBonusRolls = checkMechanic("displayBonusRolls");
+-      const newAC = await bonusDialog.bind(data)(validFlags, "ac", displayBonusRolls !== false, `${actor.name} - ${i18n("DND5E.AC")} ${actor.system.attributes.ac.value}`, acRoll, "roll", { card: options.itemCardUuid, anchor: "hits" });
++      const bonusOptions = { card: options.itemCardUuid, anchor: "hits" };
++      if (beforeForcedAc) {
++        bonusOptions.rebreyaBeforeForcedAc = beforeForcedAc;
++        if (Number.isFinite(options.timeout)) {
++          // Use the dialog's own timer only so a click can stop it while permission is pending.
++          bonusOptions.rebreyaReactionTimeout = Math.max(0, options.timeout - (Date.now() - startTime) / 1e3);
++        }
++      }
++      const newAC = await bonusDialog.bind(data)(validFlags, "ac", displayBonusRolls !== false, `${actor.name} - ${i18n("DND5E.AC")} ${actor.system.attributes.ac.value}`, acRoll, "roll", bonusOptions);
+       const endTime2 = Date.now();
+       if (debugEnabled > 0) warn("promptReactions | returned via bonus dialog ", endTime2 - startTime);
+       if (newAC?.total !== acRoll.total) {
+@@ -24309,6 +24353,8 @@ async function reactionDialog(actor, triggerTokenUuid, reactionActivities, rollF
+     let timeout = options.timeout ?? configSettings.reactionTimeout ?? defaultTimeout;
+     return new Promise((resolve, reject) => {
+       let timeoutId = setTimeout(() => {
++        // submit marks the dialog completed before it awaits the reaction coordinator.
++        if (dialog.data.completed) return;
+         dialog.close();
+         resolve({});
+       }, timeout * 1e3);
+@@ -30221,6 +30267,7 @@ var init_Workflow = __esm({
+       kickStart;
+       disadvantageSaves;
+       saveResults;
++      unresolvedSaveTargets;
+       /* D20Roll */
+       stateTransitionCount;
+       /** Running performState calls: above 0 while the workflow executes, 0 when it is paused, finished or failed. */
+@@ -31145,7 +31192,7 @@ var init_Workflow = __esm({
+         }
+         this.recordDamageStats();
+         if (configSettings.allowUseMacro && this.workflowOptions.noTargetOnUseMacro !== true && !configSettings.autoApplyDamage.includes("Card"))
+-          await this.triggerTargetMacros(["isDamaged"], this.hitTargets);
++          await this.triggerTargetMacros(["isDamaged"], this.unresolvedSaveTargets?.size ? this.hitTargets.difference(this.unresolvedSaveTargets) : this.hitTargets);
+         if (debugEnabled > 1) debug("all rolls complete ", foundry.utils.duplicate(this.rawDamageDetail));
+         return this.WorkflowState_ApplyDynamicEffects;
+       }
+@@ -31286,6 +31333,8 @@ var init_Workflow = __esm({
+         let targetsToUse = this.targets;
+         if (this.activity.target?.affects?.type === "" && this.targets.size == 0)
+           targetsToUse = new Set(game.user?.targets);
++        if (!this.forceApplyEffects && this.unresolvedSaveTargets?.size)
++          targetsToUse = targetsToUse.difference(this.unresolvedSaveTargets);
+         const ammunition = this.ammunitionActivity && this.ammunitionActivity !== this.otherActivity ? this.ammunitionActivity : void 0;
+         const ammunitionEffectCondition = ammunition?.effectCondition;
+         const ammunitionHasSave = !!ammunition && this.otherSaveActivity === ammunition;
+@@ -31573,7 +31622,10 @@ var init_Workflow = __esm({
+             if (ammunitionEffectTargetsOnSave.has(token)) await this.applyActivityStatuses(ammunition, token, true);
+           }
+         }
+-        if (configSettings.allowUseMacro && this.workflowOptions.noTargetOnUseMacro !== true) await this.triggerTargetMacros(["postTargetEffectApplication"], this.targets);
++        if (configSettings.allowUseMacro && this.workflowOptions.noTargetOnUseMacro !== true) {
++          const effectMacroTargets = !this.forceApplyEffects && this.unresolvedSaveTargets?.size ? targetsToUse : this.targets;
++          await this.triggerTargetMacros(["postTargetEffectApplication"], effectMacroTargets);
++        }
+         let selfEffects = [];
+         if (this.effectTargets?.size > 0) selfEffects = activitySelfEffects;
+         else selfEffects = activitySelfAllEffect;
+@@ -32034,6 +32086,7 @@ var init_Workflow = __esm({
+         this.disadvantageSaves = /* @__PURE__ */ new Set();
+         this.saveDisplayData = [];
+         this.saveResults = [];
++        this.unresolvedSaveTargets = void 0;
+       }
+       async checkAttackAdvantage() {
+         this.attackRollModifierTracker.reset();
+@@ -34496,7 +34549,8 @@ var init_Workflow = __esm({
+         const D20Roll = CONFIG.Dice.D20Roll;
+         this.saveDC = rollDC;
+         const requestCards = [];
+-        let promises = [];
++        const promises = [];
++        let unresolved;
+         const { rollAction, rollType, rollAbilities, rollSkills, rollTools, flagRollType } = this.determineRollTypeAndAction();
+         if (!rollAction) return;
+         if (rollType === "save" && rollAbilities.length === 0) {
+@@ -34566,7 +34620,17 @@ var init_Workflow = __esm({
+               },
+               moduleRequests
+             });
+-            if (promise) promises.push(promise);
++            // Observe rejection before the next target's asynchronous hooks run.
++            promises.push(Promise.resolve(promise).then(
++              (roll) => ({ target, roll }),
++              (reason) => {
++                (unresolved ??= new Set()).add(target);
++                const message = `midi-qol | checkSaves error for ${target.name}`;
++                TroubleShooter.recordError(reason, message);
++                error(message, reason);
++                return { target, rejected: true };
++              }
++            ));
+             if (requestCard) requestCards.push(requestCard);
+           }
+         } catch (err) {
+@@ -34598,11 +34662,16 @@ var init_Workflow = __esm({
+           rollDC
+         );
+         if (debugEnabled > 1) debug("check saves: requests are ", this.saveRequests);
+-        const rawResults = await Promise.all(promises);
++        const outcomes = await Promise.all(promises);
++        if (unresolved) {
++          this.unresolvedSaveTargets = unresolved;
++          this.failedSaves = this.failedSaves.difference(unresolved);
++          if (!simulate) ui.notifications?.warn(`Midi-QOL | Save unresolved for ${Array.from(unresolved, (target) => target.name).join(", ")}. Resolve the save and its damage/effects manually.`);
++        }
+         (await Promise.all(requestCards)).forEach((chatMessage) => chatMessage?.delete());
+         const epicRequests = moduleRequests.epic.player.concat(moduleRequests.epic.gm);
+         if (epicRequests?.length > 0) await busyWait(10);
+-        const results = this.normalizeRollResults(rawResults, D20Roll);
++        const results = this.normalizeRollResults(outcomes.map(({ roll }) => roll), D20Roll);
+         this.saveResults = results.filter((r) => !!r).flat();
+         let template;
+         let templateCoverOrigin;
+@@ -34627,9 +34696,9 @@ var init_Workflow = __esm({
+           }
+         }
+         const processContext = { rollDC, rollAbility: rollAbilities[0], rollType, template, templateCoverOrigin, D20Roll };
+-        let i = 0;
+-        for (let target of allHitTargets) {
+-          if (!target.actor) continue;
++        for (let i = 0; i < outcomes.length; i++) {
++          const { target, rejected } = outcomes[i];
++          if (rejected || !target.actor) continue;
+           if (!results[i]?.[0] || results[i]?.[0]?.total === void 0) {
+             const message = `Token ${target.name} could not roll save/check assuming 1`;
+             error(message, target);
+@@ -34641,7 +34710,6 @@ var init_Workflow = __esm({
+           const midiChosenId = result[0]?.options?.midiChosenId;
+           if (midiChosenId) processContext.rollAbility = midiChosenId;
+           await this.processTargetSaveResult(target, result, processContext);
+-          i++;
+         }
+         this.saveDisplayFlavor = await this.computeSaveDisplayFlavor(rollDC, rollType ?? "", { rollAbilities: rollAbilities ?? [], rollSkills: rollSkills ?? [], rollTools: rollTools ?? [] });
+       }
+@@ -46641,6 +46709,7 @@ var init_midi_qol = __esm({
+       DummyWorkflow,
+       evalAllConditions,
+       evalCondition,
++      extendReactionTimeout,
+       findNearby,
+       findNearbyCount,
+       fromUuidSync,

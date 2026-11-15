@@ -9,8 +9,9 @@ import {
 
 globalThis.CONST = { WALL_DOOR_STATES: { CLOSED: 0, OPEN: 1, LOCKED: 2 } };
 
-function pointer({ ctrlKey = false } = {}) {
+function pointer({ ctrlKey = false, button = 0 } = {}) {
   return {
+    button,
     ctrlKey,
     stopped: 0,
     prevented: 0,
@@ -19,7 +20,7 @@ function pointer({ ctrlKey = false } = {}) {
   };
 }
 
-function harness({ ds = 0, configured = true, enabled = true, allowed = true, isGM = false } = {}) {
+function harness({ ds = 0, configured = true, enabled = true, allowed = true, isGM = false, paused = false, doorPermission = true } = {}) {
   const calls = [];
   class BaseDoorControl {
     constructor() {
@@ -42,7 +43,7 @@ function harness({ ds = 0, configured = true, enabled = true, allowed = true, is
     close() { calls.push(["close"]); },
     reposition() { calls.push(["reposition"]); }
   };
-  const gameProvider = () => ({ user: { isGM } });
+  const gameProvider = () => ({ paused, user: { isGM, can: (action) => action === "WALL_DOORS" && doorPermission } });
   const DoorControl = createDoorTriggerControlClass(BaseDoorControl, api, overlay, {
     gameProvider,
     mutationIdFactory: () => "mutation-1"
@@ -85,6 +86,27 @@ test("ordinary right-click delegates and only GM Ctrl-right-click opens the exac
 
   const player = harness({ isGM: false });
   assert.equal(await player.control._onRightDown(pointer({ ctrlKey: true })), "base-right");
+});
+
+test("native pointerdown accepts only the primary button and leaves lock and editor clicks independent", async () => {
+  const gm = harness({ ds: 2, isGM: true });
+  const right = pointer({ button: 2 });
+  await gm.control._onMouseDown(right);
+  await gm.control._onRightDown(right);
+  await gm.control._onMouseDown(pointer({ button: 1 }));
+  assert.deepEqual(gm.calls.map(([kind]) => kind), ["base-left", "base-right", "base-left"]);
+  assert.equal(right.prevented, 0);
+});
+
+test("configured doors keep Foundry's permission and pause checks before preflight", async () => {
+  for (const options of [{ doorPermission: false }, { paused: true }]) {
+    const current = harness(options);
+    await current.control._onMouseDown(pointer());
+    assert.deepEqual(current.calls.map(([kind]) => kind), ["base-left"]);
+  }
+  const gm = harness({ paused: true, isGM: true });
+  await gm.control._onMouseDown(pointer());
+  assert.deepEqual(gm.calls.map(([kind]) => kind), ["preflight", "overlay"]);
 });
 
 test("Ctrl modifier supports Foundry pointer and keyboard shapes", () => {

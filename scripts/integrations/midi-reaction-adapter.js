@@ -221,11 +221,21 @@ export class MidiReactionAdapter {
     const triggerId = [fallbackId, data.tokenUuid, data.triggerType,
       data.options?.reactionTriggerId ?? "", activities.join(",")].join(":");
     return this.moduleApi.reactionQueueService.resolveManagedReaction({
-      kind: "midi-native", triggerId, candidate: { actorUuid: actor.uuid, tokenUuid: data.tokenUuid, activityUuids: activities }
+      kind: "midi-native", triggerId, triggerType: data.triggerType,
+      candidate: { actorUuid: actor.uuid, tokenUuid: data.tokenUuid, activityUuids: activities }
     }, async controls => {
       const id = String(controls.sessionId).replaceAll(/[^a-zA-Z0-9-]/g, "");
+      const expiresAt = controls.choiceDeadline ?? this.now() + TIMEOUT;
+      let extended = false;
+      const extend = () => {
+        if (extended || !data.options?.reactionRequest || !this._midi?.extendReactionTimeout) return;
+        extended = true;
+        void Promise.resolve().then(() => this._midi.extendReactionTimeout(data.options.reactionRequest)).catch(error => this.log(error));
+      };
+      const commitForcedAc = () => { extend(); return controls.commit(); };
+      const patchedMidi = typeof this._midi?.extendReactionTimeout === "function";
       const session = { ...controls, actor, shieldContext: data.options?.rebreyaShieldReaction?.[data.tokenUuid],
-        expiresAt: this.now() + TIMEOUT, dialogs: new Set(), chosen: false, finished: false };
+        expiresAt, extend, dialogs: new Set(), chosen: false, finished: false };
       this._sessions.set(id, session);
       const abort = () => {
         for (const dialog of session.dialogs) void Promise.resolve(dialog.close()).catch(error => this.log(error));
@@ -234,13 +244,16 @@ export class MidiReactionAdapter {
       try {
         // Forced optional effects execute before MIDI creates a dialog. Reserve
         // application first, without re-evaluating or rewriting authored conditions.
-        if (optional.some(flag => flag.force !== undefined) && !await controls.commit()) return { ...NONE };
+        if (!patchedMidi && optional.some(flag => flag.force !== undefined) && !await commitForcedAc()) return { ...NONE };
         if (controls.signal.aborted) return { ...NONE };
+        const remaining = expiresAt - this.now();
+        if (remaining <= 0) return { ...NONE };
         return await this._original({
           ...data,
-          reactionActivityList: activities,
+          reactionActivityList: controls.activityUuids ?? activities,
           reactionFlavor: `${data.reactionFlavor ?? ""}<!--rm-reaction:${id}-->`,
-          options: { ...data.options, timeout: TIMEOUT / 1000 }
+          options: { ...data.options, timeout: remaining / 1000,
+            ...(patchedMidi && optional.length ? { rebreyaBeforeForcedAc: commitForcedAc } : {}) }
         });
       }
       finally {
@@ -263,6 +276,11 @@ export class MidiReactionAdapter {
     const optional = dialog instanceof this._midi.apps.RollModifyDialog;
     let submitting = false;
     let submitted = false;
+    const close = dialog.data.close;
+    if (!optional && typeof close === "function") dialog.data.close = function (...args) {
+      if (!submitting && !submitted && !session.signal.aborted && !session.finished && adapter.now() < session.expiresAt) session.reportClose?.();
+      return close.apply(this, args);
+    };
     dialog.data.callback = async function(...args) {
       if (submitting || (!optional && submitted)) return;
       if (session.finished || session.signal.aborted || (!session.chosen && adapter.now() >= session.expiresAt)) {
@@ -273,23 +291,30 @@ export class MidiReactionAdapter {
         return;
       }
       submitting = true;
-      const selected = !optional && await adapter.resolve(args[1]?.key);
+      session.extend();
+      // Stop the window timer during the already selected optional reaction.
+      // MIDI's activity dialog also protects its lexical deadline in the local patch.
+      clearTimeout(dialog.timeoutId); clearTimeout(dialog.secondTimeoutId);
+      dialog.timeoutId = undefined; dialog.secondTimeoutId = undefined;
+      const activityUuid = optional ? undefined : args[1]?.key;
+      if (!await session.commit({ activityUuid }) || session.signal.aborted) {
+        dialog.data.completed = false;
+        await dialog.close();
+        return;
+      }
+      const selected = !optional && await adapter.resolve(activityUuid);
       if (isShieldReactionItem(selected?.item) && !await adapter.canOfferShield(selected, session.shieldContext)) {
         dialog.data.completed = false;
         await dialog.close();
         return;
       }
-      if (!await session.commit({ activityUuid: optional ? undefined : args[1]?.key }) || session.signal.aborted) {
+      if (session.signal.aborted) {
         dialog.data.completed = false;
         await dialog.close();
         return;
       }
       submitted = true;
       session.chosen = true;
-      // Native activity callback clears its lexical selection timer. Optional AC
-      // keeps a class timer as well; it must not interrupt an authorized macro/roll.
-      clearTimeout(dialog.timeoutId); clearTimeout(dialog.secondTimeoutId);
-      dialog.timeoutId = undefined; dialog.secondTimeoutId = undefined;
       try { return await callback.apply(this, args); }
       finally { submitting = false; }
     };

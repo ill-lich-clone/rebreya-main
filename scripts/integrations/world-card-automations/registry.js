@@ -5,7 +5,7 @@ import { grapplerPin as grapplerPinLocal } from "./selected/macros/2014/feats/gr
 import { cleanFinishCombatTurn as cleanFinishCombatTurnLocal } from "./selected/macros/2024/classFeatures/pugilist/squaredCircle/cleanFinish.js";
 import { antagonize } from "../../combat/antagonize.js?v=1.5.59";
 import { absorbElements as absorbElements_legacy } from "./selected/macros/2014/spells/absorbElements.js";
-import { bless as bless_legacy } from "./selected/macros/2014/spells/bless.js";
+import { bless as bless_legacy } from "./selected/macros/2014/spells/bless.js?v=1.5.95";
 import { boomingBlade as boomingBlade_legacy } from "./selected/macros/2014/spells/boomingBlade.js";
 import { boomingBladeMoved as boomingBladeMoved_legacy } from "./selected/macros/2014/spells/boomingBlade.js";
 import { brandingSmite as brandingSmite_legacy } from "./selected/macros/2014/spells/brandingSmite.js";
@@ -52,7 +52,7 @@ import { wardingBondSource as wardingBondSource_legacy } from "./selected/macros
 import { wrathfulSmite as wrathfulSmite_legacy } from "./selected/macros/2014/spells/wrathfulSmite.js";
 import { wrathfulSmiteDamage as wrathfulSmiteDamage_legacy } from "./selected/macros/2014/spells/wrathfulSmite.js";
 import { bane as bane_modern } from "./selected/macros/2024/spells/bane.js";
-import { bless as bless_modern } from "./selected/macros/2024/spells/bless.js";
+import { bless as bless_modern } from "./selected/macros/2024/spells/bless.js?v=1.5.95";
 import { blur as blur_modern } from "./selected/macros/2024/spells/blur.js";
 import { blurEffect as blurEffect_modern } from "./selected/macros/2024/spells/blur.js";
 import { compelledDuel as compelledDuel_modern } from "./selected/macros/2024/spells/compelledDuel.js";

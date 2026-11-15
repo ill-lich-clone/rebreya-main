@@ -7,6 +7,7 @@ const NONE = Object.freeze({ name: "None" });
 const LIMIT = 128;
 const TTL = 60_000;
 const TIMEOUT = 10_000;
+const APPLICATION_TIMEOUT = 120_000;
 
 function values(collection) { return Array.from(collection?.contents ?? collection?.values?.() ?? collection ?? []); }
 function reactionCount(actor) {
@@ -51,36 +52,61 @@ export class ManagedReactionSessions {
     let committing;
     let result;
     let timeoutId;
-    const timeout = new Promise(resolve => {
+    let reason = "declined";
+    let resolveTimeout;
+    const timeout = new Promise(resolve => { resolveTimeout = resolve; });
+    const choiceDeadline = this.now() + permission.remainingMs;
+    const setDeadline = (deadline, expiredReason) => {
+      this.clear(timeoutId);
       timeoutId = this.timer(() => {
-        if (committed) return;
-        controller.abort("timeout");
-        resolve({ ...NONE });
-      }, Math.max(0, permission.expiresAt - this.now()));
-    });
+        reason = expiredReason;
+        controller.abort(expiredReason);
+        resolveTimeout({ ...NONE });
+      }, Math.max(0, deadline - this.now()));
+    };
+    setDeadline(choiceDeadline, "timeout");
     const commit = (choice = {}) => {
       if (controller.signal.aborted) return Promise.resolve(false);
       if (committed) return Promise.resolve(true);
-      return committing ??= this.rpc("commit", { sessionId, activityUuid: choice.activityUuid }).then(answer => {
-        if (!answer?.allowed || controller.signal.aborted) return false;
+      if (committing) return committing;
+      if (this.now() >= choiceDeadline) return Promise.resolve(false);
+      // After the click, the GM validates its own deadline and persists the reservation.
+      setDeadline(this.now() + TIMEOUT, "error");
+      committing = this.rpc("commit", { sessionId, activityUuid: choice.activityUuid }).then(answer => {
+        if (!answer?.allowed || controller.signal.aborted) {
+          if (!controller.signal.aborted) reason = "error";
+          return false;
+        }
         committed = true;
-        this.clear(timeoutId);
+        setDeadline(this.now() + answer.remainingMs, "indeterminate");
         return true;
       });
+      return committing;
     };
     try {
       result = await Promise.race([
-        Promise.resolve().then(() => execute({ signal: controller.signal, commit, sessionId })),
+        Promise.resolve().then(() => execute({ signal: controller.signal, commit, sessionId, choiceDeadline,
+          activityUuids: permission.activityUuids, reportClose: () => { if (!committing && reason === "declined") reason = "closed"; } })),
         timeout
       ]);
-      if (!committed && result?.uuid) result = { ...NONE };
+      if (!committed && result?.uuid) {
+        reason = "error";
+        result = { ...NONE };
+      } else if (committed && !result?.uuid && reason === "declined") reason = "unapplied";
       return result ?? { ...NONE };
+    }
+    catch (error) {
+      reason = "error";
+      throw error;
     }
     finally {
       this.clear(timeoutId);
       // This also closes a native window whose handler rejected before its close callback.
       controller.abort("finished");
-      await this.rpc("finish", { sessionId, result: result ?? NONE });
+      const finish = this.rpc("finish", { sessionId, result: result ?? NONE, reason }).catch(error => {
+        (this.options.logger ?? console).warn("Native reaction finalization failed", error);
+      });
+      if (!(committed && result?.uuid)) await finish;
     }
   }
 
@@ -132,11 +158,21 @@ export class ManagedReactionSessions {
       if (!actor || actor.uuid !== request.candidate?.actorUuid
         || (!user.isGM && actor.testUserPermission?.(user, "OWNER") !== true)) return { allowed: false };
       const costs = {};
-      for (const uuid of request.candidate?.activityUuids ?? []) {
-        const activity = await (this.options.documentResolver ?? globalThis.fromUuid)?.(uuid);
-        if (activity?.actor?.uuid !== actor.uuid || !String(activity.activation?.type ?? "").startsWith("reaction")) return { allowed: false };
-        costs[uuid] = Number(activity.activation?.value ?? 1) > 0 ? 1 : 0;
+      const requested = request.candidate?.activityUuids;
+      if (requested !== undefined && !Array.isArray(requested)) return { allowed: false };
+      for (const uuid of new Set(requested ?? [])) {
+        if (typeof uuid !== "string" || !uuid || ["__proto__", "constructor", "prototype"].includes(uuid)) continue;
+        let activity;
+        try { activity = await (this.options.documentResolver ?? globalThis.fromUuid)?.(uuid); }
+        catch { continue; }
+        const type = activity?.effectiveActivationType ?? activity?.activation?.type;
+        if (activity?.actor?.uuid !== actor.uuid || !String(type ?? "").startsWith("reaction")) continue;
+        costs[uuid] = Number(activity.activation?.value ?? activity.activation?.cost ?? 1) > 0 ? 1 : 0;
       }
+      const activityUuids = Object.keys(costs);
+      const optionalAc = request.triggerType === "reactionattacked"
+        && Object.values(actor.flags?.["midi-qol"]?.optional ?? {}).some(flag => flag?.ac !== undefined);
+      if (requested !== undefined && !activityUuids.length && !optionalAc) return { allowed: false };
       const requiredUses = Object.values(costs).includes(0) ? 0 : 1;
       const ledger = this.queue.moduleApi?.combatAttackService;
       if (requiredUses > 0 && ledger?.canUseReaction?.(actor)?.canUse === false) return { allowed: false };
@@ -145,34 +181,46 @@ export class ManagedReactionSessions {
       const entry = { key, actor, senderId, state: "choosing", expiresAt: this.now() + TIMEOUT,
         costs, requiredUses, remaining: ledger?.getReactionState?.(actor)?.usesRemaining, midiCount: reactionCount(actor) };
       this.entries.set(data.sessionId, entry);
-      entry.message = await this.queue._beginReactionMessage({ ...request, managed: {
+      entry.messageReady = this.queue._beginReactionMessage({ ...request, candidate: { ...request.candidate, actor }, expiresAt: entry.expiresAt, managed: {
         sessionId: data.sessionId, ownerUserId: senderId, key, costs, requiredUses,
         remaining: entry.remaining, midiCount: entry.midiCount
-      } });
-      entry.timer = this.timer(() => {
-        if (entry.state !== "choosing") return;
-        entry.state = "declined"; entry.expiresAt = this.now() + TTL;
-        void this.queue._finishReactionMessage(entry.message, false);
-      }, Math.max(0, entry.expiresAt - this.now()));
-      return { allowed: true, expiresAt: entry.expiresAt };
+      } }).then(message => { entry.message = message; return message; });
+      this.watch(entry, "choosing", "timeout");
+      return { allowed: true, remainingMs: Math.max(0, entry.expiresAt - this.now()), activityUuids };
     }
     const entry = this.entries.get(data.sessionId) ?? await this.restore(data.sessionId);
     if (!entry || entry.senderId !== senderId) return { allowed: false };
     if (op === "commit") {
       if (!user.isGM && entry.actor.testUserPermission?.(user, "OWNER") !== true) return { allowed: false };
-      if (entry.state === "applying") return { allowed: true };
+      if (entry.state === "applying") {
+        if (entry.activityUuid !== data.activityUuid) return { allowed: false };
+        return entry.commitPromise ?? { allowed: entry.expiresAt > this.now(), remainingMs: Math.max(0, entry.expiresAt - this.now()) };
+      }
       if (data.activityUuid && !Object.hasOwn(entry.costs, data.activityUuid)) return { allowed: false };
       const requiredUses = data.activityUuid ? entry.costs[data.activityUuid] : 1;
       const available = requiredUses === 0 || this.queue.moduleApi?.combatAttackService?.canUseReaction?.(entry.actor, requiredUses + this.reservedUses(entry.actor.uuid))?.canUse !== false;
       if (entry.state !== "choosing" || entry.expiresAt <= this.now() || !available) return { allowed: false };
       entry.requiredUses = requiredUses;
-      entry.state = "applying"; entry.expiresAt = Infinity; this.clear(entry.timer);
-      const choice = entry.message?.flags?.[MODULE_ID]?.reactionChoice ?? {};
-      try { await entry.message?.update({ flags: { [MODULE_ID]: { reactionChoice: {
-        ...choice, state: "applying", managed: { ...choice.managed, requiredUses }
-      } } } }); }
-      catch (error) { this.options.logger?.warn?.("Reaction chat commit failed", error); }
-      return { allowed: true };
+      entry.activityUuid = data.activityUuid;
+      entry.state = "applying";
+      entry.expiresAt = this.now() + APPLICATION_TIMEOUT;
+      this.watch(entry, "applying", "indeterminate");
+      entry.commitPromise = (async () => {
+        const message = entry.messageReady ? await entry.messageReady : entry.message;
+        if (entry.state !== "applying") return { allowed: false };
+        const choice = message?.flags?.[MODULE_ID]?.reactionChoice ?? {};
+        try { await message?.update({ flags: { [MODULE_ID]: { reactionChoice: {
+          ...choice, state: "applying", expiresAt: entry.expiresAt,
+          managed: { ...choice.managed, requiredUses, activityUuid: entry.activityUuid ?? null, applicationDeadline: true }
+        } } } }); }
+        catch (error) { this.options.logger?.warn?.("Reaction chat commit failed", error); }
+        if (entry.state !== "applying") {
+          await this.queue._finishReactionMessage(entry.message, false, entry.reason);
+          return { allowed: false };
+        }
+        return { allowed: true, remainingMs: Math.max(0, entry.expiresAt - this.now()) };
+      })();
+      return entry.commitPromise;
     }
     if (op === "finish") {
       if (entry.state === "finished" || entry.state === "declined") return { allowed: true };
@@ -180,12 +228,13 @@ export class ManagedReactionSessions {
       const result = data.result;
       const applied = entry.state === "applying" && !!result?.uuid && result.name !== "None" && result.name !== "Filter";
       entry.state = "finished"; entry.expiresAt = this.now() + TTL;
+      entry.reason = data.reason;
       const ledger = this.queue.moduleApi?.combatAttackService;
       if (applied && entry.requiredUses > 0 && reactionCount(entry.actor) > entry.midiCount) {
         try { await ledger?.consumeReaction?.(entry.actor, { reactionType: "midi-native", triggerId: entry.key, idempotencyKey: `midi-native:${entry.key}` }); }
         catch (error) { this.options.logger?.error?.("Native reaction ledger synchronization failed", error); }
       }
-      await this.queue._finishReactionMessage(entry.message, applied);
+      await this.queue._finishReactionMessage(entry.messageReady ? await entry.messageReady : entry.message, applied, data.reason);
       return { allowed: true };
     }
     return { allowed: false };
@@ -202,22 +251,54 @@ export class ManagedReactionSessions {
     const managed = choice.managed;
     const entry = { actor, message, senderId: managed.ownerUserId, key: managed.key,
       costs: managed.costs ?? {}, requiredUses: managed.requiredUses ?? 1,
+      activityUuid: managed.activityUuid ?? undefined,
       remaining: managed.remaining, midiCount: managed.midiCount,
-      state: choice.state, expiresAt: choice.state === "applying" ? Infinity : choice.expiresAt };
+      state: choice.state, expiresAt: this.messageDeadline(choice) };
     if (this.entries.has(sessionId)) return this.entries.get(sessionId);
     this.entries.set(sessionId, entry);
+    this.watch(entry, entry.state, entry.state === "applying" ? "indeterminate" : "timeout");
     return entry;
   }
 
+  messageDeadline(choice) {
+    // Older applying messages still carry the deadline of the original choice.
+    return choice.state === "applying" && choice.managed?.applicationDeadline !== true
+      ? Number(choice.expiresAt) + APPLICATION_TIMEOUT
+      : Number(choice.expiresAt);
+  }
+
+  watch(entry, state, reason) {
+    this.clear(entry.timer);
+    entry.timer = this.timer(() => {
+      if (entry.state === state && this.queue._isCoordinator()) void this.expireEntry(entry, reason);
+    }, Math.max(0, entry.expiresAt - this.now()));
+  }
+
+  async expireEntry(entry, reason) {
+    entry.state = "declined";
+    entry.expiresAt = this.now() + TTL;
+    entry.reason = reason;
+    this.clear(entry.timer);
+    await this.queue._finishReactionMessage(entry.messageReady ? await entry.messageReady : entry.message, false, reason);
+  }
+
   async reconcile() {
-    const users = values(this.game()?.users);
+    const activeIds = new Set(values(this.game()?.users).filter(user => user.active).map(user => user.id));
+    const now = this.now();
     for (const message of values(this.game()?.messages)) {
       const choice = message.flags?.[MODULE_ID]?.reactionChoice;
       const managed = choice?.managed;
-      if (!managed || choice.state !== "applying" || users.some(user => user.id === managed.ownerUserId && user.active)) continue;
-      const entry = this.entries.get(managed.sessionId);
-      if (entry) { entry.state = "declined"; entry.expiresAt = this.now() + TTL; this.clear(entry.timer); }
-      await this.queue._finishReactionMessage(message, false);
+      if (!choice || !["choosing", "applying"].includes(choice.state)) continue;
+      if (choice.state === "applying" && !managed) continue;
+      const entry = managed && this.entries.get(managed.sessionId);
+      const state = entry?.state ?? choice.state;
+      if (!["choosing", "applying"].includes(state)) continue;
+      const disconnected = managed && !activeIds.has(managed.ownerUserId);
+      const expired = (entry?.expiresAt ?? this.messageDeadline(choice)) <= now;
+      if (!disconnected && !expired) continue;
+      const reason = disconnected ? "disconnected" : state === "applying" ? "indeterminate" : "timeout";
+      if (entry) await this.expireEntry(entry, reason);
+      else await this.queue._finishReactionMessage(message, false, reason);
     }
   }
 

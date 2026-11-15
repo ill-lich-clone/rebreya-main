@@ -1,5 +1,5 @@
 import { createTriggerTargetRef } from "./trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
-import { MAX_DOOR_DISTANCE_FEET } from "../data/door-access.js?v=1.4.197-door-trigger-target";
+import { canUseNativeDoorControls, MAX_DOOR_DISTANCE_FEET } from "../data/door-access.js?v=1.5.95";
 
 const MODULE_ID = "rebreya-main";
 const MAX_DEFINITIONS_LENGTH = 500_000;
@@ -120,7 +120,7 @@ function activeSupportedChains(triggers, event) {
 }
 
 export class DoorTriggerCommandService {
-  constructor({ coordinator, resolveDocument, measureDistance, logger = console } = {}) {
+  constructor({ coordinator, resolveDocument, measureDistance, gameProvider = () => globalThis.game, logger = console } = {}) {
     if (!coordinator || typeof coordinator.execute !== "function") {
       throw new TypeError("DoorTriggerCommandService requires TriggerTargetCoordinator.");
     }
@@ -130,6 +130,7 @@ export class DoorTriggerCommandService {
     this.coordinator = coordinator;
     this.resolveDocument = resolveDocument;
     this.measureDistance = measureDistance;
+    this.gameProvider = gameProvider;
     this.logger = logger;
     this.queues = new Map();
     this.tasks = new Map();
@@ -152,6 +153,9 @@ export class DoorTriggerCommandService {
   }
 
   async #resolveDoorAndCharacter(payload, sender) {
+    if (!canUseNativeDoorControls(sender, this.gameProvider()?.paused)) {
+      throw errorWithCode(DOOR_ERROR_CODES.UNAVAILABLE, "Дверь недоступна.");
+    }
     const wall = await this.#resolveWall(payload?.wallUuid);
     const secret = Number(globalThis.CONST?.WALL_DOOR_TYPES?.SECRET ?? 2);
     if (sender?.isGM !== true && Number(wall.door) === secret) {
@@ -340,13 +344,14 @@ export class DoorTriggerCommandService {
     return this.#runMutation(`door:${wallUuid}`, mutationKey, async () => {
       let access = await this.#resolveDoorAndCharacter(payload, sender);
       const states = wallDoorStates();
-      if (Number(access.wall.ds) === states.open) {
+      const initialState = Number(access.wall.ds);
+      if (initialState === states.open) {
         if (!this.#matchingBeforeOpenRun(access, payload, sender)) this.#assertOpenableState(access.wall);
         const postCommitWarning = await this.#executeAfterOpen(access, payload, sender);
         return { wallUuid, state: states.open, opened: true, replayed: true, postCommitWarning };
       }
       this.#assertOpenableState(access.wall);
-      if (Number(access.wall.ds) === states.locked
+      if (initialState === states.locked
         && activeSupportedChains(access.snapshot.triggers, "beforeOpen").length === 0) {
         throw errorWithCode(DOOR_ERROR_CODES.LOCKED, "Дверь заперта.");
       }
@@ -364,6 +369,9 @@ export class DoorTriggerCommandService {
       }
       access = await this.#resolveDoorAndCharacter(payload, sender);
       this.#assertOpenableState(access.wall);
+      if (initialState === states.closed && Number(access.wall.ds) === states.locked) {
+        throw errorWithCode(DOOR_ERROR_CODES.STATE_CHANGED, "Дверь заперли во время открытия.");
+      }
       await access.wall.update(
         { ds: states.open },
         { sound: true, rebreyaDoorTriggerBypass: true }

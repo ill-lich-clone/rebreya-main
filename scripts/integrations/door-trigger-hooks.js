@@ -1,4 +1,5 @@
 import { DoorTriggerOverlayController } from "../ui/door-trigger-overlay.js?v=1.4.199-door-overlay-anchor";
+import { canUseNativeDoorControls } from "../data/door-access.js?v=1.5.95";
 
 const WRAPPER = Symbol.for("rebreya-main.door-trigger-control");
 const REGISTRATIONS = new WeakMap();
@@ -34,12 +35,15 @@ export function createDoorTriggerControlClass(BaseDoorControl, moduleApi, overla
 
   class RebreyaDoorTriggerControl extends BaseDoorControl {
     async _onMouseDown(event) {
+      if (event?.button !== 0) return super._onMouseDown(event);
       const wall = wallDocument(this);
       const open = Number(globalThis.CONST?.WALL_DOOR_STATES?.OPEN ?? 1);
       if (Number(wall?.ds) === open) {
         overlayController.close?.();
         return super._onMouseDown(event);
       }
+      const game = gameProvider();
+      if (!canUseNativeDoorControls(game?.user, game?.paused)) return super._onMouseDown(event);
       const wallUuid = String(wall?.uuid ?? "").trim();
       const access = moduleApi.getDoorTriggerPreflight?.(wallUuid);
       if (access?.configured !== true || access?.enabled !== true) {
@@ -53,6 +57,11 @@ export function createDoorTriggerControlClass(BaseDoorControl, moduleApi, overla
       }
       return overlayController.showOpen?.(this, {
         onOpen: async () => {
+          const currentGame = gameProvider();
+          if (!canUseNativeDoorControls(currentGame?.user, currentGame?.paused)) {
+            overlayController.showFeedback?.(this, feedbackForAccess(), { durationMs: 2000 });
+            return false;
+          }
           const current = moduleApi.getDoorTriggerPreflight?.(wallUuid);
           if (current?.allowed !== true) {
             overlayController.showFeedback?.(this, feedbackForAccess(current), { durationMs: 2000 });

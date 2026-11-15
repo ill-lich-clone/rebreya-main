@@ -6,6 +6,12 @@ export async function use({trigger, workflow}) {
     let sourceEffect = workflow.activity.effects[0]?.effect;
     if (!sourceEffect) return;
     let effectData = genericUtils.duplicate(sourceEffect.toObject());
+    if (genericUtils.getIdentifier(workflow.item) === 'bless') {
+        // The managed Bless template can still carry a legacy TokenMagic visual.
+        const withoutVisual = changes => changes.filter(change => change.key !== 'macro.tokenMagic');
+        if (Array.isArray(effectData.system?.changes)) effectData.system.changes = withoutVisual(effectData.system.changes);
+        if (Array.isArray(effectData.changes)) effectData.changes = withoutVisual(effectData.changes);
+    }
     effectData.origin = sourceEffect.uuid;
     effectData.duration = itemUtils.convertDuration(workflow.activity);
     let heliodsDevotee = itemUtils.getItemByIdentifier(workflow.actor, 'heliodsDevotee');

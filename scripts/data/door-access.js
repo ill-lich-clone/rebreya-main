@@ -6,6 +6,10 @@ import {
 
 export const MAX_DOOR_DISTANCE_FEET = 10;
 
+export function canUseNativeDoorControls(user, paused) {
+  return user?.can?.("WALL_DOORS") === true && (!paused || user.isGM === true);
+}
+
 function finitePoint(value) {
   const x = Number(value?.x);
   const y = Number(value?.y);

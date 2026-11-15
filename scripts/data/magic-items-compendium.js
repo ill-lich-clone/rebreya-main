@@ -1,5 +1,6 @@
 import { ANTAGONIZE_UUID, prepareAntagonizeCastMigration } from "./antagonize-spell-item.js?v=1.5.59";
 import { MAGIC_ITEMS_COMPENDIUM_LABEL, MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { ITEM_COMPENDIUM_BANNERS } from "./item-compendium-banners.js?v=1.5.95";
 import {
   buildNamedIconLookup,
   ensureCompendiumFolders,
@@ -3802,6 +3803,7 @@ function getDesiredPackMetadata() {
     label: MAGIC_ITEMS_COMPENDIUM_LABEL,
     type: "Item",
     name: MAGIC_ITEMS_COMPENDIUM_NAME,
+    banner: ITEM_COMPENDIUM_BANNERS[PACK_ID],
     system: game.system.id,
     ownership: {
       PLAYER: "OBSERVER",

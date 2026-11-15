@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { ManagedReactionSessions } from "./managed-reaction-session.js";
+import { ManagedReactionSessions } from "./managed-reaction-session.js?v=1.5.95";
 
 export const REACTION_PROMPT_TIMEOUT_MS = 10_000;
 export const REACTION_RESULT_TTL_MS = 60_000;
@@ -58,9 +58,19 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function reactionChatContent(actorName, state) {
+const reactionFailureText = {
+  declined: "отказался от реакции",
+  closed: "закрыл окно реакции",
+  timeout: "не успел выбрать реакцию",
+  disconnected: "не завершил выбор или применение реакции из-за отключения клиента",
+  error: "не применил реакцию из-за ошибки",
+  unapplied: "не завершил применение реакции",
+  indeterminate: "начал применение реакции. Результат не подтверждён"
+};
+
+function reactionChatContent(actorName, state, reason) {
   const declined = state === "declined";
-  const text = `${escapeHtml(actorName)} ${declined ? "не применил реакцию" : "выбирает реакцию"}`;
+  const text = `${escapeHtml(actorName)} ${declined ? reactionFailureText[reason] : "выбирает реакцию"}`;
   const icon = declined ? "fa-ban" : "fa-hourglass-half";
   return `<div class="rm-reaction-chat rm-reaction-chat--${declined ? "declined" : "choosing"}">`
     + `<span class="rm-reaction-chat__icon" aria-hidden="true"><i class="fa-solid ${icon}"></i></span>`
@@ -179,7 +189,7 @@ export class ReactionQueueService {
     return this._managed.resolve(request, execute);
   }
 
-  async _beginReactionMessage({ triggerId, candidate = {}, kind, managed }) {
+  async _beginReactionMessage({ triggerId, candidate = {}, kind, managed, expiresAt }) {
     try {
       const Message = this._options.chatMessageClass ?? globalThis.ChatMessage;
       if (typeof Message?.create !== "function") return null;
@@ -191,7 +201,7 @@ export class ReactionQueueService {
         content: reactionChatContent(actorName, "choosing"),
         flags: { [MODULE_ID]: { reactionChoice: {
           triggerId, candidateActorUuid: candidate.actorUuid ?? actor?.uuid ?? "", kind,
-          actorName, state: "choosing", expiresAt: (this._options.now?.() ?? Date.now()) + REACTION_PROMPT_TIMEOUT_MS,
+          actorName, state: "choosing", expiresAt: expiresAt ?? (this._options.now?.() ?? Date.now()) + REACTION_PROMPT_TIMEOUT_MS,
           ...(managed ? { managed } : {})
         } } }
       });
@@ -202,32 +212,33 @@ export class ReactionQueueService {
     }
   }
 
-  async _finishReactionMessage(message, applied) {
+  async _finishReactionMessage(message, applied, reason = "unapplied") {
     if (!message) return;
     try {
       if (applied) await message.delete();
       else {
         const choice = message.flags?.[MODULE_ID]?.reactionChoice ?? {};
+        const outcome = Object.hasOwn(reactionFailureText, reason) ? reason : "unapplied";
         await message.update({
-          content: reactionChatContent(choice.actorName || "Персонаж", "declined"),
-          flags: { [MODULE_ID]: { reactionChoice: { ...choice, state: "declined" } } }
+          content: reactionChatContent(choice.actorName || "Персонаж", "declined", outcome),
+          flags: { [MODULE_ID]: { reactionChoice: { ...choice, state: "declined", reason: outcome } } }
         });
       }
     }
     catch (error) { this._options.logger?.warn?.("Reaction chat finalization failed", error); }
   }
 
-  async recoverExpiredReactionMessages() {
+  async recoverExpiredReactionMessages(disconnectedUserId) {
     if (!this._isCoordinator()) return;
-    await this._managed.reconcile();
-    const game = this._options.gameProvider?.() ?? globalThis.game;
-    const now = this._options.now?.() ?? Date.now();
-    for (const message of collectionValues(game?.messages)) {
-      const choice = message.flags?.[MODULE_ID]?.reactionChoice;
-      if (choice?.state === "choosing" && Number(choice.expiresAt) <= now) {
-        await this._finishReactionMessage(message, false);
+    if (disconnectedUserId) {
+      for (const [requestId, entry] of this._pendingPromptRequests) {
+        if (entry.forUserId !== disconnectedUserId) continue;
+        this._pendingPromptRequests.delete(requestId);
+        entry.signal?.removeEventListener?.("abort", entry.abortHandler);
+        entry.resolve({ accepted: false, reason: "disconnected" });
       }
     }
+    await this._managed.reconcile();
   }
 
   registerType(kind, provider) {
@@ -322,6 +333,7 @@ export class ReactionQueueService {
       const prompt = await provider.buildPrompt?.(candidate, context) ?? {};
       const message = await this._beginReactionMessage({ triggerId, candidate, kind });
       let applied = false;
+      let reason = "error";
       try {
         const choice = await this._promptWithTimeout({
           candidate,
@@ -330,6 +342,7 @@ export class ReactionQueueService {
           prompt,
           triggerId
         });
+        reason = choice?.reason ?? "unapplied";
         if (choice?.accepted === true) {
           const transaction = await this._executeAccepted({
             candidate,
@@ -339,7 +352,10 @@ export class ReactionQueueService {
             provider,
             triggerId
           });
-          if (transaction.accepted !== true) continue;
+          if (transaction.accepted !== true) {
+            reason = transaction.reason === "providerError" ? "error" : "unapplied";
+            continue;
+          }
           applied = true;
           const effect = typeof provider.serializeEffect === "function"
             ? await provider.serializeEffect(transaction.effect, candidate, context)
@@ -350,7 +366,7 @@ export class ReactionQueueService {
           }
         }
       }
-      finally { await this._finishReactionMessage(message, applied); }
+      finally { await this._finishReactionMessage(message, applied, reason); }
     }
 
     return { triggerId, kind, status: "completed", accepted };

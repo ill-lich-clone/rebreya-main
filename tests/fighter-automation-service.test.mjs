@@ -830,6 +830,40 @@ test("fighter maneuver runtime infers automation from stale subtype-only maneuve
   }
 });
 
+test("an unconfirmed remote maneuver preserves the fallback die and the verified hit for a valid retry", async () => {
+  const previousGM = game.user.isGM;
+  const previousTargets = game.user.targets;
+  const dominance = makeItem({ id: "dominance", name: "Стиль доминирования", featureId: "fighter-rework-v028::class::fighter-dominance", uses: { spent: 0, max: 2 } });
+  const item = makeItem({ id: "riposte", name: "Ответный удар" });
+  const source = new TestActor({ id: "fighter", items: [dominance, item] });
+  const target = new TestActor({ id: "target" });
+  target.isOwner = false;
+  const token = { actor: target, document: { uuid: "Scene.scene.Token.target" } };
+  const requested = [];
+  const service = new FighterAutomationService({ socketCommandBus: { request: async (...args) => { requested.push(args); return { applied: true }; } } });
+  const activity = makeActivity({ actor: source, item, automation: "fighter-dominance-maneuver",
+    fighterAutomation: { kind: "maneuver", extraDamage: { formula: "1d4" } } });
+  const workflow = { actor: source, item: { type: "weapon" }, attackRoll: fixedRoll(15), hitTargets: new Set([token]) };
+  try {
+    game.user.isGM = false;
+    game.user.targets = new Set([token]);
+    await service.applyMidiRollComplete(workflow);
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+    assert.equal(dominance.system.uses.spent, 0);
+    assert.equal(requested.length, 0);
+
+    workflow.chatCard = { id: "attack" };
+    const message = { id: "maneuver", system: { deltas: { item: { dominance: [{ keyPath: "system.uses.spent", delta: 1 }] } } } };
+    await service.applyDnd5ePostUseActivity(activity, {}, { message });
+    assert.equal(requested.length, 1);
+    assert.equal(dominance.system.uses.spent, 0);
+  }
+  finally {
+    game.user.isGM = previousGM;
+    game.user.targets = previousTargets;
+  }
+});
+
 test("fighter maneuver runtime spends the owned dominance dice item when dnd5e did not consume it", async () => {
   const previousTargets = globalThis.game.user.targets;
   const dominance = makeItem({

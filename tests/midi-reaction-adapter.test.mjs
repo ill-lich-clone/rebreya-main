@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function harness({ type = "activity", fail = false, force = false } = {}) {
+async function harness({ type = "activity", fail = false, force = false, patched = false } = {}) {
   const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
   const dialogs = []; const events = [];
   let now = 100;
@@ -22,6 +22,7 @@ async function harness({ type = "activity", fail = false, force = false } = {}) 
   }
   const original = async data => {
     if (force) {
+      if (patched) await data.options.rebreyaBeforeForcedAc();
       events.push("forced");
       return { name: "Guard", uuid: actor.uuid, ac: 19 };
     }
@@ -46,13 +47,15 @@ async function harness({ type = "activity", fail = false, force = false } = {}) 
     async resolveManagedReaction(request, execute) {
       events.push("service");
       const controller = new AbortController();
-      controls = { signal: controller.signal, commit: async () => { events.push("commit"); return true; }, sessionId: `session-${events.length}` };
+      controls = { signal: controller.signal, commit: async () => { events.push("commit"); return true; },
+        reportClose: () => events.push("closed"), sessionId: `session-${events.length}` };
       const pending = execute(controls);
       controls.abort = () => controller.abort("timeout");
       return pending;
     }
   };
   const midi = { apps: { ReactionDialog: NativeDialog, RollModifyDialog: OptionalDialog } };
+  if (patched) midi.extendReactionTimeout = async request => events.push(["extended", request.id]);
   const adapter = new MidiReactionAdapter({ reactionQueueService: queue }, {
     midiProvider: () => midi,
     socketProvider: () => socket,
@@ -61,6 +64,7 @@ async function harness({ type = "activity", fail = false, force = false } = {}) 
   });
   await adapter.initialize();
   const data = { tokenUuid: "Token.guard", triggerTokenUuid: "Token.enemy", triggerType: type === "ac" || force ? "reactionattacked" : "reaction", reactionFlavor: "Choose", reactionActivityList: type === "activity" && !force ? ["Activity.shield"] : [], options: { workflowId: "attack:1" } };
+  if (patched) data.options.reactionRequest = { id: "request", userId: "origin" };
   return { adapter, socket, original, actor, dialogs, events, data, controls: () => controls, now: value => { now = value; }, invoke: () => socket.functions.get("chooseReactions")(data) };
 }
 
@@ -95,7 +99,22 @@ test("native close and failed activity keep original no-result contract", async 
     if (fail) await h.dialogs[0].submit();
     else await h.dialogs[0].close();
     assert.deepEqual(await pending, { name: "None" });
+    assert.equal(h.events.includes("closed"), !fail);
   }
+});
+
+test("patched Midi requests extend only on a selected reaction or an evaluated forced bonus", async () => {
+  const selected = await harness({ patched: true });
+  const pending = selected.invoke();
+  while (!selected.dialogs.length) await Promise.resolve();
+  assert.deepEqual(selected.events, ["service"]);
+  await selected.dialogs[0].submit();
+  assert.equal((await pending).uuid, "Activity.shield");
+  assert.deepEqual(selected.events.filter(event => event[0] === "extended"), [["extended", "request"]]);
+  const forced = await harness({ type: "ac", patched: true, force: true });
+  assert.equal((await forced.invoke()).ac, 19);
+  assert.ok(forced.events.indexOf("commit") < forced.events.indexOf("forced"));
+  assert.deepEqual(forced.events.filter(event => event[0] === "extended"), [["extended", "request"]]);
 });
 
 test("aborted native session closes only its dialog and rejects late callbacks", async () => {

@@ -44,7 +44,7 @@ test("chat shows choosing before prompt and deletes only after successful paymen
 });
 
 test("choosing and declined cards have scoped styling and retain the escaped exact sentence", async () => {
-  for (const [applied, state, sentence] of [[true, "choosing", "выбирает реакцию"], [false, "declined", "не применил реакцию"]]) {
+  for (const [applied, state, sentence] of [[true, "choosing", "выбирает реакцию"], [false, "declined", "не завершил применение реакции"]]) {
     const h = harness({ applied });
     await h.run();
     const content = h.messages[0].content;
@@ -56,20 +56,20 @@ test("choosing and declined cards have scoped styling and retain the escaped exa
   }
 });
 
-for (const [name, options] of [
-  ["decline", { choice: { accepted: false, reason: "declined" } }],
-  ["close", { choice: { accepted: false, reason: "closed" } }],
-  ["timeout", { choice: { accepted: false, reason: "timeout" } }],
-  ["failed payment", { payment: false }],
-  ["failed application", { applied: false }],
-  ["failed reaction payment", { consumed: false }],
-  ["provider error", { throws: true }]
-]) test(`${name} replaces the same choosing message with did not use reaction`, async () => {
+for (const [name, options, reason, text] of [
+  ["decline", { choice: { accepted: false, reason: "declined" } }, "declined", "отказался от реакции"],
+  ["close", { choice: { accepted: false, reason: "closed" } }, "closed", "закрыл окно реакции"],
+  ["timeout", { choice: { accepted: false, reason: "timeout" } }, "timeout", "не успел выбрать реакцию"],
+  ["failed payment", { payment: false }, "unapplied", "не завершил применение реакции"],
+  ["failed application", { applied: false }, "unapplied", "не завершил применение реакции"],
+  ["failed reaction payment", { consumed: false }, "unapplied", "не завершил применение реакции"],
+  ["provider error", { throws: true }, "error", "не применил реакцию из-за ошибки"]
+]) test(`${name} records its own outcome on the choosing message`, async () => {
   const h = harness(options);
   await h.run();
   assert.equal(h.messages.length, 1);
-  assert.deepEqual(h.events.at(-1), ["update", "&lt;Страж&gt; не применил реакцию"]);
-  assert.equal(h.messages[0].flags["rebreya-main"].reactionChoice.state, "declined");
+  assert.deepEqual(h.events.at(-1), ["update", `&lt;Страж&gt; ${text}`]);
+  assert.equal(h.messages[0].flags["rebreya-main"].reactionChoice.reason, reason);
 });
 
 test("duplicate triggers do not duplicate chat or reaction payments", async () => {
@@ -116,7 +116,7 @@ test("late choice after ten seconds cannot apply and keeps a declined message", 
   answer({ accepted: true });
   await Promise.resolve();
   assert.equal(h.events.some(([type]) => type === "apply"), false);
-  assert.deepEqual(h.events.at(-1), ["update", "&lt;Страж&gt; не применил реакцию"]);
+  assert.deepEqual(h.events.at(-1), ["update", "&lt;Страж&gt; не успел выбрать реакцию"]);
 });
 
 test("no candidate and standalone non-reaction decisions never create chat", async () => {

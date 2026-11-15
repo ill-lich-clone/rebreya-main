@@ -1,4 +1,5 @@
 import { keyedMutationScheduling } from "../../application/socket-command-scheduling.js?v=1.5.3";
+import { END_COMBAT_TURN_COMMAND, endExpectedCombatTurn } from "../../integrations/grouped-combat-runtime.js?v=1.5.95";
 const text = (value, maximum = 128) => typeof value === "string" && value.length > 0 && value.length <= maximum && value === value.trim();
 const exact = (value, keys) => value && [Object.prototype, null].includes(Object.getPrototypeOf(value)) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const integer = value => Number.isSafeInteger(value) && value >= 0;
@@ -15,6 +16,11 @@ export function isValidGroupedCombatResolvePayload(value) {
   return Boolean(exact(value, ["combatId", "expectedRevision", "stepKey", "resolution", "operationId"]) && text(value.combatId) && text(value.operationId)
     && text(value.stepKey, 2048) && integer(value.expectedRevision) && ["completed", "retry"].includes(value.resolution));
 }
+export function isValidCombatEndTurnPayload(value) {
+  return Boolean(exact(value, ["combatId", "round", "turn", "combatantId", "groupId"]) && text(value.combatId)
+    && integer(value.round) && value.round > 0 && integer(value.turn) && text(value.combatantId)
+    && (value.groupId === null || text(value.groupId)));
+}
 export function registerGroupedCombatCommands(moduleApi) {
   const service = moduleApi.groupedCombatService;
   for (const [name, validate, method, gmOnly] of [
@@ -24,5 +30,11 @@ export function registerGroupedCombatCommands(moduleApi) {
     validate, authorize: (_payload, { sender }) => Boolean(sender && (!gmOnly || sender.isGM)),
     scheduling: keyedMutationScheduling(payload => [`grouped-ingress:${payload.combatId ?? payload.sceneId}`]),
     execute: (payload, { sender }) => service[method](payload, { sender })
+  });
+  moduleApi.socketCommandBus.register(END_COMBAT_TURN_COMMAND, {
+    validate: isValidCombatEndTurnPayload,
+    authorize: (_payload, { sender }) => Boolean(sender),
+    scheduling: keyedMutationScheduling(payload => [`combat-end-turn:${payload.combatId}`]),
+    execute: endExpectedCombatTurn
   });
 }

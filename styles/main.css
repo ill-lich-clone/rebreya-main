@@ -2543,11 +2543,29 @@ summary:focus-visible {
   margin: 0;
 }
 
-.dnd5e2.application.roll-configuration .dialog-buttons > button[data-action="heroic-advantage"],
-.dnd5e2.application.roll-configuration .dialog-buttons > button[data-action="heroic-disadvantage"],
-.dnd5e.application.roll-configuration .dialog-buttons > button[data-action="heroic-advantage"],
-.dnd5e.application.roll-configuration .dialog-buttons > button[data-action="heroic-disadvantage"] {
-  flex: 1 1 calc((100% - 6px) / 2);
+:is(.dnd5e2, .dnd5e).application.roll-configuration .dialog-buttons:has(> button[data-action="heroic-advantage"]) {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+:is(.dnd5e2, .dnd5e).application.roll-configuration .dialog-buttons:has(> button[data-action="heroic-advantage"]) > button {
+  grid-column: span 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+:is(.dnd5e2, .dnd5e).application.roll-configuration .dialog-buttons:has(> button[data-action="heroic-advantage"]) > button:is([data-action="heroic-advantage"], [data-action="heroic-disadvantage"]) {
+  grid-column: span 3;
+  grid-row: 2;
+}
+
+.compendium-sidebar .compendium img.compendium-banner[src="modules/rebreya-main/assets/icon-badges/magic-items.png"],
+.compendium-directory .header-banner img[src="modules/rebreya-main/assets/icon-badges/magic-items.png"] {
+  object-fit: contain;
+  object-position: right;
+  padding: 6px;
+  background: linear-gradient(95deg, #192b36, #2c203b);
 }
 
 .rm-weapon-lich-values-grid {

@@ -53,7 +53,7 @@
             <button type="button" data-ammo-action="down" data-index="{{selectedCell.index}}" title="Переместить ниже" aria-label="Переместить выбранную ячейку ниже" {{#unless canMoveDown}}disabled{{/unless}}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
           </div>
         </div>
-        <small class="rm-ammo-selected-name" title="{{selectedCell.name}}">{{selectedCell.shortName}}</small>
+        <small class="rm-ammo-selected-name" title="{{selectedCell.name}}" aria-live="polite">{{#if movingGroup}}Выберите заряженную ячейку для обмена{{else}}{{selectedCell.shortName}}{{/if}}</small>
       </section>
       <section class="rm-ammo-stock-list" aria-label="Доступные боеприпасы">
         <div class="rm-ammo-stock-scroll">

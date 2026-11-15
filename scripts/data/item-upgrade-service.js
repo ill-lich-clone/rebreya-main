@@ -13,7 +13,7 @@ import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.5.23";
-import { resolveWeaponModActivity, getWeaponModGrenadeCandidate, buildWeaponModGrenadeActivity, reconcileWeaponModActivities } from "./weapon-mod-activities.js?v=1.5.23";
+import { resolveWeaponModActivity, getWeaponModGrenadeCandidate, buildWeaponModGrenadeActivity, reconcileWeaponModActivities } from "./weapon-mod-activities.js?v=1.5.95";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";

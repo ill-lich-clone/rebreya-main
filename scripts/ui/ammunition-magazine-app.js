@@ -33,10 +33,21 @@ export class MagazineDraft {
     }
   }
   move(index,direction){
-    const groups=[];for(let i=0;i<this.value.rounds.length;i+=this.value.groupSize)groups.push(this.value.rounds.slice(i,i+this.value.groupSize));
-    const next=index+direction;if(next<0 || next>=groups.length)return;
-    [groups[index],groups[next]]=[groups[next],groups[index]];
-    const rounds=groups.flat();validateMagazine(rounds,this.value.groupSize,this.value.capacity);this.value.rounds=rounds;
+    return this.swapGroups(index,index+direction);
+  }
+  swapGroups(source,destination){
+    const {rounds,groupSize}=this.value;
+    const from=source*groupSize,to=destination*groupSize;
+    if(!Number.isInteger(source)||!Number.isInteger(destination)||from<0||to<0||from>=rounds.length||to>=rounds.length||from===to)return false;
+    if(rounds[from]===rounds[to])return true;
+
+    const sourceGroup=rounds.slice(from,from+groupSize),destinationGroup=rounds.slice(to,to+groupSize);
+    if(sourceGroup.length!==destinationGroup.length)throw new Error("Неполную ячейку нельзя поменять местами с полной.");
+    const reordered=[...rounds];
+    reordered.splice(from,groupSize,...destinationGroup);
+    reordered.splice(to,groupSize,...sourceGroup);
+    this.value.rounds=reordered;
+    return true;
   }
   resolveLegacy(key){
     if(!this.value.sources[key]||key===LEGACY_AMMUNITION)throw new Error("Выберите известную разновидность патронов.");
@@ -102,6 +113,7 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
   constructor(service,actor,weapon,options={}){
     super(options);this.service=service;this.actor=actor;this.weapon=weapon;
     this.draft=new MagazineDraft(service.getMagazineEditorData(actor,weapon));this.error="";this.busy=false;this.selectedPreset=null;this.selectedGroup=0;this.selectedAmmoKey=null;this.editingPreset=false;
+    this.moveSourceGroup=null;
   }
   get title(){return this.draft?`${this.weapon.name.replace(/\s+\(\d+\/\d+\)$/u,"")} · ${this.draft.value.rounds.length}/${this.draft.value.capacity}`:"Снаряжение магазина";}
   async _prepareContext(){
@@ -112,7 +124,7 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
     return {...view,weaponName:this.weapon.name.replace(/\s+\(\d+\/\d+\)$/u,""),current:value.rounds.length,capacity:value.capacity,groupSize:value.groupSize,selectedGroupNumber:this.selectedGroup+1,
       selectedCell,selectedAmmo,stock:view.stock.map(row=>({...row,selected:row.key===selectedAmmo?.key})),editingPreset:this.editingPreset,presetName:preset?.name??"",
       hasSelectedPreset:!!preset,presetModified:!!preset&&JSON.stringify(preset.rounds)!==JSON.stringify(value.rounds),lastSelected:this.selectedPreset==="last",
-      canMoveUp:this.selectedGroup>0,canMoveDown:(this.selectedGroup+1)*value.groupSize<value.rounds.length,
+      movingGroup:this.moveSourceGroup!==null,canMoveUp:this.selectedGroup>0&&selectedCell?.count>0,canMoveDown:(this.selectedGroup+1)*value.groupSize<value.rounds.length,
       presets:value.presets.map((p,index)=>({...p,index,selected:index===this.selectedPreset})),hasLast:value.lastPattern.length>0,busy:this.busy,error:this.error,
       canResolve:globalThis.game?.user?.isGM && value.originalRounds.includes(LEGACY_AMMUNITION),resolveChoices:view.stock.filter(row=>row.key!==LEGACY_AMMUNITION),unloading:value.rounds.length===0&&value.originalRounds.length>0,
       clipId:("rm-ammo-"+(this.id??this.weapon.id??"draft")).replaceAll(/[^a-zA-Z0-9_-]/g,"")};
@@ -122,6 +134,7 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
     body.addEventListener("change",event=>{
       if(this.busy||!event.target.matches("[data-ammo-preset], [data-ammo-resolve]"))return;
       try{
+        this.moveSourceGroup=null;
         if(event.target.matches("[data-ammo-preset]")){
           const selected=event.target.value===""?null:event.target.value==="last"?"last":Number(event.target.value);
           if(selected==="last")this.draft.usePattern(this.draft.value.lastPattern);
@@ -158,14 +171,32 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
       this.render();
     });
   }
-  #place(index,key){this.selectedAmmoKey=key;this.draft.selectGroup(index,key);this.selectedGroup=index;}
+  #place(index,key){this.moveSourceGroup=null;this.selectedAmmoKey=key;this.draft.selectGroup(index,key);this.selectedGroup=index;}
+  #select(index){
+    const {rounds,groupSize,capacity}=this.draft.value;
+    const start=index*groupSize;
+    if(!Number.isInteger(index)||start<0||start>=capacity||start>rounds.length)return;
+
+    const source=this.moveSourceGroup;
+    this.moveSourceGroup=null;
+    if(start<rounds.length){
+      if(source===null)this.moveSourceGroup=index;
+      else if(source!==index)this.draft.swapGroups(source,index);
+    }
+    this.selectedGroup=index;
+    this.selectedAmmoKey=null;
+  }
   async #action(button,root){
     try{
       this.error="";const action=button.dataset.ammoAction,index=Number(button.dataset.index);
-      if(action==="select"){this.selectedGroup=index;this.selectedAmmoKey=null;}
+      if(action!=="select")this.moveSourceGroup=null;
+      if(action==="select")this.#select(index);
       if(action==="place")this.#place(this.selectedGroup,button.dataset.key);
       if(action==="fill")this.draft.fill(button.dataset.key);
-      if(action==="up"||action==="down"){this.draft.move(index,action==="up"?-1:1);this.selectedGroup=Math.max(0,Math.min(index+(action==="up"?-1:1),Math.ceil(this.draft.value.rounds.length/this.draft.value.groupSize)-1));}
+      if(action==="up"||action==="down"){
+        const direction=action==="up"?-1:1;
+        if(this.draft.move(index,direction))this.selectedGroup=index+direction;
+      }
       if(action==="save")this.editingPreset=!this.editingPreset;
       if(action==="save-preset"){
         const name=root.querySelector("[data-ammo-preset-name]").value.trim();this.draft.savePreset(name);

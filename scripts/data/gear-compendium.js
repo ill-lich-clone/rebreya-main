@@ -1,5 +1,6 @@
 import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
+import { ITEM_COMPENDIUM_BANNERS } from "./item-compendium-banners.js?v=1.5.95";
 import {
   deduplicateCompendiumFolders,
   ensureCompendiumFolders,
@@ -1185,6 +1186,7 @@ function getDesiredPackMetadata() {
     label: GEAR_COMPENDIUM_LABEL,
     type: "Item",
     name: GEAR_COMPENDIUM_NAME,
+    banner: ITEM_COMPENDIUM_BANNERS[PACK_ID],
     system: game.system.id,
     ownership: {
       PLAYER: "OBSERVER",

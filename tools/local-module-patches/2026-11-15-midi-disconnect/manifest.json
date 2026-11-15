@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "moduleId": "midi-qol",
+  "beforeVersion": "14.6.8",
+  "afterVersion": "14.6.8",
+  "files": [
+    {
+      "path": "midi-qol.js",
+      "beforeSha256": "4e3b88c60caad6382999f579a6618222009ca30917b78c0c08ee702dd89b2566",
+      "afterSha256": "b474a2a0db5a46c6cc70ea7026449ed1e25cb616a18329274e60d4dca5f534b6"
+    }
+  ]
+}

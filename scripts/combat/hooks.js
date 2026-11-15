@@ -197,7 +197,7 @@ export function registerCombatHooks(moduleApi) {
     }
   }
   if (moduleApi.reactionQueueService) {
-    Hooks.on("userConnected", () => moduleApi.reactionQueueService.recoverExpiredReactionMessages());
+    Hooks.on("userConnected", (user, connected) => moduleApi.reactionQueueService.recoverExpiredReactionMessages(connected === false ? user.id : undefined));
   }
 
   if (hasAlchemyBombService) {

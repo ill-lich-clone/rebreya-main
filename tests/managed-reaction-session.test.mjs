@@ -6,7 +6,7 @@ function reactionText(content) {
   return /<p class="rm-reaction-chat__text">([^]*?)<\/p>/u.exec(content)?.[1] ?? content;
 }
 
-function harness({uses = 1} = {}) {
+function harness({uses = 1, beforeChatUpdate = async () => {}} = {}) {
   const user = { id: "gm", active: true, isGM: true };
   const users = [user]; users.activeGM = user;
   const events = [];
@@ -21,13 +21,79 @@ function harness({uses = 1} = {}) {
     consumeReaction: async () => { events.push("consume"); remaining--; return { consumed: true }; }
   } }, {
     gameProvider: () => game, actorResolver: () => actor, now: () => now,
-    setTimeoutFn: (fn, ms) => { timers.set(++sequence, { fn, ms }); return sequence; },
+    setTimeoutFn: (fn, ms) => { timers.set(++sequence, { fn, at: now + ms }); return sequence; },
     clearTimeoutFn: id => timers.delete(id),
-    chatMessageClass: { async create(data) { events.push(reactionText(data.content)); const message = { ...data, author: {isGM: true}, async update(patch) { if (patch['flags.rebreya-main.reactionChoice.state']) this.flags['rebreya-main'].reactionChoice.state = patch['flags.rebreya-main.reactionChoice.state']; Object.assign(this, patch); events.push(reactionText(patch.content) ?? "applying"); }, async delete() { events.push("deleted"); } }; game.messages.push(message); return message; } }
+    chatMessageClass: { async create(data) { events.push(reactionText(data.content)); const message = { ...data, author: {isGM: true}, async update(patch) { await beforeChatUpdate(patch); if (patch['flags.rebreya-main.reactionChoice.state']) this.flags['rebreya-main'].reactionChoice.state = patch['flags.rebreya-main.reactionChoice.state']; Object.assign(this, patch); events.push(reactionText(patch.content) ?? "applying"); }, async delete() { events.push("deleted"); } }; game.messages.push(message); return message; } }
   });
   const request = { kind: "midi-native", triggerId: "attack:1:guard", candidate: { actorUuid: actor.uuid } };
-  return { queue, game, actor, events, timers, request, expire() { now += 10001; for (const { fn } of [...timers.values()]) fn(); } };
+  return { queue, game, actor, events, timers, request, expire(ms = 10001) {
+    now += ms;
+    for (const [id, timer] of [...timers]) {
+      if (timer.at > now || !timers.delete(id)) continue;
+      timer.fn();
+    }
+  } };
 }
+
+test("the GM accepts an inherited reaction type and skips only an invalid activity", async () => {
+  const h = harness();
+  const list = {
+    cast: { actor: h.actor, effectiveActivationType: "reaction", activation: { type: "action" } },
+    ordinary: { actor: h.actor, activation: { type: "reaction" } },
+    invalid: { actor: h.actor, activation: { type: "bonus" } }
+  };
+  h.queue._options.documentResolver = uuid => list[uuid];
+  h.request.candidate.activityUuids = ["invalid", "cast", "ordinary"];
+  const result = await h.queue.resolveManagedReaction(h.request, async ({ commit, activityUuids }) => {
+    assert.deepEqual(activityUuids, ["cast", "ordinary"]);
+    assert.equal(await commit({ activityUuid: "cast" }), true);
+    return { name: "Linked spell", uuid: "cast" };
+  });
+  assert.equal(result.uuid, "cast");
+});
+
+test("an on-time click survives the old deadline while the durable chat commit is pending", async () => {
+  const chat = Promise.withResolvers();
+  const entered = Promise.withResolvers();
+  const h = harness({ beforeChatUpdate(patch) {
+    if (patch.flags?.["rebreya-main"]?.reactionChoice?.state !== "applying") return;
+    entered.resolve();
+    return chat.promise;
+  } });
+  let click;
+  const result = h.queue.resolveManagedReaction(h.request, async ({ commit }) => {
+    click = commit;
+    await new Promise(resolve => setImmediate(resolve));
+    if (!await click()) return { name: "None" };
+    return { name: "Shield", uuid: "Activity.shield" };
+  });
+  while (!click) await Promise.resolve();
+  h.expire(9999);
+  await entered.promise;
+  h.expire(2);
+  chat.resolve();
+  assert.equal((await result).uuid, "Activity.shield");
+});
+
+test("a stalled native action releases the reservation and never restarts the trigger", async () => {
+  const h = harness();
+  const applied = Promise.withResolvers();
+  let runs = 0;
+  const execute = async ({ commit }) => {
+    runs++;
+    assert.equal(await commit(), true);
+    applied.resolve();
+    return new Promise(() => {});
+  };
+  const result = h.queue.resolveManagedReaction(h.request, execute);
+  await applied.promise;
+  h.expire(120001);
+  assert.deepEqual(await result, { name: "None" });
+  assert.equal(h.queue._managed.reservedUses(h.actor.uuid), 0);
+  assert.deepEqual(await h.queue.resolveManagedReaction(h.request, execute), { name: "None" });
+  assert.equal(runs, 1);
+  assert.equal(h.game.messages[0].flags["rebreya-main"].reactionChoice.reason, "indeterminate");
+});
 
 test("managed native success passes through service, commits before execution and preserves exact result", async () => {
   const h = harness();
@@ -47,7 +113,7 @@ test("managed native success passes through service, commits before execution an
 test("managed decline and unsuccessful native payment leave did-not-use chat", async () => {
   const h = harness();
   await h.queue.resolveManagedReaction(h.request, async ({ commit }) => { await commit(); return { name: "None" }; });
-  assert.equal(h.events.at(-1), "Страж не применил реакцию");
+  assert.equal(h.events.at(-1), "Страж не завершил применение реакции");
   assert.equal(h.events.includes("consume"), false);
 });
 
@@ -64,7 +130,7 @@ test("managed timeout aborts native choice and prohibits a late callback", async
   assert.deepEqual(await operation, { name: "None" });
   assert.equal(signal.aborted, true);
   assert.equal(await commit(), false);
-  assert.equal(h.events.at(-1), "Страж не применил реакцию");
+  assert.equal(h.events.at(-1), "Страж не успел выбрать реакцию");
 });
 
 test("confirmed managed application survives the selection deadline and duplicate request is not replayed", async () => {
@@ -105,13 +171,13 @@ test("managed native errors finalize chat and nested requests never deadlock", a
     assert.deepEqual(await h.queue.resolveManagedReaction(child, async () => ({ name: "None" })), { name: "None" });
     throw Error("native error");
   }), /native error/);
-  assert.equal(h.events.at(-1), "Страж не применил реакцию");
+  assert.equal(h.events.at(-1), "Страж не применил реакцию из-за ошибки");
 });
 
 test("a native result without committed permission cannot finalize as applied", async () => {
   const h = harness();
   await h.queue.resolveManagedReaction(h.request, async () => ({ name: "Shield", uuid: "Activity.shield" }));
-  assert.equal(h.events.at(-1), "Страж не применил реакцию");
+  assert.equal(h.events.at(-1), "Страж не применил реакцию из-за ошибки");
 });
 
 test("player native session uses authenticated GM begin, commit and finish and returns AC unchanged", async () => {
@@ -119,9 +185,12 @@ test("player native session uses authenticated GM begin, commit and finish and r
   const owner = { id: "owner", active: true, isGM: false };
   h.game.users.push(owner);
   const ownerGame = { user: owner, users: h.game.users };
-  const player = new ReactionQueueService({}, { gameProvider: () => ownerGame });
+  const player = new ReactionQueueService({}, { gameProvider: () => ownerGame, now: () => h.queue._options.now() + 60_000 });
+  const finished = Promise.withResolvers();
   const route = (message, senderId) => queueMicrotask(() => {
-    void Promise.all([h.queue.handleSocketMessage(message, senderId), player.handleSocketMessage(message, senderId)]);
+    void Promise.all([h.queue.handleSocketMessage(message, senderId), player.handleSocketMessage(message, senderId)]).then(() => {
+      if (message.op === "finish" && senderId === "owner") finished.resolve();
+    });
   });
   h.game.socket = { emit: (_channel, message) => route(message, "gm") };
   ownerGame.socket = { emit: (_channel, message) => route(message, "owner") };
@@ -130,6 +199,8 @@ test("player native session uses authenticated GM begin, commit and finish and r
     return { name: "Guard", uuid: h.actor.uuid, ac: 18 };
   });
   assert.equal(actual.ac, 18);
+  await finished.promise;
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.events.at(-1), "deleted");
   assert.equal(player._managed.pending.size, 0);
 });
@@ -189,7 +260,7 @@ test("inactive owner releases applying reservation and finalizes an abandoned me
   h.queue._options.isCoordinator = () => true;
   await h.queue.recoverExpiredReactionMessages();
   assert.equal(h.queue._managed.isActorReserved(h.actor.uuid), false);
-  assert.equal(h.events.at(-1), 'Страж не применил реакцию');
+  assert.equal(h.events.at(-1), 'Страж не завершил выбор или применение реакции из-за отключения клиента');
   h.queue.destroy();
 });
 

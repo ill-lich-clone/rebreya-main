@@ -66,9 +66,10 @@ function macroChain(id = "trap") {
   };
 }
 
-function createHarness({ ds = 0, doorType = 1, distance = 5, owner = true, hidden = false } = {}) {
-  const gm = { id: "gm", isGM: true };
-  const player = { id: "player", isGM: false };
+function createHarness({ ds = 0, doorType = 1, distance = 5, owner = true, hidden = false, paused = false, doorPermission = true } = {}) {
+  const gm = { id: "gm", isGM: true, can: () => true };
+  const player = { id: "player", isGM: false, can: (action) => action === "WALL_DOORS" && doorPermission };
+  const game = { paused };
   const scene = { id: "room", documentName: "Scene" };
   const actor = {
     id: "hero",
@@ -110,10 +111,12 @@ function createHarness({ ds = 0, doorType = 1, distance = 5, owner = true, hidde
   const repository = new DoorTriggerTargetRepository();
   const macroCalls = [];
   let macroFailure = null;
+  let macroEffect;
   const triggerService = new StorageTriggerService({
     executeMacro: async (context) => {
       macroCalls.push(context);
       if (macroFailure) throw macroFailure;
+      await macroEffect?.();
       return { outcome: "continue", variables: {} };
     }
   });
@@ -133,15 +136,17 @@ function createHarness({ ds = 0, doorType = 1, distance = 5, owner = true, hidde
       return document;
     },
     measureDistance: () => distance,
+    gameProvider: () => game,
     logger: { warn(...args) { warnings.push(args); } }
   };
   const createService = () => new DoorTriggerCommandService(serviceDependencies);
   const service = createService();
 
   return {
-    gm, player, scene, actor, characterToken, wall, repository, coordinator, service,
+    gm, player, game, scene, actor, characterToken, wall, repository, coordinator, service,
     createService, macroCalls, warnings, documents,
-    setMacroFailure(error) { macroFailure = error; }
+    setMacroFailure(error) { macroFailure = error; },
+    setMacroEffect(effect) { macroEffect = effect; }
   };
 }
 
@@ -242,6 +247,33 @@ test("beforeOpen deny returns sanitized typed failure without changing the wall"
   assert.equal(harness.wall.ds, 0);
   assert.equal(harness.wall.updates.filter(({ patch }) => Object.hasOwn(patch, "ds")).length, 0);
 });
+
+test("the authoritative custom route cannot bypass Foundry door permissions and pause", async () => {
+  for (const options of [{ doorPermission: false }, { paused: true }]) {
+    const harness = createHarness(options);
+    await configure(harness);
+    await assert.rejects(harness.service.open(openPayload(), { sender: harness.player }), { code: DOOR_ERROR_CODES.UNAVAILABLE });
+    assert.equal(harness.wall.ds, 0);
+  }
+
+  const paused = createHarness({ paused: true });
+  await configure(paused);
+  assert.equal((await paused.service.open(openPayload(), { sender: paused.gm })).opened, true);
+});
+
+for (const { reason, change, code, finalState } of [
+  { reason: "pause", change: (h) => { h.game.paused = true; }, code: DOOR_ERROR_CODES.UNAVAILABLE, finalState: 0 },
+  { reason: "lock", change: (h) => { h.wall.ds = 2; }, code: DOOR_ERROR_CODES.STATE_CHANGED, finalState: 2 }
+]) {
+  test(`a ${reason} arriving during beforeOpen prevents a queued wall update`, async () => {
+    const harness = createHarness();
+    await configure(harness, { beforeOpen: [macroChain()] });
+    harness.setMacroEffect(() => change(harness));
+    await assert.rejects(harness.service.open(openPayload(), { sender: harness.player }), { code });
+    assert.equal(harness.wall.ds, finalState);
+    assert.equal(harness.wall.updates.some(({ patch }) => Object.hasOwn(patch, "ds")), false);
+  });
+}
 
 test("door open revalidates ownership scene secret type distance and state", async () => {
   const unowned = createHarness({ owner: false });

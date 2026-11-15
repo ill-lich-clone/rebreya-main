@@ -3,12 +3,18 @@ const SCOPE = "rebreya-main";
 const values = c => Array.from(c?.contents ?? c ?? []);
 const flag = (a, k) => a.getFlag?.(SCOPE, k) ?? a.flags?.[SCOPE]?.[k];
 const isImmunity = effect => Boolean(flag(effect, "treatWounds"));
+const usesCoreExpiry = game => game.release?.generation >= 14;
 const immunityDeadline = effect => {
   if (!isImmunity(effect)) return NaN;
-  const startTime = effect.start?.time ?? effect.duration?.startTime;
-  const seconds = effect.duration?.seconds;
+  const duration = effect.duration;
+  const startTime = effect.start?.time ?? duration?.startTime;
+  const seconds = duration?.units === "seconds" ? duration.value ?? duration.seconds : duration?.seconds;
   return startTime != null && Number.isFinite(Number(startTime)) && seconds != null && Number.isFinite(Number(seconds))
     ? Number(startTime) + Number(seconds) : NaN;
+};
+const hasDaeExpiry = effect => {
+  const mode = effect.flags?.dae?.expiryMode;
+  return mode === "delete" || mode === "suppress";
 };
 const reject = (code, text) => { throw new TreatWoundsError(code, text); };
 function serialize(roll) {
@@ -87,24 +93,30 @@ export class TreatWoundsService {
 
   async cleanupExpiredEffects(worldTime = Number(this.gameProvider().time.worldTime)) {
     if (!Number.isFinite(worldTime) || !this.isActiveGm?.()) return 0;
+    const game = this.gameProvider();
+    const coreExpiry = usesCoreExpiry(game);
+    const action = globalThis.CONFIG?.ActiveEffect?.expiryAction;
+    // Foundry starts its expiry batch before broadcasting updateWorldTime.
+    if (coreExpiry && (action === "update" || action === "delete")) return 0;
+    const daeOwnsOverrides = coreExpiry && game.modules?.get("dae")?.active;
+    const shouldRemove = effect => immunityDeadline(effect) <= worldTime && !(daeOwnsOverrides && hasDaeExpiry(effect));
     return this.coordinator.run("treat-wounds", async () => {
       if (!this.isActiveGm()) return 0;
       let removed = 0;
       if (!this.#expiryIndexed || !this.#expiryActors) {
         this.#expiryActors = new Map();
         this.#tokenTargets.clear();
-        const game = this.gameProvider();
         for (const actor of values(game.actors)) this.#trackExpiryActor(actor);
         for (const scene of values(game.scenes)) for (const token of values(scene.tokens)) this.#trackExpiryToken(token);
       }
       for (const actor of [...this.#expiryActors.values()]) {
         if (!this.isActiveGm()) return removed;
-        const expired = values(actor.effects).filter(e => immunityDeadline(e) <= worldTime).map(e => e.id);
+        const expired = values(actor.effects).filter(shouldRemove).map(e => e.id);
         for (const id of expired) {
           if (!this.isActiveGm()) return removed;
           if (this.#expiryActors.get(actor.uuid) !== actor) break;
           const live = actor.effects?.get?.(id) ?? values(actor.effects).find(e => e.id === id);
-          if (!live || !(immunityDeadline(live) <= worldTime)) continue;
+          if (!live || !shouldRemove(live)) continue;
           try {
             await actor.deleteEmbeddedDocuments("ActiveEffect", [id]);
             removed++;
@@ -237,7 +249,10 @@ export class TreatWoundsService {
         const existing = values(target.effects).find(e => flag(e, "treatWounds")?.operationId === record.intent.operationId);
         if (!existing) await this.#write(context, () => target.createEmbeddedDocuments("ActiveEffect", [{
           name: "Перевязка ран: иммунитет", img: "icons/skills/wounds/injury-face-impact-orange.webp",
-          origin: record.sourceActorUuid, duration: { seconds: 3600, startTime: record.startTime }, changes: [],
+          origin: record.sourceActorUuid,
+          ...(usesCoreExpiry(this.gameProvider())
+            ? { start: { time: record.startTime }, duration: { value: 3600, units: "seconds", expiry: null } }
+            : { duration: { seconds: 3600, startTime: record.startTime }, changes: [] }),
           flags: { [SCOPE]: { treatWounds: { operationId: record.intent.operationId } } }
         }]));
         this.#trackExpiryActor(target);

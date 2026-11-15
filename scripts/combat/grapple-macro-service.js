@@ -10,6 +10,7 @@ export const TWISTED_MACRO_SOURCE_ID = "twisted-macro";
 export const TREAT_WOUNDS_MACRO_SOURCE_ID = "treat-wounds-macro";
 export const CREATURE_SIZE_MACRO_SOURCE_ID = "resize-creature-macro";
 export const START_COMBAT_MACRO_SOURCE_ID = "start-combat-macro";
+export const END_COMBAT_TURN_MACRO_SOURCE_ID = "end-combat-turn-macro";
 export const DECAYING_RECOVERY_MACRO_SOURCE_ID = "decaying-recovery-macro";
 export const MOUNTED_MACRO_SOURCE_ID = "mounted-toggle-macro";
 
@@ -133,6 +134,11 @@ export function buildStartCombatMacroData(folderId, options = {}) {
     sourceId: START_COMBAT_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
 }
 
+export function buildEndCombatTurnMacroData(folderId, options = {}) {
+  return macroData({ name: "Закончить ход", command: "await game.rebreyaMain?.endCombatTurn?.();",
+    sourceId: END_COMBAT_TURN_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 export function buildDecayingRecoveryMacroData(folderId, options = {}) {
   return macroData({ name: "Уменьшить затихающий урон", command: "await game.rebreyaMain?.recoverDecayingDamage?.();",
     sourceId: DECAYING_RECOVERY_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
@@ -219,6 +225,9 @@ export class GrappleMacroService {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, START_COMBAT_MACRO_SOURCE_ID, buildStartCombatMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
+      await this.#syncMacro(game, END_COMBAT_TURN_MACRO_SOURCE_ID, buildEndCombatTurnMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       }))
     ];

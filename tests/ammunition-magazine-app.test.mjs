@@ -148,6 +148,46 @@ test("row click replaces selected group without auto-advance or writes; shortage
   await h.click("clear");await h.click("fill",{key:"b"});assert.deepEqual(h.app.draft.value.rounds,["b","b"]);assert.equal(h.commits(),0);
 });
 
+test("clicking two loaded attack groups swaps them without repacking or writing inventory",async()=>{
+  const value={...fixture(),capacity:12,rounds:["a","a","a","a","a","a","b","b","b"]};
+  const h=await harness(value);
+  await h.click("select",{index:"0"});
+  assert.equal((await h.app._prepareContext()).movingGroup,true);
+  assert.deepEqual(h.app.draft.value.rounds,value.rounds);
+
+  await h.click("select",{index:"2"});
+  assert.deepEqual(h.app.draft.value.rounds,["b","b","b","a","a","a","a","a","a"]);
+  const context=await h.app._prepareContext();
+  assert.equal(context.movingGroup,false);
+  assert.equal(context.selectedCell.index,2);
+  assert.deepEqual(h.app.draft.value.originalRounds,value.rounds);
+  assert.deepEqual(context.stock.map(row=>row.remaining),value.stock.map(row=>row.quantity));
+  assert.equal(h.commits(),0);
+
+  await h.click("select",{index:"2"});
+  await h.click("select",{index:"3"});
+  assert.equal((await h.app._prepareContext()).movingGroup,false);
+  assert.equal(h.app.selectedGroup,3);
+  await h.click("place",{key:"b"});
+  assert.equal(h.app.draft.value.rounds.length,12);
+});
+
+test("a partial loaded group cannot corrupt the draft and arrows still reorder full groups",async()=>{
+  const value={...fixture(),rounds:["a","a","a","b","b","b","b"]};
+  const h=await harness(value);
+  await h.click("select",{index:"0"});
+  await h.click("select",{index:"2"});
+  assert.deepEqual(h.app.draft.value.rounds,value.rounds);
+  assert.match(h.app.error,/ячейк/u);
+  assert.equal(h.app.selectedGroup,0);
+
+  await h.click("down",{index:"0"});
+  assert.deepEqual(h.app.draft.value.rounds,["b","b","b","a","a","a","b"]);
+  assert.equal(h.app.selectedGroup,1);
+  assert.equal(h.app.error,"");
+  assert.equal(h.commits(),0);
+});
+
 test("last pattern menu previews locally while repeat icon confirms once",async()=>{
   const h=await harness();await h.preset("last");assert.deepEqual(h.app.draft.value.rounds,["b","b","b"]);assert.equal(h.commits(),0);
   await h.click("last");assert.equal(h.commits(),1);assert.equal(h.closed(),1);
