@@ -2,7 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import { buildCombatTurnGroups, planGroupTransition, isGroupTransitionWithinBudget, buildPhaseStepKey, combatantsOf, combatantById } from "../combat/turn-group-rules.js?v=1.5.87";
 import { describeInitiative } from "../integrations/grouped-combat-effects.js?v=1.5.87";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.95";
+import { isValidGroupedCombatStartPayload, isValidGroupedCombatTransitionPayload, isValidGroupedCombatResolvePayload } from "../infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";
 
 const rejection = (code, details = {}) => ({ ok: false, code, details });
 const hasSharedGroup = groups => groups.some(group => group.memberIds.length > 1);

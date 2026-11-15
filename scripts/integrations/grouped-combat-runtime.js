@@ -5,6 +5,7 @@ import { GROUPED_NATIVE_WRITES, isGroupedCombatProgressUpdate } from "../infrast
 
 const REGISTERED = Symbol.for("rebreya-main.groupedCombatRuntime");
 export const END_COMBAT_TURN_COMMAND = "combat.endTurn";
+const groupAdvanceConfirmations = new WeakMap();
 const stateOf = combat => combat?.flags?.[MODULE_ID]?.[GROUPED_COMBAT_FLAG];
 const operationId = () => globalThis.crypto?.randomUUID?.() ?? `combat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const escape = value => String(value ?? "").replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -17,7 +18,7 @@ const messages = {
   "combat-transition-too-large": "Слишком большой переход. Перейдите к нужному раунду несколькими меньшими шагами.",
   "combat-pending-too-large": "Незавершённый переход слишком велик для безопасного восстановления. Обратитесь к разработчику; состояние и журнал боя сохранены.",
   "initiative-cancelled": "Бросок инициативы не завершён.", "combat-pending": "Общие ходы включатся со следующего раунда.",
-  "no-current-turn": "На сцене нет начатого хода.", "unchanged-turn": "Положение боя не изменилось.",
+  "no-current-turn": "На сцене нет начатого хода.", "unchanged-turn": "Макрос не подтвердил завершение хода. Проверьте трекер.",
   "turn-announcement-failed": "Ход завершён, но сообщение в чат создать не удалось.",
   "grouped-combat-disabled": "Общие ходы временно отключены для проверки производительности."
 };
@@ -69,7 +70,41 @@ function currentGroup(combat, { groupId }) {
   return groupId ? stateOf(combat)?.groups.find(group => group.id === groupId) : null;
 }
 
-export async function endExpectedCombatTurn(expected, { sender } = {}, { game = globalThis.game, ChatMessage = globalThis.ChatMessage } = {}) {
+async function confirmedNextTurn(combat, before, Hooks) {
+  let started;
+  const confirm = () => {
+    const after = combatTurnPosition(combat);
+    if (after && !matchesTurn(before, after)) started = turnNames(combat, currentGroup(combat, after));
+  };
+  const id = operationId();
+  const tag = (document, _changes, options) => {
+    if (document === combat) options.rebreyaEndTurnOperation = id;
+  };
+  const updated = Hooks.on("updateCombat", (document, changes, options) => {
+    if (document === combat && options.rebreyaEndTurnOperation === id
+      && (Object.hasOwn(changes, "round") || Object.hasOwn(changes, "turn"))) confirm();
+  });
+  const turn = Hooks.on("combatTurn", tag);
+  const round = Hooks.on("combatRound", tag);
+  try {
+    let pending;
+    groupAdvanceConfirmations.set(combat, confirm);
+    try {
+      pending = combat.nextTurn();
+    } finally {
+      // Foundry dispatches the preparation hook synchronously inside nextTurn/nextRound.
+      groupAdvanceConfirmations.delete(combat);
+      Hooks.off("combatTurn", turn);
+      Hooks.off("combatRound", round);
+    }
+    await pending;
+    return started;
+  } finally {
+    Hooks.off("updateCombat", updated);
+  }
+}
+
+export async function endExpectedCombatTurn(expected, { sender } = {}, { game = globalThis.game, ChatMessage = globalThis.ChatMessage, Hooks = globalThis.Hooks } = {}) {
   const combat = game?.combats?.get(expected.combatId) ?? game?.combat;
   const before = combatTurnPosition(combat);
   if (!matchesTurn(expected, before)) return { ok: false, code: "stale-combat" };
@@ -79,11 +114,9 @@ export async function endExpectedCombatTurn(expected, { sender } = {}, { game = 
     && actor.testUserPermission?.(sender, "OWNER"))) return { ok: false, code: "forbidden" };
 
   const ended = turnNames(combat, group);
-  await combat.nextTurn();
-  const after = combatTurnPosition(combat);
-  if (!after || matchesTurn(before, after)) return { ok: false, code: "unchanged-turn" };
+  const started = await confirmedNextTurn(combat, before, Hooks);
+  if (started === undefined) return { ok: false, code: "unchanged-turn" };
   try {
-    const started = turnNames(combat, currentGroup(combat, after));
     await ChatMessage.create({ content: `<p>Ход завершили — ${ended}</p><p>Ход начали — ${started}</p>` });
   } catch (error) {
     console.warn(`${MODULE_ID} | Не удалось сообщить о смене хода.`, error);
@@ -221,15 +254,21 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
     const live = groups.filter(g => g.memberIds.some(id => liveIds.has(id)));
     return live.length ? live : groups;
   };
-  const requestTransition = (combat, target, roundStep = false) => {
+  const requestTransition = (combat, target, roundStep = false, onAdvance) => {
     if (!roundStep && roundTransitions.has(combat.id)) return roundTransitions.get(combat.id);
     if (transitions.has(combat.id)) return transitions.get(combat.id);
-    const pending = send(moduleApi, "transition", { combatId: combat.id, expectedRevision: stateOf(combat).revision,
+    const state = stateOf(combat);
+    const confirm = state.pendingTransition ? undefined : onAdvance;
+    const pending = send(moduleApi, "transition", { combatId: combat.id, expectedRevision: state.revision,
       targetRound: target.round, targetGroupId: target.groupId, operationId: operationId() }).finally(() => { if (transitions.get(combat.id) === pending) transitions.delete(combat.id); });
-    transitions.set(combat.id, pending); return pending;
+    transitions.set(combat.id, pending);
+    return confirm ? pending.then(result => {
+      if (result?.ok) confirm();
+      return result;
+    }) : pending;
   };
-  const navigate = async (combat, target) => {
-    if (target) notifyResult(await requestTransition(combat, target));
+  const navigate = async (combat, target, onAdvance) => {
+    if (target) notifyResult(await requestTransition(combat, target, false, onAdvance));
     return combat;
   };
   for (const [method, direction] of [["nextTurn", 1], ["previousTurn", -1]]) patch(prototype, method, original => async function (...args) {
@@ -237,14 +276,17 @@ export function registerGroupedCombatRuntime(moduleApi, { Hooks = globalThis.Hoo
     if (!hasGroupedCombatPhases(this)) return original.apply(this, args);
     const groups = usableGroups(this), index = groups.findIndex(g => g.id === state.current?.groupId), next = index + direction;
     if (!groups.length || (next < 0 && this.round <= 1)) return this;
-    return navigate(this, { round: this.round + (next >= groups.length ? 1 : next < 0 ? -1 : 0), groupId: groups[(next + groups.length) % groups.length].id });
+    return navigate(this, { round: this.round + (next >= groups.length ? 1 : next < 0 ? -1 : 0), groupId: groups[(next + groups.length) % groups.length].id },
+      groupAdvanceConfirmations.get(this));
   });
   for (const [method, direction] of [["nextRound", 1], ["previousRound", -1]]) patch(prototype, method, original => async function (...args) {
     const state = stateOf(this), round = this.round + direction;
     if (!state || state.mode === "native" || (state.mode === "pending" && round < state.activateAtRound)) return original.apply(this, args);
     const groups = usableGroups(this);
     if (round < 1 || !groups.length) return this;
-    if (direction < 0 || state.mode === "pending" || !globalThis.game?.user?.isGM) return navigate(this, { round, groupId: groups[0].id });
+    if (direction < 0 || state.mode === "pending" || !globalThis.game?.user?.isGM) {
+      return navigate(this, { round, groupId: groups[0].id }, groupAdvanceConfirmations.get(this));
+    }
     if (roundTransitions.has(this.id)) { await roundTransitions.get(this.id); return this; }
     if (transitions.has(this.id)) { await transitions.get(this.id); return this; }
     const combat = this;

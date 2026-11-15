@@ -331,11 +331,11 @@ import {
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.91";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.5.95";
-import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.95";
+import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.96";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
-import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.95";
+import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.87";
-import { registerGroupedCombatRuntime, runStartCombatMacro, runEndCombatTurnMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.95";
+import { registerGroupedCombatRuntime, runStartCombatMacro, runEndCombatTurnMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.96";
 import { installDnd5eRoundRecoveryOptimization } from "./integrations/dnd5e-round-recovery.js?v=1.5.90";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.87";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.5.95";

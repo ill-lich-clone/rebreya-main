@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registerGroupedCombatRuntime, panToActiveCombatGroup } from "../scripts/integrations/grouped-combat-runtime.js";
+import { endExpectedCombatTurn, registerGroupedCombatRuntime, panToActiveCombatGroup } from "../scripts/integrations/grouped-combat-runtime.js";
 
 function fixture() {
   const listeners = new Map(), calls = [];
@@ -69,6 +69,46 @@ test("next round joins an already running transition without starting another", 
   const turn = combat.nextTurn(), round = combat.nextRound();
   assert.equal(e.calls.length, 1); release(); await Promise.all([turn, round]);
   assert.equal(e.calls.length, 1);
+});
+
+test("the macro announces only the grouped transition it initiated", async (t) => {
+  const e = fixture(), combat = new e.Combat();
+  const state = combat.flags["rebreya-main"].groupedCombat;
+  const user = { id: "gm", isGM: true };
+  const oldGame = globalThis.game;
+  globalThis.game = { user, combat };
+  t.after(() => { globalThis.game = oldGame; });
+  combat.combatants.get = id => combat.combatants.find(member => member.id === id);
+  for (const member of combat.combatants) member.name = member.id;
+  const gate = Promise.withResolvers();
+  e.moduleApi.groupedCombatService.transition = async request => {
+    e.calls.push(request);
+    await gate.promise;
+    state.current = { round: request.targetRound, groupId: request.targetGroupId };
+    combat.round = request.targetRound;
+    combat.combatant = combat.combatants.get(state.groups.find(group => group.id === request.targetGroupId).memberIds[0]);
+    combat.turn = combat.turns.indexOf(combat.combatant);
+    return { ok: true };
+  };
+  t.after(registerGroupedCombatRuntime(e.moduleApi, { Hooks: e.Hooks, CombatClass: e.Combat }));
+  const cards = [];
+  const env = { game, Hooks: e.Hooks, ChatMessage: { create: async data => cards.push(data) } };
+  const end = () => endExpectedCombatTurn({ combatId: combat.id, round: combat.round, turn: combat.turn, combatantId: combat.combatant.id,
+    groupId: state.current.groupId }, { sender: user }, env);
+  const manual = combat.nextTurn();
+  const joined = end();
+  gate.resolve();
+  await manual;
+  assert.equal((await joined).code, "unchanged-turn");
+  assert.equal(cards.length, 0);
+  assert.deepEqual(await end(), { ok: true });
+  assert.match(cards[0].content, /ход начали — a, b/iu);
+  assert.equal(e.calls.length, 2);
+
+  state.pendingTransition = { operationId: "previous-request" };
+  assert.equal((await end()).code, "unchanged-turn");
+  assert.equal(cards.length, 1);
+  assert.equal(e.calls.length, 3);
 });
 test("a player's next round is checked as one request without ending intermediate turns", async (t) => {
   const e = fixture(), combat = new e.Combat(), oldGame = globalThis.game, oldUi = globalThis.ui;

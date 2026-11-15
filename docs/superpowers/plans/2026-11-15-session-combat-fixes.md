@@ -18,4 +18,11 @@
 - [x] Add the finish-turn macro through the existing macro owner and conditional turn transition. Check stale actions, no duplicates and permissions.
 - [x] Bump module version, update owned imports and function passports, and run focused and full offline checks and review.
 
-Review Focus includes the vendor disconnect path, lost acknowledgements without replay, one result for each reaction prompt, shared resource changes, and keeping effects and user permissions stable. Live application and multiplayer measurement are excluded by request.
+Review Focus includes the vendor disconnect path, lost acknowledgements without replay, one result for each reaction prompt, shared resource changes, and keeping effects and user permissions stable. Live-world validation and multiplayer measurement are excluded by request.
+
+## Подтверждение перехода для макроса
+
+- В `tests/grouped-combat-commands.test.mjs` воспроизвести отменённый `nextTurn`, пока другой GM продвинул трекер, и подтверждение на границе раунда.
+- В `scripts/integrations/grouped-combat-runtime.js` привязать объявление к фактическому `updateCombat` с отметкой запроса макроса. В групповом пути принять только результат перехода, который запустил сам макрос. В обоих путях получить имена при подтверждении.
+- Обновить паспорт, версию модуля и затронутые ключи кэша. Прогнать профильные и общие офлайн-проверки перед записью изменений.
+- Сверить SHA-256 установленного файла Midi-QOL с manifest патча, применить отдельное изменение файла и проверить конечный хеш, синтаксис и профильные тесты. Повторная загрузка клиента проверяется отдельно.

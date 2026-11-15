@@ -18,14 +18,20 @@ assert.equal(manifest.version, patchManifest.beforeVersion, "The installed Midi-
 const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 
 function readSource() {
-  const original = readFileSync(join(installed, bundleName));
-  assert.equal(sha256(original), sourceHashes.beforeSha256, "Installed Midi-QOL does not match the exact patch source");
-  if (process.env.MIDI_DISCONNECT_TEST_UNPATCHED === "1") return original.toString("utf8");
+  const installedBytes = readFileSync(join(installed, bundleName));
+  const installedHash = sha256(installedBytes);
+  assert.ok([sourceHashes.beforeSha256, sourceHashes.afterSha256].includes(installedHash), "Installed Midi-QOL does not match either manifest hash");
   const workspace = mkdtempSync(join(tmpdir(), "rebreya-midi-"));
   const copy = join(workspace, "midi-qol", bundleName);
   mkdirSync(dirname(copy));
-  writeFileSync(copy, original);
+  writeFileSync(copy, installedBytes);
   try {
+    if (installedHash === sourceHashes.afterSha256) {
+      execFileSync("git", ["-c", "core.autocrlf=false", "apply", "--reverse", patch], { cwd: workspace });
+    }
+    const original = readFileSync(copy);
+    assert.equal(sha256(original), sourceHashes.beforeSha256, "The original Midi-QOL bytes do not match the manifest");
+    if (process.env.MIDI_DISCONNECT_TEST_UNPATCHED === "1") return original.toString("utf8");
     execFileSync("git", ["-c", "core.autocrlf=false", "apply", patch], { cwd: workspace });
     const patched = readFileSync(copy);
     assert.equal(sha256(patched), sourceHashes.afterSha256, "Patched Midi-QOL does not match the manifest");

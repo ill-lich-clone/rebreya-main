@@ -31,16 +31,34 @@ test("the managed start macro is only a stable public API invocation in the exis
   assert.equal(data.flags["rebreya-main"].sourceId, "start-combat-macro");
 });
 
+function combatHooks() {
+  const listeners = new Map();
+  return {
+    on(name, listener) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(listener); return listener; },
+    off(name, listener) { listeners.get(name)?.delete(listener); },
+    emit(name, ...args) { for (const listener of listeners.get(name) ?? []) listener(...args); },
+    count() { return [...listeners.values()].reduce((total, handlers) => total + handlers.size, 0); }
+  };
+}
+
 test("end turn checks the owner and expected position and announces one confirmed native transition", async () => {
   const owner = { id: "owner" };
   const first = { id: "first", name: "<Первый>", actor: { type: "character", testUserPermission: user => user === owner } };
   const second = { id: "second", name: "Скрытая цель", hidden: true };
   const combat = { id: "fight", started: true, active: true, round: 1, turn: 0, combatant: first };
+  const Hooks = combatHooks();
   const cards = [];
   let calls = 0;
-  combat.nextTurn = async () => { calls++; combat.turn = 1; combat.combatant = second; };
+  combat.nextTurn = async () => {
+    calls++;
+    const changed = { round: 2, turn: 0 };
+    const options = {};
+    Hooks.emit("combatRound", combat, changed, options);
+    Object.assign(combat, changed, { combatant: second });
+    Hooks.emit("updateCombat", combat, changed, options);
+  };
   const env = { game: { combat: { id: "other-combat" }, combats: new Map([[combat.id, combat]]) },
-    ChatMessage: { create: async data => cards.push(data) } };
+    Hooks, ChatMessage: { create: async data => cards.push(data) } };
   const payload = { combatId: "fight", round: 1, turn: 0, combatantId: "first", groupId: null };
   assert.equal((await runtime.endExpectedCombatTurn(payload, { sender: { id: "stranger" } }, env)).ok, false);
   assert.deepEqual(await runtime.endExpectedCombatTurn(payload, { sender: owner }, env), { ok: true });
@@ -49,11 +67,30 @@ test("end turn checks the owner and expected position and announces one confirme
   assert.equal(cards.length, 1);
   assert.match(cards[0].content, /&lt;Первый&gt;/u);
   assert.doesNotMatch(cards[0].content, /Скрытая цель/u);
+  assert.equal(Hooks.count(), 0);
 });
 
 test("end turn posts no card when NEXT leaves combat at the same position", async () => {
   const combat = { id: "fight", started: true, round: 1, turn: 0, combatant: { id: "first", name: "Первый" }, nextTurn: async () => {} };
   const result = await runtime.endExpectedCombatTurn({ combatId: "fight", round: 1, turn: 0, combatantId: "first", groupId: null },
-    { sender: { isGM: true } }, { game: { combat }, ChatMessage: { create: async () => assert.fail("No transition") } });
+    { sender: { isGM: true } }, { game: { combat }, Hooks: combatHooks(), ChatMessage: { create: async () => assert.fail("No transition") } });
   assert.equal(result.code, "unchanged-turn");
+});
+
+test("another GM's tracker update satisfies neither a canceled macro nor a no-op duplicate write", async () => {
+  const Hooks = combatHooks();
+  const combat = { id: "fight", started: true, round: 1, turn: 0, combatant: { id: "first", name: "Первый" } };
+  combat.nextTurn = async () => {
+    const macroOptions = {};
+    const desired = { round: 1, turn: 1 };
+    Hooks.emit("combatTurn", combat, desired, macroOptions);
+    await Promise.resolve();
+    Object.assign(combat, desired, { combatant: { id: "second", name: "Второй" } });
+    Hooks.emit("updateCombat", combat, { turn: 1 }, {}, "other-gm");
+    Hooks.emit("updateCombat", combat, { _id: combat.id }, macroOptions, "gm");
+  };
+  const result = await runtime.endExpectedCombatTurn({ combatId: "fight", round: 1, turn: 0, combatantId: "first", groupId: null },
+    { sender: { isGM: true } }, { game: { combat }, Hooks, ChatMessage: { create: async () => assert.fail("Other GM advanced combat") } });
+  assert.deepEqual(result, { ok: false, code: "unchanged-turn" });
+  assert.equal(Hooks.count(), 0);
 });
