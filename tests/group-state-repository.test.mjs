@@ -152,29 +152,131 @@ async function flushTasks() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function createRepositoryFixture(initialRegistry = {}) {
+test("quick clock writes persist without rewriting the large setting and survive a fresh repository", async () => {
+  const fixture = createRepositoryFixture({ groupsById: {
+    "group-a": { calendar: { isoDate: "1200-01-10", timeOfDaySeconds: 20, transitionJournal: { entries: [1] } } },
+    "group-b": { calendar: { isoDate: "1200-01-11", timeOfDaySeconds: 30 } }
+  } }, { groupClockSetting: true });
+  const { repository } = fixture;
+  const original = fixture.storedRegistry;
+  const updateClock = timeOfDaySeconds => () => ({ timeOfDaySeconds });
+
+  await repository.mutateCalendarState("group-a", updateClock(26));
+  await repository.mutateCalendarState("group-b", updateClock(36));
+  await repository.mutateCalendarState("group-a", updateClock(32));
+  assert.equal(fixture.storedRegistry, original);
+  assert.deepEqual(fixture.settingWrites, ["groupClockState", "groupClockState", "groupClockState"]);
+  assert.deepEqual(fixture.newRepository().readCalendarState("group-a"), {
+    isoDate: "1200-01-10", timeOfDaySeconds: 32
+  });
+  assert.deepEqual(fixture.newRepository().read().groupsById["group-a"].calendar, {
+    isoDate: "1200-01-10", timeOfDaySeconds: 32, transitionJournal: { entries: [1] }
+  });
+  assert.equal(fixture.newRepository().readCalendarState("group-b").timeOfDaySeconds, 36);
+  assert.deepEqual(fixture.mutationGateway.commits, Array(3).fill("setting:groupState"));
+});
+
+test("a registry commit folds in clock writes and makes old snapshots inapplicable", async () => {
+  const fixture = createRepositoryFixture({ groupsById: {
+    "group-a": { calendar: { isoDate: "1200-01-10", timeOfDaySeconds: 20 } },
+    "group-b": { calendar: { isoDate: "1200-01-11", timeOfDaySeconds: 30 } }
+  } }, { groupClockSetting: true });
+  const { repository } = fixture;
+  await repository.mutateCalendarState("group-a", clock => ({ timeOfDaySeconds: clock.timeOfDaySeconds + 6 }));
+  await repository.mutateCalendarState("group-b", clock => ({ timeOfDaySeconds: clock.timeOfDaySeconds + 6 }));
+  const entered = createDeferred();
+  const release = createDeferred();
+  const changeDate = repository.mutateRegistry(async registry => {
+    assert.equal(registry.groupsById["group-a"].calendar.timeOfDaySeconds, 26);
+    registry.groupsById["group-a"].calendar = { isoDate: "1200-01-12", timeOfDaySeconds: 0 };
+    entered.resolve();
+    await release.promise;
+  });
+  await entered.promise;
+  const tick = repository.mutateCalendarState("group-a", clock => ({ timeOfDaySeconds: clock.timeOfDaySeconds + 6 }));
+  release.resolve();
+  await changeDate;
+  await tick;
+  assert.deepEqual(fixture.newRepository().readCalendarState("group-a"), {
+    isoDate: "1200-01-12", timeOfDaySeconds: 6
+  });
+  assert.equal(fixture.storedRegistry.groupsById["group-b"].calendar.timeOfDaySeconds, 36);
+
+  await repository.mutateRegistry(registry => { delete registry.groupsById["group-a"]; });
+  assert.deepEqual(repository.readCalendarState("group-a"), {});
+  await repository.mutateGroupState("group-a", group => {
+    group.calendar = { isoDate: "1200-01-10", timeOfDaySeconds: 20 };
+  }, { create: true });
+  assert.equal(fixture.newRepository().readCalendarState("group-a").timeOfDaySeconds, 20);
+});
+
+test("failed clock and registry saves preserve the previously committed clock", async () => {
+  const fixture = createRepositoryFixture({ groupsById: {
+    "group-a": { calendar: { isoDate: "1200-01-10", timeOfDaySeconds: 20 } }
+  } }, { groupClockSetting: true });
+  const { repository } = fixture;
+  await repository.mutateCalendarState("group-a", () => ({ timeOfDaySeconds: 26 }));
+  fixture.rejectWrites = true;
+  await assert.rejects(repository.mutateCalendarState("group-a", () => ({ timeOfDaySeconds: 32 })), /rejected save/u);
+  await assert.rejects(repository.mutateGroupState("group-a", group => {
+    group.calendar.isoDate = "1200-01-12";
+  }), /rejected save/u);
+  assert.deepEqual(fixture.newRepository().readCalendarState("group-a"), {
+    isoDate: "1200-01-10", timeOfDaySeconds: 26
+  });
+  assert.equal(fixture.storedRegistry.groupsById["group-a"].calendar.timeOfDaySeconds, 20);
+});
+
+test("legacy registry saves cannot revive a stale clock from an earlier revision", async () => {
+  const fixture = createRepositoryFixture({ groupsById: {
+    "group-a": { calendar: { isoDate: "1200-01-10", timeOfDaySeconds: 20 } }
+  } }, { groupClockSetting: true });
+  await fixture.repository.mutateCalendarState("group-a", () => ({ timeOfDaySeconds: 26 }));
+  fixture.storedRegistry = { groupsById: {
+    "group-a": { calendar: { isoDate: "1200-01-12", timeOfDaySeconds: 81 } }
+  } };
+  assert.deepEqual(fixture.newRepository().readCalendarState("group-a"), {
+    isoDate: "1200-01-12", timeOfDaySeconds: 81
+  });
+});
+
+function createRepositoryFixture(initialRegistry = {}, { groupClockSetting = false } = {}) {
   let storedRegistry = initialRegistry;
+  let modifiedTime = 1;
+  let storedClock = {};
+  let rejectWrites = false;
   const reads = [];
   const writes = [];
+  const settingWrites = [];
   const game = {
     settings: {
-      get(moduleId, key) {
+      settings: new Map(groupClockSetting ? [[`${MODULE_ID}.groupClockState`, {}]] : []),
+      get(moduleId, key, options) {
         assert.equal(moduleId, MODULE_ID);
+        if (key === "groupClockState" && groupClockSetting) return clone(storedClock);
         assert.equal(key, SETTINGS_KEYS.GROUP_STATE);
         reads.push(clone(storedRegistry));
+        if (options?.document) return { id: "groupState", value: storedRegistry, _stats: { modifiedTime } };
         return storedRegistry;
       },
       async set(moduleId, key, value) {
         assert.equal(moduleId, MODULE_ID);
+        if (rejectWrites) throw new Error("rejected save");
+        settingWrites.push(key);
+        if (key === "groupClockState" && groupClockSetting) {
+          storedClock = clone(value);
+          return value;
+        }
         assert.equal(key, SETTINGS_KEYS.GROUP_STATE);
         storedRegistry = value;
+        modifiedTime++;
         writes.push(clone(value));
         return value;
       }
     }
   };
   const mutationGateway = createMutationGateway();
-  const repository = new GroupStateRepository({
+  const newRepository = () => new GroupStateRepository({
     mutationGateway,
     gameProvider: () => game,
     normalizeRegistry: normalizeGroupRegistry,
@@ -186,12 +288,18 @@ function createRepositoryFixture(initialRegistry = {}) {
     game,
     mutationGateway,
     reads,
-    repository,
+    repository: newRepository(),
+    newRepository,
+    settingWrites,
+    set rejectWrites(value) {
+      rejectWrites = value;
+    },
     get storedRegistry() {
       return storedRegistry;
     },
     set storedRegistry(value) {
       storedRegistry = value;
+      modifiedTime++;
     },
     writes
   };

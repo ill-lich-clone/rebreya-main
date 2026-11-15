@@ -179,6 +179,7 @@ export const SETTINGS_KEYS = {
   TRADER_STATE: "traderState",
   PARTY_STATE: "partyState",
   GROUP_STATE: "groupState",
+  GROUP_CLOCK_STATE: "groupClockState",
   CRAFT_STATE: "craftState",
   CRAFT_MUTATION_JOURNAL: "craftMutationJournal",
   INVENTORY_MUTATION_JOURNAL: "inventoryMutationJournal",

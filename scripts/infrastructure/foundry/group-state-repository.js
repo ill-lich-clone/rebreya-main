@@ -1,6 +1,7 @@
-import { MODULE_ID, SETTINGS_KEYS } from "../../constants.js";
+import { MODULE_ID, SETTINGS_KEYS } from "../../constants.js?v=1.5.90";
 
 const GROUP_STATE_QUEUE_KEY = `setting:${SETTINGS_KEYS.GROUP_STATE}`;
+const GROUP_CLOCK_SETTING_ID = `${MODULE_ID}.${SETTINGS_KEYS.GROUP_CLOCK_STATE}`;
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -27,6 +28,23 @@ function copyClock(calendar) {
   return clone(state);
 }
 
+function effectiveClock(calendar, clocks, id) {
+  return {
+    ...copyClock(calendar),
+    ...copyClock(asObject(Object.hasOwn(clocks, id) ? clocks[id] : null))
+  };
+}
+
+function applyClocks(registry, clocks) {
+  const groups = asObject(registry.groupsById);
+  for (const [id, clock] of Object.entries(clocks)) {
+    if (Object.hasOwn(groups, id)) {
+      groups[id].calendar = { ...groups[id].calendar, ...copyClock(asObject(clock)) };
+    }
+  }
+  return registry;
+}
+
 export class GroupStateRepository {
   #buildDefaultGroupState;
   #gameProvider;
@@ -49,7 +67,8 @@ export class GroupStateRepository {
   }
 
   read() {
-    return this.#normalizeRegistry(clone(this.#readSetting()));
+    const { registry, clocks } = this.#readSnapshot();
+    return applyClocks(this.#normalizeRegistry(clone(registry)), clocks);
   }
 
   readGroupIndex() {
@@ -64,30 +83,39 @@ export class GroupStateRepository {
   readCalendarState(groupActorId) {
     const id = String(groupActorId ?? "").trim();
     if (!id) return {};
-    const groups = asObject(asObject(this.#readSetting()).groupsById);
+    const { registry, clocks } = this.#readSnapshot();
+    const groups = asObject(registry.groupsById);
     const key = findGroupKey(groups, id);
     if (key === undefined) return {};
-    return copyClock(asObject(asObject(groups[key]).calendar));
+    return effectiveClock(asObject(asObject(groups[key]).calendar), clocks, id);
   }
 
   mutateCalendarState(groupActorId, updateClock) {
     const id = String(groupActorId ?? "").trim();
     return this.#requireMutationGateway().commit(GROUP_STATE_QUEUE_KEY, async ({ assertActiveGm }) => {
       const settings = this.#requireSettings({ write: true });
-      const registry = asObject(settings.get(MODULE_ID, SETTINGS_KEYS.GROUP_STATE));
+      const { registry, revision, generation, clocks } = this.#readSnapshot(settings);
       const groups = asObject(registry.groupsById);
       const key = id && findGroupKey(groups, id);
       if (!key) throw new Error(`Group state not found: ${id}`);
 
       const group = asObject(groups[key]);
       const calendar = asObject(group.calendar);
-      const next = copyClock(updateClock(copyClock(calendar)));
-      const updatedGroup = { ...group, calendar: { ...calendar, ...next } };
+      const current = effectiveClock(calendar, clocks, id);
+      const next = copyClock(updateClock(clone(current)));
       assertActiveGm();
-      await settings.set(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, {
-        ...registry,
-        groupsById: { ...groups, [key]: updatedGroup }
-      });
+      if (revision) {
+        await settings.set(MODULE_ID, SETTINGS_KEYS.GROUP_CLOCK_STATE, {
+          revision,
+          generation,
+          clocksByGroup: { ...clocks, [id]: { ...current, ...copyClock(next) } }
+        });
+      } else {
+        await settings.set(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, {
+          ...registry,
+          groupsById: { ...groups, [key]: { ...group, calendar: { ...calendar, ...next } } }
+        });
+      }
       assertActiveGm();
       return next;
     });
@@ -96,12 +124,18 @@ export class GroupStateRepository {
   mutateRegistry(mutator, { afterCommit = null } = {}) {
     return this.#requireMutationGateway().commit(GROUP_STATE_QUEUE_KEY, async ({ assertActiveGm }) => {
       const settings = this.#requireSettings({ write: true });
-      const registry = this.#normalizeRegistry(clone(settings.get(MODULE_ID, SETTINGS_KEYS.GROUP_STATE)));
-      const result = await mutator(registry);
-      const committedRegistry = this.#normalizeRegistry(clone(registry));
+      const { registry, revision, generation, clocks } = this.#readSnapshot(settings);
+      const draft = applyClocks(this.#normalizeRegistry(clone(registry)), clocks);
+      const result = await mutator(draft);
+      const committedRegistry = this.#normalizeRegistry(clone(draft));
+      const nextGeneration = revision ? generation + 1 : generation;
 
       assertActiveGm();
-      await settings.set(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, committedRegistry);
+      // Flush the matching clocks and invalidate their old snapshot in the same document update.
+      const persistedRegistry = nextGeneration
+        ? { ...committedRegistry, calendarClockGeneration: nextGeneration }
+        : committedRegistry;
+      await settings.set(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, persistedRegistry);
       assertActiveGm();
       return typeof afterCommit === "function"
         ? afterCommit(result, clone(committedRegistry))
@@ -131,6 +165,19 @@ export class GroupStateRepository {
 
   #readSetting() {
     return this.#gameProvider()?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.GROUP_STATE) ?? {};
+  }
+
+  #readSnapshot(settings = this.#gameProvider()?.settings) {
+    const document = settings?.settings?.has?.(GROUP_CLOCK_SETTING_ID)
+      ? settings.get(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, { document: true })
+      : null;
+    const modifiedTime = document?._stats?.modifiedTime;
+    const revision = document?.id && Number.isFinite(modifiedTime) ? `${document.id}:${modifiedTime}` : null;
+    const registry = asObject(revision ? document.value : settings?.get?.(MODULE_ID, SETTINGS_KEYS.GROUP_STATE));
+    const generation = Number.isSafeInteger(registry.calendarClockGeneration) ? registry.calendarClockGeneration : 0;
+    const store = revision ? asObject(settings.get(MODULE_ID, SETTINGS_KEYS.GROUP_CLOCK_STATE)) : null;
+    const clocks = store?.revision === revision && store?.generation === generation ? asObject(store.clocksByGroup) : {};
+    return { registry, revision, generation, clocks };
   }
 
   #requireMutationGateway() {

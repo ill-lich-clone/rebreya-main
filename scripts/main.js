@@ -72,7 +72,7 @@ import {
   normalizeGroupState,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./data/group-context-service.js?v=1.5.89";
+} from "./data/group-context-service.js?v=1.5.90";
 import { DowntimeService } from "./data/downtime-service.js?v=1.5.71";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js?v=1.4.377";
 import {
@@ -141,7 +141,7 @@ import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
 import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.281";
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
-import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js?v=1.5.89";
+import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js?v=1.5.90";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.377";
 import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js?v=1.5.3";
 import {
@@ -226,7 +226,7 @@ import {
   buildPublicCitySnapshot,
   buildPublicEconomySnapshot
 } from "./application/public-economy-read-model.js?v=1.5.49";
-import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js?v=1.5.89";
+import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js?v=1.5.90";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
 import { PurchaseBasketJournalRepository } from "./infrastructure/foundry/purchase-basket-journal-repository.js";
@@ -333,6 +333,7 @@ import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js";
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.87";
 import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.87";
+import { installDnd5eRoundRecoveryOptimization } from "./integrations/dnd5e-round-recovery.js?v=1.5.90";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.87";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.5.88";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
@@ -468,7 +469,7 @@ import {
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
-} from "./settings.js?v=1.5.71";
+} from "./settings.js?v=1.5.90";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.5.69";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
@@ -8895,6 +8896,7 @@ Hooks.once("ready", async () => {
 
   try {
     registerCombatHooks(moduleApi);
+    installDnd5eRoundRecoveryOptimization();
     registerImplantAutomationHooks(moduleApi);
     if (releaseGroupedCombat) {
       releaseGroupedCombat();

@@ -1,4 +1,4 @@
-import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js?v=1.4.397";
+import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js?v=1.5.90";
 import { refreshEconomyLauncher } from "./hooks.js?v=1.5.71";
 export {
   SOCKET_EVENT_SET_SETTING,
@@ -189,6 +189,13 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.GROUP_CLOCK_STATE, {
     scope: "world",
     config: false,
     type: Object,
