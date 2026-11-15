@@ -88,6 +88,50 @@ function createDeferred() {
   return { promise, reject, resolve };
 }
 
+test("clock mutation uses the same fresh-read queue as registry writers and isolates failed saves", async () => {
+  let stored = { version: 1, activeGroupActorId: "group-a", groupsById: {
+    "group-a": { calendar: { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 20 } },
+    "group-b": { calendar: { version: 1, isoDate: "1200-02-04", timeOfDaySeconds: 3 } }
+  } };
+  let rejectWrite = false;
+  let guardChecks = 0;
+  const mutationGateway = createMutationGateway({ assertActiveGm: () => { guardChecks++; } });
+  const repository = new GroupStateRepository({
+    gameProvider: () => ({ settings: {
+      get: () => stored,
+      async set(_module, _key, next) {
+        if (rejectWrite) throw new Error("save rejected");
+        stored = next;
+      }
+    } }),
+    mutationGateway, normalizeRegistry: normalizeGroupRegistry, normalizeGroupState, buildDefaultGroupState
+  });
+  const entered = createDeferred();
+  const release = createDeferred();
+  const first = repository.mutateGroupState("group-b", async group => {
+    entered.resolve();
+    await release.promise;
+    group.calendar.timeOfDaySeconds = 5;
+  });
+  await entered.promise;
+  const next = repository.mutateCalendarState("group-a", clock => ({ ...clock, timeOfDaySeconds: 26 }));
+  release.resolve();
+  await first;
+  assert.equal((await next).timeOfDaySeconds, 26);
+  assert.deepEqual(mutationGateway.commits, ["setting:groupState", "setting:groupState"]);
+  assert.equal(guardChecks, 4);
+  assert.equal(stored.groupsById["group-b"].calendar.timeOfDaySeconds, 5);
+
+  const snapshot = stored;
+  rejectWrite = true;
+  await assert.rejects(repository.mutateCalendarState("group-a", clock => {
+    clock.timeOfDaySeconds = 32;
+    return clock;
+  }), /save rejected/u);
+  assert.equal(stored, snapshot);
+  assert.equal(stored.groupsById["group-a"].calendar.timeOfDaySeconds, 26);
+});
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }

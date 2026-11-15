@@ -4,7 +4,7 @@ import { MODULE_ID } from "../constants.js";
 import { canViewItem } from "../infrastructure/foundry/item-source-resolver.js?v=1.4.377";
 import { getPlantExtractionData } from "../data/alchemy-extraction-service.js";
 import { REBREYA_TOOLS } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.5.17";
+import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js?v=1.5.89";
 import {
   buildInventoryFolderSearchIndex,
   buildInventoryFolderTree,

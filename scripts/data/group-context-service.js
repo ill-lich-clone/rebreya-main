@@ -1,5 +1,5 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
-import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js?v=1.4.377";
+import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js?v=1.5.89";
 
 export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",
@@ -459,6 +459,18 @@ export class GroupContextService {
 
   mutateGroupState(groupActorId, mutator, options) {
     return this.#groupStateRepository.mutateGroupState(groupActorId, mutator, options);
+  }
+
+  mutateCalendarState(groupActorId, updateClock) {
+    if (typeof this.#groupStateRepository.mutateCalendarState === "function") {
+      return this.#groupStateRepository.mutateCalendarState(groupActorId, updateClock);
+    }
+    return this.mutateGroupState(groupActorId, group => {
+      const calendar = asObject(group.calendar);
+      const next = updateClock(calendar);
+      group.calendar = { ...calendar, ...next };
+      return next;
+    });
   }
 
   async initializeSupplyCoverage(legacyCoverage = {}) {

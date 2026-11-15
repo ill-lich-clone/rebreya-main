@@ -47,6 +47,33 @@ test("calendar time patches preserve journal and custom calendar fields", async 
   });
 });
 
+test("round clock writes never copy nested archives or normalize other groups", async () => {
+  const forbidden = () => { throw new Error("Clock write traversed an unrelated archive"); };
+  const archive = Object.defineProperty({}, "history", { enumerable: true, get: forbidden });
+  const fallback = { version: 1, isoDate: "1300-01-01", timeOfDaySeconds: 0 };
+  const stale = { calendar: { version: 1, isoDate: "1200-01-09", timeOfDaySeconds: 3600 } };
+  const calendar = { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 43200, transitionJournal: archive };
+  const group = { calendar, downtimeState: archive };
+  const otherGroup = { calendar: { isoDate: "1250-02-05", timeOfDaySeconds: 28000 }, tradeAudit: archive };
+  const registry = { activeGroupActorId: "group-a", groupsById: { "group-a": stale, " group-a ": group, "group-b": otherGroup } };
+  const state = { [SETTINGS_KEYS.CALENDAR_STATE]: fallback, [SETTINGS_KEYS.GROUP_STATE]: registry };
+  await withCalendarHarness(state, async ({ calendarService }) => {
+    game.settings.get = (_module, key) => state[key];
+    game.settings.set = async (_module, key, next) => { state[key] = next; };
+
+    const snapshot = await calendarService.setTimeOfDaySeconds(43206);
+    const saved = state[SETTINGS_KEYS.GROUP_STATE];
+    assert.equal(snapshot.timeLabel, "12:00:06");
+    assert.equal(snapshot.isoDate, calendar.isoDate);
+    assert.equal(saved.groupsById[" group-a "].calendar.timeOfDaySeconds, 43206);
+    assert.equal(calendar.timeOfDaySeconds, 43200);
+    assert.equal(saved.groupsById[" group-a "].calendar.transitionJournal, archive);
+    assert.equal(saved.groupsById["group-b"], otherGroup);
+    assert.equal(saved.groupsById["group-a"], stale);
+    assert.equal(state[SETTINGS_KEYS.CALENDAR_STATE], fallback);
+  });
+});
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -129,7 +156,8 @@ test("calendar service reads and writes the active Rebreya group calendar", asyn
     }
   };
 
-  await withCalendarHarness(state, async ({ calendarService, state: storedState }) => {
+  await withCalendarHarness(state, async ({ calendarService, groupContextService, state: storedState }) => {
+    groupContextService.mutateCalendarState = () => assert.fail("Changing the date must use the existing date persistence path");
     assert.equal(calendarService.getSnapshot().isoDate, "1200-01-10");
 
     const result = await calendarService.setDate(1200, 2, 3);
