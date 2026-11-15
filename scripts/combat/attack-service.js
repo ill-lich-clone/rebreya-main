@@ -5746,12 +5746,18 @@ export class CombatAttackService {
     const turn = Math.floor(toNumber(options.turn, combat?.turn ?? -1));
     const combatId = String(options.combatId ?? combat?.id ?? "");
 
-    return this.#setReactionState(actor, {
-      usesMax,
-      usesRemaining: usesMax,
-      lastRefreshCombatId: combatId,
-      lastRefreshRound: round,
-      lastRefreshTurn: turn
+    return this.#queueReactionChange(actor, () => {
+      if (options.skipFull === true) {
+        const state = this.getReactionState(actor);
+        if (state.usesMax === usesMax && state.usesRemaining === usesMax) return state;
+      }
+      return this.#setReactionState(actor, {
+        usesMax,
+        usesRemaining: usesMax,
+        lastRefreshCombatId: combatId,
+        lastRefreshRound: round,
+        lastRefreshTurn: turn
+      });
     });
   }
 
@@ -5766,10 +5772,14 @@ export class CombatAttackService {
       };
     }
 
+    return this.#queueReactionChange(actor, () => this.#consumeReactionNow(actor, options));
+  }
+
+  async #queueReactionChange(actor, change) {
     this._reactionSpendQueue ??= new Map();
     const key = actor.uuid || actor.id;
     const previous = this._reactionSpendQueue.get(key) ?? Promise.resolve();
-    const pending = previous.catch(() => undefined).then(() => this.#consumeReactionNow(actor, options));
+    const pending = previous.catch(() => undefined).then(change);
     this._reactionSpendQueue.set(key, pending);
     try { return await pending; }
     finally {
@@ -6460,7 +6470,8 @@ export class CombatAttackService {
     return this.refreshReaction(currentActor, {
       combat,
       round: updateData.round,
-      turn: updateData.turn
+      turn: updateData.turn,
+      skipFull: true
     });
   }
 

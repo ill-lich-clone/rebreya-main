@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
-import { isImplantItem } from "../data/implant-service.js";
+import { isImplantItem } from "../data/implant-service.js?v=1.5.88";
+import { isTurnFlagOnlyUpdate } from "../shared/actor-update.js";
 
 const registeredHookSets = new WeakSet();
 const DATA_MODEL_PATCH = Symbol.for("rebreya-main.implantAbilityCaps");
@@ -213,8 +214,8 @@ export function registerImplantHooks(moduleApi, {
   Hooks.on("createItem", itemChanged);
   Hooks.on("updateItem", itemChanged);
   Hooks.on("deleteItem", itemChanged);
-  Hooks.on("updateActor", (actor, _changed = {}, options = {}) => {
-    if (options?.rebreyaImplantReconcile === true) return;
+  Hooks.on("updateActor", (actor, changed = {}, options = {}) => {
+    if (options?.rebreyaImplantReconcile === true || isTurnFlagOnlyUpdate(changed)) return;
     if (service.hasImplants?.(actor)) schedule(actor, "updateActor");
   });
   const ready = () => {

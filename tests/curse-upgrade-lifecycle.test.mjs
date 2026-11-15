@@ -78,6 +78,29 @@ test("initiative grants curse temporary HP once per actual initiative result, pr
   assert.equal(other.state().burdenActive, undefined);
 });
 
+test("NEXT leaves curse effects with Foundry-normalized description unchanged", async () => {
+  const f = fixture();
+  f.upgrade.flags[NS].upgrade.effect = "Основной текст\nОписание проклятия";
+  await f.service.syncActor(f.actor);
+  const [effect] = f.actor.effects.values();
+  effect.description = "<p>Основной текст<br>Описание проклятия</p>";
+  const update = f.actor.updateEmbeddedDocuments;
+  const writes = [];
+  f.actor.updateEmbeddedDocuments = async (_type, patch) => {
+    writes.push(...patch);
+    return update(_type, patch);
+  };
+  const combatant = { id: "owner", actor: f.actor };
+  const fight = { id: "fight", round: 2, turn: 1, combatant, combatants: [combatant], turns: [null, combatant] };
+  await f.service.combatChanged(fight, { round: 2, turn: 0 }, { round: 2, turn: 1 });
+  assert.deepEqual(writes, []);
+
+  f.upgrade.flags[NS].upgrade.effect = "Основной текст\nНовое описание проклятия";
+  await f.service.syncActor(f.actor);
+  assert.equal(writes.length, 1);
+  assert.match(effect.description, /Новое описание проклятия/u);
+});
+
 test("burden movement penalty persists during damage and clears when other THP replace it", async () => {
   const f = fixture();
   await f.service.initiative(f.actor, [{ uuid: "Combat.c.Combatant.owner", initiative: 14 }]);

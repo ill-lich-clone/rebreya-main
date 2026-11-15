@@ -1,4 +1,5 @@
 import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
+import { isTurnFlagOnlyUpdate } from "../shared/actor-update.js";
 import { MODULE_ID } from "../constants.js";
 import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.84";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
@@ -21,21 +22,7 @@ const clone = value => structuredClone(value);
 const change = (key, value) => ({ key, value: String(value), mode: 2, priority: 20 });
 const escape = text => String(text ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const getChanged = (patch, path) => Object.hasOwn(patch, path) ? patch[path] : path.split(".").reduce((o, k) => o?.[k], patch);
-const turnFlagPath = new RegExp(`^flags\\.${MODULE_ID}\\.(?:==)?(?:weaponModMovement|reactionState)(?:\\..+)?$`, "u");
-function isTurnFlagOnlyUpdate(changed) {
-  let found = false;
-  for (const [key, value] of Object.entries(changed ?? {})) {
-    if (key === "_id" || key === "_stats" || key.startsWith("_stats.")) continue;
-    if (turnFlagPath.test(key)) { found = true; continue; }
-    if (key !== "flags" || !value || Object.keys(value).some(namespace => namespace !== MODULE_ID)) return false;
-    const own = value[MODULE_ID];
-    if (!own || typeof own !== "object" || Array.isArray(own)) return false;
-    const keys = Object.keys(own);
-    if (keys.some(flag => !turnFlagPath.test(`flags.${MODULE_ID}.${flag}`))) return false;
-    found ||= keys.length > 0;
-  }
-  return found;
-}
+const normalizeBreaks = value => String(value ?? "").replace(/<br\s*\/?>/gu, "<br>");
 
 export function collectCurseUpgradeSources(actor, catalog = new Map()) {
   const slots = flag(actor, "heroDoll")?.slots ?? {};
@@ -77,7 +64,7 @@ export function buildCurseUpgradeEffect(source, actor, state = {}) {
   }
   if (source.key === "obsidian" && state.ac) changes.push(change("system.attributes.ac.bonus", state.ac));
   return { name: source.upgrade.name, img: source.upgrade.img ?? "icons/svg/aura.svg", type: "base",
-    description: `<p>${escape(source.profile.effect).replace(/\n/g, "<br />")}</p>`,
+    description: `<p>${escape(source.profile.effect).replace(/\n/g, "<br>")}</p>`,
     origin: source.upgrade.uuid, disabled: false, transfer: false, changes,
     flags: { [MODULE_ID]: { [FLAG]: { managed: true, sourceId: source.upgrade.id, hostId: source.host.id, key: source.key } } } };
 }
@@ -87,6 +74,7 @@ function curseEffectDiffers(effect, data) {
   return Object.keys(data).some(key => {
     if (key === "changes") return JSON.stringify(comparableEffectChanges(current)) !== JSON.stringify(comparableEffectChanges(data));
     if (key === "flags") return JSON.stringify(current.flags?.[MODULE_ID]?.[FLAG]) !== JSON.stringify(data.flags[MODULE_ID][FLAG]);
+    if (key === "description") return normalizeBreaks(current.description) !== normalizeBreaks(data.description);
     return JSON.stringify(current[key]) !== JSON.stringify(data[key]);
   });
 }

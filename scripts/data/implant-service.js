@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import {
   compileMechanicalImplants,
   getMechanicalImplantDefinition
@@ -642,23 +643,39 @@ export class ImplantService {
     const nextCondenserCapability = compiled.capabilities.find(({ type }) => (
       type === "spellCondenser"
     )) ?? null;
-    const runtimeMultiplier = Number(
-      getModuleFlag(aggregate, "automation")?.runtime?.movementMultiplier
-    );
+    const runtime = getModuleFlag(aggregate, "automation")?.runtime;
+    const runtimeMultiplier = Number(runtime?.movementMultiplier);
+    if (runtime && typeof runtime === "object" && !Array.isArray(runtime)) {
+      effectFlags.automation.runtime = clone(runtime);
+    }
     if (Number.isFinite(runtimeMultiplier) && runtimeMultiplier > 1) {
       effectData.changes = [...changes, ...runtimeMovementChanges(runtimeMultiplier)];
-      effectFlags.automation.runtime = { movementMultiplier: runtimeMultiplier };
     }
     if (aggregate) {
-      await actor.updateEmbeddedDocuments("ActiveEffect", [{
-        _id: aggregate.id,
-        ...effectData,
-        [`flags.${MODULE_ID}`]: effectFlags
-      }]);
+      const current = aggregate.toObject?.() ?? aggregate;
+      const equal = globalThis.foundry?.utils?.equals ?? ((left, right) => JSON.stringify(left) === JSON.stringify(right));
+      const flags = current.flags?.[MODULE_ID] ?? {};
+      const sameFlags = Object.entries(effectFlags).every(([key, value]) => equal(flags[key], value));
+      const sameData = Object.entries(effectData).every(([key, value]) => key === "changes"
+        ? equal(comparableEffectChanges(current), comparableEffectChanges(effectData))
+        : equal(current[key], value));
+      if (!sameFlags || !sameData) {
+        const { automation, ...metadata } = effectFlags;
+        const flagPatch = Number(globalThis.game?.release?.generation) >= 14
+          ? { ...metadata, "==automation": automation }
+          : { ...metadata, automation: globalThis.foundry?.utils?.diffObject?.(
+            flags.automation ?? {}, automation, { deletionKeys: true }
+          ) ?? automation };
+        await actor.updateEmbeddedDocuments("ActiveEffect", [{
+          _id: aggregate.id,
+          ...nativeEffectUpdate(effectData, current),
+          [`flags.${MODULE_ID}`]: flagPatch
+        }]);
+      }
     }
     else {
       await actor.createEmbeddedDocuments("ActiveEffect", [{
-        ...effectData,
+        ...nativeEffectUpdate(effectData),
         flags: {
           [MODULE_ID]: effectFlags
         }

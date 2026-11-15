@@ -7,12 +7,12 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.5.87`.
+- Версия: `1.5.88`.
 - Черта «Мастер огнестрельного оружия» добавляет количество мест обвесов по текущему бонусу мастерства владельца; дополнительные места показаны сеткой под чертежом. Уже установленные обвесы сохраняются при потере черты или снижении бонуса.
 - Foundry VTT: minimum `13`, verified `14`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.5.87` загружает только тонкий `scripts/main-1.5.87.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
+- Manifest версии `1.5.88` загружает только тонкий `scripts/main-1.5.88.js`, который содержит единственный `import "./main.js";`. Собственные cache keys отдельных подсистем сохраняются до изменения соответствующих файлов и не обязаны совпадать с версией manifest.
 - `scripts/main.js` — единственный composition root. Ранее опубликованные versioned entrypoint-файлы, включая `scripts/main-1.4.*.js`, сохранены как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Узкий API регистрации panel tools публикуется в `game.modules.get("rebreya-main")?.api` уже на `init`, до первой сборки Scene Controls. Полный runtime API на `ready` публикуется как `game.rebreyaMain` и заменяет module API.
 
@@ -668,7 +668,7 @@ Public API: `getReputation(actorOrUuid)` возвращает доступную
 - `getCombatStatusDefinitions`, `normalizeCombatStatusId`, `getCombatStatus`, `setCombatStatus`, `clearCombatStatus`, `setCombatStatusValue`, `applyDecayingDamage`, `syncBloodiedStatuses`.
 - `applyDecayingDamage(actorOrId, amount, { step = 1, damageType, sourceActorId, sourceActorUuid })` требует базовый dnd5e-тип урона. Значение `10` при `step: 1` наносит через MIDI-QOL в конце ходов цели последовательность `10 + 9 + ... + 1`; после каждого завершённого OverTime workflow состояние обновляет формулу следующего тика и снимается на нуле. Тот же контракт доступен вручную через Token HUD и для ActiveEffect с `statusId: rebreya-decaying-damage`, `statusValue` и `statusMeta: { step, damageType }`. На иконке токена Status Counter показывает текущий урон, но зарегистрированный тип `rebreya-decaying-damage` отдаёт legacy-интеграциям технический stack count `1`, поэтому MIDI-QOL не умножает бросок на отображаемое число.
 - `recoverDecayingDamage()` — макрос «Уменьшить затихающий урон» в папке «Ребрея» и кнопка в чатовой карточке при получении эффекта. Выберите токен лекаря; цель через `T` необязательна (без неё — сам лекарь). Кнопка задаёт пациента и эффект из сообщения. При успешной проверке Мудрости (Медицины) против Сл 10 + БМ источника бонусное действие уменьшает урон на один шаг, действие — на два. Если источник неизвестен, укажите Сл; ручное уменьшение доступно владельцу пациента или GM. Союзнику может помочь владелец лекаря, дистанция не ограничивается модулем. Учет расхода действия остаётся за игроком и GM. Требуется active GM; незавершённую операцию после ошибки должен проверить GM.
-- `getReactionState`, `canUseReaction`, `refreshReaction`, `consumeReaction`.
+- `getReactionState`, `canUseReaction`, `refreshReaction`, `consumeReaction`. Обычный ход сохраняет восстановление, когда меняется запас реакции. Полный запас сохраняет последнюю записанную отметку `lastRefresh*`.
 - `consumeReaction(actorOrId, { uses, reactionType, idempotencyKey })` сериализует расходы одного Actor. Необязательный стабильный `idempotencyKey` делает повторную оплату того же действия безопасной: результат содержит `consumed: true, replayed: true`, а количество реакций повторно не уменьшается. Квитанции ограничены последними 64 ключами и сохраняются при refresh; без ключа каждый вызов сохраняет прежний отдельный расход.
 - `rollWeaponAttack`, `rollFirearmAttack`, `clearFirearmJam`, `maintainFirearm`, `resolveProvokedAttack`, `resolveParry`, `resolveInterception`.
 - Осечку конкретной карточки отменяет `game.rebreyaMain.combatAttackService.cancelFirearmMisfire(message)`; `message` — документ ChatMessage.

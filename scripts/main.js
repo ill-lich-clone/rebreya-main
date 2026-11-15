@@ -123,7 +123,7 @@ import {
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.47";
-import { ImplantService } from "./data/implant-service.js";
+import { ImplantService } from "./data/implant-service.js?v=1.5.88";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.84";
@@ -334,7 +334,7 @@ import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-
 import { createGroupedCombatEffects } from "./integrations/grouped-combat-effects.js?v=1.5.87";
 import { registerGroupedCombatRuntime, runStartCombatMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.87";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.87";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.87";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.88";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.5.61";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.5.63";
@@ -348,7 +348,7 @@ import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.87";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.61";
-import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.84";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.88";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js?v=1.5.60";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.5.61";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
@@ -433,7 +433,7 @@ import { registerLongRestHooks } from "./integrations/long-rest-hooks.js?v=1.5.7
 import {
   registerImplantDataModelPatch,
   registerImplantHooks
-} from "./integrations/implant-hooks.js";
+} from "./integrations/implant-hooks.js?v=1.5.88";
 import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js?v=1.5.87";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
@@ -6504,6 +6504,14 @@ export class RebreyaMainModule {
 
   getGroupRegistry() {
     return this.groupContextService.getRegistry();
+  }
+
+  getGroupIndex() {
+    return this.groupStateRepository.readGroupIndex();
+  }
+
+  getGroupCalendarContext(options = {}) {
+    return this.groupContextService.getCalendarContext(options);
   }
 
   getGroupContext(options = {}) {

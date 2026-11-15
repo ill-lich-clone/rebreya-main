@@ -82,9 +82,27 @@ test("ready reconciliation visits only actors that own implants", async () => {
   assert.deepEqual(reconciled, ["with"]);
 });
 
+test("combat-only Actor flags do not schedule implant reconciliation", async () => {
+  const Hooks = hooksStub();
+  const actor = { id: "actor" };
+  const calls = [];
+  registerImplantHooks({
+    implantService: { hasImplants: () => true, reconcileActor: async candidate => calls.push(candidate) }
+  }, { Hooks, game: { actors: [] }, debounceMs: 0 });
+  const updated = Hooks.handlers.get("updateActor")[0];
+  updated(actor, { _id: actor.id, _stats: { modifiedTime: 1 }, flags: { [MODULE_ID]: { reactionState: { usesRemaining: 1 } } } });
+  updated(actor, { "flags.midi-qol.actions.action": false });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(calls, []);
+
+  updated(actor, { "flags.rebreya-main.reactionState.usesRemaining": 1, "system.attributes.prof": 4 });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(calls, [actor]);
+});
+
 test("module composition registers implant reconciliation hooks", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
-  assert.match(source, /registerImplantHooks\s*\}\s*from "\.\/integrations\/implant-hooks\.js"/u);
+  assert.match(source, /registerImplantHooks\s*\}\s*from "\.\/integrations\/implant-hooks\.js\?v=1\.5\.88"/u);
   assert.match(source, /new ImplantAutomationService\(this\)/u);
   assert.match(source, /registerImplantHooks\(moduleApi\)/u);
   assert.match(source, /registerImplantAutomationHooks\(moduleApi\)/u);

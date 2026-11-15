@@ -178,6 +178,67 @@ function actorStub({ prof = 3, items = [], spells = null } = {}) {
   return actor;
 }
 
+test("implant reconciliation skips an identical aggregate but updates a changed mechanical profile", async () => {
+  const item = implantItem({ installed: true, united: true });
+  const actor = actorStub({ items: [item] });
+  const service = new ImplantService();
+  await service.reconcileActor(actor);
+  assert.equal(actor.effectCreates.length, 1);
+  await service.reconcileActor(actor);
+  assert.equal(actor.effectUpdates.length, 0);
+
+  await service.setMovementMultiplier(actor, 2);
+  await service.setMovementMultiplier(actor, 1);
+  actor.effectUpdates.length = 0;
+  await service.reconcileActor(actor);
+  assert.equal(actor.effectUpdates.length, 0, "reset movement does not cause another write");
+
+  item.flags[MODULE_ID].implantInstallation.installed = false;
+  item.flags[MODULE_ID].implantInstallation.installedCount = 0;
+  await service.reconcileActor(actor);
+  assert.equal(actor.effectUpdates.length, 1);
+  assert.deepEqual(actor.effects[0].changes, []);
+});
+
+test("v14 implant updates remove the old derived bonus and retain neighboring flags", async () => {
+  const oldGame = globalThis.game;
+  globalThis.game = { release: { generation: 14 } };
+  try {
+    const item = implantItem({ gearId: "ukreplyonnye-sustavy", automationKey: "ukreplyonnye-sustavy", installed: true, united: true });
+    const actor = actorStub({ items: [item] });
+    const service = new ImplantService();
+    await service.reconcileActor(actor);
+    const [effect] = actor.effects;
+    const flags = effect.flags[MODULE_ID];
+    assert.equal(flags.automation.actorFlags.carryingStrengthBonus, 2);
+    flags.otherOwner = true;
+    effect.system.changes = [];
+    actor.updateEmbeddedDocuments = async (type, [patch]) => {
+      assert.equal(type, "ActiveEffect");
+      actor.effectUpdates.push(patch);
+      const { "==automation": replacement, automation, ...rest } = patch[`flags.${MODULE_ID}`];
+      Object.assign(flags, rest);
+      if (replacement) flags.automation = replacement;
+      else if (automation) {
+        flags.automation = { ...flags.automation, ...automation, actorFlags: {
+          ...flags.automation.actorFlags, ...automation.actorFlags
+        } };
+      }
+      effect.system = patch.system;
+    };
+
+    item.flags[MODULE_ID].implantInstallation.installed = false;
+    item.flags[MODULE_ID].implantInstallation.installedCount = 0;
+    await service.reconcileActor(actor);
+    assert.equal(flags.automation.actorFlags.carryingStrengthBonus, undefined);
+    assert.equal(flags.otherOwner, true);
+    await service.reconcileActor(actor);
+    assert.equal(actor.effectUpdates.length, 1);
+  } finally {
+    globalThis.game = oldGame;
+  }
+});
+
 function combatStatusServiceStub(initial = null) {
   return {
     current: initial,

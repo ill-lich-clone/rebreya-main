@@ -56,8 +56,16 @@ test("one ordinary turn with five participants leaves equipment and world lighti
   combat.combatant = combat.combatants[1];
   game.combat = combat;
   await api.combatAttackService.handleCombatTurnChange(combat, { round: 1, turn: 1 });
+  assert.deepEqual(actorWrites, [], "a full reaction counter must not rebuild the actor at NEXT");
+  await api.combatAttackService.consumeReaction(actors[1], { idempotencyKey: "spent-before-turn" });
+  assert.equal(api.combatAttackService.getReactionState(actors[1]).usesRemaining, 0);
+  actorWrites.length = 0;
+  await api.combatAttackService.handleCombatTurnChange(combat, { round: 2, turn: 1 });
   assert.deepEqual(actorWrites, [[actors[1].id, ["reactionState"]]]);
   assert.equal(actors[1].getFlag(ns, "reactionState").usesRemaining, 1);
+  assert.equal(actors[1].getFlag(ns, "reactionState").lastRefreshRound, 2);
+  assert.equal((await api.combatAttackService.consumeReaction(actors[1], { idempotencyKey: "spent-before-turn" })).replayed, true);
+  assert.equal(api.combatAttackService.getReactionState(actors[1]).usesRemaining, 1);
   assert.deepEqual(counts, { syncs: 0, items: 0, lights: 0 });
   actorWrites.length = 0;
   const memberIds = [actors[2].id, actors[3].id];
@@ -84,7 +92,7 @@ test("one ordinary turn with five participants leaves equipment and world lighti
   actorWrites.length = 0;
   await fire("combatTurnChange", combat, { round: 1, turn: 1 }, { round: 1, turn: 2 });
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(actorWrites, [[actors[2].id, ["reactionState"]]]);
+  assert.deepEqual(actorWrites, [], "ordinary NEXT skips the already-full counter even when a legacy group exists");
   await fire("updateActor", actors[1], { flags: { [ns]: { "==weaponModMovement": { feet: 0 } } } }, {});
   assert.equal(counts.syncs, 0, "legacy replacement syntax is also a turn-only update");
   await fire("updateActor", actors[1], { flags: { [ns]: { reactionState: {} } }, system: { attributes: { hp: { max: 7 } } } }, {});
