@@ -90,6 +90,30 @@ test("single managed gear and material rows use their canonical top-down texture
   }]).img, `modules/${MODULE_ID}/assets/top-down/items/material/material-10.webp`);
 });
 
+test("single catalog magic armor uses its scene artwork and armor footprint", () => {
+  const row = {
+    sourceType: "magicItem",
+    sourceId: "доспех-1",
+    name: "Доспех +1",
+    img: "icons/original-item-icon.webp",
+    quantity: 1,
+    itemData: {
+      type: "equipment",
+      system: { type: { value: "heavy" } },
+      flags: { [MODULE_ID]: { sourceType: "magicItem", magicItemId: "доспех-1" } }
+    }
+  };
+  const single = deriveGroundPilePresentation([row]);
+  assert.equal(single.img, "modules/rebreya-main/assets/top-down/items/magic/dospekh-1.png");
+  assert.equal(single.tokenSize, 1);
+  assert.equal(single.topDownItem, true);
+  assert.equal(deriveGroundPilePresentation([{ ...row, quantity: 2 }]).categoryKey, "armor");
+  assert.equal(deriveGroundPilePresentation([row, { ...row }]).categoryKey, "armor");
+  assert.equal(deriveGroundPilePresentation([{
+    ...row, itemData: { ...row.itemData, flags: {} }
+  }]).img, "icons/original-item-icon.webp");
+});
+
 test("single managed alchemy row uses its top-down texture instead of the Foundry icon", () => {
   assert.deepEqual(deriveGroundPilePresentation([{
     sourceType: "consumable",

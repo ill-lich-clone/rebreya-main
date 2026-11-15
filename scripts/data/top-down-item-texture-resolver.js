@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { MAGIC_ITEM_TOP_DOWN_ASSETS } from "./magic-item-top-down-catalog.js?v=1.5.91";
 import {
   TOP_DOWN_ITEM_ARMOR_KEYS,
   TOP_DOWN_ITEM_FOOTPRINTS,
@@ -20,6 +21,22 @@ function resolveAlchemyTopDownTexture(row) {
   const prefix = `modules/${MODULE_ID}/assets/top-down/items/alchemy/`;
   const filename = image.startsWith(prefix) ? image.slice(prefix.length) : "";
   return /^[a-z0-9][a-z0-9-]*\.webp$/u.test(filename) ? image : null;
+}
+
+function resolveMagicItemTopDownAsset(row) {
+  const flags = row?.itemData?.flags?.[MODULE_ID];
+  if (!flags || typeof flags !== "object" || Array.isArray(flags)) return null;
+  if (clean(flags.sourceType).toLowerCase() !== "magicitem") return null;
+  if ([flags.materialId, flags.alchemyProductId].some(clean)) return null;
+  const gearId = clean(flags.gearId);
+  if (gearId && (flags.magicEquipmentTemplate !== true || clean(flags.magicEquipmentGearId) !== gearId)) return null;
+
+  const id = clean(flags.magicItemId);
+  const rowType = clean(row.sourceType).toLowerCase();
+  if (!id || ["gear", "material"].includes(rowType)) return null;
+  const identities = [flags.sourceId, rowType === "magicitem" ? row.sourceId : null];
+  if (identities.map(clean).some((identity) => identity && identity !== id && identity !== gearId)) return null;
+  return MAGIC_ITEM_TOP_DOWN_ASSETS.get(id) ?? null;
 }
 
 function resolveTopDownItemKey(row) {
@@ -59,11 +76,12 @@ export function resolveTopDownItemPresentation(row, {
   tokenScales = TOP_DOWN_ITEM_TOKEN_SCALES,
   footprints = TOP_DOWN_ITEM_FOOTPRINTS
 } = {}) {
-  const alchemyImage = resolveAlchemyTopDownTexture(row);
-  if (alchemyImage) {
+  const magicAsset = resolveMagicItemTopDownAsset(row);
+  const specialImage = magicAsset?.img ?? resolveAlchemyTopDownTexture(row);
+  if (specialImage) {
     return {
-      img: alchemyImage,
-      visualType: "",
+      img: specialImage,
+      visualType: magicAsset?.visualType ?? "",
       textureScale: 1,
       tokenWidth: null,
       tokenHeight: null,
@@ -88,8 +106,8 @@ export function resolveTopDownItemPresentation(row, {
 export function resolveTopDownItemTexture(row, {
   textures = TOP_DOWN_ITEM_TEXTURES
 } = {}) {
-  const alchemyImage = resolveAlchemyTopDownTexture(row);
-  if (alchemyImage) return alchemyImage;
+  const specialImage = resolveMagicItemTopDownAsset(row)?.img ?? resolveAlchemyTopDownTexture(row);
+  if (specialImage) return specialImage;
   const key = resolveTopDownItemKey(row);
   return key ? textures.get(key) ?? null : null;
 }

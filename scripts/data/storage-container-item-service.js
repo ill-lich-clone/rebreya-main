@@ -15,7 +15,7 @@ import {
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.396";
-import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.322";
+import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.5.91";
 import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.396";
 import {
   buildGroundPileTokenLayout,
@@ -91,14 +91,20 @@ function nativeStorageKind(item) {
 function canonicalItemIdentity(item) {
   const source = item?.flags?.[MODULE_ID];
   if (!source || typeof source !== "object" || Array.isArray(source)) return {};
-  return Object.fromEntries(["sourceType", "sourceId", "gearId", "materialId"]
+  return Object.fromEntries(["sourceType", "sourceId", "gearId", "materialId", "magicItemId"]
     .map((key) => [key, clean(source[key])])
     .filter(([, value]) => value));
 }
 
 function containerTopDownPresentation(snapshot) {
-  const identity = snapshot?.presentation?.itemIdentity;
+  const presentation = snapshot?.presentation;
+  const identity = presentation?.itemIdentity;
   if (!identity || typeof identity !== "object" || Array.isArray(identity)) return null;
+  if (clean(identity.sourceType).toLowerCase() === "magicitem" && !clean(identity.magicItemId)) {
+    const { itemData } = presentation;
+    if (clean(itemData?.flags?.[MODULE_ID]?.sourceType).toLowerCase() !== "magicitem") return null;
+    return resolveTopDownItemPresentation({ sourceType: identity.sourceType, sourceId: identity.sourceId, itemData });
+  }
   return resolveTopDownItemPresentation({
     itemData: { flags: { [MODULE_ID]: clone(identity) } }
   });

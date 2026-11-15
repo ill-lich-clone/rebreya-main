@@ -277,9 +277,9 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.5.68";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.5.48";
-import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.396";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.5.66";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.5.91";
+import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.5.91";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.5.91";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.396";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -302,7 +302,7 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.5.48";
+} from "./data/storage-deposit-source.js?v=1.5.91";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.5.48";
 import {
   StorageCommandService,
@@ -326,7 +326,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.5.77";
+} from "./data/storage-command-service.js?v=1.5.91";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.5.87";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.87";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
@@ -448,7 +448,7 @@ import { ALCHEMY_REAGENT_COMMAND, ALCHEMY_REAGENT_RESERVE_COMMAND, ALCHEMY_REAGE
   registerAlchemyReagentSocketCommand } from "./integrations/alchemy-reagent-socket.js?v=1.5.11";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js?v=1.4.377";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.396";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.5.60";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.5.91";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.5.66";
 import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.5.60";
 import { hasStorageNarrativeCandidates, prepareStorageNarrativeRows } from "./data/storage-narrative-rows.js?v=1.4.396";
@@ -6357,7 +6357,7 @@ export class RebreyaMainModule {
         characterTokenUuid: safeCharacterTokenUuid
       });
     }
-    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.77");
+    const { StorageApp } = await import("./ui/storage-app.js?v=1.5.91");
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {

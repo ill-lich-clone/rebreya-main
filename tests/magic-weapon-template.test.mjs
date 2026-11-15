@@ -73,6 +73,8 @@ const {
   registerMagicWeaponTemplateHook,
 } = await import("../scripts/integrations/magic-weapon-template.js");
 
+const { resolveTopDownItemTexture } = await import("../scripts/data/top-down-item-texture-resolver.js");
+
 function makeLongsword() {
   return {
     id: "longsword",
@@ -589,6 +591,28 @@ test("createMagicWeaponTemplateUpdate applies base weapon data while preserving 
   assert.doesNotMatch(update.system.description.value, /Тип:\s*Магический предмет/iu);
   assert.match(update.system.description.value, /Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием\./u);
   assert.equal((update.system.description.value.match(/Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием\./gu) ?? []).length, 1);
+});
+
+test("a configured magic weapon keeps its one catalog scene sprite after a base form is chosen", () => {
+  const id = "оружие-1";
+  const item = new FakeItem({
+    name: "Оружие +1",
+    system: {},
+    flags: { "rebreya-main": { sourceType: "magicItem", magicItemId: id } }
+  });
+  const itemData = createMagicWeaponTemplateUpdate(item, makeDagger(), 1);
+  assert.equal(itemData.system.type.baseItem, "dagger");
+  const flags = itemData.flags["rebreya-main"];
+  assert.equal(flags.gearId, "dagger");
+  assert.equal(flags.magicEquipmentGearId, "dagger");
+  const row = { sourceType: "magicItem", sourceId: id, itemData };
+  const img = "modules/rebreya-main/assets/top-down/items/magic/oruzhie-1.png";
+  assert.equal(resolveTopDownItemTexture(row), img);
+
+  flags.sourceId = row.sourceId = "dagger";
+  assert.equal(resolveTopDownItemTexture(row), img);
+  flags.magicEquipmentGearId = "rapira";
+  assert.equal(resolveTopDownItemTexture(row), null);
 });
 
 test("createMagicArmorTemplateUpdate applies base armor data while preserving magic source", () => {

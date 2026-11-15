@@ -101,6 +101,42 @@ test("managed materials resolve by material identity", () => {
   );
 });
 
+test("magic items use the exact stable catalog ID, including a specific weapon form", () => {
+  const bow = managedRow("magicItem", "длинный-лук-исцеляющего-очага", {
+    magicItemId: "длинный-лук-исцеляющего-очага"
+  });
+  const genericWeapon = managedRow("magicItem", "оружие-1", { magicItemId: "оружие-1" });
+  assert.deepEqual(resolveTopDownItemPresentation(bow), {
+    img: "modules/rebreya-main/assets/top-down/items/magic/dlinnyy-luk-istselyayushchego-ochaga.png",
+    visualType: "",
+    textureScale: 1,
+    tokenWidth: null,
+    tokenHeight: null,
+    rotationMode: "full"
+  });
+  assert.equal(resolveTopDownItemTexture(bow), resolveTopDownItemPresentation(bow).img);
+  assert.equal(resolveTopDownItemTexture(genericWeapon),
+    "modules/rebreya-main/assets/top-down/items/magic/oruzhie-1.png");
+  bow.sourceType = "weapon";
+  bow.sourceId = "Compendium.world.rebreya-magic-items.Item.native-document";
+  assert.equal(resolveTopDownItemTexture(bow), resolveTopDownItemPresentation(bow).img);
+});
+
+test("magic artwork rejects name-only, unknown, and contradictory identities", () => {
+  const id = "оружие-1";
+  const input = [
+    { sourceType: "magicItem", sourceId: id, name: "Оружие +1", itemData: { flags: { [MODULE_ID]: { magical: true } } } },
+    managedRow("magicItem", id),
+    managedRow("magicItem", "unknown", { magicItemId: "unknown" }),
+    managedRow("magicItem", id, { magicItemId: "оружие-2" }),
+    managedRow("magicItem", id, { magicItemId: id, gearId: "rapira" })
+  ];
+  for (const row of input) {
+    assert.equal(resolveTopDownItemTexture(row), null);
+    assert.equal(resolveTopDownItemPresentation(row), null);
+  }
+});
+
 test("managed alchemy products resolve their module-owned top-down image", () => {
   const row = {
     sourceType: "consumable",

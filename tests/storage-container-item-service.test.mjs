@@ -797,7 +797,24 @@ test("a native container without a stored actor uses the Rebreya fallback storag
   assert.equal(created[0].texture.src, snapshot.img);
 });
 
-test("a canonical gear container restores to the scene with its top-down presentation", async () => {
+for (const { kind, identity, img, legacy = false } of [
+  {
+    kind: "gear",
+    identity: { sourceType: "gear", sourceId: "koshel", gearId: "koshel" },
+    img: "modules/rebreya-main/assets/top-down/items/gear/koshel.webp"
+  },
+  {
+    kind: "magic",
+    identity: { sourceType: "magicItem", magicItemId: "сумка-хранения" },
+    img: "modules/rebreya-main/assets/top-down/items/magic/sumka-khraneniya.png"
+  },
+  {
+    kind: "legacy magic",
+    identity: { sourceType: "magicItem", magicItemId: "сумка-хранения" },
+    img: "modules/rebreya-main/assets/top-down/items/magic/sumka-khraneniya.png",
+    legacy: true
+  }
+]) test(`a canonical ${kind} container restores to the scene with its top-down presentation`, async () => {
   const actor = createActor();
   const [pouch] = await actor.createEmbeddedDocuments("Item", [{
     name: "Кошель",
@@ -809,15 +826,11 @@ test("a canonical gear container restores to the scene with its top-down present
       currency: {},
       capacity: { volume: { value: 0.2, units: "ft3" }, weight: { value: 6, units: "lb" } }
     },
-    flags: {
-      [MODULE_ID]: {
-        sourceType: "gear",
-        sourceId: "koshel",
-        gearId: "koshel"
-      }
-    }
+    flags: { [MODULE_ID]: identity }
   }]);
   const snapshot = await new StorageContainerItemService().captureFromItem(pouch);
+  assert.deepEqual(snapshot.presentation.itemIdentity, identity);
+  if (legacy) delete snapshot.presentation.itemIdentity.magicItemId;
   const created = [];
   const scene = {
     id: "scene",
@@ -846,10 +859,7 @@ test("a canonical gear container restores to the scene with its top-down present
     mutationId: "koshel-scene"
   });
 
-  assert.equal(
-    created[0].texture.src,
-    "modules/rebreya-main/assets/top-down/items/gear/koshel.webp"
-  );
+  assert.equal(created[0].texture.src, img);
   assert.equal(created[0].width, 0.5);
   assert.equal(created[0].height, 0.5);
   assert.equal(created[0].rotation, 52);
