@@ -17393,6 +17393,14 @@
     },
     {
       "packId": "world.rebreya-magic-items",
+      "documentId": "5LCA2JBAwCZYxNan",
+      "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%A4%D0%BB%D0%B0%D0%BA%D0%BE%D0%BD%20%D1%81%20%D0%BA%D1%80%D0%BE%D0%B2%D1%8C%D1%8E%20%2B2.webp",
+      "sourcePath": "modules/rebreya-main/templates/icons/Magic Items/%D0%A4%D0%BB%D0%B0%D0%BA%D0%BE%D0%BD%20%D1%81%20%D0%BA%D1%80%D0%BE%D0%B2%D1%8C%D1%8E%20%2B2.webp",
+      "sourceHash": "e27b2c7d0f7495334790b70ddafa2fa4d81c0802482cf1e265716372b9e55145",
+      "badgeId": "magic-items"
+    },
+    {
+      "packId": "world.rebreya-magic-items",
       "documentId": "5PmvrWgPX8wXDGGd",
       "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%9F%D0%BE%D1%8F%D1%81%20%D1%85%D0%B0%D1%80%D0%B8%D0%B7%D0%BC%D1%8B%20%D0%B8%D1%81%D1%87%D0%B0%D0%B4%D0%B8%D1%8F%20%D0%BF%D1%80%D0%B5%D0%B8%D1%81%D0%BF%D0%BE%D0%B4%D0%BD%D0%B5%D0%B9.webp",
       "sourcePath": "modules/rebreya-main/templates/icon-bases/rebreya-magic-items/5PmvrWgPX8wXDGGd.webp",
@@ -18489,6 +18497,14 @@
     },
     {
       "packId": "world.rebreya-magic-items",
+      "documentId": "IvEMqSXmGFMEH98I",
+      "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%9C%D0%B0%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B3%D1%80%D0%B8%D0%BC%D1%83%D0%B0%D1%80%20%2B3.webp",
+      "sourcePath": "modules/rebreya-main/templates/icons/Magic Items/%D0%9C%D0%B0%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B3%D1%80%D0%B8%D0%BC%D1%83%D0%B0%D1%80%20%2B3.webp",
+      "sourceHash": "f142dc41154392874fb36f7ef10f2b6ec668327dab910cdf5676bb5d73837c3d",
+      "badgeId": "magic-items"
+    },
+    {
+      "packId": "world.rebreya-magic-items",
       "documentId": "IvRYfjQH4rbIp2CV",
       "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%A1%D0%B0%D0%BF%D0%BE%D0%B3%D0%B8%20%D1%85%D0%BE%D0%B4%D1%8C%D0%B1%D1%8B%20%D0%B8%20%D0%BF%D1%80%D1%8B%D0%B6%D0%BA%D0%BE%D0%B2.webp",
       "sourcePath": "modules/rebreya-main/templates/icon-bases/rebreya-magic-items/IvRYfjQH4rbIp2CV.webp",
@@ -18501,6 +18517,14 @@
       "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%A3%D0%BD%D0%B8%D0%B2%D0%B5%D1%80%D1%81%D0%B0%D0%BB%D1%8C%D0%BD%D1%8B%D0%B9%20%D1%80%D0%B0%D1%81%D1%82%D0%B2%D0%BE%D1%80%D0%B8%D1%82%D0%B5%D0%BB%D1%8C.webp",
       "sourcePath": "modules/rebreya-main/templates/icon-bases/rebreya-magic-items/IwyCLti0TmgWAHug.webp",
       "sourceHash": "62c3a9ed02963d86624d15e12b7bf1a6bb6345ffa3caec4fc163a8d2cbc725ba",
+      "badgeId": "magic-items"
+    },
+    {
+      "packId": "world.rebreya-magic-items",
+      "documentId": "IyMXF7jhWpnrJGUM",
+      "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%A4%D0%BB%D0%B0%D0%BA%D0%BE%D0%BD%20%D1%81%20%D0%BA%D1%80%D0%BE%D0%B2%D1%8C%D1%8E%20%2B3.webp",
+      "sourcePath": "modules/rebreya-main/templates/icons/Magic Items/%D0%A4%D0%BB%D0%B0%D0%BA%D0%BE%D0%BD%20%D1%81%20%D0%BA%D1%80%D0%BE%D0%B2%D1%8C%D1%8E%20%2B3.webp",
+      "sourceHash": "081849925ddd14e80fe984057e85cc91abd0d742addbd16210a96d158a965ece",
       "badgeId": "magic-items"
     },
     {
@@ -19053,6 +19077,14 @@
       "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%94%D0%BE%D1%81%D0%BF%D0%B5%D1%85%D0%B8%20%D0%BD%D0%B5%D0%B2%D0%B5%D1%81%D0%BE%D0%BC%D0%BE%D1%81%D1%82%D0%B8.webp",
       "sourcePath": "modules/rebreya-main/templates/icon-bases/rebreya-magic-items/Pun3Cd5napI2qCLX.webp",
       "sourceHash": "a02f257a88a16bc32c5a1a806f2fa34608df05b9bad5d74465e9ec5ce5569d27",
+      "badgeId": "magic-items"
+    },
+    {
+      "packId": "world.rebreya-magic-items",
+      "documentId": "PxABJik9wbAGxfNh",
+      "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%9C%D0%B0%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B3%D1%80%D0%B8%D0%BC%D1%83%D0%B0%D1%80%20%2B2.webp",
+      "sourcePath": "modules/rebreya-main/templates/icons/Magic Items/%D0%9C%D0%B0%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B3%D1%80%D0%B8%D0%BC%D1%83%D0%B0%D1%80%20%2B2.webp",
+      "sourceHash": "3508191dd9f9c0fea4e388382b4c04a030dcab30b6e611e91f9cc4ae73eaf899",
       "badgeId": "magic-items"
     },
     {
@@ -21353,6 +21385,14 @@
     },
     {
       "packId": "world.rebreya-magic-items",
+      "documentId": "oZrz2Cq8ShTLPp77",
+      "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%9C%D0%B0%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B3%D1%80%D0%B8%D0%BC%D1%83%D0%B0%D1%80%20%2B1.webp",
+      "sourcePath": "modules/rebreya-main/templates/icons/Magic Items/%D0%9C%D0%B0%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B3%D1%80%D0%B8%D0%BC%D1%83%D0%B0%D1%80%20%2B1.webp",
+      "sourceHash": "8e54fa64d4c77b0fc3de73a3b6b66f7673913ea0ff41c3d36f0afe17d5c76a50",
+      "badgeId": "magic-items"
+    },
+    {
+      "packId": "world.rebreya-magic-items",
       "documentId": "oc76PZk3kPTiJvu5",
       "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%9A%D0%BD%D1%83%D1%82%E2%80%93%D1%89%D1%83%D0%BF%D0%B0%D0%BB%D1%8C%D1%86%D0%B5%20%D0%94%D0%B8%D1%80%D1%80%D0%BD%D0%B0.webp",
       "sourcePath": "modules/rebreya-main/templates/icon-bases/rebreya-magic-items/oc76PZk3kPTiJvu5.webp",
@@ -22109,6 +22149,14 @@
       "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%90%D0%BF%D0%BF%D0%B0%D1%80%D0%B0%D1%82%20%D0%9A%D0%B2%D0%B0%D0%BB%D0%B8%D1%88%D0%B0.webp",
       "sourcePath": "modules/rebreya-main/templates/icon-bases/rebreya-magic-items/y8V5Ma6dejjcyNF9.webp",
       "sourceHash": "d74d26497e41643c293a40f4011791cc7d5893250da3e2f694a2c7c135d700cf",
+      "badgeId": "magic-items"
+    },
+    {
+      "packId": "world.rebreya-magic-items",
+      "documentId": "yGc1lucw9Ji5yD20",
+      "baselineImg": "modules/rebreya-main/templates/icons/Magic Items/%D0%A4%D0%BB%D0%B0%D0%BA%D0%BE%D0%BD%20%D1%81%20%D0%BA%D1%80%D0%BE%D0%B2%D1%8C%D1%8E%20%2B1.webp",
+      "sourcePath": "modules/rebreya-main/templates/icons/Magic Items/%D0%A4%D0%BB%D0%B0%D0%BA%D0%BE%D0%BD%20%D1%81%20%D0%BA%D1%80%D0%BE%D0%B2%D1%8C%D1%8E%20%2B1.webp",
+      "sourceHash": "aac4ca3aee8fde070c1be1eadf01fc404a4b1c1828874030e81718ea914d46be",
       "badgeId": "magic-items"
     },
     {

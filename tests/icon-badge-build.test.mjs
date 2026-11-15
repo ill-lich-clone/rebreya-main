@@ -220,3 +220,47 @@ test("magic writing quill badge builds from its current named artwork", async ()
   const bytes = await readFile(new URL("../templates/icons/Magic Items/Писчее перо.webp", import.meta.url));
   assert.equal(target.sourceHash, createHash("sha256").update(bytes).digest("hex"));
 });
+
+test("the three magic grimoires and three bloodwell vials receive compendium badges", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { createHash } = await import("node:crypto");
+  const catalog = JSON.parse(await readFile(new URL("../data/icon-badge-targets.json", import.meta.url), "utf8"));
+  const packId = "world.rebreya-magic-items";
+  const targets = catalog.targets.filter((target) => target.packId === packId);
+  const items = [
+    ["oZrz2Cq8ShTLPp77", "Магический гримуар +1"],
+    ["PxABJik9wbAGxfNh", "Магический гримуар +2"],
+    ["IvEMqSXmGFMEH98I", "Магический гримуар +3"],
+    ["yGc1lucw9Ji5yD20", "Флакон с кровью +1"],
+    ["5LCA2JBAwCZYxNan", "Флакон с кровью +2"],
+    ["IyMXF7jhWpnrJGUM", "Флакон с кровью +3"]
+  ];
+
+  for (const [documentId, name] of items) {
+    const target = targets.find((row) => row.documentId === documentId);
+    assert.ok(target, `Missing badge target for ${name}`);
+    const expectedPath = `modules/rebreya-main/templates/icons/Magic Items/${encodeURIComponent(name)}.webp`;
+    assert.equal(target.badgeId, "magic-items", name);
+    assert.equal(target.sourcePath, expectedPath, name);
+    assert.equal(target.baselineImg, expectedPath, name);
+    const bytes = await readFile(new URL(`../templates/icons/Magic Items/${encodeURIComponent(name)}.webp`, import.meta.url));
+    assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP", name);
+    assert.equal(target.sourceHash, createHash("sha256").update(bytes).digest("hex"), name);
+  }
+  let checkpoint;
+  const result = await runBadgeBuild({
+    manifest: { schemaVersion: catalog.schemaVersion, markers: catalog.markers, targets },
+    markerHashes: { "magic-items": catalog.markers["magic-items"].sha256 },
+    isActiveGm: () => true,
+    fileExists: async () => false,
+    pathForName: (name) => `modules/rebreya-main/storage/${name}`,
+    upload: async (_target, name) => `modules/rebreya-main/storage/${name}`,
+    saveCheckpoint: async (id, data) => { assert.equal(id, packId); checkpoint = data; }
+  });
+  assert.deepEqual(result.failures, []);
+  const projection = buildManagedIconProjection(catalog, result.images);
+  for (const [documentId, name] of items) {
+    assert.ok(checkpoint.pathsById[documentId]?.endsWith(`-${documentId}.webp`), name);
+    assert.equal(projection.get(`${packId}\0${documentId}`)?.path, checkpoint.pathsById[documentId], name);
+  }
+});
