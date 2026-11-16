@@ -1718,6 +1718,39 @@ export async function handleActorRenderMagicWeapons(
   return false;
 }
 
+async function handleCreatedMagicEquipmentItem(item, options, userId, moduleApi) {
+  return await handleCreatedMagicWeaponItem(item, options, userId, moduleApi)
+    || await handleCreatedMagicArmorItem(item, options, userId, moduleApi)
+    || await handleCreatedMagicAmmunitionItem(item, options, userId, moduleApi)
+    || await handleCreatedMagicToolItem(item, options, userId, moduleApi);
+}
+
+function reportMagicEquipmentTemplateError(error) {
+  console.error(`${MODULE_ID} | Failed to apply magic equipment template.`, error);
+  globalThis.ui?.notifications?.error?.(error?.message || "Не удалось применить шаблон магического предмета.");
+}
+
+export async function promptPurchasedMagicEquipment(receipt, moduleApi) {
+  const user = globalThis.game?.user;
+  const resolveUuid = globalThis.fromUuid ?? globalThis.foundry?.utils?.fromUuid;
+  if (receipt?.status !== "committed" || !Array.isArray(receipt.createdItemUuids)
+      || !user?.id || typeof resolveUuid !== "function") {
+    return;
+  }
+
+  for (const uuid of new Set(receipt.createdItemUuids)) {
+    try {
+      const item = await resolveUuid(uuid);
+      const actor = getOwnedActor(item);
+      if (actor?.id !== receipt.actorId || !userOwnsActor(actor, user)) continue;
+      await handleCreatedMagicEquipmentItem(item, {}, user.id, moduleApi);
+    }
+    catch (error) {
+      reportMagicEquipmentTemplateError(error);
+    }
+  }
+}
+
 export function registerMagicWeaponTemplateHook(moduleApi, { Hooks = globalThis.Hooks } = {}) {
   if (magicWeaponTemplateHookRegistered || typeof Hooks?.on !== "function") {
     return false;
@@ -1725,24 +1758,7 @@ export function registerMagicWeaponTemplateHook(moduleApi, { Hooks = globalThis.
 
   magicWeaponTemplateHookRegistered = true;
   Hooks.on("createItem", (item, options, userId) => {
-    (async () => {
-      if (await handleCreatedMagicWeaponItem(item, options, userId, moduleApi)) {
-        return true;
-      }
-
-      if (await handleCreatedMagicArmorItem(item, options, userId, moduleApi)) {
-        return true;
-      }
-
-      if (await handleCreatedMagicAmmunitionItem(item, options, userId, moduleApi)) {
-        return true;
-      }
-
-      return handleCreatedMagicToolItem(item, options, userId, moduleApi);
-    })().catch((error) => {
-      console.error(`${MODULE_ID} | Failed to apply magic equipment template.`, error);
-      globalThis.ui?.notifications?.error?.(error.message || "Не удалось применить шаблон магического предмета.");
-    });
+    handleCreatedMagicEquipmentItem(item, options, userId, moduleApi).catch(reportMagicEquipmentTemplateError);
   });
 
   const repairActorSheetMagicWeapons = (app) => {

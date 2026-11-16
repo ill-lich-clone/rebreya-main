@@ -171,9 +171,14 @@ export class PurchaseBasketFoundryOperations {
     if (typeof actor.createEmbeddedDocuments !== "function") {
       throw operationError("actor-item-create-unavailable", "Actor cannot create embedded Items");
     }
+    const creatorId = globalThis.game?.user?.id;
+    const creationOptions = creatorId && creatorId !== record.request.requestedByUserId
+      ? { [this.#moduleId]: { skipMagicEquipmentTemplate: true } }
+      : {};
     const created = await actor.createEmbeddedDocuments(
       "Item",
-      record.descriptor.items.map((item) => clone(item.itemData))
+      record.descriptor.items.map((item) => clone(item.itemData)),
+      creationOptions
     );
     return created.map((item) => String(item.uuid ?? `${actor.uuid}.Item.${item.id}`));
   }

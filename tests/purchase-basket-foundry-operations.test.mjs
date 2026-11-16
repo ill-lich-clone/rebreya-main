@@ -64,8 +64,8 @@ function createActor({ currency = { pp: 0, gp: 4, ep: 1, sp: 0, cp: 0 } } = {}) 
     createCalls: [],
     deleteCalls: [],
     updateCalls: [],
-    async createEmbeddedDocuments(type, rows) {
-      this.createCalls.push({ type, rows: clone(rows) });
+    async createEmbeddedDocuments(type, rows, options) {
+      this.createCalls.push({ type, rows: clone(rows), options: clone(options) });
       const created = rows.map((data, index) => ({
         id: `created-${index}`,
         uuid: `Actor.actor-a.Item.created-${index}`,
@@ -180,6 +180,24 @@ test("compensation removes only exact transaction copies and leaves sources and 
   }]);
   assert.deepEqual(harness.actor.items.map((item) => item.id), ["unrelated"]);
   assert.deepEqual(harness.sources.get("Item.rope").sourceData, sourceBefore);
+});
+
+test("a basket fulfilled for a player suppresses the GM create picker while an own basket preserves it", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { id: "gm-a", isGM: true } };
+  try {
+    for (const requestedByUserId of ["player-a", "gm-a"]) {
+      const harness = createHarness();
+      const request = { ...REQUEST, requestedByUserId };
+      const descriptor = await harness.operations.prepare(request);
+      await harness.operations.applyItems({ id: request.transactionId, request, descriptor });
+      const [call] = harness.actor.createCalls;
+      assert.equal(call.options?.["rebreya-main"]?.skipMagicEquipmentTemplate, requestedByUserId === "player-a" ? true : undefined);
+    }
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
 
 test("currency application refuses a wallet changed after preparation", async () => {

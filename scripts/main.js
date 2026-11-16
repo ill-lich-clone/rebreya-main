@@ -233,7 +233,7 @@ import { GroupStateRepository } from "./infrastructure/foundry/group-state-repos
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
 import { PurchaseBasketJournalRepository } from "./infrastructure/foundry/purchase-basket-journal-repository.js";
-import { PurchaseBasketFoundryOperations } from "./infrastructure/foundry/purchase-basket-operations.js";
+import { PurchaseBasketFoundryOperations } from "./infrastructure/foundry/purchase-basket-operations.js?v=1.5.97";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js?v=1.5.3";
 import { createSocketCommandTraceSink } from "./infrastructure/foundry/socket-command-trace.js";
@@ -425,7 +425,7 @@ import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.5.82";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.95";
+import { promptPurchasedMagicEquipment, registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.5.97";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.5.68";
 import { getHarvestMaterialIcons, repairHarvestIcons } from "./data/creature-harvesting.js?v=1.5.75";
 import { renderHarvestChat } from "./integrations/creature-harvesting-chat.js?v=1.5.77";
@@ -5465,9 +5465,11 @@ export class RebreyaMainModule {
         requestedByUserId: String(globalThis.game?.user?.id ?? "")
       });
     }
-    return this.socketCommandBus.request(PURCHASE_BASKET_COMMIT_COMMAND, payload, {
+    const receipt = await this.socketCommandBus.request(PURCHASE_BASKET_COMMIT_COMMAND, payload, {
       requestId: payload.transactionId
     });
+    void promptPurchasedMagicEquipment(receipt, this);
+    return receipt;
   }
 
   isTraderIntegrationAvailable() {
