@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { getInstalledUpgradeItems } from "../scripts/data/item-upgrade-service.js";
 
 test("installed upgrades use keyed lookups in slot order and support array actors", () => {
@@ -224,6 +225,38 @@ test("required choice is validated before splitting and persists only on the ins
     await service.installItemUpgrade(host,installed);
     assert.deepEqual(installed.flags[MODULE_ID].upgradeChoices,{damageType:"fire"});
   } finally { restore(); }
+});
+
+test("Troll Bones can be installed and removed as a manual upgrade", async (t) => {
+  t.after(installFoundryStubs());
+  const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+  const { createUpgradeAvailabilityHtml } = await import("../scripts/integrations/item-upgrade-sheet.js");
+  const [upgrades, decisions] = await Promise.all(["upgrades", "upgrade-automation-manifest"].map(async name =>
+    JSON.parse(await readFile(new URL(`../data/${name}.json`, import.meta.url), "utf8"))));
+  const source = upgrades.find(row => row.productId === "gear-3");
+  const entry = { ...decisions.find(row => row.productId === "gear-3"), gearId: "gear-3", profile: source.upgrade };
+  const service = new ItemUpgradeService(null, { getManifest: async () => [entry] });
+  const actor = new FakeActor();
+  const armor = actor.addItem({ _id: "armor", type: "equipment", system: { type: { value: "light" }, quantity: 1 } });
+  const weapon = actor.addItem({ _id: "weapon", type: "weapon", system: { quantity: 1 } });
+  const bones = makeUpgrade(actor, { gearId: "gear-3", name: source.name, quantity: 2,
+    flags: { [MODULE_ID]: { upgrade: source.upgrade } } });
+
+  await assert.rejects(service.installItemUpgrade(weapon, bones), error => error.code === "incompatible");
+  assert.equal(actor.created.length + weapon.updates.length + bones.updates.length, 0);
+  const installed = await service.installItemUpgrade(armor, bones);
+  assert.equal(bones.system.quantity, 1);
+  assert.equal(installed.system.quantity, 1);
+  assert.equal(installed.system.container, armor.id);
+  assert.equal(installed.getFlag(MODULE_ID, "installedUpgrade").slotIndex, 1);
+  assert.deepEqual(getInstalledUpgradeItems(armor), [installed]);
+  assert.deepEqual(installed.getFlag(MODULE_ID, "upgrade"), source.upgrade);
+  const projection = await service.getUpgradeProjection(installed);
+  assert.equal(projection.availability.available, false);
+  assert.match(createUpgradeAvailabilityHtml(installed, projection), /Без автоматизации/u);
+  await service.removeItemUpgrade(armor, installed);
+  assert.deepEqual(getInstalledUpgradeItems(armor), []);
+  assert.deepEqual(installed.getFlag(MODULE_ID, "upgrade"), source.upgrade);
 });
 
 test("availability text escapes names and reasons without replacing the Item", async () => {

@@ -49,6 +49,7 @@ test("existing automation owner syncs managed actions and preserves native autho
     fx.component.data.flags=makeItem("kollimatornyy-pritsel").flags;await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"optic",mountId:"top"});
     const foreign={_id:"authored",type:"damage",damage:{parts:[{custom:{enabled:true,formula:"1d7 + @custom"}}]}};fx.host.system.activities={authored:foreign};
     const automation=new ItemUpgradeAutomationService(fx.api,{isAuthority:()=>true,readActor:async uuid=>fx.actors.get(uuid)});automation.weaponModCatalog=fx.catalog;
+    automation.manifest=[];
     await automation.syncActor(fx.group);const first=structuredClone(fx.host.system.activities);assert.equal(Object.keys(first).length,3);assert.deepEqual(first.authored,foreign);
     await automation.syncActor(fx.group);assert.deepEqual(fx.host.system.activities,first);
     await fx.service.removeWeaponAttachment(fx.host,fx.component,{operationId:"remove-optic"});await automation.syncActor(fx.group);assert.deepEqual(fx.host.system.activities,{authored:foreign});
@@ -65,6 +66,7 @@ test("flashlight keeps foreign Token light and uses one separately owned native 
     // Boundary fixture exposes native Collection.get after source writes.
     const attachGet=()=>Object.defineProperty(fx.host.system.activities,"get",{enumerable:false,configurable:true,value:id=>fx.host.system.activities[id]});attachGet();
     const automation=new ItemUpgradeAutomationService(fx.api,{isAuthority:()=>true,readActor:async uuid=>fx.actors.get(uuid)});automation.weaponModCatalog=fx.catalog;fx.api.itemUpgradeAutomationService=automation;
+    automation.manifest=[];
     const payload={actorUuid:fx.group.uuid,hostItemId:fx.host.id,childItemId:fx.component.id,activityId:activity._id,operationId:"on",decision:{kind:"light-token",tokenUuid:token.uuid}};
     await fx.service.useWeaponModActivity(payload,{sender:fx.sender});assert.equal(scene.lights.contents.length,1);let light=scene.lights.contents[0];assert.deepEqual([light.config.bright,light.config.dim,light.config.angle,light.rotation],[30,60,60,45]);assert.deepEqual(token.light,sourceLight);
     light.config.color="#ffee00";light.flags.foreign={kept:1};

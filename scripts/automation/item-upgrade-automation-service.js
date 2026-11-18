@@ -1,8 +1,8 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.5.84";
+import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.5.98";
 import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
-import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
+import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.5.98";
 import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.279";
 import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.5.87";
 import { loadWeaponModCatalog } from "../data/weapon-mod-catalog.js?v=1.5.23";
@@ -13,6 +13,7 @@ import { buildWeaponModActivities, buildWeaponModBayonetProfile, reconcileWeapon
 import { getItemHeldHands } from "../integrations/held-items.js?v=1.5.29";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { storageTokenCenter } from "../data/storage-access.js";
+import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 
 const FLAG = "simpleItemUpgrade", PATCH = Symbol.for("rebreya-main.simple-upgrade-item-effects");
 const values = collection => Array.from(collection?.contents ?? collection?.values?.() ?? collection ?? []);
@@ -25,8 +26,10 @@ const nativeSnapshot=system=>({weight:system.weight?.value,strength:system.stren
 
 /** Owns simple passive and roll contributions; installed links remain owned by ItemUpgradeService. */
 export class ItemUpgradeAutomationService {
+  #startupSyncs = new Set();
+
   constructor(moduleApi, options = {}) {
-    this.moduleApi = moduleApi; this.options = options; this.manifest = []; this.pending = new Map(); this.hostAdapterReady = false;
+    this.moduleApi = moduleApi; this.options = options; this.manifest = null; this.pending = new Map(); this.hostAdapterReady = false;
     this.itemProjections = new WeakMap();
     this.weaponModActivityRuntime=new WeakMap();
     this.weaponModActivityRanges=new WeakMap();this.weaponModRangeWrappers=new WeakMap();
@@ -43,7 +46,7 @@ export class ItemUpgradeAutomationService {
       const eligibleHost = Boolean(getItemUpgradeCategory(item));
       return { id: item.id, descriptor, source: item.toObject(), upgrades: links.map(link => {
         const upgrade = actor.items.get(link.itemId), sourceId = getFlag(upgrade, "gearId");
-        const entry = this.manifest.find(row => row.productId === sourceId), reverse = getFlag(upgrade, "installedUpgrade");
+        const entry = this.manifest?.find(row => row.productId === sourceId), reverse = getFlag(upgrade, "installedUpgrade");
         const stored = getFlag(upgrade, "upgrade");
         let compatible = false;
         if (eligibleHost) try {
@@ -85,6 +88,10 @@ export class ItemUpgradeAutomationService {
   requestSync(actorOrUuid, reason = "changed") {
     const uuid = typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid;
     if (!uuid || !this.isAuthority()) return Promise.resolve();
+    if (!this.manifest) {
+      this.#startupSyncs.add(uuid);
+      return Promise.resolve();
+    }
     const pending = this.pending.get(uuid);
     if (pending) { pending.dirty = true; return pending.promise; }
     const state = { dirty: true };
@@ -95,7 +102,7 @@ export class ItemUpgradeAutomationService {
     return state.promise;
   }
   async syncActor(actorOrUuid) {
-    if (!this.isAuthority()) return;
+    if (!this.manifest || !this.isAuthority()) return;
     const uuid = typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid;
     const actor = await (this.options.readActor?.(uuid) ?? globalThis.fromUuid?.(uuid));
     if (!actor?.items || !actor.createEmbeddedDocuments || !this.isAuthority()) return;
@@ -113,11 +120,16 @@ export class ItemUpgradeAutomationService {
       if (!data) { remove.push(effect.id); continue; }
       desired.delete(own.key);
       const current = effect.toObject();
-      if (Object.keys(data).some(key => profileSignature(key === "flags" ? current.flags?.[MODULE_ID]?.[FLAG] : current[key])
-        !== profileSignature(key === "flags" ? data.flags[MODULE_ID][FLAG] : data[key]))) update.push({ _id: effect.id, ...data });
+      const differs = Object.keys(data).some(key => {
+        if (key === "changes") return profileSignature(comparableEffectChanges(current)) !== profileSignature(comparableEffectChanges(data));
+        if (key === "flags") return profileSignature(current.flags?.[MODULE_ID]?.[FLAG]) !== profileSignature(data.flags[MODULE_ID][FLAG]);
+        return current[key] !== data[key];
+      });
+      if (differs) update.push({ _id: effect.id, ...nativeEffectUpdate(data, current) });
     }
     const options = { rebreyaSimpleUpgradeSync: true };
-    for (const [method, data] of [["deleteEmbeddedDocuments", remove], ["updateEmbeddedDocuments", update], ["createEmbeddedDocuments", [...desired.values()]]]) {
+    const create = Array.from(desired.values(), data => nativeEffectUpdate(data));
+    for (const [method, data] of [["deleteEmbeddedDocuments", remove], ["updateEmbeddedDocuments", update], ["createEmbeddedDocuments", create]]) {
       if (!this.isAuthority()) return;
       if (data.length) await actor[method]("ActiveEffect", data, options);
     }
@@ -199,7 +211,9 @@ export class ItemUpgradeAutomationService {
     if (document?.documentName === "Actor" && keys.length && Object.keys(changed.flags).length === 1
       && Object.keys(changed).every(key => ["_id", "_stats", "flags"].includes(key))
       && keys.every(key => ["weaponModMovement", "reactionState"].includes(key.replace(/^==/u, "")))) return Promise.resolve();
-    return this.requestSync(document?.actor ?? (document?.parent?.items ? document.parent : document));
+    const actor = document?.actor ?? (document?.documentName === "Actor" ? document : null)
+      ?? (document?.parent?.documentName === "Actor" ? document.parent : null);
+    return this.requestSync(actor);
   }
   #createWeaponModBayonetItem(activity){
     const definition=this.moduleApi.combatAttackService?.getManagedWeaponModActivityDefinition(activity);
@@ -381,13 +395,21 @@ export class ItemUpgradeAutomationService {
   }
   async initialize() {
     if (globalThis.game?.system?.id !== "dnd5e") return;
-    this.manifest = await (this.options.getManifest?.() ?? loadUpgradeAutomationManifest());
-    this.weaponModCatalog=await (this.options.getWeaponModCatalog?.()??loadWeaponModCatalog());
+    const [manifest, weaponModCatalog] = await Promise.all([
+      this.options.getManifest?.() ?? loadUpgradeAutomationManifest(),
+      this.options.getWeaponModCatalog?.() ?? loadWeaponModCatalog()
+    ]);
+    this.weaponModCatalog = weaponModCatalog;
+    this.manifest = manifest;
     this.registerItemDataPatch();
     for (const actor of values(globalThis.game?.actors)) {
+      this.#startupSyncs.delete(actor.uuid);
       // Native dnd5e final preparation appends base damage parts. Reset the models first.
       actor.reset?.();
       await this.requestSync(actor, "ready");
     }
+    const remaining = [...this.#startupSyncs];
+    this.#startupSyncs.clear();
+    for (const uuid of remaining) await this.requestSync(uuid, "ready");
   }
 }

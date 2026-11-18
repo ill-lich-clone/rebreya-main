@@ -34,10 +34,10 @@ export function validateUpgradeCapacity(host, installed, capacity) {
   return capacity;
 }
 
-export function validateUpgradeInstallation(host, installed, candidate) {
+export function validateUpgradeInstallation(host, installed, candidate, { allowManual = false } = {}) {
   const availability = candidate?.availability;
   const decision = typeof availability === "string" ? availability : availability?.decision;
-  if (!["existing-curse", "simple-implemented"].includes(decision)) {
+  if (!(allowManual && candidate?.profile) && !["existing-curse", "simple-implemented"].includes(decision)) {
     throw new UpgradeRuleError("unavailable", { reason: availability?.reason });
   }
   const capacity = validateUpgradeCapacity(host, installed, host?.capacity);

@@ -51,6 +51,7 @@ test("one ordinary turn with five participants leaves equipment and world lighti
     counts.syncs++;
     return actors.find(actor => actor.uuid === uuid);
   } });
+  api.itemUpgradeAutomationService.manifest = [];
   registerCombatHooks(api);
   const combat = Object.assign(new Combat(), { id: "fight", round: 1, turn: 1, combatants: actors.map(actor => ({ id: actor.id, actor })) });
   combat.combatant = combat.combatants[1];
@@ -99,7 +100,7 @@ test("one ordinary turn with five participants leaves equipment and world lighti
   assert.equal(counts.syncs, 1, "a mixed Actor update still refreshes equipment");
 });
 
-function fixture() {
+function fixture({ ready = true } = {}) {
   const effects = new Map(); let writes = 0, authority = true;
   const actor = { uuid: "Actor.a", effects, items: { contents: [] },
     async createEmbeddedDocuments(_type, rows) { for (const row of rows) { const id = `e${++writes}`; effects.set(id, { ...structuredClone(row), id, toObject() { const { toObject, ...data } = this; return structuredClone(data); } }); } },
@@ -111,8 +112,85 @@ function fixture() {
     readActor: async () => actor, isAuthority: () => authority,
     project: () => ({ contributions, unavailable: [] })
   });
+  if (ready) service.manifest = [];
   return { actor, effects, service, writes: () => writes, setContributions: value => { contributions = value; }, setAuthority: value => { authority = value; } };
 }
+
+test("startup preserves existing griffon and soul enchantment effects until both catalogs are ready", async (t) => {
+  const previous = globalThis.game;
+  t.after(() => { globalThis.game = previous; });
+  const { actor, effects, service, writes } = fixture({ ready: false });
+  actor.uuid = "Scene.s.Token.t.Actor.a";
+  actor.items = new Map();
+  const ns = "rebreya-main", manifest = [];
+  let reads = 0;
+  globalThis.game = { system: { id: "dnd5e" }, release: { generation: 14 }, actors: [] };
+  service.options.project = undefined;
+  service.options.readActor = async uuid => { reads++; return uuid === actor.uuid ? actor : null; };
+  service.options.getManifest = async () => manifest;
+  const catalog = Promise.withResolvers();
+  service.options.getWeaponModCatalog = () => catalog.promise;
+  const makeItem = (id, name, type, system, flags) => ({
+    id, name, type, system, flags: { [ns]: flags },
+    toObject() { const { toObject, ...source } = this; return structuredClone(source); }
+  });
+  const cases = [
+    { id: "griffon", name: "Шерсть гриффона", type: "clothing", sourceId: "sherst-griffona", compatibility: "outerwear",
+      bonuses: [["system.attributes.movement.walk", 5]] },
+    { id: "soul", name: "Душевное зачарование", type: "wondrous", sourceId: "dushevnoe-zacharovanie", compatibility: "wondrous-item",
+      bonuses: [["system.skills.per.bonuses.check", 1], ["system.skills.prf.bonuses.check", 1]] }
+  ];
+  for (const { id, name, type, sourceId, compatibility, bonuses } of cases) {
+    const hostItemId = `host-${id}`;
+    const profile = { compatibility: [compatibility] };
+    manifest.push({ productId: sourceId, decision: "simple-implemented", profile });
+    actor.items.set(hostItemId, makeItem(hostItemId, type, "equipment", { equipped: true, quantity: 1, type: { value: type } },
+      { itemUpgrades: { capacity: 1, installed: [{ itemId: id, slotIndex: 1 }] } }));
+    actor.items.set(id, makeItem(id, name, "loot", { quantity: 1, container: hostItemId },
+      { gearId: sourceId, installedUpgrade: { hostItemId, slotIndex: 1 } }));
+    for (const [index, [key, value]] of bonuses.entries()) {
+      const effectId = `${id}-${index}`;
+      effects.set(effectId, {
+        id: effectId, name, type: "base", transfer: false, disabled: false,
+        system: { changes: [{ _id: effectId, key, type: "add", value, priority: 20, phase: "initial", conditions: {} }] },
+        flags: { [ns]: { simpleItemUpgrade: { managed: true, hostItemId, upgradeItemId: id,
+          key: JSON.stringify([actor.uuid, hostItemId, id, String(index), 1]) } } },
+        toObject() { const { toObject, ...data } = this; return structuredClone(data); }
+      });
+    }
+  }
+
+  const expectedIds = ["griffon-0", "soul-0", "soul-1"];
+  await service.handleChanged({ uuid: "Compendium.rebreya-main.gear.Item.template", documentName: "Item" });
+  await service.handleChanged({ actor });
+  assert.deepEqual([...effects.keys()], expectedIds);
+  const initializing = service.initialize();
+  try {
+    await service.handleChanged({ actor });
+    assert.equal(writes(), 0);
+  } finally {
+    catalog.resolve({ rows: [], hosts: [] });
+    await initializing;
+  }
+  assert.deepEqual([...effects.keys()], expectedIds);
+  assert.equal(reads, 1, "repeated early hooks coalesce into one sync for the synthetic actor");
+  assert.equal(writes(), 0, "an equivalent native change must not be rewritten");
+
+  effects.get("griffon-0").system.changes[0].value = 2;
+  await service.handleChanged({ actor });
+  assert.equal(writes(), 1);
+  assert.deepEqual(effects.get("griffon-0").system.changes, [
+    { _id: "griffon-0", key: "system.attributes.movement.walk", type: "add", value: 5, priority: 20 }
+  ]);
+
+  actor.items.get("host-griffon").system.equipped = false;
+  await service.handleChanged({ actor });
+  assert.deepEqual([...effects.keys()], ["soul-0", "soul-1"]);
+  actor.items.get("host-griffon").system.equipped = true;
+  await service.handleChanged({ actor });
+  const created = [...effects.values()].find(effect => effect.name === "Шерсть гриффона");
+  assert.deepEqual(created.system.changes, [{ key: "system.attributes.movement.walk", type: "add", value: 5, priority: 20 }]);
+});
 test("sync is idempotent; remove preserves unrelated and curse effects", async () => {
   const f = fixture();
   f.effects.set("user", { id: "user", flags: {} });

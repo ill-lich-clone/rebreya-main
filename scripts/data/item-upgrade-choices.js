@@ -1,4 +1,4 @@
-import { UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
+import { UpgradeRuleError } from "./item-upgrade-rules.js?v=1.5.98";
 
 const DAMAGE_TYPES = ["acid", "bludgeoning", "cold", "fire", "force", "lightning", "necrotic", "piercing", "poison", "psychic", "radiant", "slashing", "thunder"];
 const CHOICES = {

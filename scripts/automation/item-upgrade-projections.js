@@ -1,4 +1,4 @@
-import { evaluateUpgradeActivation } from "../data/item-upgrade-rules.js?v=1.4.250";
+import { evaluateUpgradeActivation } from "../data/item-upgrade-rules.js?v=1.5.98";
 import { SIMPLE_UPGRADE_ROLL_PROFILES } from "./item-upgrade-roll-modifiers.js?v=1.4.254";
 import { validateUpgradeChoices } from "../data/item-upgrade-choices.js?v=1.4.255";
 

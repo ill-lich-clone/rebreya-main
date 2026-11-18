@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";
 import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.255";
-import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
+import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.5.98";
 import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.5.29";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js?v=1.5.29";
 import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.5.23";
@@ -559,6 +559,7 @@ export class ItemUpgradeService {
     const availability = getUpgradeAvailability(sourceId, manifest);
     if (legacyOverride) Object.assign(availability, { available: false, decision: "unavailable-no-rule",
       label: "Усовершенствования нет в реализации", reason: "Сохранён пользовательский профиль; его полная автоматизация не подтверждена." });
+    else if (!availability.available && profile) availability.label = "Без автоматизации";
     const choices = readModuleFlag(item, "upgradeChoices"), choiceOptions = getUpgradeChoiceOptions(sourceId);
     let requiresChoice = false;
     try { validateUpgradeChoices(sourceId, choices); } catch { requiresChoice = true; }
@@ -602,7 +603,7 @@ export class ItemUpgradeService {
     const previousHost = readModuleFlag(upgradeItem, INSTALLED_UPGRADE_FLAG)?.hostItemId;
     if (previousHost && previousHost !== getItemId(hostItem)) throw new UpgradeRuleError("slot-conflict");
     const { slotIndex } = validateUpgradeInstallation(buildUpgradeHostDescriptor(hostItem), installed,
-      { ...projection, slotIndex: options.slotIndex });
+      { ...projection, slotIndex: options.slotIndex }, { allowManual: !projection.legacyOverride });
     const choices = validateUpgradeChoices(projection.sourceId, options.choices ?? projection.choices);
 
     let installedItem = upgradeItem;
