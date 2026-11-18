@@ -27,7 +27,7 @@
 
 ## Быстрый вход
 
-- Среда: Foundry VTT 13, система dnd5e, обязательный модуль `statuscounter >= 3.0.4`.
+- Среда: Foundry VTT 14.369, система dnd5e, обязательный модуль `statuscounter >= 3.0.4`.
 - Источник версии и runtime-entrypoint — `module.json`.
 - Versioned forwarder `scripts/main-<version>.js` должен только импортировать `scripts/main.js`.
 - `scripts/main.js` — единственный composition root; он собирает сервисы, hooks и socket routes и публикует `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
