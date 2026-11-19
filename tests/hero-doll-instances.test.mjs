@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { HeroDollService, isValidHeroDollAssignPayload } from "../scripts/data/hero-doll-service.js";
+import { buildHeldItemHandUpdate, buildHeldItemReleaseHandUpdate } from "../scripts/integrations/held-items.js";
+import { filterMagicItemSpellbook } from "../scripts/integrations/magic-item-spellbook.js";
 import { makeInstanceDocumentsFixture } from "./helpers/item-instance-documents-fixture.mjs";
 
 function setup(options={}) {
@@ -99,77 +101,100 @@ test("legacy normalization keeps equipped original ID and unequipped remainder; 
   assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{});
 });
 
-test("two-hand item can be carried in the selected real hand and released",async t=>{
+test("a two-handed item occupies one chosen doll slot without taking a real hand",async t=>{
   const fx=setup({quantity:1,itemFlags:{heroDollSlots:["leftHand","rightHand"],handRequirement:2}});t.after(()=>fx.restore());
   fx.source.data.type="weapon";const payload={...fx.payload,slotId:"leftHand"};
   await fx.run(payload);
-  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands"),["left"]);
+  assert.equal(fx.source.getFlag("rebreya-main","heldHands"),undefined);
+  assert.equal(fx.source.system.equipped,true);
   assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{leftHand:{itemId:fx.source.id}});
   await fx.service.executeAssignItemToSlot({...payload,operationId:"clear-2"},{sender:game.user},"clear");
   assert.equal(fx.source.getFlag("rebreya-main","heldHands"),undefined);assert.equal(fx.total(),1);
 });
 
-test("hero doll displays a mundane weapon only while it is actually held", async t => {
-  const fx = setup({ quantity: 1, itemFlags: { heroDollSlots: ["leftHand", "rightHand"], heldHands: ["left"] }, itemSystem: { equipped: true } });
+test("a mundane sword is a doll candidate independently of its real grip", async t => {
+  const fx = setup({ quantity: 1, itemFlags: { heroDollSlots: ["leftHand", "rightHand", "back1"], heldHands: ["left"] }, itemSystem: { equipped: true } });
   t.after(() => fx.restore());
   fx.source.data.type = "weapon";
+  fx.source.data.name = "Длинный меч";
   const before = structuredClone(fx.hero.flags["rebreya-main"]);
   let snapshot = fx.service.getActorSnapshot(fx.hero);
-  assert.equal(snapshot.slots.find(slot => slot.id === "leftHand").itemId, fx.source.id);
-  assert.equal(snapshot.reservedCount, 1);
-  assert.equal(snapshot.inventoryItems.some(item => item.id === fx.source.id), false);
+  assert.equal(snapshot.slots.find(slot => slot.id === "leftHand").itemId, "");
+  assert.equal(snapshot.reservedCount, 0);
+  assert.deepEqual(snapshot.inventoryItems.find(item => item.id === fx.source.id)?.allowedSlots, ["leftHand", "rightHand", "back1"]);
   fx.source.flags["rebreya-main"].heldHands = [];
   snapshot = fx.service.getActorSnapshot(fx.hero);
   assert.equal(snapshot.slots.find(slot => slot.id === "leftHand").itemId, "");
-  assert.equal(snapshot.inventoryItems.some(item => item.id === fx.source.id), false);
+  assert.equal(snapshot.inventoryItems.some(item => item.id === fx.source.id), true);
   assert.deepEqual(fx.hero.flags["rebreya-main"], before);
+
+  await fx.run({ ...fx.payload, slotId: "back1" });
+  snapshot = fx.service.getActorSnapshot(fx.hero);
+  assert.equal(snapshot.slots.find(slot => slot.id === "back1").itemId, fx.source.id);
+  assert.equal(snapshot.inventoryItems.some(item => item.id === fx.source.id), false);
+  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), []);
 });
 
-test("hero doll candidates retain magical gear and mundane clothing", async t => {
+test("hero doll candidates include compatible items regardless of magic", async t => {
   const fx = setup({ quantity: 1, itemFlags: { heroDollSlots: ["neck"] } });
   t.after(() => fx.restore());
-  const [magic, clothing] = await fx.hero.createEmbeddedDocuments("Item", [
+  const [magic, clothing, incompatible] = await fx.hero.createEmbeddedDocuments("Item", [
     { _id: "magic-ring", name: "Магическое кольцо", type: "equipment", system: { quantity: 1 }, flags: { "rebreya-main": { magical: true, heroDollSlots: ["ring1"] } } },
-    { _id: "ordinary-clothing", name: "Одежда", type: "equipment", system: { quantity: 1, type: { value: "clothing" } }, flags: { "rebreya-main": {} } }
+    { _id: "ordinary-clothing", name: "Одежда", type: "equipment", system: { quantity: 1, type: { value: "clothing" } }, flags: { "rebreya-main": {} } },
+    { _id: "incompatible", name: "Кусок металла", type: "loot", system: { quantity: 1 }, flags: { "rebreya-main": {} } }
   ]);
   const snapshot = fx.service.getActorSnapshot(fx.hero);
-  assert.deepEqual(new Set(snapshot.inventoryItems.map(item => item.id)), new Set([magic.id, clothing.id]));
-  assert.equal(snapshot.inventoryItems.some(item => item.id === fx.source.id), false);
+  assert.deepEqual(new Set(snapshot.inventoryItems.map(item => item.id)), new Set([magic.id, clothing.id, fx.source.id]));
+  assert.equal(snapshot.inventoryItems.some(item => item.id === incompatible.id), false);
 });
 
-test("assigning and clearing a doll hand updates the real grip", async t => {
-  const fx = setup({ quantity: 1, itemFlags: { heroDollSlots: ["leftHand", "rightHand"] } });
+test("a slotted focus keeps its equipment and spell when weapon and shield take both hands", async t => {
+  const fx = setup({ quantity: 1, itemFlags: { heroDollSlots: ["leftHand"], magical: true }, itemSystem: { equipped: true } });
   t.after(() => fx.restore());
-  fx.source.data.type = "weapon";
-  const payload = { ...fx.payload, slotId: "leftHand" };
-  await fx.run(payload);
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["left"]);
+  fx.hero.flags["rebreya-main"].heroDoll = { version: 1, slots: { leftHand: { itemId: fx.source.id } } };
+  const [weapon, shield] = await fx.hero.createEmbeddedDocuments("Item", [
+    { _id: "sword", name: "Меч", type: "weapon", system: { quantity: 1, equipped: false } },
+    { _id: "shield", name: "Щит", type: "equipment", system: { quantity: 1, equipped: false, type: { value: "shield" } } }
+  ]);
+  await fx.source.update(buildHeldItemHandUpdate(["left"], fx.source));
+  await fx.source.update(buildHeldItemReleaseHandUpdate(fx.source, ["left"]));
+  await weapon.update(buildHeldItemHandUpdate(["left"], weapon));
+  await shield.update(buildHeldItemHandUpdate(["right"], shield));
   assert.equal(fx.service.getActorSnapshot(fx.hero).slots.find(slot => slot.id === "leftHand").itemId, fx.source.id);
-  await fx.service.executeAssignItemToSlot({ ...payload, operationId: "release-hand" }, { sender: game.user }, "clear");
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands") ?? [], []);
-  assert.equal(fx.service.getActorSnapshot(fx.hero).slots.find(slot => slot.id === "leftHand").itemId, "");
+  assert.equal(fx.source.system.equipped, true);
+  const spell = { type: "spell", flags: { dnd5e: { cachedFor: ".Item.rope.Activity.cast" } }, system: { linkedActivity: { item: fx.source } } };
+  const context = { spellbook: { item: { items: [spell] } } };
+  filterMagicItemSpellbook(fx.hero, context);
+  assert.deepEqual(context.spellbook.item.items, [spell]);
 });
 
-test("assigning a hand through the GM worker releases its actual previous occupant", async t => {
+test("the GM worker replaces a doll entry while preserving both occupied real hands", async t => {
   const fx = setup({ quantity: 1, itemFlags: { heroDollSlots: ["leftHand", "rightHand"] } });
   t.after(() => fx.restore());
   fx.source.data.type = "weapon";
-  const [oldWeapon] = await fx.hero.createEmbeddedDocuments("Item", [{ _id: "old-weapon", name: "Старое оружие", type: "weapon",
-    system: { quantity: 1, equipped: true }, flags: { "rebreya-main": { heldHands: ["left"] } } }]);
+  const [oldWeapon, shield, oldFocus] = await fx.hero.createEmbeddedDocuments("Item", [
+    { _id: "old-weapon", name: "Старое оружие", type: "weapon", system: { quantity: 1, equipped: true }, flags: { "rebreya-main": { heldHands: ["left"] } } },
+    { _id: "shield", name: "Щит", type: "equipment", system: { quantity: 1, equipped: true }, flags: { "rebreya-main": { heldHands: ["right"] } } },
+    { _id: "old-focus", name: "Фокус", type: "equipment", system: { quantity: 1, equipped: true } }
+  ]);
+  fx.hero.flags["rebreya-main"].heroDoll = { version: 1, slots: { leftHand: { itemId: oldFocus.id } } };
   await fx.run({ ...fx.payload, slotId: "leftHand" });
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["left"]);
-  assert.deepEqual(oldWeapon.getFlag("rebreya-main", "heldHands") ?? [], []);
+  assert.equal(fx.source.getFlag("rebreya-main", "heldHands"), undefined);
+  assert.equal(fx.source.system.equipped, true);
+  assert.equal(oldFocus.system.equipped, false);
+  assert.deepEqual(oldWeapon.getFlag("rebreya-main", "heldHands"), ["left"]);
+  assert.deepEqual(shield.getFlag("rebreya-main", "heldHands"), ["right"]);
   assert.equal(oldWeapon.system.equipped, true);
 });
 
-test("doll hand assignment moves an existing grip and clearing releases it",async t=>{
+test("the GM worker assigns and clears a held item without moving its grip",async t=>{
   const fx=setup({quantity:1,itemFlags:{heroDollSlots:["leftHand","rightHand"],heldHands:["right"]},itemSystem:{equipped:true}});t.after(()=>fx.restore());
   fx.source.data.type="weapon";const payload={...fx.payload,slotId:"leftHand"};
   await fx.run(payload);
-  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands"),["left"]);
+  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands"),["right"]);
   assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{leftHand:{itemId:fx.source.id}});
   await fx.service.executeAssignItemToSlot({...payload,operationId:"clear-held"},{sender:game.user},"clear");
-  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands")??[],[]);
+  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands"),["right"]);
   assert.equal(fx.source.system.equipped,true);
 });
 

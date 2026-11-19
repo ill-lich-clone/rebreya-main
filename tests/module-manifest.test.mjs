@@ -9,7 +9,7 @@ test("player sync owners share the released cache key at every runtime import", 
   const seen = new Set();
   for (const { path, source } of await readJavaScriptTree("../scripts/")) {
     for (const [, specifier, owner] of source.matchAll(/["']([^"'\n]*\/(hero-doll-service|socket-command-bus|socket-command-scheduling|privileged-mutation-gateway|ui-refresh-coordinator)\.js(?:\?[^"'\n]*)?)["']/gu)) {
-      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.47" : "1.5.3", `${path}: ${specifier}`);
+      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.100" : "1.5.3", `${path}: ${specifier}`);
       seen.add(owner);
     }
   }
@@ -21,9 +21,9 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.99");
+  assert.equal(manifest.version, "1.5.100");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
-  for (const entry of [manifest.esmodules[0], "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
+  for (const entry of [manifest.esmodules[0], "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
   }
 });
@@ -150,7 +150,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.99");
+  assert.equal(manifest.version, "1.5.100");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 

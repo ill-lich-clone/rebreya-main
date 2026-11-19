@@ -98,7 +98,7 @@ test("owner without GM equips and clears a singleton without sockets or world wr
   assert.deepEqual(fx.requests, []);
 });
 
-test("owner moves and releases the real grip while preserving unrelated slot data", async t => {
+test("owner moves and clears the doll slot while preserving grip and unrelated slot data", async t => {
   const fx = setup(t, { itemFlags: { heroDollSlots: ["leftHand", "rightHand"], heldHands: ["right"] }, itemSystem: { equipped: true } });
   fx.source.data.type = "weapon";
   await fx.assign("leftHand");
@@ -107,56 +107,65 @@ test("owner moves and releases the real grip while preserving unrelated slot dat
   assert.deepEqual(fx.hero.getFlag("rebreya-main", "heroDoll").slots, { rightHand: { itemId: "rope" }, back1: { itemId: "unrelated", extra: "keep" } });
   await fx.service.clearSlot(fx.hero, "rightHand");
   assert.equal(fx.source.system.equipped, true);
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands") ?? [], []);
+  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["right"]);
   assert.equal(fx.requests.length, 0);
   assert.equal(fx.total(), 1);
 });
 
-test("an owner can hold and release a doll item without requiring a GM", async t => {
+test("an owner can equip and unequip a doll item without requiring a GM or free hands", async t => {
   const fx = setup(t, { itemFlags: { heroDollSlots: ["leftHand", "rightHand"] } });
   fx.source.data.type = "weapon";
+  fx.hero.flags["rebreya-main"].handReservations = [{
+    linkId: "grapple", kind: "grapple", handSlot: "left",
+    sourceTokenUuid: "Scene.arena.Token.hero", targetTokenUuid: "Scene.arena.Token.enemy"
+  }];
   await fx.assign("leftHand");
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["left"]);
+  assert.equal(fx.source.system.equipped, true);
+  assert.equal(fx.source.getFlag("rebreya-main", "heldHands"), undefined);
   await fx.service.clearSlot(fx.hero, "leftHand");
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands") ?? [], []);
+  assert.equal(fx.source.system.equipped, false);
+  assert.equal(fx.source.getFlag("rebreya-main", "heldHands"), undefined);
   assert.equal(fx.requests.length, 0);
 });
 
-test("a synthetic NPC can hold and release its own item without a GM", async t => {
+test("a synthetic NPC can equip and unequip its doll item without a GM", async t => {
   const fx = setup(t, { itemFlags: { heroDollSlots: ["leftHand", "rightHand"] } });
   fx.hero.type = "npc";
   fx.hero.uuid = "Scene.sceneA.Token.tokenA.Actor.actorA";
   fx.source.data.type = "weapon";
   await fx.assign("leftHand");
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["left"]);
+  assert.equal(fx.service.getActorSnapshot(fx.hero).slots.find(slot => slot.id === "leftHand").itemId, fx.source.id);
+  assert.equal(fx.source.getFlag("rebreya-main", "heldHands"), undefined);
   assert.equal(await fx.service.clearSlot(fx.hero, "leftHand"), true);
   assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands") ?? [], []);
   assert.equal(fx.requests.length, 0);
 });
 
-test("owner can release a real held item even when no doll slot was saved", async t => {
+test("clearing an empty doll slot does not release the corresponding real hand", async t => {
   const fx = setup(t, { itemFlags: { heroDollSlots: ["leftHand", "rightHand"], heldHands: ["left"] }, itemSystem: { equipped: true } });
   fx.source.data.type = "weapon";
-  assert.equal(await fx.service.clearSlot(fx.hero, "leftHand"), true);
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands") ?? [], []);
+  assert.equal(await fx.service.clearSlot(fx.hero, "leftHand"), false);
+  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["left"]);
   assert.equal(fx.source.system.equipped, true);
   assert.equal(fx.requests.length, 0);
 });
 
-test("releasing one doll hand keeps the other real hand occupied", async t => {
+test("clearing a saved doll slot preserves both hands of a two-handed grip", async t => {
   const fx = setup(t, { itemFlags: { heroDollSlots: ["leftHand", "rightHand"], heldHands: ["left", "right"], handRequirement: 2 }, itemSystem: { equipped: true } });
   fx.source.data.type = "weapon";
+  fx.hero.flags["rebreya-main"].heroDoll = { version: 1, slots: { leftHand: { itemId: fx.source.id } } };
   let snapshot = fx.service.getActorSnapshot(fx.hero);
   assert.equal(snapshot.slots.find(slot => slot.id === "leftHand").itemId, fx.source.id);
-  assert.equal(snapshot.slots.find(slot => slot.id === "rightHand").itemId, fx.source.id);
+  assert.equal(snapshot.slots.find(slot => slot.id === "rightHand").itemId, "");
   assert.equal(await fx.service.clearSlot(fx.hero, "leftHand"), true);
-  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["right"]);
+  assert.deepEqual(fx.source.getFlag("rebreya-main", "heldHands"), ["left", "right"]);
+  assert.equal(fx.source.system.equipped, true);
   snapshot = fx.service.getActorSnapshot(fx.hero);
   assert.equal(snapshot.slots.find(slot => slot.id === "leftHand").itemId, "");
-  assert.equal(snapshot.slots.find(slot => slot.id === "rightHand").itemId, fx.source.id);
+  assert.equal(snapshot.slots.find(slot => slot.id === "rightHand").itemId, "");
 });
 
-test("owner hand assignment restores the grip if saving the slot fails", async t => {
+test("owner doll hand assignment restores equipment if saving the slot fails", async t => {
   const fx = setup(t, { itemFlags: { heroDollSlots: ["leftHand", "rightHand"] } });
   fx.source.data.type = "weapon";
   fx.failAt("placement", "after");

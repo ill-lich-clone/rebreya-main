@@ -34,15 +34,20 @@ function setupLootRing(t,options={}) {
   return fx;
 }
 
-test('preset captures and restores the real two-handed grip', async t => {
+test('a legacy preset with two hand slots restores the doll without restoring a real grip', async t => {
   const fx=setup(t,{itemFlags:{heroDollSlots:['leftHand','rightHand'],heldHands:['left','right'],handRequirement:2}});
-  fx.source.data.type='weapon';fx.hero.flags['rebreya-main'].heroDoll.slots={};
+  fx.source.data.type='weapon';
+  const slots={leftHand:{itemId:fx.source.id},rightHand:{itemId:fx.source.id}};
+  fx.hero.flags['rebreya-main'].heroDoll.slots=structuredClone(slots);
   await fx.create();
   const saved=fx.state().presets[0].slots;
   assert.equal(saved.leftHand.itemId,fx.source.id);assert.equal(saved.rightHand.itemId,fx.source.id);
   delete fx.source.flags['rebreya-main'].heldHands;
+  assert.equal(fx.service.getActorSnapshot(fx.hero).presetModified,false);
+  fx.hero.flags['rebreya-main'].heroDoll.slots={};
   await fx.apply();
-  assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands'),['left','right']);
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,slots);
+  assert.equal(fx.source.getFlag('rebreya-main','heldHands'),undefined);
   assert.equal(fx.source.system.quantity,1);
 });
 test('loot signet ring preset applies and clears without an unsupported equipped write',async t=>{
@@ -167,14 +172,20 @@ test('saving a remaining ghost retains its reference and metadata; return does n
   assert.equal(fx.service.getActorSnapshot(fx.hero).slots.find(s=>s.id==='neck').ghost,true);assert.equal(fx.source.system.equipped,false);
   await fx.apply();assert.equal(fx.source.system.equipped,true);assert.deepEqual(fx.state().ghosts,{});
 });
-test('presets restore and release the real grip while preserving independent equipped items',async t=>{
+test('presets capture doll slots and keep independent grips when switching layouts',async t=>{
   const fx=setup(t,{itemFlags:{heroDollSlots:['leftHand','rightHand'],heldHands:['right']}});fx.source.data.type='weapon';
-  fx.hero.flags['rebreya-main'].heroDoll.slots={};await fx.create();
-  await fx.hero.createEmbeddedDocuments('Item',[{_id:'unrelated',name:'Одежда',type:'equipment',system:{quantity:1,equipped:true},flags:{'rebreya-main':{}}}]);
-  delete fx.source.flags['rebreya-main'].heldHands;await fx.create('Пусто','empty');
-  await fx.apply();assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands'),['right']);await fx.apply('empty');
+  const slots={leftHand:{itemId:fx.source.id}};
+  fx.hero.flags['rebreya-main'].heroDoll.slots=structuredClone(slots);
+  const [other]=await fx.hero.createEmbeddedDocuments('Item',[{_id:'unrelated',name:'Меч',type:'weapon',system:{quantity:1,equipped:true},flags:{'rebreya-main':{heldHands:['left']}}}]);
+  await fx.create();
+  assert.deepEqual(Object.keys(fx.state().presets[0].slots),['leftHand']);
+  assert.equal(fx.state().presets[0].slots.leftHand.itemId,fx.source.id);
+  fx.hero.flags['rebreya-main'].heroDoll.slots={};await fx.create('Пусто','empty');
+  await fx.apply();assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,slots);
+  assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands'),['right']);await fx.apply('empty');
   assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{});assert.equal(fx.source.system.equipped,true);
-  assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands')??[],[]);assert.equal(fx.hero.items.get('unrelated').system.equipped,true);
+  assert.deepEqual(fx.source.getFlag('rebreya-main','heldHands'),['right']);
+  assert.deepEqual(other.getFlag('rebreya-main','heldHands'),['left']);assert.equal(other.system.equipped,true);
 });
 test('empty set releases formerly doll-equipped Item while keeping saved set immutable',async t=>{
   const fx=setup(t);await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};await fx.create('Пусто','empty');
