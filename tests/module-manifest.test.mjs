@@ -21,7 +21,7 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.101");
+  assert.equal(manifest.version, "1.5.102");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   for (const entry of [manifest.esmodules[0], "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
@@ -150,7 +150,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.101");
+  assert.equal(manifest.version, "1.5.102");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
@@ -186,12 +186,12 @@ test("glossary and feat-link owners preserve their released cache key", async ()
   ]);
 
   for (const [source, owner, ownerVersion = version] of [
-    [mainSource, "feats-compendium", "1\\.5\\.61"],
+    [mainSource, "feats-compendium", "1\\.5\\.102"],
     [mainSource, "glossary-compendium", "1\\.4\\.330"],
-    [mainSource, "actions-compendium", "1\\.4\\.330"],
+    [mainSource, "actions-compendium", "1\\.5\\.102"],
     [featsSource, "compendium-item-reference-index"],
     [featsSource, "feat-reference-linker"],
-    [featsSource, "actions-compendium"],
+    [featsSource, "actions-compendium", "1\\.5\\.102"],
     [featsSource, "glossary-compendium"],
     [featsSource, "constants"],
     [indexSource, "feat-reference-linker"],
@@ -200,7 +200,7 @@ test("glossary and feat-link owners preserve their released cache key", async ()
     [glossarySource, "constants"],
     [sheetSource, "dnd5e-sheet-status-references"],
     [statusPresentationSource, "status-reference-data"],
-    [performerSource, "feats-compendium", "1\\.5\\.61"]
+    [performerSource, "feats-compendium", "1\\.5\\.102"]
   ]) {
     assert.match(source, new RegExp(`${owner}\\.js\\?v=${ownerVersion}`, "u"), owner);
   }
@@ -677,11 +677,11 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.101(?=["'])/u,
+    /combat\/hooks\.js\?v=1\.5\.102(?=["'])/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.101(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.102(?=["'])/u,
   );
   assert.match(
     entrypointSource,
@@ -736,7 +736,7 @@ test("paladin dogma automation is constructed and routed through the current com
   );
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.5\.101(?=["'])/u
+    /combat\/hooks\.js\?v=1\.5\.102(?=["'])/u
   );
   assert.match(
     entrypointSource,
@@ -783,7 +783,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.101(?=["'])/u,
+    /attack-service\.js\?v=1\.5\.102(?=["'])/u,
   );
   assert.match(
     sheetSource,

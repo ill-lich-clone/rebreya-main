@@ -22,6 +22,22 @@ function harness() {
   return { options, inputs, resolves, game };
 }
 
+test("applied legacy Shield expires at the defender's turn without a source lookup", async () => {
+  const { normalizeAppliedShield } = await import(path);
+  const actor = { documentName: "Actor", uuid: "Scene.s.Token.t.Actor.a" };
+  const data = { system: { changes: [{ key: "system.attributes.ac.bonus", value: "5" }],
+    origin: { activity: actor.uuid + ".Item.shield.Activity.cast" } },
+    duration: { value: 1, expiry: "turnStart", expired: false },
+    flags: { "chris-premades": { info: { identifier: "shield" } },
+      dae: { specialDuration: ["turnStartSource", "combatEnd"] } } };
+  const effect = { parent: actor, toObject: () => data, updateSource: update => Object.assign(data, update) };
+  normalizeAppliedShield(effect);
+  assert.equal(data["duration.expiry"], "targetStart");
+  assert.equal(data["duration.value"], null);
+  assert.deepEqual(data["flags.dae.specialDuration"], ["combatEnd"]);
+  assert.equal(data.system.origin.activity, actor.uuid + ".Item.shield.Activity.cast");
+});
+
 test("Shield world copy preserves complete native data and embedded references without mutating source", async () => {
   const { buildShieldSpellItem } = await import(path);
   const original = source(); const before = structuredClone(original);

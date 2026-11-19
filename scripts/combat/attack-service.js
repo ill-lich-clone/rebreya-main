@@ -5588,12 +5588,17 @@ export class CombatAttackService {
     return actor.items?.contents?.find?.((item) => isMeleeWeaponItem(item)) ?? null;
   }
 
-  #hasParryEquipment(actor) {
+  getParryBonus(actor) {
+    return this.#hasParryEquipment(actor, true) ? getActorProficiencyBonus(actor) : 0;
+  }
+
+  #hasParryEquipment(actor, requireHeld = false) {
     if (!(actor instanceof Actor)) {
       return false;
     }
 
-    const hasMeleeWeapon = actor.items?.contents?.some?.((item) => isMeleeWeaponItem(item) && isEquippedItem(item)) ?? false;
+    const inHand = item => isEquippedItem(item) && (!requireHeld || getItemHeldHands(item).length > 0);
+    const hasMeleeWeapon = actor.items?.contents?.some?.((item) => isMeleeWeaponItem(item) && inHand(item)) ?? false;
     if (hasMeleeWeapon) {
       return true;
     }
@@ -5603,7 +5608,7 @@ export class CombatAttackService {
         return false;
       }
 
-      if (!isEquippedItem(item)) {
+      if (!inHand(item)) {
         return false;
       }
 
@@ -6826,6 +6831,8 @@ export class CombatAttackService {
 
   #attackReactionProvider(kind) {
     return {
+      midi: kind === INTERCEPTION_REACTION_KIND ? { preTargetDamageApplication: (...args) => this.applyMidiInterception(...args) }
+        : kind === SENTINEL_REACTION_KIND ? { AttackRollComplete: workflow => this.applyMidiSentinel(workflow) } : undefined,
       listCandidates: (context) => {
         const state = this.#attackReactionState(context, kind);
         if (state.attack) {

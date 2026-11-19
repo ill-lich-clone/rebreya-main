@@ -12,6 +12,7 @@ import {
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
 import { getManagedIconProjection, syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const PACK_ID = `world.${ACTIONS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -29,6 +30,9 @@ const ACTION_ICON_SEARCH_PATHS = [
   MODULE_ICONS_BASE_PATH
 ];
 const GLOSSARY_TEXT_RELATIVE_PATH = `modules/${MODULE_ID}/Глоссарий.txt`;
+const WORLD_REACTIONS = new Set(["parry", "opportunity-attack"]);
+const REACTION_ACTIVITY_ID = "rebreyaReaction1";
+const STAND_UP_URL = "https://docs.google.com/document/d/1a2k-CnJxJWiX7aC3nPbLt3TIaQD5_0cGsl0I1Iihy3E/edit?tab=t.0#heading=h.aowjzhahcgiq";
 
 const ACTION_DEFINITIONS = [
   { key: "attack", name: "Атака", section: "Действия" },
@@ -233,14 +237,17 @@ function buildActionSignature(entry) {
     name: entry.name,
     aliases: entry.aliases,
     section: entry.section,
-    description: entry.description
+    description: entry.description,
+    ...(WORLD_REACTIONS.has(entry.key) ? { activation: "reaction" } : {})
   });
 }
 
 function createActionSystem(entry) {
+  const description = toHtmlParagraphs(entry.description);
   return {
     description: {
-      value: toHtmlParagraphs(entry.description),
+      value: entry.key === "opportunity-attack" ? description.replace("Поднимается из положения ничком",
+        `<a href="${STAND_UP_URL}">Поднимается из положения ничком</a>`) : description,
       chat: ""
     },
     source: {
@@ -258,7 +265,15 @@ function createActionSystem(entry) {
       repeatable: false
     },
     properties: [],
-    activities: {},
+    activities: WORLD_REACTIONS.has(entry.key) ? {
+      [REACTION_ACTIVITY_ID]: {
+        _id: REACTION_ACTIVITY_ID, type: "utility", name: entry.name.replace(/\s*⚡$/u, ""),
+        activation: { type: "reaction", value: 1, override: true },
+        consumption: { spellSlot: false, targets: [] },
+        range: { units: "self", override: true },
+        target: { affects: { type: "self" }, override: true }
+      }
+    } : {},
     uses: {
       spent: 0,
       max: "",
@@ -430,6 +445,21 @@ async function ensureManagedIdentifiers(pack, documents) {
 }
 
 export class ActionsCompendiumService {
+  async syncWorldReactions(entries, iconLookup) {
+    if (!isActiveGmClient(game)) return;
+    if (this._worldReactionsSync) return this._worldReactionsSync;
+    const pending = (async () => {
+      const worldItems = game.items?.contents ?? [];
+      const additions = entries.filter(entry => WORLD_REACTIONS.has(entry.key)
+        && !worldItems.some(item => item.type === ACTION_ITEM_TYPE && item.system.identifier === entry.actionId))
+        .map(entry => createActionItemData(entry, new Map(), iconLookup));
+      if (additions.length) await Item.implementation.createDocuments(additions);
+    })();
+    this._worldReactionsSync = pending;
+    try { await pending; }
+    finally { this._worldReactionsSync = null; }
+  }
+
   async sync() {
     if (!game.user?.isGM || !isDnd5eWorld()) {
       return null;
@@ -441,6 +471,7 @@ export class ActionsCompendiumService {
     await deduplicateCompendiumFolders(pack, [ACTION_ROOT_FOLDER, "Действия", "Реакции"]);
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(ACTION_ICON_SEARCH_PATHS);
+    await this.syncWorldReactions(entries, iconLookup);
 
     if (!entries.length) {
       await ensureManagedIdentifiers(pack, documents);

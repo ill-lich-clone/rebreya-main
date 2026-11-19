@@ -8,7 +8,10 @@ test("combat hook registers Shield filter once and preserves all original hook a
   globalThis.game = {};
   globalThis.Hooks = { on: (name, fn) => { hooks.set(name, [...hooks.get(name) ?? [], fn]); } };
   try {
-    const api = { midiReactionAdapter: { filterReactions: (...args) => received.push(args) } };
+    const api = { midiReactionAdapter: {}, reactionQueueService: { dispatchMidi: (phase, ...args) => {
+      assert.equal(phase, "ReactionFilter");
+      received.push(args);
+    } } };
     registerCombatHooks(api); registerCombatHooks(api);
     assert.equal(hooks.get("midi-qol.ReactionFilter")?.length, 1);
     const args = [[], { workflow: {} }, "reaction", []];

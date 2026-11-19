@@ -119,6 +119,33 @@ test("late choice after ten seconds cannot apply and keeps a declined message", 
   assert.deepEqual(h.events.at(-1), ["update", "&lt;Страж&gt; не успел выбрать реакцию"]);
 });
 
+test("chat retry resumes the same pending trigger once and only for its owner", async () => {
+  const h = harness();
+  const gm = { id: "gm", active: true, isGM: true };
+  const player = { id: "owner", active: true };
+  const outsider = { id: "outsider", active: true };
+  const game = { user: gm, users: [gm, player, outsider], messages: h.messages };
+  h.queue._options.gameProvider = () => game;
+  h.queue._options.chatRetryMs = 10_000;
+  const messageClass = h.queue._options.chatMessageClass;
+  const create = messageClass.create.bind(messageClass);
+  messageClass.create = async data => { const message = await create(data); message.id = "retry"; return message; };
+  h.queue._options.actorResolver = () => ({ uuid: "Actor.npc", testUserPermission: user => user === player });
+  let calls = 0;
+  h.queue._options.promptCandidate = async () => ++calls === 1 ? { accepted: false, reason: "timeout" } : { accepted: true };
+  const pending = h.run();
+  for (let i = 0; i < 20 && h.messages[0]?.flags["rebreya-main"].reactionChoice.state !== "retry"; i++) await Promise.resolve();
+  assert.equal(h.messages[0].flags["rebreya-main"].reactionChoice.state, "retry");
+  assert.match(h.messages[0].content, /Выбрать реакцию/);
+  assert.equal(await h.queue.chooseFromChat("retry", "choose", outsider.id), false);
+  const clicks = await Promise.all([h.queue.chooseFromChat("retry", "choose", player.id),
+    h.queue.chooseFromChat("retry", "choose", player.id)]);
+  assert.deepEqual(clicks, [true, false]);
+  assert.equal((await pending).accepted.length, 1);
+  assert.equal(h.events.filter(([type]) => type === "consume").length, 1);
+  assert.equal(calls, 2);
+});
+
 test("no candidate and standalone non-reaction decisions never create chat", async () => {
   const h = harness();
   h.queue.registerType("reaction", { listCandidates: () => [] });

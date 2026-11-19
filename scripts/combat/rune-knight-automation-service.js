@@ -373,7 +373,8 @@ export class RuneKnightAutomationService {
       capabilityIndex.registerProvider(
         CLOUD_REACTION_KIND,
         ({ actor, token }) => this.#hitReactionCapabilitiesForActor(actor, token, "cloud"),
-        { providerId: CLOUD_PROVIDER_ID }
+        { providerId: CLOUD_PROVIDER_ID, ownsActivity: activity => automationId(activity?.item) === "cloud"
+          && firstActivityId(activity.item) === documentId(activity) }
       );
       capabilityIndex.registerProvider(
         RUNIC_SHIELD_REACTION_KIND,

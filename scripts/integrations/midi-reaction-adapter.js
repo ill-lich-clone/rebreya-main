@@ -1,12 +1,15 @@
 import { MODULE_ID } from "../constants.js";
-import { isShieldReactionItem, hasShieldEffect, MISSILE_REACTION_CONDITION } from "../data/shield-spell-item.js?v=1.5.59";
-import { CprShieldReactionAdapter } from "./cpr-shield-reaction-adapter.js?v=1.5.59";
+import { isShieldReactionItem, hasShieldEffect, dropLegacyShieldExpiry, MISSILE_REACTION_CONDITION } from "../data/shield-spell-item.js?v=1.5.102";
+import { CprShieldReactionAdapter } from "./cpr-shield-reaction-adapter.js?v=1.5.102";
 
 const WRAPPED = Symbol.for(`${MODULE_ID}.midiReactionAdapter`);
 const NONE = Object.freeze({ name: "None" });
 const MARKER = /<!--rm-reaction:([a-zA-Z0-9-]+)-->/;
 const TIMEOUT = 10_000;
 const isMagicMissile = item => item?.type === "spell" && item.system?.identifier === "magic-missile";
+const isParry = item => item?.type === "feat" && item.system?.identifier === "glossary-parry";
+const isManualReaction = item => item?.system?.identifier === "glossary-opportunity-attack";
+const isDefensiveItem = item => isShieldReactionItem(item) || isParry(item);
 
 // The socketlib function map and MIDI dialog data are an isolated, version-sensitive
 // boundary. Replacing MidiQOL.reactionDialog alone does not intercept lexical calls.
@@ -16,6 +19,10 @@ export class MidiReactionAdapter {
     this._options = options;
     this._sessions = new Map();
     this._shieldApplications = new WeakMap();
+    this.moduleApi.reactionQueueService?.registerType?.("midi-native", {
+      midi: { ReactionFilter: (...args) => this.filterReactions(...args),
+        RollComplete: workflow => this.completeDefensiveReaction(workflow) }
+    });
   }
 
   now() { return this._options.now?.() ?? Date.now(); }
@@ -95,8 +102,21 @@ export class MidiReactionAdapter {
     return Number.isFinite(effectiveAC) && effectiveAC <= context.attackTotal && context.attackTotal < effectiveAC + 5;
   }
 
+  canOfferParry(activity, context) {
+    const actor = activity?.actor;
+    const combat = this.moduleApi.combatAttackService;
+    return Boolean(isParry(activity?.item) && actor && context?.parry && context.actorUuid === actor.uuid
+      && combat?.canUseReaction?.(actor)?.canUse && combat.getParryBonus?.(actor) > 0 && activity.canUse !== false);
+  }
+
   async filterReactions(reactions, options = {}, triggerType, reactionActivityList) {
-    const managed = reactions.filter(activity => isShieldReactionItem(activity?.item));
+    const registry = this.moduleApi.reactionCapabilityIndex;
+    if (registry?.ownsActivity) {
+      const owned = new Set(reactions.filter(activity => registry.ownsActivity(activity)).map(activity => activity.uuid));
+      for (let index = reactions.length - 1; index >= 0; index--) if (owned.has(reactions[index].uuid)) reactions.splice(index, 1);
+      for (let index = reactionActivityList.length - 1; index >= 0; index--) if (owned.has(reactionActivityList[index])) reactionActivityList.splice(index, 1);
+    }
+    const managed = reactions.filter(activity => isDefensiveItem(activity?.item) || isManualReaction(activity?.item));
     if (!managed.length) return;
     const allowed = new Set();
     const workflow = options.workflow;
@@ -104,6 +124,7 @@ export class MidiReactionAdapter {
     if (["reaction", "reactionhit"].includes(triggerType) || missile || (!workflow && triggerType === "reactiondamage")) {
       options.rebreyaShieldReaction ??= {};
       for (const activity of managed) {
+        if (isManualReaction(activity.item)) continue;
         if (!workflow) { allowed.add(activity.uuid); continue; } // The receiving choose() already checked its exact Token.
         for (const target of workflow.targets ?? []) {
           if (target.actor?.uuid !== activity.actor?.uuid) continue;
@@ -111,6 +132,11 @@ export class MidiReactionAdapter {
             ? { tokenUuid: target.document?.uuid ?? target.uuid, actorUuid: target.actor.uuid, magicMissile: true }
             : await this.getShieldAttackContext(workflow, target);
           if (!context) continue;
+          if (isParry(activity.item)) {
+            const midi = this._options.midiProvider?.() ?? globalThis.MidiQOL;
+            context.parry = !missile && Boolean(workflow.token && workflow.activity.attack?.type?.value === "melee"
+              && midi?.canSee?.(target.object ?? target, workflow.token.object ?? workflow.token));
+          }
           context.conditions = {};
           if (activity.reactionCondition) {
             const midi = this._options.midiProvider?.() ?? globalThis.MidiQOL;
@@ -119,8 +145,9 @@ export class MidiReactionAdapter {
           }
           const previous = options.rebreyaShieldReaction[context.tokenUuid];
           context.conditions = { ...previous?.conditions, ...context.conditions };
+          context.parry ??= previous?.parry;
           options.rebreyaShieldReaction[context.tokenUuid] = context;
-          if (await this.canOfferShield(activity, context)) allowed.add(activity.uuid);
+          if (isParry(activity.item) ? this.canOfferParry(activity, context) : await this.canOfferShield(activity, context)) allowed.add(activity.uuid);
         }
       }
     }
@@ -180,6 +207,24 @@ export class MidiReactionAdapter {
     }
   }
 
+  async completeDefensiveReaction(workflow) {
+    if (!isParry(workflow?.activity?.item)) {
+      await this.applyShieldEffect(workflow);
+      return;
+    }
+    const session = this._sessions.get(workflow.workflowOptions?.rebreyaShieldSessionId);
+    const { activity, actor } = workflow;
+    if (workflow.aborted || !workflow.itemCardUuid || session?.parryActivity?.uuid !== activity.uuid || session.actor.uuid !== actor?.uuid) return;
+    session.parryResult = this.parryResult(activity, actor);
+  }
+
+  parryResult(activity, actor) {
+    const ac = Number(actor.system?.attributes?.ac?.value);
+    const bonus = this.moduleApi.combatAttackService?.getParryBonus?.(actor) ?? 0;
+    if (!Number.isFinite(ac) || !(bonus > 0)) return;
+    return { ac: ac + bonus, uuid: activity.uuid, name: activity.item.name, itemName: activity.item.name, itemUuid: activity.item.uuid };
+  }
+
   async _applyShieldBarrier(actor, activity, itemCardUuid) {
     if (hasShieldEffect(actor)) return true;
     for (const profile of activity.effects ?? []) {
@@ -195,6 +240,7 @@ export class MidiReactionAdapter {
       data.flags ??= {};
       (data.flags[MODULE_ID] ??= {}).shieldReaction = { version: 1 };
       if (data.system?.changes) {
+        dropLegacyShieldExpiry(data);
         data.duration = { ...data.duration, value: null, expiry: "targetStart", expired: false };
         data.system.origin = { activity: activity.uuid, message: itemCardUuid };
         const Effect = globalThis.CONFIG?.ActiveEffect?.documentClass;
@@ -250,11 +296,12 @@ export class MidiReactionAdapter {
       const activity = await this.resolve(uuid);
       // Only module-owned activities are removed; all other MIDI filtering and
       // native resource/formula logic remains in the captured original handler.
-      if (activity?.actor?.uuid !== actor.uuid || this.moduleApi.reactionCapabilityIndex?.ownsActivity?.(activity)) continue;
-      if (isShieldReactionItem(activity.item)) {
+      if (activity?.actor?.uuid !== actor.uuid || isManualReaction(activity.item)
+        || this.moduleApi.reactionCapabilityIndex?.ownsActivity?.(activity)) continue;
+      if (isDefensiveItem(activity.item)) {
         const context = data.options?.rebreyaShieldReaction?.[data.tokenUuid];
         const matched = context?.magicMissile ? data.triggerType === "reactiondamage" : ["reaction", "reactionhit"].includes(data.triggerType);
-        if (!matched || !await this.canOfferShield(activity, context)) continue;
+        if (!matched || !(isParry(activity.item) ? this.canOfferParry(activity, context) : await this.canOfferShield(activity, context))) continue;
       }
       activities.push(uuid);
     }
@@ -265,9 +312,10 @@ export class MidiReactionAdapter {
     const workflowId = String(data.options?.workflowId ?? data.options?.workflowOptions?.workflowId ?? "");
     const fallbackId = workflowId || (this._options.idFactory?.() ?? globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
     const triggerId = [fallbackId, data.tokenUuid, data.triggerType,
-      data.options?.reactionTriggerId ?? "", activities.join(",")].join(":");
+      data.options?.reactionTriggerId ?? "", [...activities].sort().join(",")].join(":");
     return this.moduleApi.reactionQueueService.resolveManagedReaction({
       kind: "midi-native", triggerId, triggerType: data.triggerType,
+      chatRetry: Boolean(data.options?.reactionRequest && this._midi?.extendReactionTimeout),
       candidate: { actorUuid: actor.uuid, tokenUuid: data.tokenUuid, activityUuids: activities }
     }, async controls => {
       const id = String(controls.sessionId).replaceAll(/[^a-zA-Z0-9-]/g, "");
@@ -296,13 +344,23 @@ export class MidiReactionAdapter {
         if (remaining <= 0) return { ...NONE };
         session.nativeOptions = { ...data.options, timeout: remaining / 1000,
           ...(patchedMidi && optional.length ? { rebreyaBeforeForcedAc: commitForcedAc } : {}) };
+        if (controls.chatRetryMs) extend();
         const result = await this._original({
           ...data,
           reactionActivityList: controls.activityUuids ?? activities,
           reactionFlavor: `${data.reactionFlavor ?? ""}<!--rm-reaction:${id}-->`,
           options: session.nativeOptions
         });
-        if (session.shieldActivity && !hasShieldEffect(actor)) return { ...NONE };
+        if (session.shieldActivity) {
+          const current = (await this.resolve(data.tokenUuid))?.actor ?? actor;
+          if (!hasShieldEffect(current)) return { ...NONE };
+        }
+        if (session.parryActivity) {
+          const current = (await this.resolve(data.tokenUuid))?.actor ?? actor;
+          if (session.parryResult) return session.parryResult;
+          if (result?.uuid === session.parryActivity.uuid) return this.parryResult(session.parryActivity, current) ?? { ...NONE };
+          return { ...NONE };
+        }
         return session.shieldResult ?? result;
       }
       finally {
@@ -352,7 +410,8 @@ export class MidiReactionAdapter {
         return;
       }
       const selected = !optional && await adapter.resolve(activityUuid);
-      if (isShieldReactionItem(selected?.item) && !await adapter.canOfferShield(selected, session.shieldContext)) {
+      if ((isShieldReactionItem(selected?.item) && !await adapter.canOfferShield(selected, session.shieldContext))
+        || (isParry(selected?.item) && !adapter.canOfferParry(selected, session.shieldContext))) {
         dialog.data.completed = false;
         await dialog.close();
         return;
@@ -362,8 +421,9 @@ export class MidiReactionAdapter {
         await dialog.close();
         return;
       }
-      if (isShieldReactionItem(selected?.item)) {
-        session.shieldActivity = selected;
+      if (isDefensiveItem(selected?.item)) {
+        if (isParry(selected.item)) session.parryActivity = selected;
+        else session.shieldActivity = selected;
         session.nativeOptions.configureDialog = false;
         delete session.nativeOptions.targetsToUse;
         session.nativeOptions.targetUuids = [session.tokenUuid];

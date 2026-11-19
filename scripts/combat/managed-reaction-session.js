@@ -56,6 +56,7 @@ export class ManagedReactionSessions {
     let resolveTimeout;
     const timeout = new Promise(resolve => { resolveTimeout = resolve; });
     const choiceDeadline = this.now() + permission.remainingMs;
+    const chatRetryMs = Number(permission.chatRetryMs) || 0;
     const setDeadline = (deadline, expiredReason) => {
       this.clear(timeoutId);
       timeoutId = this.timer(() => {
@@ -64,12 +65,13 @@ export class ManagedReactionSessions {
         resolveTimeout({ ...NONE });
       }, Math.max(0, deadline - this.now()));
     };
-    setDeadline(choiceDeadline, "timeout");
+    const initialDeadline = choiceDeadline + (chatRetryMs ? chatRetryMs + TIMEOUT : 0);
+    setDeadline(initialDeadline, "timeout");
     const commit = (choice = {}) => {
       if (controller.signal.aborted) return Promise.resolve(false);
       if (committed) return Promise.resolve(true);
       if (committing) return committing;
-      if (this.now() >= choiceDeadline) return Promise.resolve(false);
+      if (this.now() >= initialDeadline) return Promise.resolve(false);
       // After the click, the GM validates its own deadline and persists the reservation.
       setDeadline(this.now() + TIMEOUT, "error");
       committing = this.rpc("commit", { sessionId, activityUuid: choice.activityUuid }).then(answer => {
@@ -84,9 +86,19 @@ export class ManagedReactionSessions {
       return committing;
     };
     try {
+      const attempt = deadline => execute({ signal: controller.signal, commit, sessionId, choiceDeadline: deadline, chatRetryMs,
+        activityUuids: permission.activityUuids, reportClose: () => { if (!committing && reason === "declined") reason = "closed"; } });
       result = await Promise.race([
-        Promise.resolve().then(() => execute({ signal: controller.signal, commit, sessionId, choiceDeadline,
-          activityUuids: permission.activityUuids, reportClose: () => { if (!committing && reason === "declined") reason = "closed"; } })),
+        Promise.resolve().then(async () => {
+          const first = await attempt(choiceDeadline);
+          if (!chatRetryMs || committed || first?.uuid || reason !== "declined" || this.now() < choiceDeadline - 25) return first;
+          const next = await this.rpc("retry", { sessionId });
+          if (!next?.allowed || controller.signal.aborted) {
+            reason = next?.skipped ? "declined" : "timeout";
+            return first;
+          }
+          return attempt(this.now() + next.remainingMs);
+        }),
         timeout
       ]);
       if (!committed && result?.uuid) {
@@ -119,7 +131,8 @@ export class ManagedReactionSessions {
     if (!game?.socket?.emit || this.pending.size >= LIMIT) return null;
     const requestId = this.id();
     return new Promise(resolve => {
-      const timer = this.timer(() => { this.pending.delete(requestId); resolve(null); }, TIMEOUT);
+      const timer = this.timer(() => { this.pending.delete(requestId); resolve(null); },
+        TIMEOUT + (op === "retry" ? this.options.chatRetryMs ?? 0 : 0));
       this.pending.set(requestId, { resolve, timer, forUserId });
       try { game.socket.emit(`module.${MODULE_ID}`, { type: EVENT, op, ...payload, requestId, senderId, forUserId }); }
       catch { this.clear(timer); this.pending.delete(requestId); resolve(null); }
@@ -178,7 +191,10 @@ export class ManagedReactionSessions {
       if (requiredUses > 0 && ledger?.canUseReaction?.(actor)?.canUse === false) return { allowed: false };
       const key = `${request.triggerId}:${actor.uuid}`;
       if (this.entries.has(data.sessionId) || [...this.entries.values()].some(entry => entry.key === key)) return { allowed: false };
-      const entry = { key, actor, senderId, state: "choosing", expiresAt: this.now() + TIMEOUT,
+      const chatRetryMs = request.chatRetry === false ? 0 : this.options.chatRetryMs ?? 0;
+      const choiceDeadline = this.now() + TIMEOUT;
+      const entry = { key, actor, senderId, tokenUuid: request.candidate.tokenUuid, state: "choosing", choiceDeadline, chatRetryMs,
+        expiresAt: choiceDeadline + (chatRetryMs ? chatRetryMs + TIMEOUT : 0),
         costs, requiredUses, remaining: ledger?.getReactionState?.(actor)?.usesRemaining, midiCount: reactionCount(actor) };
       this.entries.set(data.sessionId, entry);
       entry.messageReady = this.queue._beginReactionMessage({ ...request, candidate: { ...request.candidate, actor }, expiresAt: entry.expiresAt, managed: {
@@ -187,10 +203,21 @@ export class ManagedReactionSessions {
         remaining: entry.remaining, midiCount: entry.midiCount
       } }).then(message => { entry.message = message; return message; });
       this.watch(entry, "choosing", "timeout");
-      return { allowed: true, remainingMs: Math.max(0, entry.expiresAt - this.now()), activityUuids };
+      return { allowed: true, remainingMs: Math.max(0, choiceDeadline - this.now()), activityUuids, chatRetryMs };
     }
     const entry = this.entries.get(data.sessionId) ?? await this.restore(data.sessionId);
     if (!entry || entry.senderId !== senderId) return { allowed: false };
+    if (op === "retry") {
+      const remainingMs = Math.min(entry.chatRetryMs ?? 0, entry.expiresAt - this.now() - TIMEOUT);
+      if (entry.state !== "choosing" || entry.retryClaimed || !(this.now() >= entry.choiceDeadline - 100) || remainingMs <= 0) return { allowed: false };
+      entry.retryClaimed = true;
+      const message = await entry.messageReady;
+      const retry = await this.queue.waitForChatDecision(message, {
+        candidate: { actorUuid: entry.actor.uuid, tokenUuid: entry.tokenUuid }, remainingMs
+      });
+      return { allowed: retry?.action === "choose" && entry.state === "choosing",
+        skipped: retry?.action === "skip", remainingMs: Math.min(TIMEOUT, entry.expiresAt - this.now()) };
+    }
     if (op === "commit") {
       if (!user.isGM && entry.actor.testUserPermission?.(user, "OWNER") !== true) return { allowed: false };
       if (entry.state === "applying") {
@@ -290,7 +317,13 @@ export class ManagedReactionSessions {
     for (const message of values(this.game()?.messages)) {
       const choice = message.flags?.[MODULE_ID]?.reactionChoice;
       const managed = choice?.managed;
-      if (!choice || !["choosing", "applying"].includes(choice.state)) continue;
+      if (!choice || !["choosing", "applying", "retry"].includes(choice.state)) continue;
+      if (choice.state === "retry") {
+        if (choice.expiresAt <= now && !this.queue._chatDecisions.has(message.id)) {
+          await this.queue._finishReactionMessage(message, false, "timeout");
+        }
+        continue;
+      }
       if (choice.state === "applying" && !managed) continue;
       const entry = managed && this.entries.get(managed.sessionId);
       const state = entry?.state ?? choice.state;

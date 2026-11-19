@@ -5,7 +5,7 @@ import { activityUtils } from "../../../lib/utilities/activityUtils.js";
 import { itemUtils } from "../../../lib/utilities/itemUtils.js";
 import { animationUtils } from "../../../lib/utilities/animationUtils.js";
 import { errors } from "../../../lib/errors.js";
-import { hasShieldEffect } from "../../../../../../data/shield-spell-item.js?v=1.5.59";
+import { hasShieldEffect } from "../../../../../../data/shield-spell-item.js?v=1.5.102";
 export async function use({workflow}) {
     if (!workflow.targets.size) return;
     let maxMissiles = 2 + workflowUtils.getCastLevel(workflow);

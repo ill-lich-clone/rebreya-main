@@ -49,10 +49,10 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.101");
+  assert.equal(manifest.version, "1.5.102");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.match(mainSource, /application\/equipment-size-service\.js\?v=1\.5\.63/u);
-  assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.101/u);
+  assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.102/u);
   assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.98/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.94/u);
@@ -68,7 +68,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    const cacheVersion = ["feats-compendium", "transport-compendium"].includes(name) ? "1\\.5\\.61"
+    const cacheVersion = ["feats-compendium", "spells-compendium", "actions-compendium"].includes(name) ? "1\\.5\\.102"
+      : name === "transport-compendium" ? "1\\.5\\.61"
       : ["gear-compendium", "magic-items-compendium"].includes(name) ? "1\\.5\\.95"
         : name === "classes-compendium" ? "1\\.5\\.70"
         : name === "materials-compendium" ? "1\\.5\\.72"

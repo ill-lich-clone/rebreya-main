@@ -53,7 +53,7 @@ export class ReactionCapabilityIndex {
     this._built = false;
   }
 
-  registerProvider(kind, resolver, { providerId = kind } = {}) {
+  registerProvider(kind, resolver, { providerId = kind, ownsActivity } = {}) {
     const normalizedKind = cleanString(kind);
     if (!normalizedKind || typeof resolver !== "function") {
       throw new TypeError("Reaction capability provider requires a kind and resolver");
@@ -61,7 +61,8 @@ export class ReactionCapabilityIndex {
 
     this._providers.set(normalizedKind, {
       providerId: cleanString(providerId) || normalizedKind,
-      resolver
+      resolver,
+      ownsActivity
     });
     this._built = false;
     return this;
@@ -82,11 +83,12 @@ export class ReactionCapabilityIndex {
 
   ownsActivity(activity) {
     this._ensureBuilt();
-    for (const entries of this._entriesByKind.values()) {
-      for (const entry of entries.values()) {
-        if (entry.actorUuid === activity?.actor?.uuid && entry.itemUuid === activity?.item?.uuid
-          && (!entry.activityId || entry.activityId === String(activity?.id ?? activity?._id ?? ""))) return true;
-      }
+    for (const provider of this._providers.values()) if (provider.ownsActivity?.(activity)) return true;
+    const activityId = String(activity?.id ?? activity?._id ?? "");
+    for (const key of this._keysByActor.get(activity?.actor?.uuid) ?? []) {
+      const separator = key.indexOf("\u0000");
+      const entry = this._entriesByKind.get(key.slice(0, separator))?.get(key.slice(separator + 1));
+      if (entry?.itemUuid && entry.itemUuid === activity?.item?.uuid && (!entry.activityId || entry.activityId === activityId)) return true;
     }
     return false;
   }

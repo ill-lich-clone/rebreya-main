@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { ManagedReactionSessions } from "./managed-reaction-session.js?v=1.5.99";
+import { ManagedReactionSessions } from "./managed-reaction-session.js?v=1.5.102";
 
 export const REACTION_PROMPT_TIMEOUT_MS = 10_000;
 export const REACTION_RESULT_TTL_MS = 60_000;
@@ -10,6 +10,7 @@ export const REACTION_TRIGGER_EVENT = `${MODULE_ID}.reaction.trigger`;
 export const REACTION_TRIGGER_RESULT_EVENT = `${MODULE_ID}.reaction.triggerResult`;
 export const REACTION_PROMPT_EVENT = `${MODULE_ID}.reaction.prompt`;
 export const REACTION_PROMPT_RESULT_EVENT = `${MODULE_ID}.reaction.promptResult`;
+const REACTION_CHAT_DECISION_EVENT = `${MODULE_ID}.reaction.chatDecision`;
 export const REACTION_TRIGGER_REQUEST_TIMEOUT_MS = 15 * 60_000;
 export const MAX_PENDING_REACTION_REQUESTS = 128;
 
@@ -69,13 +70,16 @@ const reactionFailureText = {
 };
 
 function reactionChatContent(actorName, state, reason) {
-  const declined = state === "declined";
+  const declined = state === "declined" || state === "retry";
   const text = `${escapeHtml(actorName)} ${declined ? reactionFailureText[reason] : "выбирает реакцию"}`;
   const icon = declined ? "fa-ban" : "fa-hourglass-half";
   return `<div class="rm-reaction-chat rm-reaction-chat--${declined ? "declined" : "choosing"}">`
     + `<span class="rm-reaction-chat__icon" aria-hidden="true"><i class="fa-solid ${icon}"></i></span>`
     + `<div class="rm-reaction-chat__body"><span class="rm-reaction-chat__label">Реакция</span>`
-    + `<p class="rm-reaction-chat__text">${text}</p></div></div>`;
+    + `<p class="rm-reaction-chat__text">${text}</p>`
+    + (state === "retry" ? '<button type="button" data-rm-reaction-decision="choose">Выбрать реакцию</button>'
+      + '<button type="button" data-rm-reaction-decision="skip">Пропустить</button>' : "")
+    + "</div></div>";
 }
 
 function promptContent(prompt) {
@@ -177,6 +181,7 @@ export class ReactionQueueService {
     this._completed = new Map();
     this._pendingPromptRequests = new Map();
     this._pendingTriggerRequests = new Map();
+    this._chatDecisions = new Map();
     this._managed = new ManagedReactionSessions(this);
   }
 
@@ -187,6 +192,79 @@ export class ReactionQueueService {
 
   resolveManagedReaction(request, execute) {
     return this._managed.resolve(request, execute);
+  }
+
+  async waitForChatDecision(message, { candidate, remainingMs = this._options.chatRetryMs } = {}) {
+    if (!message?.id || !candidate?.actorUuid || !(remainingMs > 0) || this._chatDecisions.has(message.id)
+      || this._chatDecisions.size >= MAX_PENDING_REACTION_REQUESTS) return null;
+    const clock = this._options.now ?? Date.now;
+    const setTimer = this._options.setTimeoutFn ?? globalThis.setTimeout;
+    const clearTimer = this._options.clearTimeoutFn ?? globalThis.clearTimeout;
+    const expiresAt = clock() + remainingMs;
+    const choice = message.flags?.[MODULE_ID]?.reactionChoice ?? {};
+    let finish;
+    const decision = new Promise(resolve => { finish = resolve; });
+    const entry = { candidate, expiresAt, finish };
+    this._chatDecisions.set(message.id, entry);
+    const timeout = setTimer(() => finish(null), remainingMs);
+    try {
+      await message.update({
+        content: reactionChatContent(choice.actorName || "Персонаж", "retry", "timeout"),
+        flags: { [MODULE_ID]: { reactionChoice: { ...choice, state: "retry", reason: "timeout", expiresAt } } }
+      });
+      const result = await decision;
+      if (result?.action === "choose") {
+        const current = message.flags?.[MODULE_ID]?.reactionChoice ?? choice;
+        await message.update({
+          content: reactionChatContent(current.actorName || "Персонаж", "choosing"),
+          flags: { [MODULE_ID]: { reactionChoice: { ...current, state: "choosing",
+            expiresAt: clock() + REACTION_PROMPT_TIMEOUT_MS } } }
+        });
+      }
+      return result;
+    }
+    catch (error) {
+      this._options.logger?.warn?.("Reaction chat retry unavailable", error);
+      return null;
+    }
+    finally {
+      clearTimer(timeout);
+      if (this._chatDecisions.get(message.id) === entry) this._chatDecisions.delete(message.id);
+    }
+  }
+
+  async chooseFromChat(messageId, action, senderId) {
+    if (!["choose", "skip"].includes(action) || !this._isCoordinator()) return false;
+    const entry = this._chatDecisions.get(messageId);
+    const game = this._options.gameProvider?.() ?? globalThis.game;
+    const user = findUser(game, senderId);
+    if (!entry || !user?.active) return false;
+    const target = await (this._options.actorResolver ?? globalThis.fromUuid)?.(entry.candidate.tokenUuid || entry.candidate.actorUuid);
+    const actor = target?.actor ?? target;
+    if (actor?.uuid !== entry.candidate.actorUuid || (!user.isGM && actor.testUserPermission?.(user, "OWNER") !== true)
+      || this._chatDecisions.get(messageId) !== entry || entry.expiresAt <= (this._options.now ?? Date.now)()) return false;
+    this._chatDecisions.delete(messageId);
+    entry.finish({ action, forUserId: user.id });
+    return true;
+  }
+
+  renderChatDecision(message, html) {
+    const choice = message?.flags?.[MODULE_ID]?.reactionChoice;
+    if (choice?.state !== "retry") return;
+    const game = this._options.gameProvider?.() ?? globalThis.game;
+    const actor = globalThis.fromUuidSync?.(choice.candidateActorUuid, { strict: false });
+    for (const button of html?.querySelectorAll?.("[data-rm-reaction-decision]") ?? []) {
+      if (!game?.user?.isGM && actor?.testUserPermission?.(game?.user, "OWNER") !== true) {
+        button.remove();
+        continue;
+      }
+      button.addEventListener("click", () => {
+        const action = button.dataset.rmReactionDecision;
+        if (this._isCoordinator()) void this.chooseFromChat(message.id, action, game.user.id);
+        else game?.socket?.emit?.(REACTION_SOCKET_CHANNEL, { type: REACTION_CHAT_DECISION_EVENT,
+          messageId: message.id, action, forUserId: getActiveGm(game)?.id });
+      });
+    }
   }
 
   async _beginReactionMessage({ triggerId, candidate = {}, kind, managed, expiresAt }) {
@@ -248,6 +326,13 @@ export class ReactionQueueService {
     }
     this._providers.set(normalizedKind, provider);
     return this;
+  }
+
+  async dispatchMidi(phase, ...args) {
+    for (const provider of this._providers.values()) {
+      const handler = provider.midi?.[phase];
+      if (handler) await handler(...args);
+    }
   }
 
   resolve(request = {}) {
@@ -335,13 +420,22 @@ export class ReactionQueueService {
       let applied = false;
       let reason = "error";
       try {
-        const choice = await this._promptWithTimeout({
+        const promptContext = {
           candidate,
           context,
           kind,
           prompt,
           triggerId
-        });
+        };
+        let choice = await this._promptWithTimeout(promptContext);
+        if (choice?.reason === "timeout") {
+          const retry = await this.waitForChatDecision(message, { candidate });
+          if (retry?.action === "skip") choice = { accepted: false, reason: "declined" };
+          if (retry?.action === "choose" && await provider.isTriggerValid?.(context) !== false
+            && await provider.revalidateCandidate?.(candidate, context) !== false && await this._hasReactionCapacity(candidate, provider)) {
+            choice = await this._promptWithTimeout({ ...promptContext, forUserId: retry.forUserId });
+          }
+        }
         reason = choice?.reason ?? "unapplied";
         if (choice?.accepted === true) {
           const transaction = await this._executeAccepted({
@@ -446,6 +540,13 @@ export class ReactionQueueService {
 
   async handleSocketMessage(message, transportSenderId = "") {
     if (await this._managed.handle(message, transportSenderId)) return true;
+    if (message?.type === REACTION_CHAT_DECISION_EVENT) {
+      const game = this._options.gameProvider?.() ?? globalThis.game;
+      if (transportSenderId && message.forUserId === game?.user?.id) {
+        await this.chooseFromChat(message.messageId, message.action, transportSenderId);
+      }
+      return true;
+    }
     if (message?.type === REACTION_TRIGGER_EVENT) {
       await this._handleTriggerRequest(message, transportSenderId);
       return true;
@@ -840,6 +941,8 @@ export class ReactionQueueService {
 
   destroy() {
     this._managed.destroy();
+    for (const entry of this._chatDecisions.values()) entry.finish(null);
+    this._chatDecisions.clear();
     for (const [requestId, entry] of this._pendingPromptRequests) {
       this._pendingPromptRequests.delete(requestId);
       entry.signal?.removeEventListener?.("abort", entry.abortHandler);

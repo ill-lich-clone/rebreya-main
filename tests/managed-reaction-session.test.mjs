@@ -52,6 +52,32 @@ test("the GM accepts an inherited reaction type and skips only an invalid activi
   assert.equal(result.uuid, "cast");
 });
 
+test("native choice can reopen from chat and commit on the original session", async () => {
+  const h = harness();
+  h.queue._options.chatRetryMs = 15_000;
+  const create = h.queue._options.chatMessageClass.create;
+  h.queue._options.chatMessageClass.create = async data => Object.assign(await create(data), { id: "native-retry" });
+  const attempts = [];
+  const pending = h.queue.resolveManagedReaction(h.request, async ({ commit, sessionId, choiceDeadline }) => {
+    attempts.push(sessionId);
+    if (attempts.length === 1) {
+      assert.equal(choiceDeadline, 10_100);
+      h.expire();
+      return { name: "None" };
+    }
+    assert.equal(await commit(), true);
+    h.actor.flags["midi-qol"] = { actions: { reactionsUsed: 1 } };
+    return { name: "Щит", uuid: "Activity.shield" };
+  });
+  for (let i = 0; i < 30 && h.game.messages[0]?.flags["rebreya-main"].reactionChoice.state !== "retry"; i++) await Promise.resolve();
+  assert.equal(h.game.messages[0].flags["rebreya-main"].reactionChoice.state, "retry");
+  assert.equal(await h.queue.chooseFromChat("native-retry", "choose", h.game.user.id), true);
+  assert.deepEqual(await pending, { name: "Щит", uuid: "Activity.shield" });
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0], attempts[1]);
+  assert.equal(h.events.filter(event => event === "consume").length, 1);
+});
+
 test("Foundry chat normalization cannot invalidate an offered Shield activity UUID", async () => {
   const h = harness();
   const uuid = "Scene.test.Token.lich.Actor.lich.Item.shield.Activity.cast";

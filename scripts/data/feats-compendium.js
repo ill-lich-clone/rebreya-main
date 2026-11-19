@@ -19,7 +19,7 @@ import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildSlug } from "./item-classification.js?v=1.5.29";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
-import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.4.317";
+import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.5.102";
 import { loadGlossaryReferenceDefinitions } from "./glossary-compendium.js?v=1.4.317";
 import { buildCompendiumItemReferenceIndex } from "./compendium-item-reference-index.js?v=1.4.317";
 import { linkFeatDescriptionHtml } from "./feat-reference-linker.js?v=1.4.317";

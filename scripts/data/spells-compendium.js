@@ -5,7 +5,7 @@ import {
 } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildCounterspellActivity } from "./counterspell-activity.js";
-import { buildShieldSpellItem } from "./shield-spell-item.js?v=1.5.59";
+import { buildShieldSpellItem } from "./shield-spell-item.js?v=1.5.102";
 import { buildAntagonizeSpellItem } from "./antagonize-spell-item.js?v=1.5.59";
 import { ensurePackSidebarFolder } from "./compendium-utils.js?v=1.4.327";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";

@@ -3,7 +3,7 @@ import { canUseCraftedPotion } from "../data/alchemy-crafting-rules.js?v=1.5.72"
 import { hasGroupedCombatPhases } from "../integrations/grouped-combat-effects.js?v=1.5.87";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { registerGrappleHooks } from "./grapple-hooks.js?v=1.5.81";
-import { expireV13ShieldAtTurnStart } from "../data/shield-spell-item.js?v=1.5.59";
+import { expireV13ShieldAtTurnStart, normalizeAppliedShield } from "../data/shield-spell-item.js?v=1.5.102";
 import { ignoreProneFireDisadvantage } from "./prone-fire.js?v=1.5.61";
 import { canApplyFirearmTuning, allowMagicalFirearmTuning, startTuningForAreaFire } from "./firearm-tuning.js?v=1.5.61";
 
@@ -185,8 +185,7 @@ export function registerCombatHooks(moduleApi) {
 
   if (moduleApi.midiReactionAdapter) {
     Hooks.on("midi-qol.midiReady", () => moduleApi.midiReactionAdapter.initialize());
-    Hooks.on("midi-qol.ReactionFilter", (...args) => moduleApi.midiReactionAdapter.filterReactions(...args));
-    Hooks.on("midi-qol.RollComplete", workflow => moduleApi.midiReactionAdapter.applyShieldEffect?.(workflow));
+    if (globalThis.game?.release?.generation >= 14) Hooks.on("preCreateActiveEffect", normalizeAppliedShield);
     Hooks.on("midi-qol.preDamageRollComplete", workflow => moduleApi.midiReactionAdapter.prepareMagicMissileReactions(workflow));
     Hooks.on("dnd5e.calculateDamage", (actor, damages, options) => moduleApi.midiReactionAdapter.applyMagicMissileShield(actor, damages, options));
     if (globalThis.game?.release?.generation === 13) {
@@ -199,6 +198,7 @@ export function registerCombatHooks(moduleApi) {
   }
   if (moduleApi.reactionQueueService) {
     Hooks.on("userConnected", (user, connected) => moduleApi.reactionQueueService.recoverExpiredReactionMessages(connected === false ? user.id : undefined));
+    Hooks.on("renderChatMessageHTML", (message, html) => moduleApi.reactionQueueService.renderChatDecision?.(message, html));
   }
 
   if (hasAlchemyBombService) {
@@ -712,9 +712,13 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("combatTurnChange", advanceSorcererCooldowns);
   }
 
+  if (moduleApi.reactionQueueService) {
+    for (const phase of ["ReactionFilter", "AttackRollComplete", "preTargetDamageApplication", "RollComplete"]) {
+      Hooks.on(`midi-qol.${phase}`, (...args) => moduleApi.reactionQueueService.dispatchMidi?.(phase, ...args));
+    }
+  }
+
   if (hasAttackService) {
-    Hooks.on("midi-qol.AttackRollComplete", workflow => moduleApi.combatAttackService.applyMidiSentinel?.(workflow));
-    Hooks.on("midi-qol.preTargetDamageApplication", (token, context) => moduleApi.combatAttackService.applyMidiInterception?.(token, context));
     for(const event of ["createChatMessage","updateChatMessage"])Hooks.on(event,message=>{
       moduleApi.combatAttackService.handleWeaponModAttackMessage?.(message)?.catch(error=>{
         console.error(`${MODULE_ID} | Weapon mod target resolution failed.`,error);

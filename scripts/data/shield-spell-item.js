@@ -21,6 +21,33 @@ export function hasShieldEffect(actor) {
         || effect.flags?.[MODULE_ID]?.shieldReaction?.version === 1));
 }
 
+export function dropLegacyShieldExpiry(data) {
+  const special = data.flags?.dae?.specialDuration;
+  if (Array.isArray(special) && special.includes("turnStartSource")) {
+    data.flags.dae.specialDuration = special.filter(expiry => expiry !== "turnStartSource");
+  }
+}
+
+export function normalizeAppliedShield(effect) {
+  const actor = effect?.parent;
+  if (actor?.documentName !== "Actor") return;
+  const data = effect._source ?? effect.toObject();
+  const flags = data.flags;
+  if (!(flags?.[MODULE_ID]?.shieldReaction?.version === 1 || flags?.["chris-premades"]?.info?.identifier === "shield"
+    || flags?.cat?.identifier === "shield")) return;
+  const origin = data.system?.origin;
+  const source = origin?.actor ?? origin?.item ?? origin?.activity ?? data.origin;
+  if (!(source === actor.uuid || source?.startsWith?.(actor.uuid + "."))) return;
+  if (!data.system?.changes?.some(change => change.key === "system.attributes.ac.bonus" && Number(change.value) === 5)) return;
+  if (!(data.duration?.expiry === "sourceStart" || flags?.dae?.specialDuration?.includes("turnStartSource"))) return;
+  const special = flags?.dae?.specialDuration;
+  effect.updateSource({
+    "duration.expiry": "targetStart",
+    "duration.value": null,
+    ...(Array.isArray(special) ? { "flags.dae.specialDuration": special.filter(expiry => expiry !== "turnStartSource") } : {})
+  });
+}
+
 export async function expireV13ShieldAtTurnStart(actor) {
   const effects = Array.from(actor?.effects?.contents ?? actor?.effects?.values?.() ?? []);
   const ids = effects.filter(effect => effect.flags?.[MODULE_ID]?.shieldReaction?.version === 1).map(effect => effect.id);
@@ -38,7 +65,10 @@ export function buildShieldSpellItem(sourceData, { description = "" } = {}) {
   barrier.disabled = false;
   barrier.flags ??= {};
   barrier.flags[MODULE_ID] = { ...barrier.flags[MODULE_ID], shieldReaction: { version: 1 } };
-  if (barrier.system?.changes) barrier.duration = { ...barrier.duration, value: null, expiry: "targetStart" };
+  if (barrier.system?.changes) {
+    dropLegacyShieldExpiry(barrier);
+    barrier.duration = { ...barrier.duration, value: null, expiry: "targetStart" };
+  }
   cast.useConditionText = cast.useConditionText || MISSILE_REACTION_CONDITION;
   delete data._id;
   delete data.folder;

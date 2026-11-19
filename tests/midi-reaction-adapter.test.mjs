@@ -108,6 +108,32 @@ test("an applied Shield is confirmed even when the native choice loses its retur
   assert.equal(h.actor.effects[0].system.changes[0].value, 5);
 });
 
+test("Parry offers against a visible melee hit and reports AC only for the selected attack", async () => {
+  const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
+  const actor = { uuid: "Actor.defender", system: { attributes: { ac: { value: 16 } } } };
+  const parry = { actor, uuid: "Activity.parry", item: { name: "Парирование", uuid: "Item.parry", type: "feat",
+    system: { identifier: "glossary-parry" } } };
+  const manual = { actor, uuid: "Activity.manual", item: { type: "feat", system: { identifier: "glossary-opportunity-attack" } } };
+  const target = { actor, uuid: "Token.defender" };
+  let visible = true;
+  const adapter = new MidiReactionAdapter({ combatAttackService: { getParryBonus: () => 3, canUseReaction: () => ({ canUse: true }) } },
+    { midiProvider: () => ({ canSee: () => visible }) });
+  const options = { workflow: { id: "attack", attackRoll: {}, attackTotal: 18, activity: { attack: { type: { value: "melee" } } },
+    token: { uuid: "Token.attacker" }, targets: [target] } };
+  const reactions = [parry, manual], uuids = reactions.map(activity => activity.uuid);
+  await adapter.filterReactions(reactions, options, "reaction", uuids);
+  assert.deepEqual(uuids, [parry.uuid]);
+  assert.equal(adapter.parryResult(parry, actor).ac, 19);
+  assert.equal(actor.system.attributes.ac.value, 16);
+  for (const [type, see] of [["ranged", true], ["melee", false]]) {
+    options.workflow.activity.attack.type.value = type;
+    visible = see;
+    const types = [parry.uuid];
+    await adapter.filterReactions([parry], options, "reaction", types);
+    assert.deepEqual(types, []);
+  }
+});
+
 test("a finished legacy Shield cast installs its linked AC effect once", async () => {
   const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
   const h = shieldCase();
