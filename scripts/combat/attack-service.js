@@ -22,6 +22,7 @@ import {
 } from "../data/ammunition-compatibility.js?v=1.5.31";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.5.61";
 import { getNaturalReachFeet } from "./natural-reach.js?v=1.5.70";
+import { calculateFlatDamageRatios } from "./curse-upgrade-damage.js?v=1.5.101";
 import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.70";
 import { getWeaponSizeUse } from "../data/equipment-size-rules.js?v=1.4.393";
 import {
@@ -67,6 +68,9 @@ const REACTION_DEFAULT_MAX_USES = 1;
 const PROVOKED_ATTACK_REACTION_KIND = "provoked-attack";
 const PARRY_REACTION_KIND = "parry";
 const INTERCEPTION_REACTION_KIND = "interception";
+const SENTINEL_REACTION_KIND = "sentinel-defender";
+const DEFENCE_FEATS = { [INTERCEPTION_REACTION_KIND]: "perehvat", [SENTINEL_REACTION_KIND]: "strazh" };
+const NON_ATTACK_DAMAGE_TYPES = new Set(["healing", "temphp", "midi-none", "vitality", "maximum", "none"]);
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 const DUAL_WIELD_GLOVES_MAGIC_ITEM_ID = "перчатки-двуручного-боя";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
@@ -928,6 +932,10 @@ export class CombatAttackService {
     this._processedDeadlyWorkflowTargets = new Set();
     this._reactionTriggerSequence = 0;
     this._reactionTriggerContexts = new Map();
+    this._interceptedAttacks = new WeakMap();
+    this._sentinelWorkflows = new WeakSet();
+    this._sentinelStrikes = new Set();
+    this._defenceReactionStates = new WeakMap();
     this._weaponModDeferred = new WeakSet();
     this._weaponModUtilityRequests=new Map();
     this._weaponModDamageWarnings=new WeakSet();
@@ -1799,11 +1807,19 @@ export class CombatAttackService {
 
   async initialize() {
     registerWhirlwindNativeTargetOptions();
+    const index = this.moduleApi?.reactionCapabilityIndex;
+    for (const [kind, identifier] of Object.entries(DEFENCE_FEATS)) {
+      index?.registerProvider?.(kind, ({ actor, token }) => {
+        const item = this.#attackDefenceFeat(actor, identifier);
+        return item ? [{ actorUuid: actor.uuid, tokenUuid: token.uuid, itemUuid: item.uuid }] : [];
+      });
+    }
     const queue = this.moduleApi?.reactionQueueService;
     if (typeof queue?.registerType === "function") {
       queue.registerType(PROVOKED_ATTACK_REACTION_KIND, this.#attackReactionProvider(PROVOKED_ATTACK_REACTION_KIND));
       queue.registerType(PARRY_REACTION_KIND, this.#attackReactionProvider(PARRY_REACTION_KIND));
       queue.registerType(INTERCEPTION_REACTION_KIND, this.#attackReactionProvider(INTERCEPTION_REACTION_KIND));
+      queue.registerType(SENTINEL_REACTION_KIND, this.#attackReactionProvider(SENTINEL_REACTION_KIND));
     }
     this.refreshFirearmChatActions();
     return queue ?? null;
@@ -5596,7 +5612,7 @@ export class CombatAttackService {
     }) ?? false;
   }
 
-  #hasInterceptionEquipment(actor) {
+  #hasInterceptionEquipment(actor, requireHeld = false) {
     if (!(actor instanceof Actor)) {
       return false;
     }
@@ -5606,7 +5622,7 @@ export class CombatAttackService {
         return false;
       }
 
-      if (!isEquippedItem(item)) {
+      if (!isEquippedItem(item) || (requireHeld && !getItemHeldHands(item).length)) {
         return false;
       }
 
@@ -5617,7 +5633,8 @@ export class CombatAttackService {
       return true;
     }
 
-    return actor.items?.contents?.some?.((item) => isSimpleOrMartialWeapon(item) && isEquippedItem(item)) ?? false;
+    return actor.items?.contents?.some?.(item => isSimpleOrMartialWeapon(item) && isEquippedItem(item)
+      && (!requireHeld || getItemHeldHands(item).length > 0)) ?? false;
   }
 
   #getHitDiceMaximum(actor) {
@@ -6657,10 +6674,171 @@ export class CombatAttackService {
     });
   }
 
+  async applyMidiSentinel(workflow) {
+    if (!workflow?.attackRoll || !workflow.activity?.attack || workflow.aborted || this._sentinelWorkflows.has(workflow)
+      || !this.moduleApi?.reactionCapabilityIndex?.has?.(SENTINEL_REACTION_KIND)) return;
+    const targets = collectionValues(workflow.targets);
+    if (!targets.some(target => target.actor && !this.#attackDefenceFeat(target.actor, "strazh"))) return;
+    this._sentinelWorkflows.add(workflow);
+    await this.#resolveAttackDefence(SENTINEL_REACTION_KIND, workflow, targets);
+  }
+
+  async applyMidiInterception(token, { workflow, damageItem } = {}) {
+    if (!workflow?.attackRoll || !workflow.activity?.attack || workflow.aborted || !Array.isArray(damageItem?.damageDetail)
+      || !this.moduleApi?.reactionCapabilityIndex?.has?.(INTERCEPTION_REACTION_KIND)) return;
+    const target = token?.document ?? token;
+    if (!target?.actor || ![...collectionValues(workflow.hitTargets), ...collectionValues(workflow.hitTargetsEC)]
+      .some(hit => (hit.document ?? hit).uuid === target.uuid)) return;
+    const damageRows = rows => rows.filter(row => !row.active?.inlined && !NON_ATTACK_DAMAGE_TYPES.has(row.type)
+      && Number.isFinite(row.value) && row.value > 0);
+    const details = damageRows(damageItem.damageDetail);
+    const sumDamage = rows => rows.reduce((total, row) => total + row.value, 0);
+    const amount = sumDamage(details);
+    if (!amount) return;
+
+    const targets = this._interceptedAttacks.get(workflow) ?? new Map();
+    this._interceptedAttacks.set(workflow, targets);
+    const selector = damageItem.damageSelector ?? "combinedDamage";
+    let state = targets.get(target.uuid);
+    if (!state) {
+      const extra = selector === "combinedDamage" && workflow.otherDamageRolls?.length
+        && !globalThis.MidiQOL?.configSettings?.()?.singleConcentrationRoll
+        ? sumDamage(damageRows(damageItem.damageDetails?.otherDamage ?? [])) : 0;
+      const limit = Math.max(0, Math.floor(amount + extra) - 1);
+      if (!limit) return;
+      state = { limit, spent: 0, batches: new Set(),
+        resolution: this.#resolveAttackDefence(INTERCEPTION_REACTION_KIND, workflow, [target], amount + extra) };
+      targets.set(target.uuid, state);
+    }
+    if (state.batches.has(selector)) return;
+    state.batches.add(selector);
+    const result = await state.resolution;
+    const absorption = collectionValues(result?.accepted).reduce((sum, accepted) => sum + toNumber(accepted.effect?.reduction, 0), 0);
+    const reduction = Math.min(amount, Math.min(state.limit, absorption) - state.spent);
+    if (reduction <= 0) return;
+    const ratios = calculateFlatDamageRatios(details, [{ type: null, delta: -reduction, minimum: 0 }]);
+    for (const [index, detail] of details.entries()) detail.value *= ratios[index];
+    state.spent += reduction;
+    // MIDI rounds the applied packet down. Keep an exact integer near the rounding boundary.
+    const expected = amount - reduction;
+    const actual = sumDamage(details);
+    if (actual !== expected) details.at(-1).value += expected - actual;
+    if (damageItem.damageDetails) damageItem.damageDetails[selector] = damageItem.damageDetail;
+    this.moduleApi.curseUpgradeAutomationService?.damage?.updateDamagePreview(target.actor, damageItem);
+  }
+
+  #attackDefenceFeat(actor, identifier) {
+    return actor?.items?.contents?.find(item => item.type === "feat" && item.system?.identifier === identifier);
+  }
+
+  #attackDefenceDistance(from, to) {
+    if (from === to || from.uuid === to.uuid) return 0;
+    const midiDistance = globalThis.MidiQOL?.computeDistance?.(from.object ?? from, to.object ?? to,
+      { wallsBlock: true, includeCover: false, includeElevation: true });
+    const distance = midiDistance ?? measureStorageTokenDistance(from, to);
+    return distance >= 0 ? convertUnitsToFeet(distance, from.parent?.grid?.units ?? "ft") : Infinity;
+  }
+
+  #attackDefenceCandidate(state, candidate) {
+    const { attack, kind } = state;
+    if (!attack?.attacker || !state.triggerActive) return null;
+    const { attacker, targets } = attack;
+    const sceneTokens = attacker.parent?.tokens;
+    const id = candidate.tokenUuid?.split(".").at(-1);
+    const token = sceneTokens?.get?.(id) ?? (Array.isArray(sceneTokens) ? sceneTokens.find(entry => entry.id === id) : null);
+    const actor = token?.actor;
+    if (token?.uuid !== candidate.tokenUuid || actor?.uuid !== candidate.actorUuid || !actor
+      || actor.uuid === attacker.actor?.uuid || !this.#attackDefenceFeat(actor, DEFENCE_FEATS[kind])
+      || globalThis.MidiQOL?.checkIncapacitated?.(actor) || !this.canUseReaction(actor).canUse) return null;
+
+    const weapons = actor.items.contents.filter(item => isMeleeWeaponItem(item) && getItemHeldHands(item).length > 0);
+    const distance = to => this.#attackDefenceDistance(token, to);
+    if (kind === SENTINEL_REACTION_KIND) {
+      if (this._sentinelStrikes.has(actor.uuid) || !token.disposition || !targets.some(target => target.actor?.uuid !== actor.uuid
+        && target.disposition === token.disposition && !this.#attackDefenceFeat(target.actor, "strazh"))) return null;
+      const reach = distance(attacker);
+      const activity = weapons.filter(item => reach <= this.getMeleeReachFeet(item, { actor }))
+        .flatMap(item => collectionValues(item.system.activities).filter(activity => activity.type === "attack"
+          && activity.attack?.type?.value === "melee" && activity.canUse !== false))[0];
+      return activity ? { actor, token, activity } : null;
+    }
+    const reach = Math.max(getNaturalReachFeet(actor), ...weapons.map(weapon => this.getMeleeReachFeet(weapon, { actor })));
+    if (!this.#hasInterceptionEquipment(actor, true) || distance(targets[0]) > reach
+      || globalThis.MidiQOL?.canSee?.(token.object ?? token, attacker.object ?? attacker) === false) return null;
+    return { actor, token };
+  }
+
+  async #resolveAttackDefence(kind, workflow, tokens, incomingDamage = 0) {
+    const index = this.moduleApi?.reactionCapabilityIndex;
+    const queue = this.moduleApi?.reactionQueueService;
+    const attacker = workflow.token?.document ?? workflow.token;
+    const targets = tokens.map(token => token.document ?? token)
+      .filter(token => token.actor && token.uuid && token.parent === attacker?.parent);
+    const attackId = workflow.chatCard?.id ?? workflow.itemCardId;
+    if (!attacker?.actor || !attacker.parent || !attacker.uuid || !targets.length || !attackId || !queue?.resolve || !index?.has?.(kind)) return;
+    const triggerId = kind === SENTINEL_REACTION_KIND ? `${kind}:${attackId}` : `${kind}:${attackId}:${targets[0].uuid}`;
+    const attack = { attackerTokenUuid: attacker.uuid, targetTokenUuids: targets.map(token => token.uuid), attackId };
+    const state = { kind, attack: { attacker, targets }, incomingDamage, target: (kind === SENTINEL_REACTION_KIND ? attacker : targets[0]).actor,
+      options: {}, triggerActive: true };
+    const gm = getActiveGm(globalThis.game);
+    if (!gm) return;
+    // The attack card already carries the hit rows at both defence hooks.
+    // On the origin client, avoid a round trip when nobody could react.
+    if (!isActiveGmClient(globalThis.game)
+      && !index.list(kind).some(candidate => this.#attackDefenceCandidate(state, candidate))) return;
+    this._reactionTriggerContexts.set(triggerId, state);
+    try {
+      return await queue.resolve({ kind, triggerId, context: { triggerId, attack, incomingDamage } });
+    } finally {
+      this._reactionTriggerContexts.delete(triggerId);
+    }
+  }
+
+  #attackDefenceState(context, kind) {
+    const local = !context._reactionTransportSender && this._reactionTriggerContexts.get(context.triggerId);
+    if (local?.kind === kind && local.attack) return local;
+    const cached = this._defenceReactionStates.get(context);
+    if (cached) return cached;
+    const proof = context.attack ?? {};
+    const lookup = globalThis.fromUuidSync;
+    const attacker = lookup?.(proof.attackerTokenUuid);
+    const message = globalThis.game?.messages?.get?.(proof.attackId);
+    const sender = globalThis.game?.users?.get?.(context._reactionTransportSender);
+    const hitRows = message?.system?.midi?.sections?.hits?.data?.hits;
+    const hasTarget = uuid => kind === INTERCEPTION_REACTION_KIND
+      ? cardHitEvidence(message, uuid)
+      : (hitRows?.some(row => row.uuid === uuid) || cardHitEvidence(message, uuid));
+    const targets = collectionValues(proof.targetTokenUuids).filter(hasTarget).map(uuid => lookup?.(uuid))
+      .filter(token => token?.actor && token.parent === attacker?.parent);
+    const triggerId = kind === SENTINEL_REACTION_KIND ? `${kind}:${proof.attackId}` : `${kind}:${proof.attackId}:${targets[0]?.uuid}`;
+    const valid = Boolean(Object.hasOwn(DEFENCE_FEATS, kind) && context.triggerId === triggerId
+      && sender?.active && attacker?.uuid === proof.attackerTokenUuid && attacker.actor?.testUserPermission?.(sender, "OWNER") && usageCardData(message)
+      && message.getAssociatedActivity?.()?.attack
+      && (message.author?.id ?? message.user?.id ?? message.user) === sender.id
+      && message.speaker?.scene === attacker.parent?.id && message.speaker?.token === attacker.id
+      && Number.isFinite(message.timestamp) && Math.abs(Date.now() - message.timestamp) < 300_000
+      && (kind === INTERCEPTION_REACTION_KIND ? targets.length === 1 : targets.length > 0));
+    const state = { kind, attack: { attacker, targets }, incomingDamage: Math.max(0, toNumber(context.incomingDamage, 0)),
+      target: (kind === SENTINEL_REACTION_KIND ? attacker : targets[0])?.actor, options: {}, triggerActive: valid };
+    this._defenceReactionStates.set(context, state);
+    return state;
+  }
+
   #attackReactionProvider(kind) {
     return {
       listCandidates: (context) => {
-        const state = this.#attackReactionState(context);
+        const state = this.#attackReactionState(context, kind);
+        if (state.attack) {
+          if (!state.triggerActive) return [];
+          const seen = new Set();
+          return (this.moduleApi?.reactionCapabilityIndex?.list(kind) ?? []).flatMap(candidate => {
+            if (seen.has(candidate.actorUuid)) return [];
+            const selected = this.#attackDefenceCandidate(state, candidate);
+            if (!selected) return [];
+            seen.add(candidate.actorUuid);
+            return [{ ...candidate, actor: selected.actor, ownerUserIds: this.#reactionOwnerUserIds(selected.actor) }];
+          });
+        }
         return collectionValues(state.reactors)
           .filter((reactor) => reactor instanceof Actor)
           .map((reactor) => ({
@@ -6670,30 +6848,31 @@ export class CombatAttackService {
             reactionType: kind === PROVOKED_ATTACK_REACTION_KIND ? "provokedAttack" : kind
           }));
       },
-      isTriggerValid: (context) => this.#attackReactionState(context).triggerActive !== false,
+      isTriggerValid: (context) => this.#attackReactionState(context, kind).triggerActive !== false,
       revalidateCandidate: (candidate, context) => this.#canResolveAttackReaction(
         kind,
-        this.#attackReactionCandidateState(context, candidate)
+        this.#attackReactionCandidateState(context, candidate, kind)
       ),
       buildPrompt: (candidate, context) => this.#attackReactionPrompt(
         kind,
-        this.#attackReactionCandidateState(context, candidate)
+        this.#attackReactionCandidateState(context, candidate, kind)
       ),
       pay: async () => ({ paid: true }),
       apply: (candidate, _choice, context) => this.#applyAttackReaction(
         kind,
-        this.#attackReactionCandidateState(context, candidate)
+        this.#attackReactionCandidateState(context, candidate, kind)
       ),
       rollback: (candidate, transaction, context) => this.#rollbackAttackReaction(
         kind,
         transaction,
-        this.#attackReactionCandidateState(context, candidate)
+        this.#attackReactionCandidateState(context, candidate, kind)
       ),
       serializeEffect: (effect) => this.#serializeAttackReactionEffect(effect)
     };
   }
 
-  #attackReactionState(context = {}) {
+  #attackReactionState(context = {}, kind) {
+    if (context.attack !== undefined || kind === SENTINEL_REACTION_KIND) return this.#attackDefenceState(context, kind);
     const triggerId = cleanText(context.triggerId);
     const local = this._reactionTriggerContexts.get(triggerId) ?? context._resolvedAttackReaction;
     if (local) {
@@ -6726,8 +6905,12 @@ export class CombatAttackService {
     return state;
   }
 
-  #attackReactionCandidateState(context, candidate = {}) {
-    const rootState = this.#attackReactionState(context);
+  #attackReactionCandidateState(context, candidate = {}, kind) {
+    const rootState = this.#attackReactionState(context, kind);
+    if (rootState.attack) {
+      const selected = this.#attackDefenceCandidate(rootState, candidate);
+      return { ...rootState, reactor: selected?.actor, activity: selected?.activity, rootState };
+    }
     const reactor = candidate.actor instanceof Actor
       ? candidate.actor
       : this.#resolveReactionActor(candidate.actorUuid);
@@ -6770,6 +6953,7 @@ export class CombatAttackService {
 
   #canResolveAttackReaction(kind, state) {
     const reactor = state.reactor;
+    if (state.attack) return Boolean(reactor && (kind === SENTINEL_REACTION_KIND || state.incomingDamage > 1));
     if (!(reactor instanceof Actor) || !this.canUseReaction(reactor, 1).canUse) {
       return false;
     }
@@ -6794,6 +6978,11 @@ export class CombatAttackService {
   }
 
   #attackReactionPrompt(kind, state) {
+    if (kind === SENTINEL_REACTION_KIND) {
+      return { title: "Страж: Защитник",
+        body: `Атаковать ${cleanText(state.target?.name, "нападающего")} оружием «${cleanText(state.activity?.item?.name, "рукопашное оружие")}»?`,
+        acceptLabel: "Атаковать", declineLabel: "Пропустить" };
+    }
     if (kind === PROVOKED_ATTACK_REACTION_KIND) {
       return {
         title: "Провоцированная атака",
@@ -6819,6 +7008,7 @@ export class CombatAttackService {
   }
 
   async #applyAttackReaction(kind, state) {
+    if (state.attack && !this.#canResolveAttackReaction(kind, state)) return { applied: false };
     let effect;
     if (kind === PROVOKED_ATTACK_REACTION_KIND) {
       effect = await this.#executeProvokedAttack(state);
@@ -6826,15 +7016,19 @@ export class CombatAttackService {
     else if (kind === PARRY_REACTION_KIND) {
       effect = this.#executeParry(state);
     }
+    else if (kind === SENTINEL_REACTION_KIND) {
+      effect = await this.#executeSentinelAttack(state);
+    }
     else {
       effect = await this.#executeInterception(state);
     }
     if (effect?.success !== true) {
       return { applied: false, ...effect };
     }
+    if (kind === INTERCEPTION_REACTION_KIND && state.attack) state.rootState.incomingDamage = effect.reducedDamage;
     if (
       (kind === PARRY_REACTION_KIND && effect.preventedHit === true)
-      || (kind === INTERCEPTION_REACTION_KIND && effect.reducedDamage <= 0)
+      || (kind === INTERCEPTION_REACTION_KIND && effect.reducedDamage <= 1)
     ) {
       const rootState = state.rootState ?? state;
       rootState.triggerActive = false;
@@ -6849,7 +7043,11 @@ export class CombatAttackService {
     if (kind !== INTERCEPTION_REACTION_KIND) {
       return;
     }
-    const previousHp = Number(transaction?.effect?.previousHp);
+    if (state.attack && Number.isFinite(transaction?.effect?.incomingDamage)) {
+      state.rootState.incomingDamage = transaction.effect.incomingDamage;
+      state.rootState.triggerActive = true;
+    }
+    const previousHp = transaction?.effect?.previousHp;
     if (Number.isFinite(previousHp) && state.target instanceof Actor) {
       await state.target.update({ "system.attributes.hp.value": previousHp });
     }
@@ -6896,6 +7094,19 @@ export class CombatAttackService {
     };
   }
 
+  async #executeSentinelAttack({ reactor, activity, attack }) {
+    this._sentinelStrikes.add(reactor.uuid);
+    try {
+      const result = await globalThis.MidiQOL?.completeActivityUse?.(activity, {
+        midiOptions: { targetUuids: [attack.attacker.uuid], ignoreUserTargets: true, configureDialog: false,
+          workflowOptions: { isReaction: true, castUsesReaction: true } }
+      }, { configure: false }, { systemCard: false });
+      return { success: Boolean(result && !result.aborted), actorId: reactor.id, targetId: attack.attacker.actor.id };
+    } finally {
+      this._sentinelStrikes.delete(reactor.uuid);
+    }
+  }
+
   #executeParry(state) {
     const defender = state.reactor;
     const baseAc = Number.isFinite(Number(state.options.baseAc))
@@ -6921,7 +7132,7 @@ export class CombatAttackService {
     const guardian = state.reactor;
     const target = state.target;
     const reduction = Math.max(0, this.#getHitDiceMaximum(guardian));
-    const reducedDamage = Math.max(0, state.incomingDamage - reduction);
+    const reducedDamage = Math.max(Math.min(1, state.incomingDamage), state.incomingDamage - reduction);
     let previousHp = null;
     if (state.options.applyDamage === true) {
       previousHp = toNumber(foundry.utils.getProperty(target, "system.attributes.hp.value"), NaN);

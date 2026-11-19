@@ -83,6 +83,8 @@ globalThis.Roll = TestRoll;
 const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
 const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
+const { ReactionCapabilityIndex } = await import("../scripts/combat/reaction-capability-index.js");
+const { CurseUpgradeDamageAdapter } = await import("../scripts/combat/curse-upgrade-damage.js");
 const {captureAmmunition}=await import("../scripts/combat/ammunition-magazine.js");
 
 test("OWNER loads ammunition through one native batch without GM sockets journals or preliminary flag writes", async()=>{
@@ -4328,7 +4330,125 @@ test("attack reactions register with the global reaction queue", async () => {
 
   await service.initialize();
 
-  assert.deepEqual(registered, ["provoked-attack", "parry", "interception"]);
+  assert.deepEqual(registered, ["provoked-attack", "parry", "interception", "sentinel-defender"]);
+});
+
+async function defenceFixture(t, feat, { targetFeat = false, self = false, distance = 5, visible = true, held = true } = {}) {
+  const weapon = makeWeaponItem({ heldHands: held ? ["right"] : [] });
+  const nativeAttack = { type: "attack", attack: { type: { value: "melee" } }, item: weapon };
+  weapon.system.activities = new Map([["melee", nativeAttack]]);
+  const feature = identifier => ({ id: identifier, type: "feat", system: { identifier } });
+  const guard = makeActor([weapon, feature(feat)], { id: "guard" });
+  guard.system.attributes.hd = { max: 6 };
+  const enemy = makeActor([], { id: "enemy" });
+  const ally = makeActor(targetFeat ? [feature("strazh")] : [], { id: "ally" });
+  const scene = { id: "scene", grid: { units: "ft" } };
+  const token = (actor, disposition) => ({ id: actor.id, uuid: `Scene.scene.Token.${actor.id}`, actor, disposition, parent: scene });
+  const guardToken = token(guard, 1), enemyToken = token(enemy, -1), allyToken = self ? guardToken : token(ally, 1);
+  allyToken.actor.system.attributes.hp = { value: 12, temp: 2, damage: 0 };
+  scene.tokens = [...new Set([guardToken, enemyToken, allyToken])];
+  const gm = { id: "gm", active: true, isGM: true };
+  const prompts = [], attacks = [];
+  const old = { game: globalThis.game, MidiQOL: globalThis.MidiQOL };
+  t.after(() => Object.assign(globalThis, old));
+  globalThis.game = { user: gm, users: [gm] };
+  globalThis.MidiQOL = {
+    computeDistance: () => distance, canSee: () => visible,
+    async completeActivityUse(activity, config) { attacks.push([activity, config.midiOptions.targetUuids]); return { activity }; }
+  };
+  const api = { reactionCapabilityIndex: new ReactionCapabilityIndex({ sceneProvider: () => scene }) };
+  api.reactionQueueService = new ReactionQueueService(api, { promptCandidate: async ({ prompt }) => {
+    prompts.push(prompt.title);
+    return { accepted: true };
+  } });
+  api.curseUpgradeAutomationService = { blocksReaction: () => false, damage: new CurseUpgradeDamageAdapter({ moduleApi: api }) };
+  const service = api.combatAttackService = new CombatAttackService(api);
+  await service.initialize();
+  const workflow = { id: "attack", itemCardId: "card", actor: enemy, token: enemyToken,
+    activity: { attack: {} }, attackRoll: { total: 20 }, targets: new Set([allyToken]), hitTargets: new Set([allyToken]) };
+  return { api, service, workflow, allyToken, enemyToken, guard, nativeAttack, prompts, attacks };
+}
+
+test("Interception absorbs the maximum Hit Dice only once and leaves at least one damage to self", async t => {
+  const h = await defenceFixture(t, "perehvat", { self: true });
+  const detail = [{ type: "slashing", value: 3 }, { type: "fire", value: 2 }];
+  const packet = { damageDetail: detail, damageDetails: { combinedDamage: detail } };
+  await Promise.all([h.service.applyMidiInterception(h.allyToken, { workflow: h.workflow, damageItem: packet }),
+    h.service.applyMidiInterception(h.allyToken, { workflow: h.workflow, damageItem: packet })]);
+  assert.deepEqual(h.prompts, ["Перехват"]);
+  assert.equal(packet.healingAdjustedTotalDamage, 1);
+  assert.equal(packet.tempDamage, 1);
+  assert.equal(packet.newHP, 12);
+  assert.deepEqual(packet.damageDetail.map(row => row.type), ["slashing", "fire"]);
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
+  assert.equal(h.guard.updateCalls.some(patch => Object.hasOwn(patch, "system.attributes.hp.value")), false);
+});
+
+test("Interception uses one allowance across both MIDI damage batches", async t => {
+  const h = await defenceFixture(t, "perehvat");
+  h.guard.system.attributes.hd.max = 4;
+  h.workflow.otherDamageRolls = [{}];
+  const base = [{ type: "slashing", value: 2 }];
+  const other = [{ type: "fire", value: 3 }];
+  const detail = { combinedDamage: base, otherDamage: other };
+  for (const damageSelector of ["combinedDamage", "otherDamage"]) {
+    await h.service.applyMidiInterception(h.allyToken, { workflow: h.workflow,
+      damageItem: { damageSelector, damageDetail: detail[damageSelector], damageDetails: detail } });
+  }
+  assert.equal(base[0].value + other[0].value, 1);
+  assert.deepEqual(h.prompts, ["Перехват"]);
+});
+
+test("a rejected Interception ledger payment leaves target HP and the MIDI packet alone", async t => {
+  const h = await defenceFixture(t, "perehvat");
+  h.service.consumeReaction = async () => ({ consumed: false });
+  const packet = { damageDetail: [{ type: "slashing", value: 5 }] };
+  await h.service.applyMidiInterception(h.allyToken, { workflow: h.workflow, damageItem: packet });
+  assert.equal(h.allyToken.actor.system.attributes.hp.value, 12);
+  assert.deepEqual(h.allyToken.actor.updateCalls, []);
+  assert.equal(packet.damageDetail[0].value, 5);
+});
+
+test("Sentinel offers a normal melee activity when an ally without Sentinel is attacked, even on a miss", async t => {
+  const h = await defenceFixture(t, "strazh");
+  h.workflow.hitTargets.clear();
+  await h.service.applyMidiSentinel(h.workflow);
+  await h.service.applyMidiSentinel(h.workflow);
+  assert.deepEqual(h.prompts, ["Страж: Защитник"]);
+  assert.deepEqual(h.attacks, [[h.nativeAttack, [h.enemyToken.uuid]]]);
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
+});
+
+test("Sentinel does not offer a strike against an attack on another Sentinel", async t => {
+  const h = await defenceFixture(t, "strazh", { targetFeat: true });
+  await h.service.applyMidiSentinel(h.workflow);
+  assert.deepEqual(h.prompts, []);
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 1);
+});
+
+test("a player attack can trigger Sentinel on the GM only through its original attack card and trigger", async t => {
+  const h = await defenceFixture(t, "strazh");
+  const source = { id: "player", active: true, isGM: false };
+  const gm = game.user;
+  game.users = new Map([[gm.id, gm], [source.id, source]]);
+  game.socket = { emit() {} };
+  h.enemyToken.actor.testUserPermission = user => user === source;
+  const previous = globalThis.fromUuidSync;
+  t.after(() => { globalThis.fromUuidSync = previous; });
+  const tokens = [h.enemyToken, h.allyToken];
+  globalThis.fromUuidSync = uuid => tokens.find(token => token.uuid === uuid);
+  const card = { timestamp: Date.now(), author: source, type: "usage", speaker: { scene: "scene", token: h.enemyToken.id },
+    getAssociatedActivity: () => h.workflow.activity,
+    system: { midi: { sections: { hits: { data: { hits: [{ uuid: h.allyToken.uuid, hitClass: "failure" }] } } } } } };
+  game.messages = new Map([["card", card]]);
+  const triggerId = "sentinel-defender:card";
+  const context = { triggerId, attack: { attackId: "card", attackerTokenUuid: h.enemyToken.uuid, targetTokenUuids: [h.allyToken.uuid] } };
+  const offer = { type: "rebreya-main.reaction.trigger", kind: "sentinel-defender",
+    requestId: "request", senderId: source.id, forUserId: gm.id, triggerId, context };
+  await h.api.reactionQueueService.handleSocketMessage({ ...offer, triggerId: "unrelated" }, source.id);
+  assert.deepEqual(h.prompts, []);
+  await h.api.reactionQueueService.handleSocketMessage(offer, source.id);
+  assert.deepEqual(h.attacks, [[h.nativeAttack, [h.enemyToken.uuid]]]);
 });
 
 test("combat reaction ledger rejects actors suppressed by Magistrate detention", () => {

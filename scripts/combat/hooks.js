@@ -186,6 +186,7 @@ export function registerCombatHooks(moduleApi) {
   if (moduleApi.midiReactionAdapter) {
     Hooks.on("midi-qol.midiReady", () => moduleApi.midiReactionAdapter.initialize());
     Hooks.on("midi-qol.ReactionFilter", (...args) => moduleApi.midiReactionAdapter.filterReactions(...args));
+    Hooks.on("midi-qol.RollComplete", workflow => moduleApi.midiReactionAdapter.applyShieldEffect?.(workflow));
     Hooks.on("midi-qol.preDamageRollComplete", workflow => moduleApi.midiReactionAdapter.prepareMagicMissileReactions(workflow));
     Hooks.on("dnd5e.calculateDamage", (actor, damages, options) => moduleApi.midiReactionAdapter.applyMagicMissileShield(actor, damages, options));
     if (globalThis.game?.release?.generation === 13) {
@@ -712,6 +713,8 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasAttackService) {
+    Hooks.on("midi-qol.AttackRollComplete", workflow => moduleApi.combatAttackService.applyMidiSentinel?.(workflow));
+    Hooks.on("midi-qol.preTargetDamageApplication", (token, context) => moduleApi.combatAttackService.applyMidiInterception?.(token, context));
     for(const event of ["createChatMessage","updateChatMessage"])Hooks.on(event,message=>{
       moduleApi.combatAttackService.handleWeaponModAttackMessage?.(message)?.catch(error=>{
         console.error(`${MODULE_ID} | Weapon mod target resolution failed.`,error);

@@ -25,12 +25,12 @@ export function calculateFlatDamageRatios(entries, rules) {
     const indices = entries.flatMap((entry, i) => {
       const properties = entry.properties;
       const knownNonmagical = (properties instanceof Set || Array.isArray(properties)) && !new Set(properties).has("mgc");
-      return entry.type === rule.type && !entry.ignoreModification && amounts[i] > 0
+      return (rule.type == null || entry.type === rule.type) && !entry.ignoreModification && amounts[i] > 0
         && (!rule.nonmagical || knownNonmagical) ? [i] : [];
     });
     const total = indices.reduce((sum,i) => sum + amounts[i], 0);
     if (!total || !rule.delta) continue;
-    const changed = rule.delta < 0 ? Math.max(Math.min(1,total), total + rule.delta) : total + rule.delta;
+    const changed = rule.delta < 0 ? Math.max(Math.min(rule.minimum ?? 1,total), total + rule.delta) : total + rule.delta;
     for (const i of indices) amounts[i] *= changed / total;
   }
   return entries.map((entry,i) => entry.value > 0 ? amounts[i] / entry.value : 1);

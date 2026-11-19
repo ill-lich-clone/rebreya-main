@@ -15,6 +15,7 @@ export class MidiReactionAdapter {
     this.moduleApi = moduleApi;
     this._options = options;
     this._sessions = new Map();
+    this._shieldApplications = new WeakMap();
   }
 
   now() { return this._options.now?.() ?? Date.now(); }
@@ -160,6 +161,51 @@ export class MidiReactionAdapter {
     return true;
   }
 
+  async applyShieldEffect(workflow) {
+    const { actor, activity, itemCardUuid, aborted } = workflow ?? {};
+    if (aborted || !itemCardUuid || !isShieldReactionItem(activity?.item) || activity.item.actor?.uuid !== actor?.uuid
+      || !actor?.isOwner || !actor.createEmbeddedDocuments) return false;
+    const pending = this._shieldApplications.get(actor) ?? this._applyShieldBarrier(actor, activity, itemCardUuid);
+    this._shieldApplications.set(actor, pending);
+    try {
+      const applied = await pending;
+      const session = this._sessions.get(workflow.workflowOptions?.rebreyaShieldSessionId);
+      if (applied && session?.shieldActivity?.uuid === activity.uuid && session.actor.uuid === actor.uuid) {
+        session.shieldResult = { name: activity.name ?? activity.item.name ?? "Щит", uuid: activity.uuid,
+          itemName: activity.item.name, itemUuid: activity.item.uuid };
+      }
+      return applied;
+    } finally {
+      if (this._shieldApplications.get(actor) === pending) this._shieldApplications.delete(actor);
+    }
+  }
+
+  async _applyShieldBarrier(actor, activity, itemCardUuid) {
+    if (hasShieldEffect(actor)) return true;
+    for (const profile of activity.effects ?? []) {
+      const effect = await (profile.getEffect?.() ?? activity.item.effects?.get?.(profile._id));
+      const data = effect?.toObject?.();
+      const changes = data?.system?.changes ?? data?.changes;
+      if (data?.transfer || !changes?.some(change => change.key === "system.attributes.ac.bonus" && Number(change.value) === 5)) continue;
+      if (hasShieldEffect(actor)) return true;
+      delete data._id;
+      delete data.start;
+      data.disabled = false;
+      data.origin = activity.item.uuid;
+      data.flags ??= {};
+      (data.flags[MODULE_ID] ??= {}).shieldReaction = { version: 1 };
+      if (data.system?.changes) {
+        data.duration = { ...data.duration, value: null, expiry: "targetStart", expired: false };
+        data.system.origin = { activity: activity.uuid, message: itemCardUuid };
+        const Effect = globalThis.CONFIG?.ActiveEffect?.documentClass;
+        if (Effect?.forApplication) data.system.changes = await Effect.forApplication(changes, activity, actor);
+      }
+      const [created] = await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+      return Boolean(created);
+    }
+    return false;
+  }
+
   async initialize() {
     const midi = this._options.midiProvider?.() ?? globalThis.MidiQOL;
     if (!midi) return false;
@@ -234,7 +280,7 @@ export class MidiReactionAdapter {
       };
       const commitForcedAc = () => { extend(); return controls.commit(); };
       const patchedMidi = typeof this._midi?.extendReactionTimeout === "function";
-      const session = { ...controls, actor, shieldContext: data.options?.rebreyaShieldReaction?.[data.tokenUuid],
+      const session = { ...controls, actor, tokenUuid: data.tokenUuid, shieldContext: data.options?.rebreyaShieldReaction?.[data.tokenUuid],
         expiresAt, extend, dialogs: new Set(), chosen: false, finished: false };
       this._sessions.set(id, session);
       const abort = () => {
@@ -248,13 +294,16 @@ export class MidiReactionAdapter {
         if (controls.signal.aborted) return { ...NONE };
         const remaining = expiresAt - this.now();
         if (remaining <= 0) return { ...NONE };
-        return await this._original({
+        session.nativeOptions = { ...data.options, timeout: remaining / 1000,
+          ...(patchedMidi && optional.length ? { rebreyaBeforeForcedAc: commitForcedAc } : {}) };
+        const result = await this._original({
           ...data,
           reactionActivityList: controls.activityUuids ?? activities,
           reactionFlavor: `${data.reactionFlavor ?? ""}<!--rm-reaction:${id}-->`,
-          options: { ...data.options, timeout: remaining / 1000,
-            ...(patchedMidi && optional.length ? { rebreyaBeforeForcedAc: commitForcedAc } : {}) }
+          options: session.nativeOptions
         });
+        if (session.shieldActivity && !hasShieldEffect(actor)) return { ...NONE };
+        return session.shieldResult ?? result;
       }
       finally {
         session.finished = true;
@@ -312,6 +361,13 @@ export class MidiReactionAdapter {
         dialog.data.completed = false;
         await dialog.close();
         return;
+      }
+      if (isShieldReactionItem(selected?.item)) {
+        session.shieldActivity = selected;
+        session.nativeOptions.configureDialog = false;
+        delete session.nativeOptions.targetsToUse;
+        session.nativeOptions.targetUuids = [session.tokenUuid];
+        session.nativeOptions.workflowOptions = { ...session.nativeOptions.workflowOptions, rebreyaShieldSessionId: match[1] };
       }
       submitted = true;
       session.chosen = true;

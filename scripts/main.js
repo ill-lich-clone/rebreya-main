@@ -330,7 +330,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.91";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.95";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.101";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.96";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";
@@ -338,7 +338,7 @@ import { createGroupedCombatEffects } from "./integrations/grouped-combat-effect
 import { registerGroupedCombatRuntime, runStartCombatMacro, runEndCombatTurnMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.96";
 import { installDnd5eRoundRecoveryOptimization } from "./integrations/dnd5e-round-recovery.js?v=1.5.90";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.87";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.95";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.5.101";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.5.61";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.5.63";
@@ -347,12 +347,12 @@ import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.
 import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/equipment-size.js?v=1.4.393";
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js?v=1.5.66";
-import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.99";
-import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.95";
+import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.101";
+import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.101";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.99";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.61";
-import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.88";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.101";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js?v=1.5.60";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.5.61";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
