@@ -182,7 +182,8 @@ export class ManagedReactionSessions {
         costs, requiredUses, remaining: ledger?.getReactionState?.(actor)?.usesRemaining, midiCount: reactionCount(actor) };
       this.entries.set(data.sessionId, entry);
       entry.messageReady = this.queue._beginReactionMessage({ ...request, candidate: { ...request.candidate, actor }, expiresAt: entry.expiresAt, managed: {
-        sessionId: data.sessionId, ownerUserId: senderId, key, costs, requiredUses,
+        // Foundry expands dotted UUID keys in ChatMessage flags in place.
+        sessionId: data.sessionId, ownerUserId: senderId, key, costs: { ...costs }, requiredUses,
         remaining: entry.remaining, midiCount: entry.midiCount
       } }).then(message => { entry.message = message; return message; });
       this.watch(entry, "choosing", "timeout");
@@ -249,8 +250,9 @@ export class ManagedReactionSessions {
     const actor = resolved?.actor ?? resolved;
     if (!actor || actor.uuid !== choice.candidateActorUuid) return null;
     const managed = choice.managed;
+    const storedCosts = managed.costs ?? {};
     const entry = { actor, message, senderId: managed.ownerUserId, key: managed.key,
-      costs: managed.costs ?? {}, requiredUses: managed.requiredUses ?? 1,
+      costs: globalThis.foundry?.utils?.flattenObject?.(storedCosts) ?? storedCosts, requiredUses: managed.requiredUses ?? 1,
       activityUuid: managed.activityUuid ?? undefined,
       remaining: managed.remaining, midiCount: managed.midiCount,
       state: choice.state, expiresAt: this.messageDeadline(choice) };

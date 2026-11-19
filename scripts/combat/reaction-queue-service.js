@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { ManagedReactionSessions } from "./managed-reaction-session.js?v=1.5.95";
+import { ManagedReactionSessions } from "./managed-reaction-session.js?v=1.5.99";
 
 export const REACTION_PROMPT_TIMEOUT_MS = 10_000;
 export const REACTION_RESULT_TTL_MS = 60_000;

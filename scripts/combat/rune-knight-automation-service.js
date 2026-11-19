@@ -191,7 +191,7 @@ function hitTargetFields(tokens) {
 function ownerUserIds(actor) {
   return collectionValues(globalThis.game?.users)
     .filter((user) => {
-      if (!user?.id || user?.active === false) return false;
+      if (!user?.id || user.isGM) return false;
       if (typeof actor?.testUserPermission === "function") {
         return actor.testUserPermission(user, "OWNER") === true;
       }

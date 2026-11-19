@@ -1,4 +1,5 @@
 import { faerieFireOutlined } from "./selected/macros/2014/spells/faerieFire.js";
+import { setCardMacroDefinitions } from "./selected/events/custom.js";
 import { detectMagicDetecting } from "./selected/macros/2014/spells/detectMagic.js";
 import { removeTemplate as removeTemplateLocal } from "./selected/macros/2014/generic/removeTemplate.js";
 import { grapplerPin as grapplerPinLocal } from "./selected/macros/2014/feats/grappler.js";
@@ -146,3 +147,5 @@ export const definitions = Object.freeze({
     shieldOfFaith: shieldOfFaith_modern
   })
 });
+
+setCardMacroDefinitions(definitions);

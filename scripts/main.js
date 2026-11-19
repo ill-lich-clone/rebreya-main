@@ -347,10 +347,10 @@ import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.
 import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/equipment-size.js?v=1.4.393";
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js?v=1.5.66";
-import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.95";
+import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.99";
 import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.95";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
-import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.87";
+import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.99";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.61";
 import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.5.88";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js?v=1.5.60";
@@ -8830,7 +8830,7 @@ Hooks.once("ready", async () => {
 
   if (game.system?.id === "dnd5e" && game.modules?.get("midi-qol")?.active && !game.modules?.get("chris-premades")?.active) {
     try {
-      const { registerWorldCardAutomations } = await import("./integrations/world-card-automations/setup.js?v=1.5.95");
+      const { registerWorldCardAutomations } = await import("./integrations/world-card-automations/setup.js?v=1.5.99");
       registerWorldCardAutomations({ Hooks, game });
     } catch (error) {
       releaseGroupedCombat?.(error);

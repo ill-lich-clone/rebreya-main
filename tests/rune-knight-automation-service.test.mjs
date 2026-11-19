@@ -28,6 +28,7 @@ globalThis.foundry ??= {
 
 const { RuneKnightAutomationService } = await import("../scripts/combat/rune-knight-automation-service.js");
 const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
+const { ReactionCapabilityIndex } = await import("../scripts/combat/reaction-capability-index.js");
 
 function createItem({ id, automation, spent = 0, max = "", delay = null, type = "feat", identifier = "" }) {
   const item = {
@@ -823,6 +824,47 @@ test("Cloud Rune rewrites the target before Runic Shield rerolls and recalculate
   assert.equal(harness.workflow.hitTargets.has(harness.redirectedToken), false);
   assert.strictEqual(harness.workflow.attackRoll, harness.rerolledAttack);
   assert.equal(harness.workflow.damageList.some((row) => row.tokenUuid === harness.originalToken.uuid), false);
+});
+
+test("Cloud Rune reaches the connected player owner even when the GM was first and the index was built offline", async (t) => {
+  const gm = { id: "gm", active: true, isGM: true };
+  const player = { id: "owner", active: true, isGM: false };
+  const users = [gm, player];
+  users.activeGM = gm;
+  const actor = createActor({ items: [createItem({ id: "cloud", automation: "cloud", max: 1 })] });
+  actor.testUserPermission = user => user.isGM || user === player;
+  const scene = { id: "scene", tokens: [{ id: "token", uuid: "Scene.scene.Token.token", actor }] };
+  const index = new ReactionCapabilityIndex({ sceneProvider: () => scene });
+  const delivered = [];
+  let gmQueue, playerQueue;
+  const gameFor = user => ({ user, users, socket: { emit(_channel, message) {
+    const recipient = message.forUserId === player.id ? playerQueue : gmQueue;
+    queueMicrotask(() => recipient.handleSocketMessage(message, user.id));
+  } } });
+  const previousGame = Object.getOwnPropertyDescriptor(globalThis, "game");
+  t.after(() => {
+    if (previousGame) Object.defineProperty(globalThis, "game", previousGame);
+    else delete globalThis.game;
+  });
+  Object.defineProperty(globalThis, "game", { configurable: true, value: gameFor(gm) });
+  const renderer = user => prompt => {
+    delivered.push([user.id, prompt.title]);
+    return { accepted: false, reason: "declined" };
+  };
+  gmQueue = new ReactionQueueService({}, { gameProvider: () => gameFor(gm), promptRenderer: renderer(gm) });
+  playerQueue = new ReactionQueueService({}, { gameProvider: () => gameFor(player), promptRenderer: renderer(player) });
+  await new RuneKnightAutomationService({ reactionCapabilityIndex: index }).initialize();
+  const prompt = { title: "Облачная руна" };
+  const send = candidate => gmQueue.promptDecision({ candidate, prompt });
+  await send(index.list("rune-cloud")[0]);
+
+  player.active = false;
+  index.rebuildScene(scene);
+  const beforeLogin = index.list("rune-cloud")[0];
+  await send(beforeLogin);
+  player.active = true;
+  await send(beforeLogin);
+  assert.deepEqual(delivered, [["owner", prompt.title], ["gm", prompt.title], ["owner", prompt.title]]);
 });
 
 test("Cloud Rune ignores friendly and neutral attackers", async () => {

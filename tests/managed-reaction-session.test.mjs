@@ -52,6 +52,56 @@ test("the GM accepts an inherited reaction type and skips only an invalid activi
   assert.equal(result.uuid, "cast");
 });
 
+test("Foundry chat normalization cannot invalidate an offered Shield activity UUID", async () => {
+  const h = harness();
+  const uuid = "Scene.test.Token.lich.Actor.lich.Item.shield.Activity.cast";
+  h.actor.uuid = "Scene.test.Token.lich.Actor.lich";
+  h.request.candidate = { actorUuid: h.actor.uuid, activityUuids: [uuid] };
+  h.queue._options.documentResolver = () => ({ actor: h.actor, activation: { type: "reaction", value: 1 } });
+  const create = h.queue._options.chatMessageClass.create;
+  h.queue._options.chatMessageClass.create = async data => {
+    const costs = data.flags["rebreya-main"].reactionChoice.managed.costs;
+    const value = costs[uuid];
+    delete costs[uuid];
+    costs.Scene = { test: { Token: { lich: { Actor: { lich: { Item: { shield: { Activity: { cast: value } } } } } } } } };
+    return create(data);
+  };
+
+  const result = await h.queue.resolveManagedReaction(h.request, async ({ commit, activityUuids }) => {
+    assert.deepEqual(activityUuids, [uuid]);
+    assert.equal(await commit({ activityUuid: uuid }), true);
+    h.actor.flags["midi-qol"] = { actions: { reactionsUsed: 1 } };
+    return { name: "Щит", uuid };
+  });
+  assert.equal(result.uuid, uuid);
+  assert.equal(h.events.filter(event => event === "consume").length, 1);
+  assert.equal(h.events.at(-1), "deleted");
+});
+
+test("a choosing native reaction restores an already expanded Activity UUID after GM reconnect", async (t) => {
+  const h = harness();
+  const uuid = "Actor.guard.Item.shield.Activity.cast";
+  const costs = { Actor: { guard: { Item: { shield: { Activity: { cast: 1 } } } } } };
+  const foundry = globalThis.foundry;
+  t.after(() => { globalThis.foundry = foundry; });
+  globalThis.foundry = { utils: { flattenObject(value) {
+    assert.deepEqual(value, costs);
+    return { [uuid]: value.Actor.guard.Item.shield.Activity.cast };
+  } } };
+  h.game.messages.push({
+    author: { isGM: true },
+    flags: { "rebreya-main": { reactionChoice: {
+      candidateActorUuid: h.actor.uuid, state: "choosing", expiresAt: 10000,
+      managed: { sessionId: "restored", ownerUserId: "gm", key: "restored-key", costs, requiredUses: 1 }
+    } } },
+    async update() {}
+  });
+  const answer = await h.queue._managed.command("commit", { sessionId: "restored", activityUuid: uuid }, "gm");
+  assert.equal(answer.allowed, true);
+  assert.equal(h.queue._managed.reservedUses(h.actor.uuid), 1);
+  h.queue.destroy();
+});
+
 test("an on-time click survives the old deadline while the durable chat commit is pending", async () => {
   const chat = Promise.withResolvers();
   const entered = Promise.withResolvers();
