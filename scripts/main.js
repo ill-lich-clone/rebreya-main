@@ -34,7 +34,7 @@ import { ALCHEMY_EXTRACTION_COMMAND, registerAlchemyExtractionCommands } from ".
 import { AlchemyReagentService, registerAlchemyReagentSettings } from "./data/alchemy-reagent-service.js?v=1.5.72";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.5.31";
 import { repairDfredsExhaustionIcons } from "./integrations/dfreds-exhaustion-icons.js?v=1.5.69";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.95";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.5.105";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.5.102";
 import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
@@ -110,7 +110,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.5.94";
+} from "./data/inventory-service.js?v=1.5.105";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -125,7 +125,7 @@ import {
 } from "./application/inventory-ingress-planner.js?v=1.4.396";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.100";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.5.105";
 import { ImplantService } from "./data/implant-service.js?v=1.5.88";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
@@ -421,7 +421,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.45";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.94";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.5.105";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.5.82";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -1705,7 +1705,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.5.94"
+          "./ui/inventory-app.js?v=1.5.105"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -8439,7 +8439,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.94");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.105");
 
       const secondary = options?.newWindow === true;
       const viewKey = "full:secondary";
@@ -8496,7 +8496,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.94");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.5.105");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

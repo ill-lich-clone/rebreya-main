@@ -1,5 +1,5 @@
 import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph, runtimeItemGraphMatchesSource, deleteRuntimeItemGraph, rollbackRuntimeItemGraph } from "../data/runtime-item-graph.js?v=1.5.66";
-import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.5.17";
+import { itemInstanceFingerprint } from "./item-instance-workflow.js?v=1.5.105";
 
 export const INVENTORY_GRAPH_TRANSFER_KIND = "inventory-graph-transfer-v1";
 export function isInventoryGraphItem(source, item) {

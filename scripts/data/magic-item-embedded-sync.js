@@ -494,6 +494,9 @@ export function buildMagicItemAutomationProjection(packItem) {
     signature: cleanText(flags.signature),
     catalogAttunement: cleanText(flags.attunement),
     automationDefinition: cloneValue(flags.magicItemAutomation ?? null),
+    ...(flags.magicItemId === "ожерелье-огненных-шаров" && source.type === "equipment"
+      ? { necklaceEquipmentType: cloneValue(source.system.type) }
+      : {}),
     ...(flags.magicArmorProfile ? { armorProfile: cloneValue(flags.magicArmorProfile) } : {}),
     effects,
     activities,
@@ -567,6 +570,9 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   }
 
   const itemType = cleanText(itemSource?.type ?? item?.type);
+  const migrateNecklace = resolution.magicItemId === "ожерелье-огненных-шаров"
+    && itemType === "consumable" && itemSource.system?.type?.value === "potion"
+    && projection?.necklaceEquipmentType?.value === "wondrous";
   const supportsActivities = !itemType || DND5E_ACTIVITY_ITEM_TYPES.has(itemType);
   const existingActivities = activitySources(itemSource?.system?.activities);
   const projectedActivities = objectActivities(projection?.activities);
@@ -630,6 +636,10 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     if (flags[MODULE_ID].foundryBaseItem === "chainmail") flags[MODULE_ID].foundryBaseItem = "chainshirt";
     if (flags[MODULE_ID].itemSubtype === "Кольчуга") flags[MODULE_ID].itemSubtype = "Кольчужная рубаха";
   }
+  if (migrateNecklace) {
+    flags[MODULE_ID].foundryType = "equipment";
+    flags[MODULE_ID].foundrySubtype = "wondrous";
+  }
   if (resolution.reason !== "managed-pack" && Object.hasOwn(projection ?? {}, "catalogAttunement")) {
     flags[MODULE_ID].catalogAttunement = cleanText(projection.catalogAttunement);
   }
@@ -644,7 +654,7 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
       : false
     : Object.hasOwn(system, "-=uses");
   const flagsChanged = !sameValue(flags, existingFlags);
-  if (!effectsChanged && !activitiesChanged && !usesChanged && !flagsChanged && !armorChanged) {
+  if (!effectsChanged && !activitiesChanged && !usesChanged && !flagsChanged && !armorChanged && !migrateNecklace) {
     return { status: "unchanged" };
   }
 
@@ -653,9 +663,12 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     update: {
       _id: cleanText(itemSource?._id ?? item?._id ?? item?.id),
       effects,
-      system,
+      ...(migrateNecklace ? {
+        type: "equipment",
+        "==system": { ...itemSource.system, ...system, type: cloneValue(projection.necklaceEquipmentType) }
+      } : { system }),
       flags,
-      ...Object.fromEntries(removalPlan.activityIdsToDelete.map((id) => [
+      ...Object.fromEntries((migrateNecklace ? [] : removalPlan.activityIdsToDelete).map((id) => [
         `system.activities.-=${id}`,
         null
       ]))

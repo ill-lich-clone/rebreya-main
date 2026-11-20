@@ -1007,7 +1007,7 @@ export function classifyMagicItem(item = {}) {
   const isConsumable = item.isConsumable === true || normalizeText(item.isConsumable) === "true";
   const slotFallback = inferSlotsFromName(item.name, []);
 
-  if (isConsumable) {
+  if (isConsumable && item.id !== "ожерелье-огненных-шаров") {
     const consumable = itemType === normalizeText("Оружие") && isMagicAmmunitionSubtype(itemSubtype)
       ? buildMagicAmmunitionProfile(item)
       : normalizeMagicConsumableType(item);

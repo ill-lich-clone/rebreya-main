@@ -8,6 +8,21 @@ function moduleFlags(overrides = {}) {
   return { [MODULE_ID]: { ...overrides } };
 }
 
+test("legacy Necklace of Fireballs changes type in place and preserves owned item fields", () => {
+  const id = "ожерелье-огненных-шаров";
+  const flags = moduleFlags({ magicItemId: id, foundryType: "consumable", foundrySubtype: "potion" });
+  const item = { _id: "owned-necklace", type: "consumable", flags, effects: [],
+    system: { type: { value: "potion" }, quantity: 2, equipped: true, description: { value: "Мои бусины" }, uses: { max: "6", spent: 2 } } };
+  const projection = embeddedSync.buildMagicItemAutomationProjection({
+    type: "equipment", system: { type: { value: "wondrous" } }, flags: moduleFlags({ magicItemId: id })
+  });
+  const result = embeddedSync.buildEmbeddedMagicItemPatch(item, projection, { status: "resolved", magicItemId: id });
+  assert.equal(result.update._id, item._id);
+  assert.equal(result.update.type, "equipment");
+  assert.deepEqual(result.update["==system"], { ...item.system, type: { value: "wondrous" }, activities: {} });
+  assert.equal(result.update.flags[MODULE_ID].foundrySubtype, "wondrous");
+});
+
 function managedEffect({ id = "managed-effect-01", value = "+1", managed = true } = {}) {
   return {
     _id: id,

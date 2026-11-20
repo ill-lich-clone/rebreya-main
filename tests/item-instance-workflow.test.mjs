@@ -34,7 +34,9 @@ test("conflicting external edits are left untouched for manual review",async()=>
   await assert.rejects(fx.workflow.run(fx.intent,fx.context),e=>e.code==="manual-review");
   assert.equal(fx.quantity("rope"),6);fx.restart();
   await assert.rejects(fx.workflow.run(fx.intent,fx.context),e=>e.code==="manual-review");
-  await assert.rejects(fx.workflow.run({...fx.intent,operationId:"other"},fx.context),e=>e.code==="pending-instance-operation");
+  const next=await fx.workflow.run({...fx.intent,operationId:"other",quantity:6,expectedSourceQuantity:6},fx.context);
+  assert.equal(next.changed,true);
+  assert.equal(fx.quantity("rope"),6);
 });
 test("concurrent identical requests serialize and permission is rechecked on replay",async()=>{
   const fx=makeItemInstanceFixture();

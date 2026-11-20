@@ -14,7 +14,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.5.60";
+} from "./magic-item-embedded-sync.js?v=1.5.105";
 import { formatMagicAttunement } from "../shared/magic-attunement.js?v=1.5.21";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
@@ -23,7 +23,7 @@ import {
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js?v=1.5.29";
+} from "./item-classification.js?v=1.5.105";
 import { MAGIC_ITEMS } from "../../magicItem.js?v=1.5.49";
 import { resolveMagicArmorProfile } from "./magic-armor-profile.js?v=1.5.46";
 import { SPELLCASTING_ITEM_FAMILIES, getSpellcastingItemDefinition } from "./equipment-bonuses.js?v=1.5.30";
@@ -3928,11 +3928,15 @@ async function applyPackAutomationUpdate(document, data, item, iconLookup, activ
       await document.deleteEmbeddedDocuments("ActiveEffect", merge.effectIdsToDelete);
     }
     data.effects = merge.update.effects;
-    if (data.system && merge.update.system?.activities) {
-      data.system.activities = merge.update.system.activities;
-      if (merge.update.system.uses) data.system.uses = merge.update.system.uses;
-      for (const activityId of merge.activityIdsToDelete) {
-        data[`system.activities.-=${activityId}`] = null;
+    const system = data["==system"] ?? data.system;
+    const mergedSystem = merge.update["==system"] ?? merge.update.system;
+    if (system && mergedSystem?.activities) {
+      system.activities = mergedSystem.activities;
+      if (mergedSystem.uses) system.uses = mergedSystem.uses;
+      if (data.system) {
+        for (const activityId of merge.activityIdsToDelete) {
+          data[`system.activities.-=${activityId}`] = null;
+        }
       }
     }
   }

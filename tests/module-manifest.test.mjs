@@ -9,7 +9,7 @@ test("player sync owners share the released cache key at every runtime import", 
   const seen = new Set();
   for (const { path, source } of await readJavaScriptTree("../scripts/")) {
     for (const [, specifier, owner] of source.matchAll(/["']([^"'\n]*\/(hero-doll-service|socket-command-bus|socket-command-scheduling|privileged-mutation-gateway|ui-refresh-coordinator)\.js(?:\?[^"'\n]*)?)["']/gu)) {
-      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.100" : "1.5.3", `${path}: ${specifier}`);
+      assert.equal(new URL(specifier, `file:///module/${path}`).searchParams.get("v"), owner === "hero-doll-service" ? "1.5.105" : "1.5.3", `${path}: ${specifier}`);
       seen.add(owner);
     }
   }
@@ -21,7 +21,7 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.104");
+  assert.equal(manifest.version, "1.5.105");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   for (const entry of [manifest.esmodules[0], "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
@@ -52,9 +52,9 @@ test("clock and inventory runtime owners each share one canonical module URL", a
   }
   assert.ok(imports >= 12);
   const updatedKeys = new Map([
-    ["inventory-app.js", "1.5.94"],
-    ["inventory-service.js", "1.5.94"],
-    ["inventory-sync.js", "1.5.94"],
+    ["inventory-app.js", "1.5.105"],
+    ["inventory-service.js", "1.5.105"],
+    ["inventory-sync.js", "1.5.105"],
     ["group-context-service.js", "1.5.90"],
     ["group-state-repository.js", "1.5.90"],
     ["calendar-service.js", "1.5.90"],
@@ -150,7 +150,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.104");
+  assert.equal(manifest.version, "1.5.105");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
@@ -369,7 +369,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.5.49",
     "data/downtime-service.js?v=1.5.71",
-    "data/inventory-service.js?v=1.5.94",
+    "data/inventory-service.js?v=1.5.105",
     "data/inventory-ingress-descriptor.js?v=1.4.396",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.5.74",
@@ -380,7 +380,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/durability-hooks.js?v=1.5.48",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.5.68",
-    "integrations/inventory-sync.js?v=1.5.94",
+    "integrations/inventory-sync.js?v=1.5.105",
     "ui/lootgen-chat.js?v=1.5.69",
     "integrations/dfreds-exhaustion-icons.js?v=1.5.69",
     "data/gear-compendium.js?v=1.5.95",
@@ -804,7 +804,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.5\.95/u
+    /magic-items-compendium\.js\?v=1\.5\.105/u
   );
   assert.match(
     entrypointSource,
@@ -812,7 +812,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
   );
   assert.match(
     compendiumSource,
-    /magic-item-embedded-sync\.js\?v=1\.5\.60/u
+    /magic-item-embedded-sync\.js\?v=1\.5\.105/u
   );
   assert.match(compendiumSource, /magicItem\.js\?v=1\.5\.49/u);
 });

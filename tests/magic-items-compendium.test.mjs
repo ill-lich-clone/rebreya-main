@@ -25,6 +25,16 @@ globalThis.CONST ??= {
 
 const magicItemsCompendium = await import("../scripts/data/magic-items-compendium.js");
 
+test("Necklace of Fireballs is wondrous equipment with expendable beads", () => {
+  const original = MAGIC_ITEMS.find(item => item.id === "ожерелье-огненных-шаров");
+  const [item] = magicItemsCompendium.normalizeMagicItems([original]);
+  const created = magicItemsCompendium.createMagicItemData(item, new Map());
+  assert.equal(created.type, "equipment");
+  assert.equal(created.system.type.value, "wondrous");
+  assert.equal(created.flags["rebreya-main"].isConsumable, true);
+  assert.match(created.system.description.value, /1к6 \+ 3 бусины/u);
+});
+
 test("Elven Chain catalog projection records medium chain shirt consistently", () => {
   const original = MAGIC_ITEMS.find(item => item.id === "эльфийская-кольчуга");
   const [item] = magicItemsCompendium.normalizeMagicItems([original]);

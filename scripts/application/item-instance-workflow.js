@@ -85,11 +85,6 @@ export class ItemInstanceWorkflow {
     }
     if (record?.phase === "manual-review") throw new ItemInstanceError("manual-review", "Операция требует ручной сверки.");
     if (!record) {
-      const pending = await this.#batchJournal(context, () => this.journal.listPending());
-      if (pending.some(entry => entry.kind === "item-instance-v1" &&
-        [entry.intent.sourceActorUuid, entry.intent.destinationActorUuid].includes(intent.sourceActorUuid))) {
-        throw new ItemInstanceError("pending-instance-operation", "Сначала завершите или сверьте предыдущую операцию с предметами этого персонажа.");
-      }
       const prepared = await context.prepareBatch(actors, { id, fingerprint, intent });
       record = await this.#batchJournal(context, () => this.journal.start({ ...prepared, id, fingerprint, intent,
         kind: "item-instance-v1", batch: true, phase: "prepared" }));
@@ -176,12 +171,6 @@ export class ItemInstanceWorkflow {
     }
     if (record?.phase === "manual-review") throw new ItemInstanceError("manual-review", "Операция требует ручной сверки; повторная выдача заблокирована.");
     if (!record) {
-      const pending = await this.journal.listPending();
-      const actorIds = [intent.sourceActorUuid, intent.destinationActorUuid];
-      if (pending.some(entry => entry.kind === "item-instance-v1" &&
-        [entry.intent.sourceActorUuid, entry.intent.destinationActorUuid].some(uuid => actorIds.includes(uuid)))) {
-        throw new ItemInstanceError("pending-instance-operation", "Сначала завершите или сверьте предыдущую операцию с предметами этого персонажа.");
-      }
       const source = await this.documents.readSource(intent, actors);
       await context.authorize({ ...actors, ...source }, intent);
       if (intent.expectedSourceQuantity != null && intent.expectedSourceQuantity !== source.quantity) {

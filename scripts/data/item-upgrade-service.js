@@ -7,7 +7,7 @@ import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js?
 import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.5.23";
 import { getWeaponModHostDescriptor, getWeaponModEffectiveHost, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.5.23";
 import { getRuntimeWeaponModChildren } from "./runtime-item-graph.js?v=1.5.66";
-import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.5.17";
+import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.5.105";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.392";
 import { planItemInstanceMutation } from "./item-instance-rules.js?v=1.4.379";
 import { createStableGearDocumentId } from "./gear-document-ids.js";

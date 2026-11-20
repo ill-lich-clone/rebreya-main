@@ -54,11 +54,14 @@ for(const phase of ['equip','placement'])for(const timing of ['before','after'])
   assert.equal(fx.source.system.equipped,false);assert.equal(fx.hero.getFlag('rebreya-main','heroDoll'),undefined);
   assert.equal(fx.total(),1);
 });
-test('batch foreign touched field edit enters manual review and blocks a new operation',async t=>{
+test('batch foreign touched field edit stays in manual review and allows a new operation',async t=>{
   const fx=setup(t);fx.failAt('placement','after',()=>fx.hero.flags['rebreya-main'].heroDoll={slots:{head:{itemId:'foreign'}}});
   await assert.rejects(fx.run(),e=>e.code==='manual-review');
   assert.deepEqual(fx.hero.flags['rebreya-main'].heroDoll,{slots:{head:{itemId:'foreign'}}});
-  await assert.rejects(fx.run({operationId:'batch-2',mode:'hero-preset',sourceActorUuid:fx.hero.uuid,destinationActorUuid:fx.hero.uuid}),e=>e.code==='pending-instance-operation');
+  fx.hero.flags['rebreya-main'].heroDoll=undefined;
+  const next=await fx.run({operationId:'batch-2',mode:'hero-preset',sourceActorUuid:fx.hero.uuid,destinationActorUuid:fx.hero.uuid});
+  assert.equal(next.applied,true);
+  assert.equal(fx.source.system.equipped,true);
 });
 test('batch finish persistence failure retries committed receipts without compensating',async t=>{
   const fx=setup(t),journal=fx.api.inventoryService.mutationJournal;
