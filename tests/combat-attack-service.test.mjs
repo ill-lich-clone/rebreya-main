@@ -360,6 +360,35 @@ test("concurrent native reaction receipts spend distinct available uses exactly 
   assert.equal(reconnected.getReactionState(actor).usesRemaining, 0);
 });
 
+test("ordinary turn refresh uses the confirmed combatant while weapon turn work is pending", async t => {
+  const previousCombat = globalThis.Combat;
+  const previousGM = game.user.isGM;
+  globalThis.Combat = class Combat {};
+  game.user.isGM = true;
+  t.after(() => { globalThis.Combat = previousCombat; game.user.isGM = previousGM; });
+
+  const first = makeActor([], { id: "first" });
+  const second = makeActor([], { id: "second" });
+  for (const actor of [first, second]) actor.flags[MODULE_ID].reactionState = { usesMax: 1, usesRemaining: 0 };
+  const turns = [first, second].map(actor => ({ id: actor.id, actor }));
+  const combat = Object.assign(new Combat(), {
+    id: "combat", round: 1, turn: 0, combatant: turns[0], turns,
+    combatants: new Map(turns.map(entry => [entry.id, entry]))
+  });
+  const service = new CombatAttackService({});
+  const weaponUpdate = Promise.withResolvers();
+  service.handleWeaponModTurnChange = () => weaponUpdate.promise;
+
+  const refresh = service.handleCombatTurnChange(combat, { round: 1, turn: 0, combatantId: "first" });
+  Object.assign(combat, { turn: 1, combatant: turns[1] });
+  weaponUpdate.resolve();
+  await refresh;
+
+  assert.equal(service.getReactionState(first).usesRemaining, 1);
+  assert.equal(service.getReactionState(first).lastRefreshTurn, 0);
+  assert.equal(service.getReactionState(second).usesRemaining, 0);
+});
+
 function makeActor(items, {
   id = "actor-a",
   name = "Стрелок",
@@ -4418,6 +4447,34 @@ test("Sentinel offers a normal melee activity when an ally without Sentinel is a
   await h.service.applyMidiSentinel(h.workflow);
   assert.deepEqual(h.prompts, ["Страж: Защитник"]);
   assert.deepEqual(h.attacks, [[h.nativeAttack, [h.enemyToken.uuid]]]);
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
+});
+
+test("Interception cannot apply while Sentinel is spending the same last reaction use", async t => {
+  const h = await defenceFixture(t, "strazh");
+  h.guard.items.contents.push({ id: "perehvat", type: "feat", system: { identifier: "perehvat" } });
+  const rolled = Promise.withResolvers();
+  const completed = Promise.withResolvers();
+  MidiQOL.completeActivityUse = async (activity, config) => {
+    h.attacks.push([activity, config.midiOptions.targetUuids]);
+    rolled.resolve();
+    await completed.promise;
+    return { activity };
+  };
+  const sentinel = h.service.applyMidiSentinel(h.workflow);
+  await Promise.race([rolled.promise, sentinel]);
+  const packet = { damageDetail: [{ type: "slashing", value: 5 }] };
+  const workflow = { ...h.workflow, id: "second-attack", itemCardId: "second-card" };
+  try {
+    await h.service.applyMidiInterception(h.allyToken, { workflow, damageItem: packet });
+  }
+  finally {
+    completed.resolve();
+    await sentinel;
+  }
+  assert.deepEqual(h.prompts, ["Страж: Защитник"]);
+  assert.equal(packet.damageDetail[0].value, 5);
+  assert.equal(h.attacks.length, 1);
   assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
 });
 

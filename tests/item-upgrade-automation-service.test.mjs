@@ -5,6 +5,7 @@ import { WorldMutationCoordinator } from "../scripts/application/world-mutation-
 import { CombatAttackService } from "../scripts/combat/attack-service.js";
 import { registerCombatHooks } from "../scripts/combat/hooks.js";
 import { isCombatActorActive } from "../scripts/combat/turn-group-rules.js";
+import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 
 test("one ordinary turn with five participants leaves equipment and world lighting alone", async (t) => {
   const previous = { game: globalThis.game, Hooks: globalThis.Hooks, Actor: globalThis.Actor, Combat: globalThis.Combat, foundry: globalThis.foundry };
@@ -298,7 +299,8 @@ test("native preparation repeats without accumulating weight and honors a source
 test("initialize resets native actor models before preparing existing activities", async () => {
   const previous = globalThis.game;
   let resets = 0;
-  const actor = { uuid: "Actor.ready", reset() { resets++; }, prepareData() { assert.fail("Direct prepareData duplicates native base damage parts"); } };
+  const actor = { uuid: "Actor.ready", items: [{ flags: { "rebreya-main": { itemUpgrades: { installed: [{}] } } } }],
+    reset() { resets++; }, prepareData() { assert.fail("Direct prepareData duplicates native base damage parts"); } };
   const service = new ItemUpgradeAutomationService({}, { getManifest: async () => [], getWeaponModCatalog:async()=>({rows:[],hosts:[]}), isAuthority: () => false });
   service.registerItemDataPatch = () => false;
   try {
@@ -306,6 +308,37 @@ test("initialize resets native actor models before preparing existing activities
     await service.initialize();
     assert.equal(resets, 1);
   } finally { globalThis.game = previous; }
+});
+
+test("upgrade startup visits world lights once and resets only affected actors", async (t) => {
+  const restore = { game: globalThis.game, fromUuid: globalThis.fromUuid };
+  t.after(() => Object.assign(globalThis, restore));
+  const ns = "rebreya-main";
+  const counts = { resets: 0, actorReads: 0, lightReads: 0 };
+  const removed = [];
+  const actors = Array.from({ length: 30 }, (_, i) => ({
+    uuid: `Actor.${i}`, items: [], effects: [], reset() { counts.resets++; }, async createEmbeddedDocuments() {},
+    async deleteEmbeddedDocuments(kind, ids) { removed.push([kind, ...ids]); }
+  }));
+  actors[0].items = [{ flags: { [ns]: { itemUpgrades: { installed: [{}] } } }, toObject() { return {}; } }];
+  actors[1].effects = [{ id: "orphan-effect", flags: { [ns]: { simpleItemUpgrade: { managed: true } } } }];
+  const scenes = Array.from({ length: 12 }, () => ({
+    lights: Array.from({ length: 20 }, () => ({ getFlag() { counts.lightReads++; } }))
+  }));
+  const marker = { actorUuid: "Actor.gone", hostItemId: "host", childItemId: "mod", tokenUuid: "Scene.a.Token.gone" };
+  const id = createStableGearDocumentId(`weapon-mod-light:${marker.actorUuid}:${marker.hostItemId}:${marker.childItemId}:${marker.tokenUuid}`);
+  scenes[0].lights.push({ id, getFlag() { counts.lightReads++; return marker; }, async delete() {
+    removed.push(["AmbientLight", id]); scenes[0].lights.pop();
+  } });
+  globalThis.game = { system: { id: "dnd5e" }, actors, scenes };
+  globalThis.fromUuid = async () => null;
+  const service = new ItemUpgradeAutomationService({ worldMutationCoordinator: new WorldMutationCoordinator() }, {
+    isAuthority: () => true, getManifest: async () => [], getWeaponModCatalog: async () => ({ rows: [], hosts: [] }),
+    readActor(uuid) { counts.actorReads++; return actors.find(actor => actor.uuid === uuid); }, project: () => ({ contributions: [] })
+  });
+  await service.initialize();
+  assert.deepEqual(counts, { resets: 2, actorReads: 2, lightReads: 241 });
+  assert.deepEqual(removed, [["AmbientLight", id], ["ActiveEffect", "orphan-effect"]]);
 });
 
 test("holy steel restores only its own base dice and respects source edits and removal", () => {

@@ -49,3 +49,50 @@ test("economy reuses the baseline model with disabled events and still applies a
   assert.equal(repository.model.cityById.get("test-city").goodsRows[0].eventPriceModifierPercent, 0.25);
   assert.deepEqual(repository.model.globalEvents.activeEvents, [event]);
 });
+
+test("concurrent cold readers share one dataset load and one model", async (t) => {
+  const original = { game: globalThis.game, foundry: globalThis.foundry, fetch: globalThis.fetch };
+  t.after(() => Object.assign(globalThis, original));
+  const gate = Promise.withResolvers();
+  const paths = [];
+  globalThis.game = { settings: { get: () => undefined } };
+  globalThis.foundry = { utils: { deepClone: structuredClone } };
+  globalThis.fetch = async path => { paths.push(path); await gate.promise; return { ok: true, json: async () => [] }; };
+  const repository = new EconomyRepository();
+  const readers = Array.from({ length: 6 }, () => repository.load());
+  gate.resolve();
+  const models = await Promise.all(readers);
+  assert.equal(paths.length, 9);
+  assert.ok(models.every(model => model === repository.model));
+  await repository.reload();
+  assert.equal(paths.length, 18);
+});
+
+test("a forced reload supersedes an older load and failed loads can be retried", async (t) => {
+  const original = { game: globalThis.game, foundry: globalThis.foundry, fetch: globalThis.fetch };
+  t.after(() => Object.assign(globalThis, original));
+  const slow = Promise.withResolvers();
+  let batch = "old";
+  globalThis.game = { settings: { get: () => undefined } };
+  globalThis.foundry = { utils: { deepClone: structuredClone } };
+  globalThis.fetch = async path => {
+    const name = batch;
+    if (name === "old") await slow.promise;
+    if (name === "failed") throw new Error("dataset unavailable");
+    const rows = path.endsWith("/cities.json") ? [{ id: name, name }] : [];
+    return { ok: true, json: async () => rows };
+  };
+  const repository = new EconomyRepository();
+  const older = repository.load();
+  batch = "new";
+  const current = await repository.reload();
+  assert.equal(await older, current);
+  slow.resolve();
+  await new Promise(setImmediate);
+  assert.equal(repository.model.cities[0].id, "new");
+  batch = "failed";
+  await assert.rejects(repository.reload(), /dataset unavailable/u);
+  assert.equal(await repository.load(), current);
+  batch = "retried";
+  assert.equal((await repository.reload()).cities[0].id, "retried");
+});

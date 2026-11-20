@@ -372,6 +372,39 @@ test("actor with two reaction uses can reserve two paid reactions but never a th
   h.queue.destroy();
 });
 
+test("a module reaction reserves the last use against MIDI until its rollback completes", async t => {
+  const h = harness();
+  const service = h.queue._managed;
+  t.after(() => h.queue.destroy());
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  h.queue._options.promptCandidate = async () => ({ accepted: true });
+  h.queue.registerType("module-reaction", {
+    listCandidates: () => [{ actorUuid: h.actor.uuid, actor: h.actor }],
+    apply: () => ({ applied: false }),
+    async rollback() { started.resolve(); await release.promise; }
+  });
+  const pending = h.queue.resolve({ kind: "module-reaction", triggerId: "first-attack" });
+  await Promise.race([started.promise, pending]);
+  try {
+    const choice = { sessionId: "native" };
+    assert.equal((await service.command("begin", { ...choice, request: h.request }, "gm")).allowed, true);
+    assert.equal((await service.command("commit", choice, "gm")).allowed, false);
+
+    const activityUuid = "Actor.guard.Item.free.Activity.a";
+    h.queue._options.documentResolver = () => ({ actor: h.actor, activation: { type: "reaction", value: 0 } });
+    const request = { ...h.request, triggerId: "free-trigger", candidate: { actorUuid: h.actor.uuid, activityUuids: [activityUuid] } };
+    await service.command("begin", { sessionId: "free", request }, "gm");
+    assert.equal((await service.command("commit", { sessionId: "free", activityUuid }, "gm")).allowed, true);
+  }
+  finally {
+    release.resolve();
+    await pending;
+  }
+  assert.equal((await service.command("commit", { sessionId: "native" }, "gm")).allowed, true);
+  assert.equal(h.events.includes("consume"), false);
+});
+
 test("both successful native applications settle their own module reaction use", async () => {
   const h = harness({uses: 2});
   const service = h.queue._managed;

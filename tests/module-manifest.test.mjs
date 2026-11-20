@@ -21,9 +21,9 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.5.108");
+  assert.equal(manifest.version, "1.6.0");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
-  for (const entry of [manifest.esmodules[0], "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
+  for (const entry of [manifest.esmodules[0], "scripts/main-1.5.107.js", "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
   }
 });
@@ -63,11 +63,7 @@ test("clock and inventory runtime owners each share one canonical module URL", a
   for (const [owner, keys] of cacheKeys) assert.deepEqual(keys, new Set([updatedKeys.get(owner) ?? "1.4.377"]), owner);
 });
 
-test("cached 1.4 manifests retain loadable entrypoints after the 1.5 upgrade", async () => {
-  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  const [major, minor] = manifest.version.split(".").map(Number);
-  assert.equal(major, 1);
-  assert.equal(minor, 5);
+test("cached 1.4 manifests retain loadable entrypoints", async () => {
   for (let version = 322; version <= 400; version++) {
     const path = `../scripts/main-1.4.${version}.js`;
     const source = await readFile(new URL(path, import.meta.url), "utf8");
@@ -150,7 +146,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.5.108");
+  assert.equal(manifest.version, "1.6.0");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
@@ -681,7 +677,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.104(?=["'])/u,
+    /attack-service\.js\?v=1\.6\.0(?=["'])/u,
   );
   assert.match(
     entrypointSource,
@@ -697,7 +693,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /sorcerer-automation-service\.js\?v=1\.5\.62(?=["'])/u,
+    /sorcerer-automation-service\.js\?v=1\.6\.0(?=["'])/u,
   );
   assert.match(
     statusServiceSource,
@@ -783,7 +779,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.5\.104(?=["'])/u,
+    /attack-service\.js\?v=1\.6\.0(?=["'])/u,
   );
   assert.match(
     sheetSource,

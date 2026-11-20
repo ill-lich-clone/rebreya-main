@@ -120,6 +120,7 @@ function buildTradeRouteSnapshotCache(model, citySnapshots) {
 export class EconomyRepository {
   #dataset = null;
   #model = null;
+  #loading = null;
   #modelRevision = 0;
   #routePlanCache = new Map();
   #citySnapshotCache = new Map();
@@ -257,9 +258,23 @@ export class EconomyRepository {
     if (this.#model && !force) {
       return this.#model;
     }
+    if (this.#loading && !force) return this.#loading.promise;
 
-    this.#dataset = await loadEconomyDataset();
-    return this.#buildModel();
+    const load = Promise.withResolvers();
+    this.#loading?.resolve(load.promise);
+    this.#loading = load;
+    loadEconomyDataset().then(dataset => {
+      if (this.#loading !== load) return;
+      this.#dataset = dataset;
+      const model = this.#buildModel();
+      this.#loading = null;
+      load.resolve(model);
+    }).catch(error => {
+      if (this.#loading !== load) return;
+      this.#loading = null;
+      load.reject(error);
+    });
+    return load.promise;
   }
 
   async reload() {

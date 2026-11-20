@@ -40,21 +40,24 @@ test("current release reuses the catalog icon cache graph", async () => {
     "spells-compendium",
     "transport-actor-builder"
   ];
-  const [manifestSource, mainSource, serviceSource, syncSource, appSource, ...cacheImporterSources] = await Promise.all([
+  const [manifestSource, mainSource, serviceSource, syncSource, appSource, queueSource, ...cacheImporterSources] = await Promise.all([
     readFile(new URL("../module.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/inventory-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/integrations/inventory-sync.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/combat/reaction-queue-service.js", import.meta.url), "utf8"),
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.5.108");
+  assert.equal(manifest.version, "1.6.0");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.match(mainSource, /application\/equipment-size-service\.js\?v=1\.5\.108/u);
-  assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.5\.107/u);
+  assert.match(mainSource, /combat\/reaction-queue-service\.js\?v=1\.6\.0/u);
+  assert.match(queueSource, /managed-reaction-session\.js\?v=1\.6\.0/u);
   assert.match(mainSource, /integrations\/midi-reaction-adapter\.js\?v=1\.5\.106/u);
-  assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.5\.98/u);
+  assert.match(mainSource, /automation\/item-upgrade-automation-service\.js\?v=1\.6\.0/u);
+  assert.match(mainSource, /data\/repository\.js\?v=1\.6\.0/u);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.5\.105/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.5\.91/u);

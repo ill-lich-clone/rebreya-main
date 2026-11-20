@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getActiveGm, isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { ManagedReactionSessions } from "./managed-reaction-session.js?v=1.5.107";
+import { ManagedReactionSessions } from "./managed-reaction-session.js?v=1.6.0";
 
 export const REACTION_PROMPT_TIMEOUT_MS = 10_000;
 export const REACTION_RESULT_TTL_MS = 60_000;
@@ -879,8 +879,16 @@ export class ReactionQueueService {
 
   async _executeAccepted({ candidate, choice, context, kind, provider, triggerId }) {
     const transaction = { payment: null, effect: null, reaction: null };
+    let release;
+    let actor;
     try {
-      if (!await this._hasReactionCapacity(candidate, provider)) return { accepted: false, reason: "reactionReserved", ...transaction };
+      if (provider.consumesReaction !== false && candidate.consumesReaction !== false) {
+        actor = candidate.actor
+          ?? await (this._options.actorResolver ?? globalThis.fromUuid)?.(candidate.actorUuid)
+          ?? null;
+        release = this._managed.reserveModuleReaction(actor, candidate.actorUuid);
+        if (!release) return { accepted: false, reason: "reactionReserved", ...transaction };
+      }
       transaction.payment = typeof provider.pay === "function"
         ? await provider.pay(candidate, choice, context, transaction)
         : { paid: true };
@@ -896,10 +904,7 @@ export class ReactionQueueService {
         return { accepted: false, reason: "applicationFailed", ...transaction };
       }
 
-      if (provider.consumesReaction !== false && candidate?.consumesReaction !== false) {
-        const actor = candidate?.actor
-          ?? await (this._options.actorResolver ?? globalThis.fromUuid)?.(candidate?.actorUuid)
-          ?? null;
+      if (release) {
         const consumeReaction = this.moduleApi?.combatAttackService?.consumeReaction;
         transaction.reaction = typeof consumeReaction === "function"
           ? await consumeReaction.call(this.moduleApi.combatAttackService, actor, {
@@ -920,6 +925,9 @@ export class ReactionQueueService {
       await this._rollback(provider, candidate, { ...transaction, error }, context);
       return { accepted: false, reason: "providerError", error, ...transaction };
     }
+    finally {
+      release?.();
+    }
   }
 
   async _rollback(provider, candidate, transaction, context) {
@@ -935,8 +943,9 @@ export class ReactionQueueService {
   }
 
   async _hasReactionCapacity(candidate, provider) {
-    const reserved = this._managed.reservedUses(candidate.actorUuid);
-    if (!reserved || provider.consumesReaction === false || candidate.consumesReaction === false) return true;
+    if (provider.consumesReaction === false || candidate.consumesReaction === false) return true;
+    const reserved = this._managed.reservedUses(candidate.actor?.uuid ?? candidate.actorUuid);
+    if (!reserved) return true;
     const actor = candidate.actor ?? await (this._options.actorResolver ?? globalThis.fromUuid)?.(candidate.actorUuid);
     return this.moduleApi?.combatAttackService?.canUseReaction?.(actor, reserved + 1)?.canUse === true;
   }

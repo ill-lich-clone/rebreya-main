@@ -6483,17 +6483,24 @@ export class CombatAttackService {
       return null;
     }
 
-    await this.handleWeaponModTurnChange(combat);
+    const round = updateData.round ?? combat.round;
+    const turn = updateData.turn ?? combat.turn;
+    const { combatantId } = updateData;
+    const combatant = updateData.combatant
+      ?? (combatantId ? combat.combatants?.get?.(combatantId) : undefined)
+      ?? combat.turns?.[turn]
+      ?? combat.combatant;
+    const currentActor = !combatantId || combatant?.id === combatantId ? combatant?.actor : null;
 
-    const currentActor = combat.combatant?.actor ?? null;
+    await this.handleWeaponModTurnChange(combat);
     if (!(currentActor instanceof Actor)) {
       return null;
     }
 
     return this.refreshReaction(currentActor, {
       combat,
-      round: updateData.round,
-      turn: updateData.turn,
+      round,
+      turn,
       skipFull: true
     });
   }

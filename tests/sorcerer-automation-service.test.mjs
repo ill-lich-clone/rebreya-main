@@ -1765,6 +1765,35 @@ test("RED: level-three virtual-slot cooldown counts down on each owner turn", as
   });
 });
 
+test("overlapping turns of the same Sorcerer each decrement the virtual-slot cooldown", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  const flag = "sorcererAutomation.virtualSlotCooldowns";
+  await actor.setFlag(MODULE_ID, flag, { "fireball:3": { remaining: 3 } });
+  const setFlag = actor.setFlag.bind(actor);
+  const firstWrite = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const written = [];
+  actor.setFlag = async (scope, key, value) => {
+    written.push(value["fireball:3"].remaining);
+    if (written.length === 1) {
+      firstWrite.resolve();
+      await release.promise;
+    }
+    return setFlag(scope, key, value);
+  };
+  const combat = { combatant: { actor } };
+  const first = service.handleCombatTurnChange(combat, { turn: 0, round: 1 });
+  await Promise.race([firstWrite.promise, first]);
+  const second = service.handleCombatTurnChange(combat, { turn: 0, round: 2 });
+  await new Promise(setImmediate);
+  release.resolve();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(written, [2, 1]);
+  assert.equal(actor.getFlag(MODULE_ID, flag)["fireball:3"].remaining, 1);
+});
+
 test("RED: an unrelated combatant turn leaves another Sorcerer's cooldown unchanged", async () => {
   const actor = levelActor(5, { includePoints: true });
   const otherActor = levelActor(5, { includePoints: true });

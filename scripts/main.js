@@ -57,7 +57,7 @@ import { ensureWorldShieldSpell } from "./data/shield-spell-item.js?v=1.5.102";
 import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.5.102";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js?v=1.5.66";
+import { EconomyRepository } from "./data/repository.js?v=1.6.0";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.5.49";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
@@ -131,7 +131,7 @@ import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.98";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.87";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.5.98";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.6.0";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.95";
@@ -338,7 +338,7 @@ import { createGroupedCombatEffects } from "./integrations/grouped-combat-effect
 import { registerGroupedCombatRuntime, runStartCombatMacro, runEndCombatTurnMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.96";
 import { installDnd5eRoundRecoveryOptimization } from "./integrations/dnd5e-round-recovery.js?v=1.5.90";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.87";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.5.104";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.6.0";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.5.61";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.5.108";
@@ -347,7 +347,7 @@ import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.
 import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/equipment-size.js?v=1.4.393";
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js?v=1.5.102";
-import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.107";
+import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.6.0";
 import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.106";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.102";
@@ -371,7 +371,7 @@ import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.5.46";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.5.95";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.5.62";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.6.0";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
 import {
   PaladinAutomationService,

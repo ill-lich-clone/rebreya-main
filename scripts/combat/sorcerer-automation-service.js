@@ -3223,29 +3223,36 @@ export class SorcererAutomationService {
       return true;
     }
 
-    const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
-    const changedCooldowns = [];
-    for (const [key, record] of Object.entries(cooldowns)) {
-      if (!hasOwnerTurnCooldown(record)) {
-        continue;
-      }
-      const remaining = cooldownRemaining(record);
-      if (remaining <= 0) {
-        continue;
-      }
-      const nextRemaining = remaining - 1;
-      cooldowns[key] = { ...record, remaining: nextRemaining };
-      changedCooldowns.push({ key, remaining: nextRemaining });
-    }
-    if (!changedCooldowns.length) {
+    const snapshot = this._paymentLocks.has(actor) ? null : actorFlag(actor, COOLDOWNS_FLAG);
+    if (snapshot && !Object.keys(snapshot).length) {
       return true;
     }
 
-    await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
-    await Promise.all(changedCooldowns.map(({ key, remaining }) => (
-      this.#updateCooldownCards(actor, key, remaining)
-    )));
-    return true;
+    return this.#withActorPaymentLock(actor, async () => {
+      const cooldowns = snapshot ?? actorFlag(actor, COOLDOWNS_FLAG);
+      const changedCooldowns = [];
+      for (const [key, record] of Object.entries(cooldowns)) {
+        if (!hasOwnerTurnCooldown(record)) {
+          continue;
+        }
+        const remaining = cooldownRemaining(record);
+        if (remaining <= 0) {
+          continue;
+        }
+        const nextRemaining = remaining - 1;
+        cooldowns[key] = { ...record, remaining: nextRemaining };
+        changedCooldowns.push({ key, remaining: nextRemaining });
+      }
+      if (!changedCooldowns.length) {
+        return true;
+      }
+
+      await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
+      await Promise.all(changedCooldowns.map(({ key, remaining }) => (
+        this.#updateCooldownCards(actor, key, remaining)
+      )));
+      return true;
+    });
   }
 
   #resolveCombatTurnActor(combat, updateData = {}) {
@@ -3670,12 +3677,14 @@ export class SorcererAutomationService {
     const previous = this._paymentLocks.get(actor) ?? Promise.resolve();
     let release;
     const next = new Promise((resolve) => { release = resolve; });
-    this._paymentLocks.set(actor, previous.catch(() => undefined).then(() => next));
+    const pending = previous.catch(() => undefined).then(() => next);
+    this._paymentLocks.set(actor, pending);
     await previous.catch(() => undefined);
     try {
       return await operation();
     }
     finally {
+      if (this._paymentLocks.get(actor) === pending) this._paymentLocks.delete(actor);
       release();
     }
   }

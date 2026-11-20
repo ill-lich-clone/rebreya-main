@@ -23,6 +23,7 @@ export class ManagedReactionSessions {
     this.entries = new Map();
     this.pending = new Map();
     this.runs = new Map();
+    this.moduleReservations = new Map();
   }
 
   get options() { return this.queue._options; }
@@ -350,8 +351,26 @@ export class ManagedReactionSessions {
   }
 
   reservedUses(actorUuid) {
-    return [...this.entries.values()].reduce((total, entry) => total
-      + (entry.state === "applying" && entry.actor.uuid === actorUuid ? entry.requiredUses : 0), 0);
+    let total = this.moduleReservations.get(actorUuid) ?? 0;
+    for (const entry of this.entries.values()) {
+      if (entry.state === "applying" && entry.actor.uuid === actorUuid) total += entry.requiredUses;
+    }
+    return total;
+  }
+
+  reserveModuleReaction(actor, candidateUuid) {
+    const actorUuid = actor?.uuid ?? candidateUuid;
+    if (!actorUuid) return null;
+    const reserved = this.reservedUses(actorUuid);
+    const canUse = this.queue.moduleApi?.combatAttackService?.canUseReaction?.(actor, reserved + 1)?.canUse;
+    if (canUse !== true && (reserved > 0 || canUse === false)) return null;
+
+    this.moduleReservations.set(actorUuid, (this.moduleReservations.get(actorUuid) ?? 0) + 1);
+    return () => {
+      const count = this.moduleReservations.get(actorUuid);
+      if (count > 1) this.moduleReservations.set(actorUuid, count - 1);
+      else this.moduleReservations.delete(actorUuid);
+    };
   }
 
   prune() {
@@ -363,6 +382,6 @@ export class ManagedReactionSessions {
   destroy() {
     for (const entry of this.pending.values()) { this.clear(entry.timer); entry.resolve(null); }
     for (const entry of this.entries.values()) this.clear(entry.timer);
-    this.pending.clear(); this.entries.clear(); this.runs.clear();
+    this.pending.clear(); this.entries.clear(); this.runs.clear(); this.moduleReservations.clear();
   }
 }
