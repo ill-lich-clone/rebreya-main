@@ -15,10 +15,10 @@ import {
   normalizePinnedFolderIds,
   projectInventoryFolderRows,
   resolveInventoryDropFolderId
-} from "../data/inventory-folder-tree.js?v=1.5.94";
+} from "../data/inventory-folder-tree.js?v=1.6.1";
 import { inventoryWeightToPounds } from "../data/inventory-weight.js?v=1.5.94";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.5.105";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.6.1";
 import { promptStorageTransferQuantity } from "./storage-transfer-ui.js?v=1.5.10";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
@@ -5382,6 +5382,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         typeOptions: [
           { value: "all", label: "Все", selected: this.typeFilter === "all" },
           { value: "gear", label: "Снаряжение", selected: this.typeFilter === "gear" },
+          { value: "implant", label: "Импланты", selected: this.typeFilter === "implant" },
+          { value: "journal", label: "Записки", selected: this.typeFilter === "journal" },
           { value: "material", label: "Материалы", selected: this.typeFilter === "material" },
           { value: "supply", label: "Запасы", selected: this.typeFilter === "supply" },
           { value: "downtime", label: "Простой", selected: this.typeFilter === "downtime" },

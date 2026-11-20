@@ -573,6 +573,36 @@ test("getInventorySnapshot classifies Rebreya downtime items as downtime templat
   }
 });
 
+test("getInventorySnapshot filters saved implants and notes by their flags", async () => {
+  const gear = { sourceType: "gear" };
+  const makeItem = (id, flags) => createItem({ id, name: id, flags: { [MODULE_ID]: flags } });
+  const groupActor = createActor({
+    id: "group-1", name: "Party", type: "group", isOwner: true,
+    items: [
+      makeItem("gear", gear),
+      makeItem("implant", { ...gear, implant: {} }),
+      makeItem("note", { journalRecord: { version: 1, sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" } })
+    ]
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => ({})
+  });
+  try {
+    const all = await service.getInventorySnapshot();
+    assert.equal(all.items.length, 3);
+    assert.equal(all.items.find((item) => item.itemId === "implant").sourceType, "gear");
+    for (const [typeFilter, expected] of [["gear", ["gear"]], ["implant", ["implant"]], ["journal", ["note"]], ["custom", []]]) {
+      const { items } = await service.getInventorySnapshot({ typeFilter });
+      assert.deepEqual(items.map((item) => item.itemId), expected);
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("manual inventory item data preserves unit economics and never falls back to a same-name catalog entry", async () => {
   const fixture = installInventoryFixture();
   const service = new InventoryService({

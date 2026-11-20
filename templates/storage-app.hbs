@@ -97,6 +97,13 @@
     </form>
   {{/if}}
 
+  {{#if hasContents}}
+    <select data-storage-type-filter aria-label="Категория содержимого">
+      {{#each typeOptions}}
+        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+      {{/each}}
+    </select>
+  {{/if}}
   {{#if hasGridItems}}
     <div class="rm-storage-grid" style="--rm-storage-columns: {{gridColumns}};">
       {{#each rows}}
@@ -183,7 +190,7 @@
       {{/if}}
     </div>
   {{else}}
-    <div class="rm-storage-empty" aria-label="Пусто">
+    <div class="rm-storage-empty" aria-label="{{#if hasContents}}В этой категории пусто{{else}}Пусто{{/if}}">
       <i class="fa-solid fa-box-open" aria-hidden="true"></i>
     </div>
   {{/if}}

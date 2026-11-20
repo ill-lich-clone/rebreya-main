@@ -745,6 +745,44 @@ test("cancelled and stale party filter plans keep the storage row and request a 
   }
 });
 
+test("storage filters implants and notes without fetching or changing the bulk claim scope", async () => {
+  let snapshotRequests = 0;
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => {
+      snapshotRequests += 1;
+      return {
+        state: "opened",
+        rows: [
+          { rowId: "gear", sourceType: "gear", itemData: { type: "equipment" } },
+          { rowId: "implant", sourceType: "gear", itemData: { type: "equipment", flags: { [MODULE_ID]: { implant: {} } } } },
+          { rowId: "note", rowKind: "journal" }
+        ],
+        coins: { gp: 1 }
+      };
+    }
+  });
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  const initial = await app._prepareContext();
+  assert.deepEqual(initial.typeOptions.map(({ value }) => value), ["all", "gear", "implant", "journal"]);
+  await app._onRender(initial, {});
+
+  for (const [value, rowId] of [["gear", "gear"], ["implant", "implant"], ["journal", "note"]]) {
+    await listeners.get("change")({ target: { value, matches: (selector) => selector === "[data-storage-type-filter]" } });
+    const context = await app._prepareContext();
+    assert.deepEqual(context.rows.map((row) => row.rowId), [rowId]);
+    assert.equal(context.coinRows.length, 0);
+    assert.equal(context.canClaimAll, true);
+    assert.equal(context.typeOptions.find((option) => option.selected)?.value, value);
+  }
+  app.snapshot.coins = {};
+  assert.equal((await app._prepareContext()).canClaimAll, true);
+  assert.equal(snapshotRequests, 1);
+});
+
 test("Journal rows expose read and transfer controls", async () => {
   const { app } = createApp({
     configure: true,

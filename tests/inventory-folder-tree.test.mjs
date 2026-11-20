@@ -402,6 +402,24 @@ test("type filtering keeps only folders leading to visible Items", () => {
   assert.equal(projection.visibleItemCount, 1);
 });
 
+test("implant and journal filters separate special items from their original source types", () => {
+  const tree = buildInventoryFolderTree({
+    state: makeState([{ id: "bag", name: "Сумка", parentId: null }], { implant: "bag", note: "bag" }),
+    items: [
+      { itemId: "sword", sourceType: "gear" },
+      { itemId: "implant", sourceType: "gear", isImplant: true },
+      { itemId: "note", sourceType: "custom", isJournalRecord: true },
+      { itemId: "misc", sourceType: "custom" }
+    ]
+  });
+  for (const [typeFilter, itemId] of [["gear", "sword"], ["implant", "implant"], ["journal", "note"], ["custom", "misc"]]) {
+    for (const hideFolders of [false, true]) {
+      const { rows } = projectInventoryFolderRows({ tree, typeFilter, hideFolders });
+      assert.deepEqual(rows.map((row) => row.key).filter((key) => key.startsWith("item:")), [`item:${itemId}`]);
+    }
+  }
+});
+
 test("popout projection stays inside its subtree and handles a missing root", () => {
   const { tree, searchIndex } = buildProjectionFixture();
   const projection = projectInventoryFolderRows({

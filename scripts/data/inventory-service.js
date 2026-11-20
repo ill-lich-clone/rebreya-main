@@ -53,6 +53,7 @@ import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-cor
 import { applyLootgenNarrativeVariant, hasLootgenNarrative } from "./lootgen-narrative-catalog.js?v=1.4.396";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-record-items";
+import { isImplantItem } from "./implant-service.js?v=1.5.88";
 import {
   buildTransportFuelInventorySnapshot,
   normalizeTransportFuelSelector
@@ -66,6 +67,7 @@ import {
   InventoryFolderStateError,
   createInventoryFolder as createInventoryFolderState,
   deleteInventoryFolder as deleteInventoryFolderState,
+  itemMatchesType,
   moveInventoryFolder as moveInventoryFolderState,
   moveInventoryItemToFolder as moveInventoryItemToFolderState,
   normalizeExpandedFolderIds,
@@ -74,7 +76,7 @@ import {
   selectInventoryFolderItemIds,
   setInventoryFolderColor as setInventoryFolderColorState,
   renameInventoryFolder as renameInventoryFolderState
-} from "./inventory-folder-tree.js?v=1.5.94";
+} from "./inventory-folder-tree.js?v=1.6.1";
 import {
   appendInventoryAcquisitionEntry,
   readInventoryAcquisitionHistory,
@@ -5546,6 +5548,7 @@ export class InventoryService {
       acquisitionHistory: readInventoryAcquisitionHistory(itemData),
       canOpenEntry: true,
       isJournalRecord: isJournalRecordItem(item),
+      isImplant: isImplantItem(item),
       itemTypeLabel,
       materialLabel,
       transport,
@@ -7228,7 +7231,7 @@ export class InventoryService {
       .sort((left, right) => left.name.localeCompare(right.name, "ru"));
     const normalizedSearch = normalizeText(search);
     const filteredItems = allItems.filter((entry) => {
-      if (typeFilter !== "all" && entry.sourceType !== typeFilter) {
+      if (!itemMatchesType(entry, typeFilter)) {
         return false;
       }
 

@@ -184,8 +184,10 @@ function normalizeSearchText(value) {
     .replace(/\s+/gu, " ");
 }
 
-function itemMatchesType(item, typeFilter) {
+export function itemMatchesType(item, typeFilter) {
   if (!typeFilter || typeFilter === "all") return true;
+  if (item?.isJournalRecord) return typeFilter === "journal";
+  if (item?.isImplant) return typeFilter === "implant";
   return [item?.sourceType, item?.type, item?.itemType, item?.inventoryType, item?.category]
     .some((value) => String(value ?? "") === typeFilter);
 }

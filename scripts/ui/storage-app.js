@@ -10,6 +10,8 @@ import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-
 import { openCreatureHarvestingDialog } from "./creature-harvesting-dialog.js?v=1.5.77";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isDurabilityEligible } from "../data/durability-rules.js?v=1.4.200-storage-broken-presentation";
+import { isImplantItem } from "../data/implant-service.js?v=1.5.88";
+import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 import {
   buildStorageDragData,
   parseStorageDragData,
@@ -18,6 +20,21 @@ import {
 } from "./storage-transfer-ui.js?v=1.4.377";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+const STORAGE_TYPE_OPTIONS = [
+  { value: "all", label: "Все" },
+  { value: "gear", label: "Снаряжение" },
+  { value: "implant", label: "Импланты" },
+  { value: "journal", label: "Записки" }
+];
+
+function matchesStorageType(row, filter) {
+  if (filter === "all") return true;
+  if (row.rowKind === "journal" || isJournalRecordItem(row.itemData)) return filter === "journal";
+  if (row.rowKind === "container") return false;
+  if (isImplantItem(row.itemData)) return filter === "implant";
+  return filter === "gear" && (row.sourceType === "gear" || ["equipment", "weapon", "tool"].includes(row.itemData?.type));
+}
 
 /** Inspect the saved physical instance, with editing disabled and no persistent document creation. */
 export async function openStorageRowItem(row, { ItemClass = globalThis.CONFIG?.Item?.documentClass ?? globalThis.Item?.implementation ?? globalThis.Item, catalog } = {}) {
@@ -189,6 +206,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.pathNames = (Array.isArray(options.pathNames) ? options.pathNames : []).map(clean).filter(Boolean).slice(0, 8);
     this.rootName = clean(options.rootName);
     this.configure = options.configure === true;
+    this.typeFilter = "all";
     this.openStorageJournalViewer = options.openStorageJournalViewer ?? openStorageJournalViewer;
     this.anchorRequested = options.anchorToToken === true;
     this.anchorDetached = false;
@@ -213,6 +231,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.snapshotRequest += 1;
     this.snapshot = null;
     this.activeRowId = "";
+    this.typeFilter = "all";
     this.path = (Array.isArray(path) ? path : []).map(clean).filter(Boolean).slice(0, 8);
     this.pathNames = [];
     this.characterTokenUuid = clean(characterTokenUuid);
@@ -269,16 +288,16 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const coins = normalizeCoins(this.snapshot?.coins);
     const hasTextureSet = TEXTURE_MODES.every(({ mode }) => clean(this.snapshot?.textures?.[mode]));
     const snapshotRows = this.snapshot?.rows ?? [];
-    const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
-    const coinRows = COIN_KEYS.filter(key => coins[key] > 0).map(denomination => ({
+    const nonzeroCoinKeys = COIN_KEYS.filter((key) => coins[key] > 0);
+    const hasCoins = nonzeroCoinKeys.length > 0;
+    const coinRows = (this.typeFilter === "all" ? nonzeroCoinKeys : []).map(denomination => ({
       ...buildStorageCoinRow({ manualCoins: coins }, `__coins:${denomination}`),
       name: coinsLabel({ [denomination]: coins[denomination] }),
       img: deriveStorageCoinImage({ [denomination]: coins[denomination] }),
       expanded: this.activeRowId === `__coins:${denomination}`
     }));
-    const gridItemCount = snapshotRows.length + coinRows.length;
-    const gridColumns = storageGridColumns(gridItemCount);
-    const rows = snapshotRows.map((row) => {
+    const gridColumns = storageGridColumns(snapshotRows.length + nonzeroCoinKeys.length);
+    const rows = snapshotRows.filter((row) => matchesStorageType(row, this.typeFilter)).map((row) => {
       const isJournal = row.rowKind === "journal";
       const isContainer = row.rowKind === "container" && Boolean(row.container);
       const durability = row.itemData?.flags?.[MODULE_ID]?.durability;
@@ -354,8 +373,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       breadcrumbs,
       hasBreadcrumbs: breadcrumbs.length > 1,
       hasRows: rows.length > 0,
-      hasGridItems: gridItemCount > 0,
-      canClaimAll: !this.configure && (rows.some((row) => row.canClaim && !row.isJournal) || hasCoins),
+      hasGridItems: rows.length > 0 || coinRows.length > 0,
+      hasContents: snapshotRows.length > 0 || hasCoins,
+      typeOptions: STORAGE_TYPE_OPTIONS.map((option) => ({ ...option, selected: option.value === this.typeFilter })),
+      canClaimAll: !this.configure && (snapshotRows.some((row) => row.rowKind !== "journal") || hasCoins),
       claimAllPending: this.claimAllPending,
       gridColumns,
       coins,
@@ -416,9 +437,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.activeRowId = "";
       void this.#renderCurrent();
     }, listenerOptions);
-    const gridCount = (this.snapshot?.rows?.length ?? 0)
-      + COIN_KEYS.filter((key) => Number(this.snapshot?.coins?.[key] ?? 0) > 0).length;
-    const columns = storageGridColumns(gridCount);
+    const columns = context?.gridColumns ?? 3;
     root.style?.setProperty?.("--rm-storage-columns", String(columns));
     const viewportWidth = Math.max(320, Number(globalThis.innerWidth) || 1920);
     const width = this.configure ? 430 : Math.min(viewportWidth - 32, Math.max(286, (columns * 80) + 46));
@@ -463,6 +482,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #onStorageChange(event) {
     const input = event.target;
+    if (input?.matches?.("[data-storage-type-filter]")) {
+      this.typeFilter = input.value;
+      this.activeRowId = "";
+      await this.#renderCurrent();
+      return;
+    }
     if (input?.matches?.("[data-storage-broken]")) {
       const rowId = clean(input.dataset?.rowId);
       try {
@@ -635,6 +660,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.path = nextPath;
     this.pathNames.push(clean(row.name) || "Контейнер");
     this.activeRowId = "";
+    this.typeFilter = "all";
     this.snapshot = null;
     await this.scheduleSnapshotRefresh();
   }
@@ -725,6 +751,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.path = this.path.slice(0, index);
         this.pathNames = this.pathNames.slice(0, index);
         this.activeRowId = "";
+        this.typeFilter = "all";
         this.snapshot = null;
         await this.scheduleSnapshotRefresh();
         return;
