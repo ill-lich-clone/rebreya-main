@@ -4333,12 +4333,14 @@ test("attack reactions register with the global reaction queue", async () => {
   assert.deepEqual(registered, ["provoked-attack", "parry", "interception", "sentinel-defender"]);
 });
 
-async function defenceFixture(t, feat, { targetFeat = false, self = false, distance = 5, visible = true, held = true } = {}) {
+async function defenceFixture(t, feat, { targetFeat = false, self = false, distance = 5, visible = true, held = true, staleGrip = false } = {}) {
   const weapon = makeWeaponItem({ heldHands: held ? ["right"] : [] });
   const nativeAttack = { type: "attack", attack: { type: { value: "melee" } }, item: weapon };
   weapon.system.activities = new Map([["melee", nativeAttack]]);
   const feature = identifier => ({ id: identifier, type: "feat", system: { identifier } });
-  const guard = makeActor([weapon, feature(feat)], { id: "guard" });
+  const staleWeapon = makeWeaponItem({ id: "stale-axe", equipped: false, heldHands: ["right"] });
+  staleWeapon.system.activities = new Map([["melee", { ...nativeAttack, item: staleWeapon }]]);
+  const guard = makeActor([...(staleGrip ? [staleWeapon] : []), weapon, feature(feat)], { id: "guard" });
   guard.system.attributes.hd = { max: 6 };
   const enemy = makeActor([], { id: "enemy" });
   const ally = makeActor(targetFeat ? [feature("strazh")] : [], { id: "ally" });
@@ -4415,6 +4417,13 @@ test("Sentinel offers a normal melee activity when an ally without Sentinel is a
   await h.service.applyMidiSentinel(h.workflow);
   await h.service.applyMidiSentinel(h.workflow);
   assert.deepEqual(h.prompts, ["Страж: Защитник"]);
+  assert.deepEqual(h.attacks, [[h.nativeAttack, [h.enemyToken.uuid]]]);
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
+});
+
+test("Sentinel skips a stowed melee weapon with stale held-hand data", async t => {
+  const h = await defenceFixture(t, "strazh", { staleGrip: true });
+  await h.service.applyMidiSentinel(h.workflow);
   assert.deepEqual(h.attacks, [[h.nativeAttack, [h.enemyToken.uuid]]]);
   assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
 });

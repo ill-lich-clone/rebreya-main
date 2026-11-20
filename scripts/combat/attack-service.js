@@ -6756,7 +6756,7 @@ export class CombatAttackService {
       || actor.uuid === attacker.actor?.uuid || !this.#attackDefenceFeat(actor, DEFENCE_FEATS[kind])
       || globalThis.MidiQOL?.checkIncapacitated?.(actor) || !this.canUseReaction(actor).canUse) return null;
 
-    const weapons = actor.items.contents.filter(item => isMeleeWeaponItem(item) && getItemHeldHands(item).length > 0);
+    const weapons = actor.items.contents.filter(item => isMeleeWeaponItem(item) && isEquippedItem(item) && getItemHeldHands(item).length > 0);
     const distance = to => this.#attackDefenceDistance(token, to);
     if (kind === SENTINEL_REACTION_KIND) {
       if (this._sentinelStrikes.has(actor.uuid) || !token.disposition || !targets.some(target => target.actor?.uuid !== actor.uuid
@@ -6764,7 +6764,8 @@ export class CombatAttackService {
       const reach = distance(attacker);
       const activity = weapons.filter(item => reach <= this.getMeleeReachFeet(item, { actor }))
         .flatMap(item => collectionValues(item.system.activities).filter(activity => activity.type === "attack"
-          && activity.attack?.type?.value === "melee" && activity.canUse !== false))[0];
+          && activity.attack?.type?.value === "melee" && activity.canUse !== false
+          && !this.#getHeldWeaponActivityBlock(activity)))[0];
       return activity ? { actor, token, activity } : null;
     }
     const reach = Math.max(getNaturalReachFeet(actor), ...weapons.map(weapon => this.getMeleeReachFeet(weapon, { actor })));
