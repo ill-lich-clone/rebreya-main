@@ -28,6 +28,7 @@ import { getWeaponSizeUse } from "../data/equipment-size-rules.js?v=1.4.393";
 import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
+  getHeldItemEquipPresentation,
   getItemHeldHands,
   isNaturalWeapon,
   hasDistinctHeldItemsInDifferentHands
@@ -6762,11 +6763,11 @@ export class CombatAttackService {
       if (this._sentinelStrikes.has(actor.uuid) || !token.disposition || !targets.some(target => target.actor?.uuid !== actor.uuid
         && target.disposition === token.disposition && !this.#attackDefenceFeat(target.actor, "strazh"))) return null;
       const reach = distance(attacker);
-      const activity = weapons.filter(item => reach <= this.getMeleeReachFeet(item, { actor }))
-        .flatMap(item => collectionValues(item.system.activities).filter(activity => activity.type === "attack"
+      const activities = weapons.filter(item => reach <= this.getMeleeReachFeet(item, { actor }))
+        .map(item => collectionValues(item.system.activities).find(activity => activity.type === "attack"
           && activity.attack?.type?.value === "melee" && activity.canUse !== false
-          && !this.#getHeldWeaponActivityBlock(activity)))[0];
-      return activity ? { actor, token, activity } : null;
+          && !this.#getHeldWeaponActivityBlock(activity))).filter(Boolean);
+      return activities.length ? { actor, token, activities } : null;
     }
     const reach = Math.max(getNaturalReachFeet(actor), ...weapons.map(weapon => this.getMeleeReachFeet(weapon, { actor })));
     if (!this.#hasInterceptionEquipment(actor, true) || distance(targets[0]) > reach
@@ -6863,12 +6864,15 @@ export class CombatAttackService {
       ),
       buildPrompt: (candidate, context) => this.#attackReactionPrompt(
         kind,
-        this.#attackReactionCandidateState(context, candidate, kind)
+        this.#attackReactionCandidateState(context, candidate, kind),
+        candidate
       ),
       pay: async () => ({ paid: true }),
-      apply: (candidate, _choice, context) => this.#applyAttackReaction(
+      apply: (candidate, choice, context) => this.#applyAttackReaction(
         kind,
-        this.#attackReactionCandidateState(context, candidate, kind)
+        this.#attackReactionCandidateState(context, candidate, kind),
+        choice,
+        candidate.sentinelWeaponIds
       ),
       rollback: (candidate, transaction, context) => this.#rollbackAttackReaction(
         kind,
@@ -6917,7 +6921,7 @@ export class CombatAttackService {
     const rootState = this.#attackReactionState(context, kind);
     if (rootState.attack) {
       const selected = this.#attackDefenceCandidate(rootState, candidate);
-      return { ...rootState, reactor: selected?.actor, activity: selected?.activity, rootState };
+      return { ...rootState, reactor: selected?.actor, activities: selected?.activities ?? [], rootState };
     }
     const reactor = candidate.actor instanceof Actor
       ? candidate.actor
@@ -6985,10 +6989,20 @@ export class CombatAttackService {
     return false;
   }
 
-  #attackReactionPrompt(kind, state) {
+  #attackReactionPrompt(kind, state, candidate) {
     if (kind === SENTINEL_REACTION_KIND) {
+      const target = cleanText(state.target?.name, "нападающего");
+      const weapons = state.activities.map(activity => activity.item);
+      candidate.sentinelWeaponIds = weapons.map(item => item.id);
+      if (weapons.length > 1) {
+        return { title: "Страж: Защитник", body: `Атаковать ${target}?`,
+          acceptLabel: "Атаковать", declineLabel: "Пропустить",
+          fields: [{ name: "weaponId", type: "select", label: "Оружие в руках", options: weapons.map(item => ({
+            value: item.id, label: `${item.name} · ${getHeldItemEquipPresentation(item).label}`
+          })) }] };
+      }
       return { title: "Страж: Защитник",
-        body: `Атаковать ${cleanText(state.target?.name, "нападающего")} оружием «${cleanText(state.activity?.item?.name, "рукопашное оружие")}»?`,
+        body: `Атаковать ${target} оружием «${cleanText(weapons[0]?.name, "рукопашное оружие")}»?`,
         acceptLabel: "Атаковать", declineLabel: "Пропустить" };
     }
     if (kind === PROVOKED_ATTACK_REACTION_KIND) {
@@ -7015,7 +7029,7 @@ export class CombatAttackService {
     };
   }
 
-  async #applyAttackReaction(kind, state) {
+  async #applyAttackReaction(kind, state, choice, sentinelWeaponIds = []) {
     if (state.attack && !this.#canResolveAttackReaction(kind, state)) return { applied: false };
     let effect;
     if (kind === PROVOKED_ATTACK_REACTION_KIND) {
@@ -7025,7 +7039,10 @@ export class CombatAttackService {
       effect = this.#executeParry(state);
     }
     else if (kind === SENTINEL_REACTION_KIND) {
-      effect = await this.#executeSentinelAttack(state);
+      const weaponId = sentinelWeaponIds.length === 1 ? sentinelWeaponIds[0] : choice?.weaponId;
+      const activity = sentinelWeaponIds.includes(weaponId) && state.activities.find(entry => entry.item.id === weaponId);
+      if (!activity) return { applied: false };
+      effect = await this.#executeSentinelAttack({ ...state, activity });
     }
     else {
       effect = await this.#executeInterception(state);

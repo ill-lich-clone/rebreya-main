@@ -4428,6 +4428,35 @@ test("Sentinel skips a stowed melee weapon with stale held-hand data", async t =
   assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
 });
 
+test("Sentinel lets the player pick between held weapons and uses the selected attack", async t => {
+  const h = await defenceFixture(t, "strazh", { staleGrip: true });
+  const weapon = makeWeaponItem({ id: "axe", name: "Топор", heldHands: ["left"] });
+  const attack = { ...h.nativeAttack, item: weapon };
+  weapon.system.activities = new Map([["melee", attack]]);
+  h.guard.items.contents.push(weapon);
+  h.api.reactionQueueService._options.promptCandidate = async ({ prompt }) => {
+    assert.deepEqual(prompt.fields[0].options.map(option => option.value), ["sword", "axe"]);
+    return { accepted: true, weaponId: "axe" };
+  };
+  await h.service.applyMidiSentinel(h.workflow);
+  assert.deepEqual(h.attacks, [[attack, [h.enemyToken.uuid]]]);
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
+});
+
+test("Sentinel does not swap weapons when the offered weapon is put away before acceptance", async t => {
+  const h = await defenceFixture(t, "strazh");
+  h.api.reactionQueueService._options.promptCandidate = async () => {
+    h.nativeAttack.item.system.equipped = false;
+    const replacement = makeWeaponItem({ id: "axe", heldHands: ["right"] });
+    replacement.system.activities = new Map([["melee", { ...h.nativeAttack, item: replacement }]]);
+    h.guard.items.contents.push(replacement);
+    return { accepted: true };
+  };
+  await h.service.applyMidiSentinel(h.workflow);
+  assert.deepEqual(h.attacks, []);
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 1);
+});
+
 test("Sentinel does not offer a strike against an attack on another Sentinel", async t => {
   const h = await defenceFixture(t, "strazh", { targetFeat: true });
   await h.service.applyMidiSentinel(h.workflow);
