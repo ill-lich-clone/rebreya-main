@@ -147,6 +147,32 @@ test("preUpdateItem preserves nested replacements in non-recursive updates", () 
   }
 });
 
+test("preUpdateItem preserves Foundry's forced system replacement during item migration", t => {
+  class ForcedReplacement {}
+  const originalFoundry = Object.getOwnPropertyDescriptor(globalThis, "foundry");
+  t.after(() => {
+    if (originalFoundry) Object.defineProperty(globalThis, "foundry", originalFoundry);
+    else delete globalThis.foundry;
+  });
+  globalThis.foundry = { data: { operators: { ForcedReplacement } } };
+  const hooks = new Map();
+  const service = new EquipmentSizeService({}, { buildItemUpdate: buildEquipmentSizeUpdate });
+  registerEquipmentSizeItemHooks({ equipmentSizeService: service }, {
+    Hooks: { on(event, handler) { hooks.set(event, handler); } }
+  });
+  const item = makeEquipment({ type: "consumable" });
+  const system = { type: { value: "wondrous" }, quantity: 3, activities: { cast: { type: "save" } } };
+  const replacement = new Proxy(new ForcedReplacement(), { get: (_, key) => system[key] });
+  const flags = { "rebreya-main": { foundryType: "equipment" } };
+
+  for (const patch of [{ system: replacement }, { "==system": system }]) {
+    const changes = { type: "equipment", ...patch, flags };
+    assert.equal(hooks.get("preUpdateItem")(item, changes, {}), true);
+    assert.deepEqual(changes, { type: "equipment", ...patch, flags });
+    assert.equal(changes.system ?? changes["==system"], patch.system ?? patch["==system"]);
+  }
+});
+
 test("equipment controls exclude natural weapons, coins, spells and journal records", () => {
   assert.equal(isEquipmentSizeItem(makeEquipment()), true);
   assert.equal(isEquipmentSizeItem(makeEquipment({ type: "container" })), true);

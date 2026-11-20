@@ -37,6 +37,9 @@ export class EquipmentSizeService {
   preUpdateItem(item, changes, options = {}) {
     // Foundry treats each root key as a replacement when recursive is false.
     if (options.rebreyaEquipmentSize === true || options.recursive === false) return true;
+    // Preserve the native operator and the rest of a full system replacement.
+    const ForcedReplacement = globalThis.foundry?.data?.operators?.ForcedReplacement;
+    if (Object.hasOwn(changes, "==system") || (ForcedReplacement && changes.system instanceof ForcedReplacement)) return true;
     const { update } = this.buildItemUpdate(item, { changes, source: "edit" });
     for (const key of Object.keys(changes)) delete changes[key];
     Object.assign(changes, update);
