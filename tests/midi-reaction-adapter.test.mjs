@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function harness({ type = "activity", fail = false, force = false, patched = false, shield = false } = {}) {
+async function harness({ type = "activity", fail = false, force = false, patched = false, shield = false, shieldGate, nativeGate } = {}) {
   const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
   const dialogs = []; const events = [];
+  let shieldWorkflow;
   let now = 100;
   let controls;
   const actor = { uuid: "Actor.guard", flags: { "midi-qol": { optional: type === "ac" ? { shield: { ac: "@abilities.dex.mod + 1d4", ...(force ? { force: "true" } : {}), count: "reaction" } } : {} } }, name: "Guard" };
@@ -17,6 +18,7 @@ async function harness({ type = "activity", fail = false, force = false, patched
     actor.effects = [];
     actor.createEmbeddedDocuments = async (_type, rows) => {
       actor.effects.push(...rows);
+      for (const effect of rows) actor.system.attributes.ac.value += effect.system.changes[0].value;
       return rows;
     };
   }
@@ -50,8 +52,14 @@ async function harness({ type = "activity", fail = false, force = false, patched
           if (shield) {
             assert.equal(data.options.configureDialog, false);
             assert.deepEqual(data.options.targetUuids, ["Token.guard"]);
-            await adapter.applyShieldEffect({ actor, activity: shieldActivity, itemCardUuid: "ChatMessage.shield",
-              workflowOptions: data.options.workflowOptions });
+            shieldWorkflow = { actor, activity: shieldActivity, itemCardUuid: "ChatMessage.shield",
+              workflowOptions: data.options.workflowOptions };
+            if (shieldGate) {
+              resolve({ name: "None" });
+              if (!await shieldGate) return;
+            }
+            await queue.midi.RollComplete(shieldWorkflow);
+            if (nativeGate) await nativeGate;
           }
           result = fail ? { name: "None" } : optional ? { name: "Guard", uuid: actor.uuid, ac: 18 } : { name: "Shield", uuid: button.key, itemUuid: "Item.shield" };
           if (!optional) resolve(result);
@@ -63,6 +71,7 @@ async function harness({ type = "activity", fail = false, force = false, patched
   };
   const socket = { functions: new Map([["chooseReactions", original]]) };
   const queue = {
+    registerType(_kind, provider) { this.midi = provider.midi; },
     async resolveManagedReaction(request, execute) {
       events.push("service");
       const controller = new AbortController();
@@ -85,9 +94,10 @@ async function harness({ type = "activity", fail = false, force = false, patched
   const data = { tokenUuid: "Token.guard", triggerTokenUuid: "Token.enemy", triggerType: type === "ac" || force ? "reactionattacked" : "reaction", reactionFlavor: "Choose", reactionActivityList: type === "activity" && !force ? ["Activity.shield"] : [], options: { workflowId: "attack:1" } };
   if (patched) data.options.reactionRequest = { id: "request", userId: "origin" };
   if (shield) data.options.rebreyaShieldReaction = { "Token.guard": {
-    actorUuid: actor.uuid, tokenUuid: "Token.guard", attackTotal: 14, effectiveAC: 12, baseAC: 12
-  } }, actor.system = { attributes: { ac: { value: 12 } } };
-  return { adapter, socket, original, actor, dialogs, events, data, controls: () => controls, now: value => { now = value; }, invoke: () => socket.functions.get("chooseReactions")(data) };
+    actorUuid: actor.uuid, tokenUuid: "Token.guard", attackTotal: 17, effectiveAC: 17, baseAC: 17
+  } }, actor.system = { attributes: { ac: { value: 17 } } };
+  return { adapter, socket, original, actor, dialogs, events, data, queue, shieldWorkflow: () => shieldWorkflow,
+    controls: () => controls, now: value => { now = value; }, invoke: () => socket.functions.get("chooseReactions")(data) };
 }
 
 test("accepted legacy Shield uses the exact reacting token without a second configuration window", async () => {
@@ -106,6 +116,60 @@ test("an applied Shield is confirmed even when the native choice loses its retur
   await h.dialogs[0].submit();
   assert.deepEqual(await pending, { name: "Щит", uuid: "Activity.shield", itemUuid: "Item.shield", itemName: "Щит" });
   assert.equal(h.actor.effects[0].system.changes[0].value, 5);
+});
+
+test("Midi's early no-result leaves the triggering hit pending until the selected Shield effect exists", async () => {
+  const cast = Promise.withResolvers();
+  const h = await harness({ shield: true, shieldGate: cast.promise });
+  let resolved = false;
+  const pending = h.invoke().then(result => { resolved = true; return result; });
+  while (!h.dialogs.length) await Promise.resolve();
+  const submission = h.dialogs[0].submit();
+  await new Promise(setImmediate);
+  const { workflowOptions } = h.shieldWorkflow();
+  await h.queue.midi.preAbort?.({ ...h.shieldWorkflow(), workflowOptions: { ...workflowOptions, rebreyaShieldSessionId: "other" } });
+  await new Promise(setImmediate);
+  assert.equal(h.actor.effects.length, 0);
+  assert.equal(h.actor.system.attributes.ac.value, 17);
+  assert.equal(resolved, false);
+  cast.resolve(true);
+  await submission;
+  assert.equal((await pending).uuid, "Activity.shield");
+  assert.equal(h.actor.effects.length, 1);
+  assert.equal(h.actor.system.attributes.ac.value, 22);
+});
+
+test("a confirmed Shield releases the hit even if Midi's dialog has not returned a result", async () => {
+  const native = Promise.withResolvers();
+  const h = await harness({ shield: true, nativeGate: native.promise });
+  let resolved = false;
+  const pending = h.invoke().then(result => { resolved = true; return result; });
+  while (!h.dialogs.length) await Promise.resolve();
+  const submission = h.dialogs[0].submit();
+  await new Promise(setImmediate);
+  assert.equal(resolved, true);
+  assert.equal((await pending).uuid, "Activity.shield");
+  native.resolve();
+  await submission;
+});
+
+test("an aborted selected Shield releases the hit without an effect or a second native use", async () => {
+  for (const abort of [h => h.controls().abort(), h => h.queue.midi.preAbort?.(h.shieldWorkflow())]) {
+    const cast = Promise.withResolvers();
+    const h = await harness({ shield: true, shieldGate: cast.promise });
+    let resolved = false;
+    const pending = h.invoke().then(result => { resolved = true; return result; });
+    while (!h.dialogs.length) await Promise.resolve();
+    const submission = h.dialogs[0].submit();
+    await new Promise(setImmediate);
+    assert.equal(resolved, false);
+    await abort(h);
+    assert.deepEqual(await pending, { name: "None" });
+    cast.resolve(false);
+    await submission;
+    assert.equal(h.actor.effects.length, 0);
+    assert.equal(h.events.filter(entry => entry[0] === "native-callback").length, 1);
+  }
 });
 
 test("Parry offers against a visible melee hit and reports AC only for the selected attack", async () => {

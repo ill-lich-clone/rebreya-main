@@ -2,21 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { registerCombatHooks } from "../scripts/combat/hooks.js";
 
-test("combat hook registers Shield filter once and preserves all original hook arguments", async () => {
+test("combat hooks dispatch the native reaction filter and abort once with their original arguments", async () => {
   const oldGame = globalThis.game; const oldHooks = globalThis.Hooks;
   const hooks = new Map(); const received = [];
   globalThis.game = {};
   globalThis.Hooks = { on: (name, fn) => { hooks.set(name, [...hooks.get(name) ?? [], fn]); } };
   try {
     const api = { midiReactionAdapter: {}, reactionQueueService: { dispatchMidi: (phase, ...args) => {
-      assert.equal(phase, "ReactionFilter");
-      received.push(args);
+      received.push([phase, ...args]);
     } } };
     registerCombatHooks(api); registerCombatHooks(api);
     assert.equal(hooks.get("midi-qol.ReactionFilter")?.length, 1);
+    assert.equal(hooks.get("midi-qol.preAbort")?.length, 1);
     const args = [[], { workflow: {} }, "reaction", []];
+    const workflow = { id: "shield" };
     await hooks.get("midi-qol.ReactionFilter")[0](...args);
-    assert.deepEqual(received, [args]);
+    await hooks.get("midi-qol.preAbort")[0](workflow);
+    assert.deepEqual(received, [["ReactionFilter", ...args], ["preAbort", workflow]]);
   } finally { globalThis.game = oldGame; globalThis.Hooks = oldHooks; }
 });
 

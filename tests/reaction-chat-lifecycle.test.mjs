@@ -6,7 +6,7 @@ function reactionText(content) {
   return /<p class="rm-reaction-chat__text">([^]*?)<\/p>/u.exec(content)?.[1] ?? content;
 }
 
-function harness({ choice = { accepted: true }, payment = true, applied = true, consumed = true, throws = false, chatThrows = false } = {}) {
+function harness({ choice = { accepted: true }, payment = true, applied = true, consumed = true, throws = false, chatThrows = false, kind = "reaction" } = {}) {
   const events = [];
   const actor = { uuid: "Actor.npc", name: "<Страж>" };
   const messages = [];
@@ -26,12 +26,16 @@ function harness({ choice = { accepted: true }, payment = true, applied = true, 
     actorResolver: () => actor,
     promptCandidate: async () => { events.push(["prompt"]); return choice; }
   });
-  queue.registerType("reaction", {
+  queue.registerType(kind, {
     listCandidates: () => [{ actorUuid: actor.uuid, actor }],
     pay: () => ({ paid: payment }),
-    apply: async () => { events.push(["apply"]); if (throws) throw Error("provider failed"); return { applied }; }
+    apply: async () => {
+      events.push(["apply"]);
+      if (throws) throw Error("provider failed");
+      return { applied, ...(kind === "interception" ? { incomingDamage: 6, reducedDamage: 1, reduction: 10 } : {}) };
+    }
   });
-  return { queue, events, messages, run: () => queue.resolve({ kind: "reaction", triggerId: "attack:1" }) };
+  return { queue, events, messages, run: () => queue.resolve({ kind, triggerId: "attack:1" }) };
 }
 
 test("chat shows choosing before prompt and deletes only after successful payment, application and reaction", async () => {
@@ -41,6 +45,15 @@ test("chat shows choosing before prompt and deletes only after successful paymen
   const flag = h.messages[0].flags["rebreya-main"].reactionChoice;
   assert.equal(flag.triggerId, "attack:1");
   assert.equal(flag.candidateActorUuid, "Actor.npc");
+});
+
+test("Interception keeps one success card with the actual reduction to the one-damage floor", async () => {
+  const h = harness({ kind: "interception" });
+  await Promise.all([h.run(), h.run()]);
+  assert.deepEqual(h.events, [["create", "&lt;Страж&gt; выбирает реакцию"], ["prompt"], ["apply"], ["consume"],
+    ["update", "&lt;Страж&gt; применил «Перехват». Урон снижен на 5 (6 → 1)."]]);
+  assert.equal(h.messages[0].flags["rebreya-main"].reactionChoice.state, "applied");
+  assert.doesNotMatch(h.messages[0].content, /<button/u);
 });
 
 test("choosing and declined cards have scoped styling and retain the escaped exact sentence", async () => {

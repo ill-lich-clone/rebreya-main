@@ -330,7 +330,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.91";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.5.102";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.5.106";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.96";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";
@@ -347,8 +347,8 @@ import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.
 import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/equipment-size.js?v=1.4.393";
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js?v=1.5.102";
-import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.102";
-import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.102";
+import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.106";
+import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.106";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.102";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js?v=1.5.61";

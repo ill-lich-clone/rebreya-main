@@ -69,11 +69,19 @@ const reactionFailureText = {
   indeterminate: "начал применение реакции. Результат не подтверждён"
 };
 
-function reactionChatContent(actorName, state, reason) {
+function reactionChatContent(actorName, state, reason, effect) {
   const declined = state === "declined" || state === "retry";
-  const text = `${escapeHtml(actorName)} ${declined ? reactionFailureText[reason] : "выбирает реакцию"}`;
-  const icon = declined ? "fa-ban" : "fa-hourglass-half";
-  return `<div class="rm-reaction-chat rm-reaction-chat--${declined ? "declined" : "choosing"}">`
+  let action = declined ? reactionFailureText[reason] : "выбирает реакцию";
+  if (state === "applied") {
+    action = "применил «Перехват».";
+    const { incomingDamage, reducedDamage } = effect ?? {};
+    if (Number.isFinite(incomingDamage) && Number.isFinite(reducedDamage)) {
+      action += ` Урон снижен на ${incomingDamage - reducedDamage} (${incomingDamage} → ${reducedDamage}).`;
+    }
+  }
+  const text = `${escapeHtml(actorName)} ${action}`;
+  const icon = { applied: "fa-check", declined: "fa-ban", retry: "fa-ban", choosing: "fa-hourglass-half" }[state];
+  return `<div class="rm-reaction-chat rm-reaction-chat--${declined ? "declined" : state}">`
     + `<span class="rm-reaction-chat__icon" aria-hidden="true"><i class="fa-solid ${icon}"></i></span>`
     + `<div class="rm-reaction-chat__body"><span class="rm-reaction-chat__label">Реакция</span>`
     + `<p class="rm-reaction-chat__text">${text}</p>`
@@ -290,16 +298,17 @@ export class ReactionQueueService {
     }
   }
 
-  async _finishReactionMessage(message, applied, reason = "unapplied") {
+  async _finishReactionMessage(message, applied, reason = "unapplied", effect) {
     if (!message) return;
     try {
-      if (applied) await message.delete();
+      const choice = message.flags?.[MODULE_ID]?.reactionChoice ?? {};
+      if (applied && choice.kind !== "interception") await message.delete();
       else {
-        const choice = message.flags?.[MODULE_ID]?.reactionChoice ?? {};
-        const outcome = Object.hasOwn(reactionFailureText, reason) ? reason : "unapplied";
+        const state = applied ? "applied" : "declined";
+        const outcome = applied ? null : Object.hasOwn(reactionFailureText, reason) ? reason : "unapplied";
         await message.update({
-          content: reactionChatContent(choice.actorName || "Персонаж", "declined", outcome),
-          flags: { [MODULE_ID]: { reactionChoice: { ...choice, state: "declined", reason: outcome } } }
+          content: reactionChatContent(choice.actorName || "Персонаж", state, outcome, effect),
+          flags: { [MODULE_ID]: { reactionChoice: { ...choice, state, reason: outcome } } }
         });
       }
     }
@@ -417,7 +426,7 @@ export class ReactionQueueService {
       }
       const prompt = await provider.buildPrompt?.(candidate, context) ?? {};
       const message = await this._beginReactionMessage({ triggerId, candidate, kind });
-      let applied = false;
+      let appliedTransaction;
       let reason = "error";
       try {
         const promptContext = {
@@ -450,7 +459,7 @@ export class ReactionQueueService {
             reason = transaction.reason === "providerError" ? "error" : "unapplied";
             continue;
           }
-          applied = true;
+          appliedTransaction = transaction;
           const effect = typeof provider.serializeEffect === "function"
             ? await provider.serializeEffect(transaction.effect, candidate, context)
             : { applied: true };
@@ -460,7 +469,7 @@ export class ReactionQueueService {
           }
         }
       }
-      finally { await this._finishReactionMessage(message, applied, reason); }
+      finally { await this._finishReactionMessage(message, Boolean(appliedTransaction), reason, appliedTransaction?.effect); }
     }
 
     return { triggerId, kind, status: "completed", accepted };

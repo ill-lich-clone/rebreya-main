@@ -21,7 +21,8 @@ export class MidiReactionAdapter {
     this._shieldApplications = new WeakMap();
     this.moduleApi.reactionQueueService?.registerType?.("midi-native", {
       midi: { ReactionFilter: (...args) => this.filterReactions(...args),
-        RollComplete: workflow => this.completeDefensiveReaction(workflow) }
+        RollComplete: workflow => this.completeDefensiveReaction(workflow),
+        preAbort: workflow => this.#shieldSession(workflow)?.shieldCompletion.resolve(NONE) }
     });
   }
 
@@ -188,22 +189,34 @@ export class MidiReactionAdapter {
     return true;
   }
 
+  #shieldSession(workflow) {
+    const session = this._sessions.get(workflow?.workflowOptions?.rebreyaShieldSessionId);
+    if (session?.shieldActivity && session.shieldActivity.uuid === workflow.activity?.uuid
+      && session.actor.uuid === workflow.actor?.uuid) return session;
+  }
+
   async applyShieldEffect(workflow) {
     const { actor, activity, itemCardUuid, aborted } = workflow ?? {};
-    if (aborted || !itemCardUuid || !isShieldReactionItem(activity?.item) || activity.item.actor?.uuid !== actor?.uuid
-      || !actor?.isOwner || !actor.createEmbeddedDocuments) return false;
+    if (!isShieldReactionItem(activity?.item)) return false;
+    const session = this.#shieldSession(workflow);
+    if (aborted || !itemCardUuid || activity.item.actor?.uuid !== actor?.uuid
+      || !actor?.isOwner || !actor.createEmbeddedDocuments) {
+      session?.shieldCompletion.resolve(NONE);
+      return false;
+    }
     const pending = this._shieldApplications.get(actor) ?? this._applyShieldBarrier(actor, activity, itemCardUuid);
     this._shieldApplications.set(actor, pending);
+    let result = NONE;
     try {
       const applied = await pending;
-      const session = this._sessions.get(workflow.workflowOptions?.rebreyaShieldSessionId);
-      if (applied && session?.shieldActivity?.uuid === activity.uuid && session.actor.uuid === actor.uuid) {
-        session.shieldResult = { name: activity.name ?? activity.item.name ?? "Щит", uuid: activity.uuid,
+      if (applied && session) {
+        result = { name: activity.name ?? activity.item.name ?? "Щит", uuid: activity.uuid,
           itemName: activity.item.name, itemUuid: activity.item.uuid };
       }
       return applied;
     } finally {
       if (this._shieldApplications.get(actor) === pending) this._shieldApplications.delete(actor);
+      session?.shieldCompletion.resolve(result);
     }
   }
 
@@ -292,6 +305,7 @@ export class MidiReactionAdapter {
     const actor = token?.actor;
     if (!actor || !data.triggerType || this._sessions.size >= 128) return { ...NONE };
     const activities = [];
+    let offersShield = false;
     for (const uuid of data.reactionActivityList ?? []) {
       const activity = await this.resolve(uuid);
       // Only module-owned activities are removed; all other MIDI filtering and
@@ -299,9 +313,11 @@ export class MidiReactionAdapter {
       if (activity?.actor?.uuid !== actor.uuid || isManualReaction(activity.item)
         || this.moduleApi.reactionCapabilityIndex?.ownsActivity?.(activity)) continue;
       if (isDefensiveItem(activity.item)) {
+        const parry = isParry(activity.item);
         const context = data.options?.rebreyaShieldReaction?.[data.tokenUuid];
         const matched = context?.magicMissile ? data.triggerType === "reactiondamage" : ["reaction", "reactionhit"].includes(data.triggerType);
-        if (!matched || !(isParry(activity.item) ? this.canOfferParry(activity, context) : await this.canOfferShield(activity, context))) continue;
+        if (!matched || !(parry ? this.canOfferParry(activity, context) : await this.canOfferShield(activity, context))) continue;
+        if (!parry) offersShield = true;
       }
       activities.push(uuid);
     }
@@ -329,9 +345,11 @@ export class MidiReactionAdapter {
       const commitForcedAc = () => { extend(); return controls.commit(); };
       const patchedMidi = typeof this._midi?.extendReactionTimeout === "function";
       const session = { ...controls, actor, tokenUuid: data.tokenUuid, shieldContext: data.options?.rebreyaShieldReaction?.[data.tokenUuid],
-        expiresAt, extend, dialogs: new Set(), chosen: false, finished: false };
+        expiresAt, extend, dialogs: new Set(), chosen: false, finished: false,
+        shieldCompletion: offersShield ? Promise.withResolvers() : undefined };
       this._sessions.set(id, session);
       const abort = () => {
+        session.shieldCompletion?.resolve(NONE);
         for (const dialog of session.dialogs) void Promise.resolve(dialog.close()).catch(error => this.log(error));
       };
       controls.signal.addEventListener("abort", abort, { once: true });
@@ -345,15 +363,17 @@ export class MidiReactionAdapter {
         session.nativeOptions = { ...data.options, timeout: remaining / 1000,
           ...(patchedMidi && optional.length ? { rebreyaBeforeForcedAc: commitForcedAc } : {}) };
         if (controls.chatRetryMs) extend();
-        const result = await this._original({
+        const nativeResult = this._original({
           ...data,
           reactionActivityList: controls.activityUuids ?? activities,
           reactionFlavor: `${data.reactionFlavor ?? ""}<!--rm-reaction:${id}-->`,
           options: session.nativeOptions
         });
+        const shieldCompletion = session.shieldCompletion?.promise;
+        const result = await (shieldCompletion ? Promise.race([nativeResult, shieldCompletion]) : nativeResult);
         if (session.shieldActivity) {
-          const current = (await this.resolve(data.tokenUuid))?.actor ?? actor;
-          if (!hasShieldEffect(current)) return { ...NONE };
+          // Native dispatch can resolve before the selected spell finishes, independently of the window's lifetime.
+          return await shieldCompletion;
         }
         if (session.parryActivity) {
           const current = (await this.resolve(data.tokenUuid))?.actor ?? actor;
@@ -361,7 +381,7 @@ export class MidiReactionAdapter {
           if (result?.uuid === session.parryActivity.uuid) return this.parryResult(session.parryActivity, current) ?? { ...NONE };
           return { ...NONE };
         }
-        return session.shieldResult ?? result;
+        return result;
       }
       finally {
         session.finished = true;
@@ -432,6 +452,10 @@ export class MidiReactionAdapter {
       submitted = true;
       session.chosen = true;
       try { return await callback.apply(this, args); }
+      catch (error) {
+        if (session.shieldActivity) session.shieldCompletion.resolve(NONE);
+        throw error;
+      }
       finally { submitting = false; }
     };
   }

@@ -713,7 +713,7 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (moduleApi.reactionQueueService) {
-    for (const phase of ["ReactionFilter", "AttackRollComplete", "preTargetDamageApplication", "RollComplete"]) {
+    for (const phase of ["ReactionFilter", "AttackRollComplete", "preTargetDamageApplication", "RollComplete", "preAbort"]) {
       Hooks.on(`midi-qol.${phase}`, (...args) => moduleApi.reactionQueueService.dispatchMidi?.(phase, ...args));
     }
   }
