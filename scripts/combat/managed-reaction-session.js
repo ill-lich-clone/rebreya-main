@@ -207,6 +207,7 @@ export class ManagedReactionSessions {
     }
     const entry = this.entries.get(data.sessionId) ?? await this.restore(data.sessionId);
     if (!entry || entry.senderId !== senderId) return { allowed: false };
+    if (entry.finishPromise && op !== "finish") return { allowed: false };
     if (op === "retry") {
       const remainingMs = Math.min(entry.chatRetryMs ?? 0, entry.expiresAt - this.now() - TIMEOUT);
       if (entry.state !== "choosing" || entry.retryClaimed || !(this.now() >= entry.choiceDeadline - 100) || remainingMs <= 0) return { allowed: false };
@@ -252,18 +253,25 @@ export class ManagedReactionSessions {
     }
     if (op === "finish") {
       if (entry.state === "finished" || entry.state === "declined") return { allowed: true };
-      this.clear(entry.timer);
+      if (entry.finishPromise) return entry.finishPromise;
       const result = data.result;
       const applied = entry.state === "applying" && !!result?.uuid && result.name !== "None" && result.name !== "Filter";
-      entry.state = "finished"; entry.expiresAt = this.now() + TTL;
-      entry.reason = data.reason;
-      const ledger = this.queue.moduleApi?.combatAttackService;
-      if (applied && entry.requiredUses > 0 && reactionCount(entry.actor) > entry.midiCount) {
-        try { await ledger?.consumeReaction?.(entry.actor, { reactionType: "midi-native", triggerId: entry.key, idempotencyKey: `midi-native:${entry.key}` }); }
-        catch (error) { this.options.logger?.error?.("Native reaction ledger synchronization failed", error); }
-      }
-      await this.queue._finishReactionMessage(entry.messageReady ? await entry.messageReady : entry.message, applied, data.reason);
-      return { allowed: true };
+      entry.finishPromise = Promise.resolve().then(async () => {
+        const ledger = this.queue.moduleApi?.combatAttackService;
+        if (applied && entry.requiredUses > 0 && reactionCount(entry.actor) > entry.midiCount) {
+          // Keep this use reserved while the ledger still reports the old balance.
+          try { await ledger?.consumeReaction?.(entry.actor, { reactionType: "midi-native", triggerId: entry.key, idempotencyKey: `midi-native:${entry.key}` }); }
+          catch (error) { this.options.logger?.error?.("Native reaction ledger synchronization failed", error); }
+        }
+        if (entry.state !== "declined") {
+          this.clear(entry.timer);
+          entry.state = "finished"; entry.expiresAt = this.now() + TTL;
+          entry.reason = data.reason;
+          await this.queue._finishReactionMessage(entry.messageReady ? await entry.messageReady : entry.message, applied, data.reason);
+        }
+        return { allowed: true };
+      });
+      return entry.finishPromise;
     }
     return { allowed: false };
   }
@@ -328,7 +336,7 @@ export class ManagedReactionSessions {
       const entry = managed && this.entries.get(managed.sessionId);
       const state = entry?.state ?? choice.state;
       if (!["choosing", "applying"].includes(state)) continue;
-      const disconnected = managed && !activeIds.has(managed.ownerUserId);
+      const disconnected = managed && !entry?.finishPromise && !activeIds.has(managed.ownerUserId);
       const expired = (entry?.expiresAt ?? this.messageDeadline(choice)) <= now;
       if (!disconnected && !expired) continue;
       const reason = disconnected ? "disconnected" : state === "applying" ? "indeterminate" : "timeout";

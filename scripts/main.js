@@ -347,7 +347,7 @@ import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.
 import { getHeldEquipmentWeapons, readEquipmentItemData } from "./integrations/equipment-size.js?v=1.4.393";
 import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "./integrations/equipment-size.js?v=1.4.393";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js?v=1.5.102";
-import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.106";
+import { ReactionQueueService } from "./combat/reaction-queue-service.js?v=1.5.107";
 import { MidiReactionAdapter } from "./integrations/midi-reaction-adapter.js?v=1.5.106";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js?v=1.5.102";

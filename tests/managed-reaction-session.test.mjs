@@ -387,3 +387,51 @@ test("both successful native applications settle their own module reaction use",
   assert.equal(h.queue.moduleApi.combatAttackService.getReactionState().usesRemaining, 0);
   h.queue.destroy();
 });
+
+test("native finish keeps its paid reservation until the reaction ledger write settles", async () => {
+  const h = harness();
+  const service = h.queue._managed;
+  const ledger = h.queue.moduleApi.combatAttackService;
+  const spend = ledger.consumeReaction;
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  ledger.consumeReaction = async (...args) => {
+    started.resolve();
+    await release.promise;
+    return spend(...args);
+  };
+  await service.command("begin", { sessionId: "first", request: h.request }, "gm");
+  await service.command("commit", { sessionId: "first" }, "gm");
+  await service.command("begin", { sessionId: "second", request: { ...h.request, triggerId: "second" } }, "gm");
+  h.actor.flags["midi-qol"] = { actions: { reactionsUsed: 1 } };
+  const finish = { sessionId: "first", result: { name: "Shield", uuid: "Activity.shield" } };
+  const first = service.command("finish", finish, "gm");
+  await started.promise;
+  const duplicate = service.command("finish", finish, "gm");
+  let second;
+  try { second = await service.command("commit", { sessionId: "second" }, "gm"); }
+  finally { release.resolve(); await Promise.all([first, duplicate]); }
+  assert.equal(second.allowed, false);
+  assert.equal(h.events.filter(event => event === "consume").length, 1);
+  assert.equal(service.reservedUses(h.actor.uuid), 0);
+  h.queue.destroy();
+});
+
+test("an unfinished ledger write still releases its reservation at the original deadline", async () => {
+  const h = harness();
+  const service = h.queue._managed;
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  h.queue.moduleApi.combatAttackService.consumeReaction = () => { started.resolve(); return release.promise; };
+  await service.command("begin", { sessionId: "stalled", request: h.request }, "gm");
+  await service.command("commit", { sessionId: "stalled" }, "gm");
+  h.actor.flags["midi-qol"] = { actions: { reactionsUsed: 1 } };
+  const pending = service.command("finish", { sessionId: "stalled", result: { name: "Shield", uuid: "Activity.shield" } }, "gm");
+  await started.promise;
+  h.expire(120_000);
+  release.resolve({ consumed: true });
+  await pending;
+  assert.equal(service.reservedUses(h.actor.uuid), 0);
+  assert.equal(h.game.messages[0].flags["rebreya-main"].reactionChoice.reason, "indeterminate");
+  h.queue.destroy();
+});
