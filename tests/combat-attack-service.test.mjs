@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EquipmentSizeService } from "../scripts/application/equipment-size-service.js";
+import { buildEquipmentSizeUpdate, registerEquipmentSizeItemHooks } from "../scripts/integrations/equipment-size.js";
 
 globalThis.foundry ??= {
   utils: {
@@ -193,6 +195,47 @@ test("cancelled weapon update in a native batch returns the debited stock",async
   const draft=service.getMagazineEditorData(actor,weapon);draft.rounds=Array(3).fill(draft.stock[0].key);
   await assert.rejects(service.commitMagazine(actor,weapon,draft));
   assert.equal(ammo.system.quantity,6);assert.equal(weapon.getFlag(MODULE_ID,"firearmAmmoState").current,0);
+});
+
+test("Foundry 14 magazine replacements pass the equipment size hook when charging and unloading", async t => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет",
+    properties: { lchFirearmReload: true },
+    values: { reload: "Перезарядка 1", ammunition: "Мушкетный патрон" },
+    ammoState: { current: 0, capacity: 1, ammunition: "Мушкетный патрон" }
+  });
+  const ammo = makeAmmoItem({ name: "Мушкетный патрон", quantity: 35 });
+  const actor = makeActor([weapon, ammo]);
+  const notifications = [];
+  const originalNotifications = ui.notifications;
+  ui.notifications = { error: message => notifications.push(message) };
+  t.after(() => { ui.notifications = originalNotifications; });
+  let preUpdateItem;
+  let projections = 0;
+  const equipmentSizeService = new EquipmentSizeService({}, {
+    buildItemUpdate: (...args) => { projections += 1; return buildEquipmentSizeUpdate(...args); }
+  });
+  registerEquipmentSizeItemHooks({ equipmentSizeService }, { Hooks: { on(_name, hook) { preUpdateItem = hook; } } });
+  const update = actor.updateEmbeddedDocuments.bind(actor);
+  const flagPath = `flags.${MODULE_ID}.==firearmAmmoState`;
+  actor.updateEmbeddedDocuments = (type, patches, options) => update(type, patches.filter(patch => {
+    const { _id, [flagPath]: state, ...changes } = patch;
+    // The v14 flags field decodes == into a non-plain, non-cloneable operator before preUpdateItem.
+    if (state) changes.flags = { [MODULE_ID]: { firearmAmmoState: new Proxy(new class ForcedReplacement {}, {}) } };
+    return preUpdateItem(actor.items.get(_id), changes, options) !== false;
+  }), options);
+
+  const service = new CombatAttackService({});
+  const result = await service.reloadFirearm(actor, weapon, { createMessage: false });
+  assert.equal(result.loaded, 1);
+  assert.equal(ammo.system.quantity, 34);
+  const state = weapon.getFlag(MODULE_ID, "firearmAmmoState");
+  assert.deepEqual(state.rounds, [captureAmmunition(ammo).key]);
+  await service.unloadFirearm(actor, weapon);
+  assert.equal(ammo.system.quantity, 35);
+  assert.deepEqual(weapon.getFlag(MODULE_ID, "firearmAmmoState").rounds, []);
+  assert.deepEqual(notifications, []);
+  assert.equal(projections, 0);
 });
 
 test("cancelled native reservoir update does not load unspent ammunition",async()=>{

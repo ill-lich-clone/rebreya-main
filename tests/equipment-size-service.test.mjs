@@ -147,6 +147,14 @@ test("preUpdateItem preserves nested replacements in non-recursive updates", () 
   }
 });
 
+test("preUpdateItem still recalculates size for nested authored damage changes", () => {
+  const service = new EquipmentSizeService({}, { buildItemUpdate: buildEquipmentSizeUpdate });
+  const patch = { system: { damage: { base: { denomination: 10 } }, quantity: 7 } };
+  assert.equal(service.preUpdateItem(makeEquipment(), patch), true);
+  assert.equal(patch["flags.rebreya-main.equipmentSize.size"], "lg");
+  assert.equal(patch["system.quantity"], 7);
+});
+
 test("preUpdateItem preserves Foundry's forced system replacement during item migration", t => {
   class ForcedReplacement {}
   const originalFoundry = Object.getOwnPropertyDescriptor(globalThis, "foundry");

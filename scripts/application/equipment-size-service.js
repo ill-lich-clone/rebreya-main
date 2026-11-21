@@ -1,3 +1,4 @@
+import { MODULE_ID } from "../constants.js";
 import { getEquipmentSize, getCreatureTokenFootprint, isEquipmentSize } from "../data/equipment-size-rules.js?v=1.4.393";
 import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
 import { sha256Hex } from "../shared/sha256.js";
@@ -13,6 +14,21 @@ const owns = (document, user) => Boolean(user?.id && (user.isGM || document?.tes
 const ownsToken = (token, user) => Boolean(user?.id && (user.isGM
   || (typeof token?.canUserModify === "function" ? token.canUserModify(user, "update") : owns(token, user))));
 const fail = (code, message) => Object.assign(new Error(message), { code });
+const sizeInputs = [
+  `flags.${MODULE_ID}.equipmentSize.size`,
+  "system.damage.base", "system.damage.versatile", "system.price", "system.weight"
+];
+
+function hasEquipmentSizeEdit(changes, prefix = "") {
+  return Object.keys(changes).some(key => {
+    const path = prefix + key.replace(/(^|\.)[=-]=/gu, "$1");
+    if (sizeInputs.some(input => path === input || path.startsWith(`${input}.`))) return true;
+    if (!sizeInputs.some(input => input.startsWith(`${path}.`))) return false;
+    const value = changes[key];
+    return !value || typeof value !== "object" || hasEquipmentSizeEdit(value, `${path}.`);
+  });
+}
+
 function set(data, path, value) {
   const parts = path.split("."), key = parts.pop();
   let node = data;
@@ -40,6 +56,8 @@ export class EquipmentSizeService {
     // Preserve the native operator and the rest of a full system replacement.
     const ForcedReplacement = globalThis.foundry?.data?.operators?.ForcedReplacement;
     if (Object.hasOwn(changes, "==system") || (ForcedReplacement && changes.system instanceof ForcedReplacement)) return true;
+    // Other Item updates may carry native operators which the size projection cannot clone.
+    if (!hasEquipmentSizeEdit(changes)) return true;
     const { update } = this.buildItemUpdate(item, { changes, source: "edit" });
     for (const key of Object.keys(changes)) delete changes[key];
     Object.assign(changes, update);
