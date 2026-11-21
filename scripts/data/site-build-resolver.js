@@ -27,6 +27,18 @@ export const SRD_PACKS = {
   background: ["dnd5e.backgrounds"],
 };
 
+/**
+ * The module's own world compendia (built by races-/classes-/backgrounds-
+ * compendium.js from data/*.json): Teyvankal races, class reworks with their
+ * subclasses, Rebreya backgrounds V0.12. Preferred for Rebreya-mode site content.
+ */
+export const REBREYA_PACKS = {
+  class: "world.rebreya-classes",
+  subclass: "world.rebreya-subclasses",
+  race: "world.rebreya-races",
+  background: "world.rebreya-backgrounds",
+};
+
 export const stripSlugPrefix = (slug) => String(slug ?? "").trim().toLowerCase().replace(/^\d+-/u, "");
 
 const norm = (value) =>
@@ -137,8 +149,48 @@ export function resolveClass(classSlug, className = "") {
     return { identifier: suffix, srd: true, variant: false };
   }
   const rebreya = REBREYA_CLASS_MAP[raw];
-  if (rebreya) return { identifier: rebreya.identifier, srd: true, variant: Boolean(rebreya.variant) };
+  if (rebreya) return { identifier: rebreya.identifier, srd: true, variant: Boolean(rebreya.variant), rebreya: true };
   return { identifier: toIdentifier(suffix || className, "class"), srd: false, variant: false };
+}
+
+/** Name key for matching: lower case, ё→е, no "(…)" qualifier, single spaces. */
+export function nameKey(value) {
+  return norm(String(value ?? "").replace(/\([^)]*\)/gu, " "));
+}
+
+/**
+ * Pick the compendium index entry for a site record. Order: exact identifier,
+ * exact name key, then a unique name-prefix match of at least 5 letters (site
+ * "Синтет" ↔ module "Синтеты", "Кирисаны (Аасимары)" ↔ "Кирисан").
+ * @param {{name:string, type?:string, system?:{identifier?:string, classIdentifier?:string}}[]} entries
+ * @param {{type?:string, identifier?:string, name?:string, classIdentifier?:string}} wanted
+ */
+export function matchIndexEntry(entries, { type = null, identifier = null, name = "", classIdentifier = null } = {}) {
+  const pool = (entries ?? []).filter((e) => (!type || e.type === type)
+    && (!classIdentifier || e.system?.classIdentifier === classIdentifier));
+  if (identifier) {
+    const byId = pool.find((e) => e.system?.identifier === identifier);
+    if (byId) return byId;
+  }
+  const key = nameKey(name);
+  if (!key) return null;
+  const exact = pool.filter((e) => nameKey(e.name) === key);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+  if (key.length < 5) return null;
+  const prefix = pool.filter((e) => {
+    const other = nameKey(e.name);
+    return other.length >= 5 && (other.startsWith(key) || key.startsWith(other));
+  });
+  return prefix.length === 1 ? prefix[0] : null;
+}
+
+/** The module's rework of an SRD class ("barbarian" → "barbarian-rework-v012"), if present. */
+export function findReworkClass(entries, baseIdentifier) {
+  if (!baseIdentifier) return null;
+  const hits = (entries ?? []).filter((e) => e.type === "class"
+    && String(e.system?.identifier ?? "").startsWith(`${baseIdentifier}-rework`));
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /** @returns {string|null} SRD subclass identifier for a site subclass name. */
@@ -201,12 +253,19 @@ export function resolveBuildPlan(character = {}) {
   const kept = classes.filter((c) => c.level > 0);
 
   const raceName = String(character.race ?? "").trim();
+  // `rebreya`: not a dnd.su slug → look in the module's own compendia first.
   const race = raceName || character.raceSlug
-    ? { slug: String(character.raceSlug ?? ""), name: raceName, ...(resolveRace(character.raceSlug) ?? { identifier: null, assumedSubrace: false }) }
+    ? {
+      slug: String(character.raceSlug ?? ""), name: raceName, rebreya: !isOfficialSlug(character.raceSlug),
+      ...(resolveRace(character.raceSlug) ?? { identifier: null, assumedSubrace: false }),
+    }
     : null;
   const backgroundName = String(character.background ?? "").trim();
   const background = backgroundName || character.backgroundSlug
-    ? { slug: String(character.backgroundSlug ?? ""), name: backgroundName, identifier: resolveBackground(character.backgroundSlug) }
+    ? {
+      slug: String(character.backgroundSlug ?? ""), name: backgroundName, rebreya: !isOfficialSlug(character.backgroundSlug),
+      identifier: resolveBackground(character.backgroundSlug),
+    }
     : null;
 
   return {
@@ -247,6 +306,30 @@ export function hitPointsValue(level, { primary = true } = {}) {
   const value = {};
   for (let lvl = 1; lvl <= clampLevel(level); lvl += 1) value[String(lvl)] = lvl === 1 && primary ? "max" : "avg";
   return value;
+}
+
+/**
+ * Spell-slot override fallback. dnd5e derives slots from class Items; only when
+ * no class could be resolved do we copy the site's `data.spellSlots`
+ * ({"1": 4, ...}) into `system.spells.spellN.override`. `apply:false` clears
+ * overrides a previous import set.
+ * @returns {Record<string, number|null>} flat Actor update (empty if nothing to do)
+ */
+export function buildSlotOverrideUpdate(spellSlots, { apply }) {
+  const update = {};
+  if (apply) {
+    const slots = spellSlots && typeof spellSlots === "object" ? spellSlots : {};
+    let any = false;
+    for (let level = 1; level <= 9; level += 1) {
+      const n = Math.trunc(Number(slots[level] ?? slots[String(level)]));
+      const value = Number.isFinite(n) && n > 0 ? n : null;
+      if (value != null) any = true;
+      update[`system.spells.spell${level}.override`] = value;
+    }
+    return any ? update : {};
+  }
+  for (let level = 1; level <= 9; level += 1) update[`system.spells.spell${level}.override`] = null;
+  return update;
 }
 
 /** Level at which a class's Subclass advancement triggers (null if none). */

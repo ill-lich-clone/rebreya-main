@@ -31,8 +31,8 @@ test("resolveClass: dnd.su slugs → SRD identifiers; non-SRD official → place
 });
 
 test("resolveClass: Rebreya lore classes map to SRD; reworks are flagged; strelok is a placeholder", () => {
-  assert.deepEqual(resolveClass("volshebnik"), { identifier: "wizard", srd: true, variant: false });
-  assert.deepEqual(resolveClass("varvar-revork"), { identifier: "barbarian", srd: true, variant: true });
+  assert.deepEqual(resolveClass("volshebnik"), { identifier: "wizard", srd: true, variant: false, rebreya: true });
+  assert.deepEqual(resolveClass("varvar-revork"), { identifier: "barbarian", srd: true, variant: true, rebreya: true });
   const strelok = resolveClass("strelok", "Стрелок");
   assert.equal(strelok.srd, false);
   assert.equal(strelok.identifier, "strelok");
@@ -138,4 +138,88 @@ test("buildPlaceholderItem: class keeps level + hit die; description is escaped"
   assert.match(cls.system.description.value, /dnd-rebreya\/classes\/strelok/u);
   const sub = buildPlaceholderItem("subclass", { name: "Песнь клинка", classIdentifier: "wizard" });
   assert.equal(sub.system.classIdentifier, "wizard");
+});
+
+import { matchIndexEntry, findReworkClass, nameKey, buildSlotOverrideUpdate } from "../scripts/data/site-build-resolver.js";
+
+// world.rebreya-races index (type|name|identifier) as built by races-compendium.js,
+// read live from the testovyj3 world on 2026-11-22.
+const MODULE_RACES = [
+  ["Морские эльфы", "morskie-elfy"], ["Дварфы", "dvarfy"], ["Нефилимы", "nefilimy"], ["Железорождённые", "zhelezorozhdyonnye"],
+  ["Грунги", "grungi"], ["Высшие эльфы", "vysshie-elfy"], ["Полуорки", "poluorki"], ["Люди", "lyudi"], ["Гении", "genii"],
+  ["Драконорождённые", "drakonorozhdyonnye"], ["Табакси", "tabaksi"], ["Тортлы", "tortly"], ["Пепельные", "pepelnye"],
+  ["Кирисан", "kirisan"], ["Голиафы", "goliafy"], ["Гоблины", "gobliny"], ["Големы", "golemy"], ["Полуэльфы", "poluelfy"],
+  ["Кентавры", "kentavry"], ["Гномы", "gnomy"], ["Синтеты", "sintety"], ["Полувеликаны", "poluvelikany"], ["Кобольды", "koboldy"],
+  ["Минотавры", "minotavry"], ["Гноллы", "gnolly"], ["Дроу", "drou"], ["Лесные эльфы", "lesnye-elfy"], ["Полурослики", "polurosliki"],
+  ["Людоящеры", "lyudoyashery"], ["Багбиры", "bagbiry"], ["Ааракокры", "aarakokry"], ["Орки", "orki"], ["Таргулы", "targuly"],
+  ["Леониды", "leonidy"],
+].map(([name, identifier]) => ({ type: "race", name, system: { identifier } }));
+
+// Every dnd-rebreya race on the site (local QA API, 2026-11-22): slug | name.
+const SITE_RACES = [
+  ["golemy", "Големы"], ["pepelnye", "Пепельные"], ["nefilimy", "Нефилимы"], ["poluvelikany", "Полувеликаны"],
+  ["leonidy", "Леониды"], ["kentavry", "Кентавры"], ["minotavry", "Минотавры"], ["tabaksi", "Табакси"], ["gnolly", "Гноллы"],
+  ["grungi", "Грунги"], ["koboldy", "Кобольды"], ["bagbiry", "Багбиры"], ["tortly", "Тортлы"], ["lyudoyaschery", "Людоящеры"],
+  ["aarakokry", "Ааракокры"], ["drou", "Дроу"], ["sintet", "Синтет"], ["genii", "Гении"],
+  ["zhelezorozhdennye", "Железорождённые"], ["drakonorozhdennye", "Драконорождённые"], ["goliafy", "Голиафы"],
+  ["gobliny", "Гоблины"], ["gnomy", "Гномы"], ["targuly-tiflingi", "Таргулы (Тифлинги)"],
+  ["kirisany-aasimary", "Кирисаны (Аасимары)"], ["morskie-elfy", "Морские эльфы"], ["lesnye-elfy", "Лесные эльфы"],
+  ["orki", "Орки"], ["poluorki", "Полуорки"], ["polurosliki", "Полурослики"], ["vysshie-elfy", "Высшие эльфы"],
+  ["poluelfy", "Полуэльфы"], ["dvarfy", "Дварфы"], ["lyudi", "Люди"],
+];
+
+test("matchIndexEntry: every site Rebreya race finds exactly its module race", () => {
+  const used = new Set();
+  for (const [slug, name] of SITE_RACES) {
+    const hit = matchIndexEntry(MODULE_RACES, { type: "race", identifier: slug, name });
+    assert.ok(hit, `no match for ${slug} / ${name}`);
+    assert.equal(nameKey(hit.name).slice(0, 5), nameKey(name).slice(0, 5), `${name} → ${hit.name}`);
+    used.add(hit.system.identifier);
+  }
+  assert.equal(used.size, SITE_RACES.length); // one-to-one
+});
+
+test("matchIndexEntry: ambiguous or short names do not guess", () => {
+  const pool = [{ type: "race", name: "Морские эльфы", system: {} }, { type: "race", name: "Лесные эльфы", system: {} }];
+  assert.equal(matchIndexEntry(pool, { type: "race", name: "Эльфы" }), null);
+  assert.equal(matchIndexEntry(pool, { type: "race", name: "Орк" }), null);
+  assert.equal(matchIndexEntry(pool, { type: "race", name: "" }), null);
+});
+
+test("matchIndexEntry: subclass by name within the module class", () => {
+  const subs = [
+    { type: "subclass", name: "Путь Берсерка", system: { identifier: "barbarian-rework-v012", classIdentifier: "barbarian-rework-v012" } },
+    { type: "subclass", name: "Чемпион", system: { identifier: "rb_9dzahr", classIdentifier: "fighter-rework-v028" } },
+  ];
+  assert.equal(matchIndexEntry(subs, { type: "subclass", name: "Путь берсерка", classIdentifier: "barbarian-rework-v012" }).name, "Путь Берсерка");
+  assert.equal(matchIndexEntry(subs, { type: "subclass", name: "Чемпион", classIdentifier: "barbarian-rework-v012" }), null);
+});
+
+test("findReworkClass: Rebreya site class → module rework (world.rebreya-classes)", () => {
+  const classes = ["paladin-rework-v01", "barbarian-rework-v012", "rogue-rework-v00", "fighter-rework-v028"]
+    .map((identifier) => ({ type: "class", name: identifier, system: { identifier } }));
+  assert.equal(findReworkClass(classes, resolveClass("varvar-revork").identifier).system.identifier, "barbarian-rework-v012");
+  assert.equal(findReworkClass(classes, resolveClass("voin").identifier).system.identifier, "fighter-rework-v028");
+  assert.equal(findReworkClass(classes, resolveClass("monah-revork").identifier), null); // no monk rework → SRD
+  assert.equal(resolveClass("voin").rebreya, true);
+  assert.equal(resolveClass("91-fighter").rebreya, undefined);
+});
+
+test("resolveBuildPlan marks Rebreya race/background for the module compendia", () => {
+  const plan = resolveBuildPlan({ race: "Люди", raceSlug: "lyudi", background: "Подрывник", backgroundSlug: "podryvnik", classSlug: "voin", gameClass: "Воин", level: 3 });
+  assert.equal(plan.race.rebreya, true);
+  assert.equal(plan.background.rebreya, true);
+  assert.equal(resolveBuildPlan({ race: "Эльф", raceSlug: "79-elf" }).race.rebreya, false);
+});
+
+test("buildSlotOverrideUpdate: site spellSlots → overrides; clearing resets all nine", () => {
+  const set = buildSlotOverrideUpdate({ 1: 4, 2: "3", 3: 0 }, { apply: true });
+  assert.equal(set["system.spells.spell1.override"], 4);
+  assert.equal(set["system.spells.spell2.override"], 3);
+  assert.equal(set["system.spells.spell3.override"], null);
+  assert.equal(Object.keys(set).length, 9);
+  assert.deepEqual(buildSlotOverrideUpdate({}, { apply: true }), {});
+  const clear = buildSlotOverrideUpdate(null, { apply: false });
+  assert.equal(Object.values(clear).every((v) => v === null), true);
+  assert.equal(Object.keys(clear).length, 9);
 });

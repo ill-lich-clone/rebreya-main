@@ -19,6 +19,9 @@
 import { MODULE_ID } from "../constants.js";
 import {
   SRD_PACKS,
+  REBREYA_PACKS,
+  matchIndexEntry,
+  findReworkClass,
   resolveBuildPlan,
   collectGrants,
   hitPointsValue,
@@ -27,9 +30,11 @@ import {
   applyAdvancementValues,
   buildPlaceholderItem,
   hitDieFor,
+  buildSlotOverrideUpdate,
 } from "../data/site-build-resolver.js";
 
 const FLAG = "siteBuild";
+const SLOT_OVERRIDE_FLAG = "siteSlotOverride";
 const DESCRIPTION_LIMIT = 4000;
 
 const randomId = () => globalThis.foundry.utils.randomID();
@@ -59,20 +64,24 @@ export class SiteBuildImporter {
     const oursIds = new Set(ours.map((i) => i.id));
     const foreign = actor.items.filter((i) => !oursIds.has(i.id));
     const foreignClassIds = new Set(foreign.filter((i) => i.type === "class").map((i) => i.system?.identifier));
+    const hasForeignClass = (id) => [...foreignClassIds].some((f) => f === id || String(f ?? "").startsWith(`${id}-rework`));
     const hasForeign = (type) => foreign.some((i) => i.type === type);
 
     const actorUpdate = {};
     const subclassLinks = [];
     let primaryClassId = null;
     let spellcastingAbility = null;
+    // A real (compendium or hand-added) class lets dnd5e derive spell slots.
+    let resolvedClass = foreignClassIds.size > 0;
 
     for (const cls of plan.classes) {
-      if (foreignClassIds.has(cls.identifier)) {
+      if (hasForeignClass(cls.identifier)) {
         warnings.push(`Класс «${cls.name || cls.identifier}» уже есть на листе (добавлен вручную) — оставлен как есть.`);
         continue;
       }
       const built = await this.#buildClass(cls, warnings);
       if (!built) continue;
+      if (built.resolved) resolvedClass = true;
       items.push(...built.items);
       if (built.subclassLink) subclassLinks.push(built.subclassLink);
       if (cls.primary || !primaryClassId) primaryClassId = built.classId;
@@ -118,6 +127,19 @@ export class SiteBuildImporter {
       }
     }
 
+    // Spell slots: derived from class Items; the site's data.spellSlots is only a
+    // fallback when no class could be resolved (placeholders have no progression).
+    const hadOverride = Boolean(actor.getFlag(MODULE_ID, SLOT_OVERRIDE_FLAG));
+    if (!resolvedClass) {
+      const overrides = buildSlotOverrideUpdate(character?.data?.spellSlots, { apply: true });
+      if (Object.keys(overrides).length) {
+        Object.assign(actorUpdate, overrides, { [`flags.${MODULE_ID}.${SLOT_OVERRIDE_FLAG}`]: true });
+        warnings.push("Класс не распознан — ячейки заклинаний взяты с сайта как ручное значение (override).");
+      }
+    } else if (hadOverride) {
+      Object.assign(actorUpdate, buildSlotOverrideUpdate(null, { apply: false }), { [`flags.${MODULE_ID}.-=${SLOT_OVERRIDE_FLAG}`]: null });
+    }
+
     if (primaryClassId) actorUpdate["system.details.originalClass"] = primaryClassId;
     if (spellcastingAbility) actorUpdate["system.attributes.spellcasting"] = spellcastingAbility;
     if (Object.keys(actorUpdate).length) await actor.update(actorUpdate);
@@ -135,7 +157,7 @@ export class SiteBuildImporter {
     if (this._indexes.has(packId)) return this._indexes.get(packId);
     const pack = game.packs.get(packId);
     const index = pack ? await pack.getIndex({ fields: ["system.identifier", "system.classIdentifier"] }) : null;
-    const entry = pack ? { pack, index } : null;
+    const entry = pack ? { pack, entries: Array.from(index?.values?.() ?? index ?? []) } : null;
     this._indexes.set(packId, entry);
     return entry;
   }
@@ -146,12 +168,22 @@ export class SiteBuildImporter {
     for (const packId of SRD_PACKS[kind] ?? []) {
       const found = await this.#index(packId);
       if (!found) continue;
-      const hit = found.index.find((e) => e.type === kind
+      const hit = found.entries.find((e) => e.type === kind
         && e.system?.identifier === identifier
         && (!classIdentifier || e.system?.classIdentifier === classIdentifier));
       if (hit) return found.pack.getDocument(hit._id);
     }
     return null;
+  }
+
+  /** Entry in one of the module's own world compendia (see REBREYA_PACKS). */
+  async #findRebreya(kind, wanted) {
+    const found = await this.#index(REBREYA_PACKS[kind]);
+    if (!found) return null;
+    const hit = kind === "class" && wanted.reworkOf
+      ? findReworkClass(found.entries, wanted.reworkOf)
+      : matchIndexEntry(found.entries, { type: kind, ...wanted });
+    return hit ? found.pack.getDocument(hit._id) : null;
   }
 
   /** Item source from a compendium document, as dnd5e's createItemData does. */
@@ -190,7 +222,10 @@ export class SiteBuildImporter {
 
   async #buildClass(cls, warnings) {
     const label = cls.name || cls.identifier;
-    const doc = cls.srd ? await this.#find("class", cls.identifier) : null;
+    // Rebreya-mode class: the module's rework of that class wins over the SRD one.
+    let doc = cls.rebreya ? await this.#findRebreya("class", { reworkOf: cls.identifier }) : null;
+    const fromModule = Boolean(doc);
+    if (!doc && cls.srd) doc = await this.#find("class", cls.identifier);
     if (!doc) {
       if (cls.srd) warnings.push(`Класс «${label}» не найден в компендиях dnd5e — создана заглушка.`);
       else warnings.push(`Класс «${label}» не из SRD — создана заглушка без умений (уровень и кость хитов учтены).`);
@@ -198,12 +233,14 @@ export class SiteBuildImporter {
         name: label, identifier: cls.identifier, level: cls.level, hitDie: hitDieFor(cls.identifier),
       });
       const items = [data];
-      if (cls.subclass) items.push(await this.#subclassPlaceholder(cls, warnings));
-      return { items, classId: data._id, spellcastingAbility: null };
+      if (cls.subclass) items.push(await this.#subclassPlaceholder(cls, cls.identifier));
+      return { items, classId: data._id, spellcastingAbility: null, resolved: false };
     }
 
-    if (cls.variant) warnings.push(`«${label}» — вариант Ребреи: умения взяты из SRD-класса, сверьте с описанием на сайте.`);
+    if (fromModule) warnings.push(`«${label}»: взят класс модуля «${doc.name}».`);
+    else if (cls.variant) warnings.push(`«${label}» — вариант Ребреи: умения взяты из SRD-класса, сверьте с описанием на сайте.`);
     const classData = this.#fromCompendium(doc, "class");
+    const classIdentifier = classData.system.identifier || cls.identifier;
     classData.system.levels = cls.level;
     const { items: features, added } = await this.#grantFeatures(classData, cls.level, warnings);
     const extra = {};
@@ -217,7 +254,7 @@ export class SiteBuildImporter {
       if (minLevel != null && cls.level < minLevel) {
         warnings.push(`Подкласс «${cls.subclass.name}» доступен с ${minLevel} уровня «${label}» — не добавлен.`);
       } else {
-        const sub = await this.#buildSubclass(cls, classData, warnings);
+        const sub = await this.#buildSubclass(cls, classIdentifier, fromModule, warnings);
         items.push(...sub.items);
         const subAdv = (classData.system.advancement ?? []).find((a) => a.type === "Subclass");
         if (subAdv && sub.subclassId && sub.uuid) {
@@ -231,25 +268,27 @@ export class SiteBuildImporter {
     const ability = classData.system.spellcasting?.progression && classData.system.spellcasting.progression !== "none"
       ? classData.system.spellcasting.ability || null
       : null;
-    return { items: [classData, ...features, ...items], classId: classData._id, spellcastingAbility: ability, subclassLink };
+    return { items: [classData, ...features, ...items], classId: classData._id, spellcastingAbility: ability, subclassLink, resolved: true };
   }
 
-  async #buildSubclass(cls, classData, warnings) {
-    const doc = cls.subclass.identifier ? await this.#find("subclass", cls.subclass.identifier, cls.identifier) : null;
+  async #buildSubclass(cls, classIdentifier, fromModule, warnings) {
+    const doc = fromModule
+      ? await this.#findRebreya("subclass", { name: cls.subclass.name, classIdentifier })
+      : cls.subclass.identifier ? await this.#find("subclass", cls.subclass.identifier, classIdentifier) : null;
     if (!doc) {
-      warnings.push(`Подкласс «${cls.subclass.name}» не из SRD — создана заглушка без умений.`);
-      return { items: [await this.#subclassPlaceholder(cls, warnings)], subclassId: null, uuid: null };
+      warnings.push(`Подкласс «${cls.subclass.name}» не найден ${fromModule ? "в компендии модуля" : "в SRD"} — создана заглушка без умений.`);
+      return { items: [await this.#subclassPlaceholder(cls, classIdentifier)], subclassId: null, uuid: null };
     }
     // dnd5e's Subclass advancement strips advancementOrigin/Root from the subclass itself.
     const data = this.#fromCompendium(doc, "subclass");
-    data.system.classIdentifier = cls.identifier;
+    data.system.classIdentifier = classIdentifier;
     const { items: features, added } = await this.#grantFeatures(data, cls.level, warnings);
     applyAdvancementValues(data, added);
     return { items: [data, ...features], subclassId: data._id, uuid: doc.uuid };
   }
 
-  async #subclassPlaceholder(cls) {
-    const data = buildPlaceholderItem("subclass", { name: cls.subclass.name, classIdentifier: cls.identifier });
+  async #subclassPlaceholder(cls, classIdentifier) {
+    const data = buildPlaceholderItem("subclass", { name: cls.subclass.name, classIdentifier });
     data._id = randomId();
     foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAG}`, { kind: "subclass" });
     return data;
@@ -259,10 +298,13 @@ export class SiteBuildImporter {
 
   async #buildOrigin(kind, origin, totalLevel, warnings) {
     const label = origin.name || origin.slug;
-    const doc = origin.identifier ? await this.#find(kind, origin.identifier) : null;
+    // Rebreya content (Teyvankal races, backgrounds V0.12) lives in the module's compendia.
+    let doc = origin.rebreya ? await this.#findRebreya(kind, { identifier: origin.slug, name: origin.name }) : null;
+    if (!doc && origin.identifier) doc = await this.#find(kind, origin.identifier);
     if (!doc) {
       const what = kind === "race" ? "Раса" : "Предыстория";
-      warnings.push(`${what} «${label}» не из SRD — создана заглушка с описанием с сайта (черты не перенесены).`);
+      const where = origin.rebreya ? "не найдена в компендиях модуля" : "не из SRD";
+      warnings.push(`${what} «${label}» ${where} — создана заглушка с описанием с сайта (черты не перенесены).`);
       const resource = kind === "race" ? "races" : "backgrounds";
       return { items: [await this.#placeholder(kind, resource, origin.slug, { name: label, identifier: origin.slug })], size: null };
     }
