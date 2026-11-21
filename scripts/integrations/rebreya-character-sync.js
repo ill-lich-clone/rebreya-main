@@ -18,6 +18,7 @@ import {
 } from "../data/site-character-mapper.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
 import { SiteBuildImporter } from "./site-build-importer.js";
+import { LinkRevoked } from "./rebreya-site-api.js";
 
 const SPELLS_PACK_ID = `world.${SITE_SPELLS_COMPENDIUM_NAME}`;
 const stripPrefix = (slug) => String(slug ?? "").replace(/^\d+-/u, "");
@@ -46,6 +47,65 @@ export class RebreyaCharacterSync {
 
   getLink(actor) {
     return actor?.getFlag?.(MODULE_ID, "siteCharacter") ?? null;
+  }
+
+  /** This browser's link token for the Actor (share-code link), or null. */
+  getLinkToken(actor) {
+    return actor?.id ? this.#site?.getLinkToken?.(actor.id)?.token ?? null : null;
+  }
+
+  /** Can this client talk to the site for this Actor (link token or login)? */
+  canSync(actor) {
+    return Boolean(this.getLinkToken(actor) || this.#site?.isAuthenticated?.());
+  }
+
+  /**
+   * Run a site call with the Actor's link token; a revoked token is dropped
+   * from this browser so the UI asks for a new code.
+   */
+  async #withLinkToken(actor, fn) {
+    const token = this.getLinkToken(actor);
+    try {
+      return await fn(token);
+    } catch (error) {
+      if (error instanceof LinkRevoked || error?.name === "LinkRevoked") {
+        await this.#site?.clearLinkToken?.(actor.id);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Latest build for an already-linked Actor: link token first (no password),
+   * else the logged-in account's character list.
+   */
+  async fetchLinkedCharacter(actor) {
+    if (this.getLinkToken(actor)) {
+      return this.#withLinkToken(actor, (token) => this.#site.api.getLinkedCharacter(token));
+    }
+    const link = this.getLink(actor);
+    if (!link?.id) throw new Error("Actor не связан с персонажем сайта.");
+    const list = await this.listCharacters();
+    const character = list.find((c) => String(c.id) === String(link.id)) ?? null;
+    if (!character) throw new Error("Связанный персонаж не найден на сайте.");
+    return character;
+  }
+
+  /** Re-import the build of an already-linked Actor. */
+  async refreshBuild(actor, opts = {}) {
+    const character = await this.fetchLinkedCharacter(actor);
+    const syncMode = this.getLinkToken(actor) ? "link-token" : "manual-state-push";
+    return { character, ...(await this.importBuild(actor, character, { ...opts, syncMode })) };
+  }
+
+  async #getRemoteState(actor, link) {
+    if (this.getLinkToken(actor)) return this.#withLinkToken(actor, (token) => this.#site.api.getLinkedState(token));
+    return this.#site.api.getCharacterState(link.id);
+  }
+
+  async #patchRemoteState(actor, link, patch) {
+    if (this.getLinkToken(actor)) return this.#withLinkToken(actor, (token) => this.#site.api.patchLinkedState(token, patch));
+    return this.#site.api.patchCharacterState(link.id, patch);
   }
 
   /**
@@ -86,16 +146,17 @@ export class RebreyaCharacterSync {
    * created; user-added items are untouched.
    * @returns {Promise<{actorId:string, spellsAdded:number, itemsCreated:number, classes:string[], warnings:string[]}>}
    */
-  async importBuild(actor, character, { overrideAc = false, embedSpells = true, importItems = true } = {}) {
+  async importBuild(actor, character, { overrideAc = false, embedSpells = true, importItems = true, syncMode = "manual-state-push", ownerUserId = null } = {}) {
     if (!actor) throw new Error("Не передан Actor для импорта.");
     const warnings = [];
 
     const update = buildCharacterActorUpdate(character, { overrideAc, baseUrl: this.#baseUrl });
+    const previous = this.getLink(actor);
     update.flags = buildSiteCharacterFlags(character, {
       moduleId: MODULE_ID,
       baseUrl: this.#baseUrl,
-      syncMode: "manual-state-push",
-      ownerUserId: game.user?.id ?? "",
+      syncMode,
+      ownerUserId: ownerUserId ?? previous?.ownerUserId ?? game.user?.id ?? "",
     });
     await actor.update(update);
 
@@ -141,15 +202,16 @@ export class RebreyaCharacterSync {
   async pushState(actor, { force = false } = {}) {
     if (!actor) throw new Error("Не передан Actor.");
     const site = this.#site;
-    if (!site?.isAuthenticated?.()) throw new Error("Требуется авторизация на сайте rebreya.com.");
+    if (!this.canSync(actor)) throw new Error("Нет связи с сайтом: свяжите персонажа по коду с rebreya.com или войдите.");
     const link = this.getLink(actor);
-    if (!link?.id) throw new Error("Actor не связан с персонажем сайта.");
+    if (!link?.id && !this.getLinkToken(actor)) throw new Error("Actor не связан с персонажем сайта.");
 
     if (!force) {
       let remote = null;
       try {
-        remote = await site.api.getCharacterState(link.id);
-      } catch (_error) {
+        remote = await this.#getRemoteState(actor, link);
+      } catch (error) {
+        if (error instanceof LinkRevoked) throw error;
         remote = null; // no state yet / transient — treat as no conflict
       }
       const remoteHash = remote?.stateHash ?? "";
@@ -167,7 +229,7 @@ export class RebreyaCharacterSync {
       previousHash: link.lastStateHash ?? "",
     });
 
-    const result = await site.api.patchCharacterState(link.id, patch);
+    const result = await this.#patchRemoteState(actor, link, patch);
     const newHash = result?.stateHash ?? "";
     // Acknowledge the pushed state so the next push is conflict-free.
     const updatedLink = { ...link, lastSyncAt: new Date().toISOString(), lastStateHash: newHash, lastSyncHash: newHash };
@@ -188,8 +250,8 @@ export class RebreyaCharacterSync {
     const link = this.getLink(actor);
     let state = remoteState;
     if (!state) {
-      if (!link?.id) throw new Error("Actor не связан с персонажем сайта.");
-      state = await site.api.getCharacterState(link.id);
+      if (!link?.id && !this.getLinkToken(actor)) throw new Error("Actor не связан с персонажем сайта.");
+      state = await this.#getRemoteState(actor, link);
     }
     if (!state) throw new Error("Не удалось получить состояние с сайта.");
 

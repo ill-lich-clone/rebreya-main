@@ -409,6 +409,29 @@ export function registerSettings() {
     default: ""
   });
 
+  // Link tokens (share-code import) are per-character credentials for the
+  // site. They live ONLY in this browser's client settings (localStorage):
+  // Foundry sends every world- and user-scoped Setting document to every
+  // connected client, and Actor flags reach everyone who can see the Actor, so
+  // neither is private. Cost: a token is per device — on another browser the
+  // player links again with a fresh code. Never sent over the socket.
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_LINK_TOKENS, {
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_ALLOW_LOCALHOST, {
+    name: "REBREYA_MAIN.Settings.SiteAllowLocalhost.Name",
+    hint: "REBREYA_MAIN.Settings.SiteAllowLocalhost.Hint",
+    scope: "world",
+    config: true,
+    restricted: true,
+    type: Boolean,
+    default: false
+  });
+
   game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_LAST_CATALOG_SYNC, {
     scope: "world",
     config: false,

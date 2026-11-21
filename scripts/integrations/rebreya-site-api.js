@@ -30,6 +30,10 @@ export class TokenExpired extends RebreyaApiError {}
 export class ApiUnavailable extends RebreyaApiError {}
 /** Response did not match the expected shape / schema version. */
 export class SchemaMismatch extends RebreyaApiError {}
+/** Link token rejected (revoked on the site or unknown) — ask the player for a new code. */
+export class LinkRevoked extends RebreyaApiError {}
+/** Share code unknown, already used or expired (the site does not say which, on purpose). */
+export class ShareCodeInvalid extends RebreyaApiError {}
 /** Server asked us to slow down (HTTP 429). */
 export class RateLimited extends RebreyaApiError {
   constructor(message, opts = {}) {
@@ -44,9 +48,9 @@ export class RateLimited extends RebreyaApiError {
  * Normalise whatever the user typed into a clean origin (`https://host[:port]`)
  * with no trailing slash and no `/api...` suffix. Rejects internal hosts so a
  * stray `127.0.0.1:8001` (which the API used to leak in pagination links) can
- * never become the base.
+ * never become the base — unless `allowLocal` (a GM-only dev setting) is on.
  */
-export function normalizeBaseUrl(input) {
+export function normalizeBaseUrl(input, { allowLocal = false } = {}) {
   const raw = String(input ?? "").trim();
   if (!raw) return DEFAULT_BASE_URL;
 
@@ -61,7 +65,8 @@ export function normalizeBaseUrl(input) {
   }
 
   const host = url.hostname.toLowerCase();
-  if (host === "127.0.0.1" || host === "localhost" || host === "0.0.0.0" || host === "::1") {
+  const isLocal = host === "127.0.0.1" || host === "localhost" || host === "0.0.0.0" || host === "::1" || host === "[::1]";
+  if (isLocal && !allowLocal) {
     throw new RebreyaApiError(`Локальный адрес «${host}» не может быть базой API сайта.`);
   }
 
@@ -71,8 +76,8 @@ export function normalizeBaseUrl(input) {
 }
 
 /** Join the base, the versioned API prefix and a resource path into one URL. */
-export function buildApiUrl(baseUrl, path) {
-  const base = normalizeBaseUrl(baseUrl);
+export function buildApiUrl(baseUrl, path, { allowLocal = false } = {}) {
+  const base = normalizeBaseUrl(baseUrl, { allowLocal });
   const clean = String(path ?? "");
   // Absolute URL (e.g. a leaked full link) → take only its path+query.
   if (/^https?:\/\//i.test(clean)) {
@@ -100,8 +105,9 @@ export class RebreyaSiteApi {
    * @param {number} [opts.timeoutMs]
    * @param {number} [opts.retries]
    */
-  constructor({ baseUrl, fetchImpl, getTokens, setTokens, timeoutMs, retries } = {}) {
-    this.baseUrl = normalizeBaseUrl(baseUrl ?? DEFAULT_BASE_URL);
+  constructor({ baseUrl, fetchImpl, getTokens, setTokens, timeoutMs, retries, allowLocal = false } = {}) {
+    this.allowLocal = Boolean(allowLocal);
+    this.baseUrl = normalizeBaseUrl(baseUrl ?? DEFAULT_BASE_URL, { allowLocal: this.allowLocal });
     this._fetch = fetchImpl ?? (typeof fetch === "function" ? fetch.bind(globalThis) : null);
     this._getTokens = typeof getTokens === "function" ? getTokens : () => ({});
     this._setTokens = typeof setTokens === "function" ? setTokens : () => {};
@@ -135,12 +141,14 @@ export class RebreyaSiteApi {
    * @param {string} path resource path (relative to /api/v1) or a pagination link
    * @param {object} [opts]
    * @param {boolean} [opts.auth] attach bearer token (required for characters)
+   * @param {string} [opts.linkToken] per-character link token from a share code;
+   *   sent as `Authorization: RebreyaLink …` instead of the JWT (no refresh)
    */
-  async request(path, { method = "GET", body = null, auth = false, retries = this.retries, _didRefresh = false } = {}) {
-    const url = buildApiUrl(this.baseUrl, path);
-    const headers = { Accept: "application/json", ...this._authHeader() };
+  async request(path, { method = "GET", body = null, auth = false, linkToken = null, retries = this.retries, _didRefresh = false } = {}) {
+    const url = buildApiUrl(this.baseUrl, path, { allowLocal: this.allowLocal });
+    const headers = { Accept: "application/json", ...(linkToken ? { Authorization: `RebreyaLink ${linkToken}` } : this._authHeader()) };
     if (body != null) headers["Content-Type"] = "application/json";
-    if (auth && !this.tokens.access) {
+    if (auth && !linkToken && !this.tokens.access) {
       throw new AuthRequired("Требуется авторизация на сайте rebreya.com.");
     }
 
@@ -152,10 +160,13 @@ export class RebreyaSiteApi {
         body: body != null ? JSON.stringify(body) : undefined,
       });
     } catch (error) {
-      if (retries > 0) return this.request(path, { method, body, auth, retries: retries - 1, _didRefresh });
+      if (retries > 0) return this.request(path, { method, body, auth, linkToken, retries: retries - 1, _didRefresh });
       throw new ApiUnavailable(`Не удалось связаться с ${this.baseUrl}.`, { cause: error });
     }
 
+    if (response.status === 401 && linkToken) {
+      throw new LinkRevoked("Связь с персонажем сайта отозвана или недействительна — получите новый код на сайте.", { status: 401 });
+    }
     if (response.status === 401) {
       // Try a single refresh, then retry the original request once.
       if (auth && !_didRefresh && this.tokens.refresh) {
@@ -169,7 +180,7 @@ export class RebreyaSiteApi {
       throw new RateLimited("Слишком много запросов к сайту, попробуйте позже.", { status: 429, retryAfterSeconds: retryAfter });
     }
     if (response.status >= 500) {
-      if (retries > 0) return this.request(path, { method, body, auth, retries: retries - 1, _didRefresh });
+      if (retries > 0) return this.request(path, { method, body, auth, linkToken, retries: retries - 1, _didRefresh });
       throw new ApiUnavailable(`Сайт вернул ошибку ${response.status}.`, { status: response.status });
     }
     if (response.status >= 400) {
@@ -185,7 +196,7 @@ export class RebreyaSiteApi {
       // A connection reset mid-body yields status 200 with a truncated stream —
       // that's a transient network failure, not a schema problem: retry it.
       if (retries > 0) {
-        return this.request(path, { method, body, auth, retries: retries - 1, _didRefresh });
+        return this.request(path, { method, body, auth, linkToken, retries: retries - 1, _didRefresh });
       }
       throw new SchemaMismatch("Сайт вернул не-JSON ответ.", { cause: error });
     }
@@ -291,4 +302,65 @@ export class RebreyaSiteApi {
       auth: true,
     });
   }
+
+  // --- Share code + link token (no site password in Foundry) -----------------
+
+  /**
+   * Exchange a one-time share code (made by the player on the site) for a
+   * per-character link token and the character payload. No authentication.
+   * Not retried: a code is single-use, a blind retry could burn it.
+   * @returns {Promise<{linkToken:string, character:object}>}
+   */
+  async claimShareCode(code, label = "") {
+    const clean = normalizeShareCode(code);
+    if (!clean) throw new ShareCodeInvalid("Введите код с сайта: буквы и цифры, например K7QM-2XPA.");
+    let data;
+    try {
+      data = await this.request("/characters/claim/", {
+        method: "POST",
+        body: { code: clean, label: String(label ?? "").slice(0, 120) },
+        retries: 0,
+      });
+    } catch (error) {
+      if (error?.status === 404 || error?.status === 400) {
+        throw new ShareCodeInvalid("Код недействителен или устарел — получите новый на сайте.", { status: error.status, cause: error });
+      }
+      throw error;
+    }
+    if (!data?.linkToken || !data?.character || typeof data.character !== "object") {
+      throw new SchemaMismatch("Ответ сайта на код без linkToken/character.");
+    }
+    return { linkToken: String(data.linkToken), character: data.character };
+  }
+
+  async getLinkedCharacter(linkToken) {
+    return this.request("/characters/linked/", { linkToken: requireLinkToken(linkToken) });
+  }
+
+  async getLinkedState(linkToken) {
+    return this.request("/characters/linked/state/", { linkToken: requireLinkToken(linkToken) });
+  }
+
+  async patchLinkedState(linkToken, statePatch) {
+    return this.request("/characters/linked/state/", {
+      method: "PATCH",
+      body: statePatch,
+      linkToken: requireLinkToken(linkToken),
+    });
+  }
+}
+
+/**
+ * Share code as typed → what the site expects: case-insensitive, dashes and
+ * spaces ignored. Returns "" when it cannot be a code.
+ */
+export function normalizeShareCode(input) {
+  const clean = String(input ?? "").toUpperCase().replace(/[\s\-‐-―_]+/gu, "");
+  return /^[A-Z0-9]{4,32}$/u.test(clean) ? clean : "";
+}
+
+function requireLinkToken(linkToken) {
+  const token = String(linkToken ?? "").trim();
+  if (!token) throw new LinkRevoked("Нет токена связи для этого персонажа — свяжите его по коду с сайта.");
+  return token;
 }

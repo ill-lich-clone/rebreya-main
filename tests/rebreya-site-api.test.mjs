@@ -227,3 +227,88 @@ test("refresh keeps the rotated refresh token (site blacklists the old one)", as
   await api.request("/characters/", { auth: true });
   assert.deepEqual(store.current(), { access: "NEW", refresh: "R2" });
 });
+
+// --- Share code + link token (no password in Foundry) ------------------------
+
+import { LinkRevoked, ShareCodeInvalid, normalizeShareCode } from "../scripts/integrations/rebreya-site-api.js";
+
+test("normalizeShareCode: case-insensitive, dashes/spaces ignored, junk rejected", () => {
+  assert.equal(normalizeShareCode(" k7qm-2xpa "), "K7QM2XPA");
+  assert.equal(normalizeShareCode("K7QM 2XPA"), "K7QM2XPA");
+  assert.equal(normalizeShareCode("K7QM–2XPA"), "K7QM2XPA"); // en dash pasted from a page
+  assert.equal(normalizeShareCode("абв"), "");
+  assert.equal(normalizeShareCode("ab"), "");
+});
+
+test("claimShareCode: POST without any Authorization, single attempt, returns token + character", async () => {
+  const store = tokenStore({ access: "JWT", refresh: "R" });
+  const fetchImpl = mockFetch([jsonResponse({ linkToken: "L".repeat(43), character: { id: 7, name: "Тайрен" } })]);
+  const api = new RebreyaSiteApi({ fetchImpl, getTokens: store.getTokens, setTokens: store.setTokens });
+  const res = await api.claimShareCode("k7qm-2xpa", "Foundry: Ребрея мейн");
+  assert.equal(res.linkToken.length, 43);
+  assert.equal(res.character.name, "Тайрен");
+  const { url, init } = fetchImpl.calls[0];
+  assert.equal(url, "https://rebreya.com/api/v1/characters/claim/");
+  assert.equal(init.method, "POST");
+  assert.deepEqual(JSON.parse(init.body), { code: "K7QM2XPA", label: "Foundry: Ребрея мейн" });
+  assert.equal(init.headers.Authorization, "Bearer JWT"); // harmless when logged in; see next test for logged out
+});
+
+test("claimShareCode works logged out and maps 404 to ShareCodeInvalid without retrying", async () => {
+  const fetchImpl = mockFetch([jsonResponse({ detail: "Код недействителен или устарел." }, { status: 404 })]);
+  const api = new RebreyaSiteApi({ fetchImpl });
+  await assert.rejects(() => api.claimShareCode("AAAA-BBBB"), ShareCodeInvalid);
+  assert.equal(fetchImpl.calls.length, 1);
+  assert.equal(fetchImpl.calls[0].init.headers.Authorization, undefined);
+  await assert.rejects(() => api.claimShareCode("?"), ShareCodeInvalid); // rejected locally, no request
+  assert.equal(fetchImpl.calls.length, 1);
+});
+
+test("claimShareCode: 5xx is not retried (a single-use code must not be burnt twice)", async () => {
+  const fetchImpl = mockFetch([jsonResponse({}, { status: 502 })]);
+  const api = new RebreyaSiteApi({ fetchImpl });
+  await assert.rejects(() => api.claimShareCode("AAAA-BBBB"), ApiUnavailable);
+  assert.equal(fetchImpl.calls.length, 1);
+});
+
+test("claimShareCode: 429 surfaces RateLimited; malformed 200 is SchemaMismatch", async () => {
+  const api429 = new RebreyaSiteApi({ fetchImpl: mockFetch([jsonResponse({}, { status: 429, headers: { "Retry-After": "30" } })]) });
+  await assert.rejects(() => api429.claimShareCode("AAAA-BBBB"), RateLimited);
+  const apiBad = new RebreyaSiteApi({ fetchImpl: mockFetch([jsonResponse({ character: {} })]) });
+  await assert.rejects(() => apiBad.claimShareCode("AAAA-BBBB"), SchemaMismatch);
+});
+
+test("linked endpoints send RebreyaLink (never the JWT) and 401 → LinkRevoked without refresh", async () => {
+  const store = tokenStore({ access: "JWT", refresh: "R" });
+  const fetchImpl = mockFetch([
+    jsonResponse({ id: 7 }),
+    jsonResponse({ currentHp: 3, stateHash: "sha256:x" }),
+    jsonResponse({ stateHash: "sha256:y" }),
+    jsonResponse({ detail: "revoked" }, { status: 401 }),
+  ]);
+  const api = new RebreyaSiteApi({ fetchImpl, getTokens: store.getTokens, setTokens: store.setTokens });
+  await api.getLinkedCharacter("TOK");
+  await api.getLinkedState("TOK");
+  await api.patchLinkedState("TOK", { currentHp: 5 });
+  await assert.rejects(() => api.getLinkedCharacter("TOK"), LinkRevoked);
+  assert.deepEqual(fetchImpl.calls.map((c) => c.url), [
+    "https://rebreya.com/api/v1/characters/linked/",
+    "https://rebreya.com/api/v1/characters/linked/state/",
+    "https://rebreya.com/api/v1/characters/linked/state/",
+    "https://rebreya.com/api/v1/characters/linked/",
+  ]);
+  for (const call of fetchImpl.calls) assert.equal(call.init.headers.Authorization, "RebreyaLink TOK");
+  assert.equal(fetchImpl.calls[2].init.method, "PATCH");
+  assert.equal(fetchImpl.calls.length, 4); // no refresh attempt on 401
+  assert.deepEqual(store.current(), { access: "JWT", refresh: "R" }); // JWT untouched
+  await assert.rejects(() => api.getLinkedCharacter(""), LinkRevoked);
+});
+
+test("allowLocal (dev setting) lets http://127.0.0.1:8000 be the base; default still refuses", async () => {
+  assert.equal(normalizeBaseUrl("http://127.0.0.1:8000", { allowLocal: true }), "http://127.0.0.1:8000");
+  assert.throws(() => normalizeBaseUrl("http://127.0.0.1:8000"), /Локальный/);
+  const fetchImpl = mockFetch([jsonResponse({ id: 1 })]);
+  const api = new RebreyaSiteApi({ baseUrl: "http://127.0.0.1:8000", allowLocal: true, fetchImpl });
+  await api.getLinkedCharacter("TOK");
+  assert.equal(fetchImpl.calls[0].url, "http://127.0.0.1:8000/api/v1/characters/linked/");
+});

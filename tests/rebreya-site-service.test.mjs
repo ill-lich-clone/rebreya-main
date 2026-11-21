@@ -94,3 +94,30 @@ test("a bad configured base URL falls back to the default without throwing", () 
   const svc = new RebreyaSiteService({ adapter, apiFactory: stubApiFactory() });
   assert.equal(svc.api.baseUrl, "https://rebreya.com");
 });
+
+test("link tokens: per world + actor, private client store, cleared on demand", async () => {
+  let stored = {};
+  const adapter = {
+    ...fakeAdapter(),
+    worldId: () => "testovyj3",
+    getLinkTokens: () => stored,
+    setLinkTokens: async (v) => { stored = v; },
+  };
+  const svc = new RebreyaSiteService({ adapter, apiFactory: stubApiFactory() });
+  assert.equal(svc.getLinkToken("A1"), null);
+  await svc.setLinkToken("A1", { token: "TOK", siteId: 7 });
+  assert.equal(svc.getLinkToken("A1").token, "TOK");
+  assert.equal(svc.getLinkToken("A1").siteId, 7);
+  assert.ok(stored["testovyj3:A1"], "keyed by world id");
+  assert.equal(svc.hasLinkToken("A2"), false);
+  await svc.clearLinkToken("A1");
+  assert.equal(svc.getLinkToken("A1"), null);
+});
+
+test("allowLocal dev setting reaches the API factory", () => {
+  const factory = stubApiFactory();
+  const adapter = { ...fakeAdapter({ baseUrl: "http://127.0.0.1:8000" }), allowLocal: () => true };
+  const svc = new RebreyaSiteService({ adapter, apiFactory: factory });
+  assert.equal(svc.api.baseUrl, "http://127.0.0.1:8000");
+  assert.equal(factory.created[0]._opts.allowLocal, true);
+});

@@ -104,7 +104,11 @@ export const SETTINGS_KEYS = {
   SITE_ACCESS_TOKEN: "siteAccessToken",
   SITE_REFRESH_TOKEN: "siteRefreshToken",
   SITE_CHARACTER_SYNC_MODE: "siteCharacterSyncMode",
-  SITE_LAST_CATALOG_SYNC: "siteLastCatalogSyncAt"
+  SITE_LAST_CATALOG_SYNC: "siteLastCatalogSyncAt",
+  // Per-character link tokens from share codes (client scope — see settings.js).
+  SITE_LINK_TOKENS: "siteLinkTokens",
+  // Dev only: allow http://127.0.0.1 / localhost as the site base URL.
+  SITE_ALLOW_LOCALHOST: "siteAllowLocalhost"
 };
 
 export const DATA_SOURCE_MODES = {

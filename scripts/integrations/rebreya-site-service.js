@@ -31,6 +31,13 @@ export function createFoundrySettingsAdapter(game) {
   return {
     getBaseUrl: () => get(SETTINGS_KEYS.SITE_BASE_URL, DEFAULT_SITE_BASE_URL) || DEFAULT_SITE_BASE_URL,
     isEnabled: () => Boolean(get(SETTINGS_KEYS.SITE_INTEGRATION_ENABLED, false)),
+    allowLocal: () => Boolean(get(SETTINGS_KEYS.SITE_ALLOW_LOCALHOST, false)),
+    worldId: () => String(game?.world?.id ?? ""),
+    getLinkTokens: () => {
+      const value = get(SETTINGS_KEYS.SITE_LINK_TOKENS, {});
+      return value && typeof value === "object" ? value : {};
+    },
+    setLinkTokens: (value) => set(SETTINGS_KEYS.SITE_LINK_TOKENS, value ?? {}),
     getTokens: () => ({
       access: get(SETTINGS_KEYS.SITE_ACCESS_TOKEN) || undefined,
       refresh: get(SETTINGS_KEYS.SITE_REFRESH_TOKEN) || undefined,
@@ -59,21 +66,55 @@ export class RebreyaSiteService {
   /** Lazily (re)build the API client, tracking the configured base URL. */
   get api() {
     const rawBase = this.adapter.getBaseUrl();
+    const allowLocal = Boolean(this.adapter.allowLocal?.());
     let normalized;
     try {
-      normalized = normalizeBaseUrl(rawBase);
+      normalized = normalizeBaseUrl(rawBase, { allowLocal });
     } catch (_error) {
       normalized = normalizeBaseUrl(DEFAULT_SITE_BASE_URL);
     }
-    if (!this._api || this._apiBaseUrl !== normalized) {
+    const key = `${normalized}|${allowLocal}`;
+    if (!this._api || this._apiBaseUrl !== key) {
       this._api = this._apiFactory({
         baseUrl: normalized,
+        allowLocal,
         getTokens: () => this.adapter.getTokens(),
         setTokens: (t) => this.adapter.setTokens(t),
       });
-      this._apiBaseUrl = normalized;
+      this._apiBaseUrl = key;
     }
     return this._api;
+  }
+
+  // --- Link tokens (share-code import), private to this browser ---------------
+
+  #linkKey(actorId) {
+    return `${this.adapter.worldId?.() ?? ""}:${actorId}`;
+  }
+
+  /** @returns {{token:string, siteId:(number|string|null), baseUrl:string, savedAt:string}|null} */
+  getLinkToken(actorId) {
+    if (!actorId || !this.adapter.getLinkTokens) return null;
+    const entry = this.adapter.getLinkTokens()[this.#linkKey(actorId)];
+    return entry?.token ? entry : null;
+  }
+
+  hasLinkToken(actorId) {
+    return Boolean(this.getLinkToken(actorId));
+  }
+
+  async setLinkToken(actorId, { token, siteId = null } = {}) {
+    if (!actorId || !token || !this.adapter.setLinkTokens) return;
+    const all = { ...this.adapter.getLinkTokens() };
+    all[this.#linkKey(actorId)] = { token: String(token), siteId, baseUrl: this.api.baseUrl, savedAt: new Date().toISOString() };
+    await this.adapter.setLinkTokens(all);
+  }
+
+  async clearLinkToken(actorId) {
+    if (!actorId || !this.adapter.setLinkTokens) return;
+    const all = { ...this.adapter.getLinkTokens() };
+    delete all[this.#linkKey(actorId)];
+    await this.adapter.setLinkTokens(all);
   }
 
   isEnabled() {
