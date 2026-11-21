@@ -23,7 +23,7 @@ test("current release advances the module cache version", async () => {
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
   assert.equal(manifest.version, "1.6.3");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
-  for (const entry of [manifest.esmodules[0], "scripts/main-1.5.107.js", "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
+  for (const entry of [manifest.esmodules[0], "scripts/main-1.6.2.js", "scripts/main-1.5.107.js", "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
   }
 });
