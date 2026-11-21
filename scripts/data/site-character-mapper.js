@@ -164,7 +164,10 @@ export function buildCharacterActorUpdate(character = {}, opts = {}) {
     if (code) skills[code] = { value: 2 };
   }
 
-  const hpMax = toInt(character.maxHp);
+  // The site defaults max_hp to 0 ("not filled in"); leave hp.max null then so
+  // dnd5e computes it from the class HitPoints advancement.
+  const hpMaxRaw = toInt(character.maxHp);
+  const hpMax = hpMaxRaw != null && hpMaxRaw > 0 ? hpMaxRaw : null;
   const hpValue = toInt(character.currentHp);
   const speed = leadingInt(character.speed);
 
@@ -190,9 +193,10 @@ export function buildCharacterActorUpdate(character = {}, opts = {}) {
     if (v != null) currency[key] = Math.max(0, v);
   }
 
+  // Level is not stored on a dnd5e character: it is the sum of embedded class
+  // Items, which the build importer (site-build-importer.js) creates.
   const details = {
     ...(character.alignment ? { alignment: String(character.alignment).trim() } : {}),
-    ...(toInt(character.level) != null ? { level: Math.max(1, Math.min(20, toInt(character.level))) } : {}),
   };
   if (includeBiography) {
     const bio = buildBiographyHtml(character, { baseUrl });

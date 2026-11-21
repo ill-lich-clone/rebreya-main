@@ -259,7 +259,8 @@ async function openSyncDialog(actor, moduleApi) {
     }
     try {
       const res = await characterSync.importBuild(actor, character, { overrideAc: false });
-      await notify("info", `Импортировано: ${escapeHtml(character.name)}. Заклинаний перенесено: ${res.spellsAdded}.`);
+      const classes = res.classes?.length ? ` Классы: ${escapeHtml(res.classes.join(", "))}.` : "";
+      await notify("info", `Импортировано: ${escapeHtml(character.name)}.${classes} Предметов листа: ${res.itemsCreated ?? 0}, заклинаний: ${res.spellsAdded}.`);
       for (const w of res.warnings ?? []) await notify("warn", w);
     } catch (error) {
       await notify("error", `Импорт не удался: ${error.message}`);

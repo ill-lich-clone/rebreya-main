@@ -17,6 +17,7 @@ import {
   readUsedSlots,
 } from "../data/site-character-mapper.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
+import { SiteBuildImporter } from "./site-build-importer.js";
 
 const SPELLS_PACK_ID = `world.${SITE_SPELLS_COMPENDIUM_NAME}`;
 const stripPrefix = (slug) => String(slug ?? "").replace(/^\d+-/u, "");
@@ -80,11 +81,12 @@ export class RebreyaCharacterSync {
 
   /**
    * Import a site character's build into an Actor: scalar fields + linkage
-   * flags + embedded site spells. Re-import replaces previously site-embedded
-   * spells so it stays clean; user-added items are untouched.
-   * @returns {Promise<{actorId:string, spellsAdded:number, warnings:string[]}>}
+   * flags + class/subclass/race/background Items (with their granted features)
+   * + embedded site spells. Re-import replaces only what a previous import
+   * created; user-added items are untouched.
+   * @returns {Promise<{actorId:string, spellsAdded:number, itemsCreated:number, classes:string[], warnings:string[]}>}
    */
-  async importBuild(actor, character, { overrideAc = false, embedSpells = true } = {}) {
+  async importBuild(actor, character, { overrideAc = false, embedSpells = true, importItems = true } = {}) {
     if (!actor) throw new Error("Не передан Actor для импорта.");
     const warnings = [];
 
@@ -97,6 +99,22 @@ export class RebreyaCharacterSync {
     });
     await actor.update(update);
 
+    // Classes before spells: dnd5e assigns a spell's sourceClass on creation.
+    let itemsCreated = 0;
+    let classes = [];
+    if (importItems) {
+      try {
+        const importer = new SiteBuildImporter({ api: this.#site?.api ?? null, baseUrl: this.#baseUrl });
+        const res = await importer.import(actor, character);
+        itemsCreated = res.created;
+        classes = res.classes;
+        warnings.push(...res.warnings);
+      } catch (error) {
+        console.error(`${MODULE_ID} | Site build item import failed.`, error);
+        warnings.push(`Не удалось перенести класс/расу/предысторию: ${error.message}`);
+      }
+    }
+
     let spellsAdded = 0;
     if (embedSpells) {
       try {
@@ -105,7 +123,7 @@ export class RebreyaCharacterSync {
         warnings.push(`Не удалось перенести заклинания: ${error.message}`);
       }
     }
-    return { actorId: actor.id, spellsAdded, warnings };
+    return { actorId: actor.id, spellsAdded, itemsCreated, classes, warnings };
   }
 
   /**
@@ -254,6 +272,9 @@ export class RebreyaCharacterSync {
       if (doc) {
         const data = doc.toObject();
         delete data._id;
+        // The site list is the spells the character uses — mark leveled ones
+        // prepared (dnd5e defaults PC spells to unprepared on creation).
+        if (Number(data.system?.level) > 0) foundry.utils.setProperty(data, "system.prepared", 1);
         docs.push(data);
       }
     }

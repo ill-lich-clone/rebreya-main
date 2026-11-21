@@ -121,11 +121,15 @@ test("currency copies only valid dnd5e keys (drops xp)", () => {
   assert.equal("xp" in u.system.currency, false);
 });
 
-test("details: alignment free text + clamped level", () => {
+test("details: alignment free text; level is left to class Items", () => {
   const u = buildCharacterActorUpdate(CHAR);
   assert.equal(u.system.details.alignment, "Нейтрально-добрый");
-  assert.equal(u.system.details.level, 5);
-  assert.equal(buildCharacterActorUpdate({ level: 99 }).system.details.level, 20);
+  assert.equal("level" in u.system.details, false);
+});
+
+test("site max_hp 0 (not filled) leaves hp.max for dnd5e to compute", () => {
+  const u = buildCharacterActorUpdate({ ...CHAR, maxHp: 0 });
+  assert.equal("max" in u.system.attributes.hp, false);
 });
 
 test("biography rolls up proficiencies/languages/equipment/notes + site link", () => {
