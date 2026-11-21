@@ -215,3 +215,15 @@ test("persistent bad JSON still surfaces SchemaMismatch after retries", async ()
   const api = new RebreyaSiteApi({ fetchImpl, retries: 1 });
   await assert.rejects(() => api.request("/spells/"), SchemaMismatch);
 });
+
+test("refresh keeps the rotated refresh token (site blacklists the old one)", async () => {
+  const store = tokenStore({ access: "OLD", refresh: "R1" });
+  const fetchImpl = mockFetch([
+    jsonResponse({ detail: "expired" }, { status: 401 }),
+    jsonResponse({ access: "NEW", refresh: "R2" }),
+    jsonResponse({ results: [] }),
+  ]);
+  const api = new RebreyaSiteApi({ fetchImpl, getTokens: store.getTokens, setTokens: store.setTokens });
+  await api.request("/characters/", { auth: true });
+  assert.deepEqual(store.current(), { access: "NEW", refresh: "R2" });
+});

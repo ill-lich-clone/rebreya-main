@@ -14,6 +14,7 @@ import {
   buildStatePatch,
   buildActorStateUpdate,
   detectStateConflict,
+  readUsedSlots,
 } from "../data/site-character-mapper.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
 
@@ -178,12 +179,12 @@ export class RebreyaCharacterSync {
     // Spell slots: state.usedSlots is spent-count per level; value = max − used.
     const spells = actor.system?.spells ?? {};
     const slots = {};
-    const used = state.usedSlots ?? {};
+    const used = readUsedSlots(state.usedSlots);
     for (let level = 1; level <= 9; level += 1) {
       const key = `spell${level}`;
       const max = Number(spells[key]?.max) || 0;
-      if (max > 0 && used[key] != null) {
-        slots[key] = { value: Math.max(0, max - (Number(used[key]) || 0)) };
+      if (max > 0 && used[level] != null) {
+        slots[key] = { value: Math.max(0, max - used[level]) };
       }
     }
     if (Object.keys(slots).length) {

@@ -27,14 +27,14 @@ for (const [code, aliases] of Object.entries({
 const SKILL_BY_ALIAS = {};
 for (const [code, aliases] of Object.entries({
   acr: ["acr", "acrobatics", "акробатика"],
-  ani: ["ani", "animal handling", "обращение с животными"],
-  arc: ["arc", "arcana", "тайная магия"],
+  ani: ["ani", "animal handling", "обращение с животными", "уход за животными"],
+  arc: ["arc", "arcana", "тайная магия", "магия"],
   ath: ["ath", "athletics", "атлетика"],
   dec: ["dec", "deception", "обман"],
   his: ["his", "history", "история"],
   ins: ["ins", "insight", "проницательность"],
   itm: ["itm", "intimidation", "запугивание"],
-  inv: ["inv", "investigation", "расследование"],
+  inv: ["inv", "investigation", "расследование", "анализ"],
   med: ["med", "medicine", "медицина"],
   nat: ["nat", "nature", "природа"],
   prc: ["prc", "perception", "восприятие"],
@@ -68,6 +68,36 @@ const toInt = (value, fallback = null) => {
   const n = Math.trunc(Number(value));
   return Number.isFinite(n) ? n : fallback;
 };
+
+/** Leading integer of a free-text value ("30 футов" → 30); null if none. */
+const leadingInt = (value) => {
+  if (typeof value === "number") return toInt(value);
+  const match = String(value ?? "").match(/-?\d+/u);
+  return match ? toInt(match[0]) : null;
+};
+
+/**
+ * Death saves arrive as `{successes, failures}` from the site's own sheet
+ * (Frontend CharacterSheet.tsx) and as `{success, failure}` from older pushes.
+ */
+const readDeathSaves = (raw) => ({
+  success: Math.max(0, Math.min(3, toInt(raw?.successes ?? raw?.success, 0) ?? 0)),
+  failure: Math.max(0, Math.min(3, toInt(raw?.failures ?? raw?.failure, 0) ?? 0)),
+});
+
+/**
+ * Spent slots per level. The site keys them by bare level ("1".."9"); early
+ * module pushes used "spell1".."spell9". Returns {1..9: n} for present levels.
+ */
+export function readUsedSlots(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (let level = 1; level <= 9; level += 1) {
+    const v = toInt(raw[level] ?? raw[String(level)] ?? raw[`spell${level}`]);
+    if (v != null) out[level] = Math.max(0, v);
+  }
+  return out;
+}
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -136,7 +166,7 @@ export function buildCharacterActorUpdate(character = {}, opts = {}) {
 
   const hpMax = toInt(character.maxHp);
   const hpValue = toInt(character.currentHp);
-  const speed = toInt(character.speed);
+  const speed = leadingInt(character.speed);
 
   const attributes = {
     hp: {
@@ -144,10 +174,7 @@ export function buildCharacterActorUpdate(character = {}, opts = {}) {
       ...(hpMax != null ? { max: hpMax } : {}),
     },
     movement: { ...(speed != null ? { walk: speed } : {}), units: "ft" },
-    death: {
-      success: Math.max(0, Math.min(3, toInt(data.deathSaves?.success, 0) ?? 0)),
-      failure: Math.max(0, Math.min(3, toInt(data.deathSaves?.failure, 0) ?? 0)),
-    },
+    death: readDeathSaves(data.deathSaves),
     inspiration: Boolean(data.inspiration),
     exhaustion: Math.max(0, Math.min(10, toInt(data.exhaustion, 0) ?? 0)),
   };
@@ -212,21 +239,23 @@ export function buildStatePatch(system = {}, { statuses = [], moduleId = "rebrey
     if (attrs.hp.max != null) patch.maxHp = Math.max(0, toInt(attrs.hp.max, 0) ?? 0);
   }
   if (attrs.death) {
+    // Site sheet format (Frontend CharacterSheet.tsx): {successes, failures}.
     patch.deathSaves = {
-      success: Math.max(0, Math.min(3, toInt(attrs.death.success, 0) ?? 0)),
-      failure: Math.max(0, Math.min(3, toInt(attrs.death.failure, 0) ?? 0)),
+      successes: Math.max(0, Math.min(3, toInt(attrs.death.success, 0) ?? 0)),
+      failures: Math.max(0, Math.min(3, toInt(attrs.death.failure, 0) ?? 0)),
     };
   }
   if ("inspiration" in attrs) patch.inspiration = Boolean(attrs.inspiration);
   if ("exhaustion" in attrs) patch.exhaustion = Math.max(0, Math.min(10, toInt(attrs.exhaustion, 0) ?? 0));
 
   // Spent spell slots per level: dnd5e stores {value=available, max}; used = max-value.
+  // Keyed by bare level ("1".."9") — the format the site's sheet reads.
   const spells = system.spells ?? {};
   const usedSlots = {};
   for (let level = 1; level <= 9; level += 1) {
     const slot = spells[`spell${level}`];
     if (slot && Number(slot.max) > 0) {
-      usedSlots[`spell${level}`] = Math.max(0, (toInt(slot.max, 0) ?? 0) - (toInt(slot.value, 0) ?? 0));
+      usedSlots[String(level)] = Math.max(0, (toInt(slot.max, 0) ?? 0) - (toInt(slot.value, 0) ?? 0));
     }
   }
   if (Object.keys(usedSlots).length) patch.usedSlots = usedSlots;
@@ -279,12 +308,7 @@ export function buildActorStateUpdate(state = {}) {
       ...(state.maxHp != null ? { max: Math.max(0, toInt(state.maxHp, 0) ?? 0) } : {}),
     };
   }
-  if (state.deathSaves) {
-    attributes.death = {
-      success: Math.max(0, Math.min(3, toInt(state.deathSaves.success, 0) ?? 0)),
-      failure: Math.max(0, Math.min(3, toInt(state.deathSaves.failure, 0) ?? 0)),
-    };
-  }
+  if (state.deathSaves) attributes.death = readDeathSaves(state.deathSaves);
   if ("inspiration" in state) attributes.inspiration = Boolean(state.inspiration);
   if ("exhaustion" in state) attributes.exhaustion = Math.max(0, Math.min(10, toInt(state.exhaustion, 0) ?? 0));
 

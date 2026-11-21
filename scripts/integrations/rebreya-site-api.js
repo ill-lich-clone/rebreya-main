@@ -216,7 +216,10 @@ export class RebreyaSiteApi {
       throw error;
     }
     if (!data?.access) throw new SchemaMismatch("Ответ обновления без access-токена.");
-    this._setTokens({ ...this.tokens, access: data.access });
+    // The site rotates refresh tokens and blacklists the old one
+    // (SIMPLE_JWT ROTATE_REFRESH_TOKENS + BLACKLIST_AFTER_ROTATION), so the
+    // rotated `refresh` must be kept or the next refresh fails with 401.
+    this._setTokens({ ...this.tokens, access: data.access, ...(data.refresh ? { refresh: data.refresh } : {}) });
     return data;
   }
 

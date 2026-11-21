@@ -44,6 +44,20 @@ const CHAR = {
   },
 };
 
+// Exactly what the site's own form/sheet write (Frontend CharacterForm.tsx,
+// CharacterSheet.tsx, lib/dnd.ts SKILLS): free-text speed, RU skill labels,
+// {successes, failures} death saves.
+const SITE_CHAR = {
+  ...CHAR,
+  speed: "30 футов",
+  data: {
+    saveProficiencies: ["intelligence", "wisdom"],
+    skillProficiencies: ["Анализ", "Магия", "История", "Уход за животными"],
+    skillExpertise: [],
+    deathSaves: { successes: 2, failures: 1 },
+  },
+};
+
 test("normalizeAbility accepts code / EN / RU", () => {
   assert.equal(normalizeAbility("int"), "int");
   assert.equal(normalizeAbility("Intelligence"), "int");
@@ -158,14 +172,14 @@ test("buildStatePatch extracts hp/death/inspiration/exhaustion", () => {
   const p = buildStatePatch(SYSTEM);
   assert.equal(p.currentHp, 12);
   assert.equal(p.maxHp, 27);
-  assert.deepEqual(p.deathSaves, { success: 1, failure: 2 });
+  assert.deepEqual(p.deathSaves, { successes: 1, failures: 2 });
   assert.equal(p.inspiration, true);
   assert.equal(p.exhaustion, 3);
 });
 
 test("buildStatePatch computes spent slots (max-value) per level", () => {
   const p = buildStatePatch(SYSTEM);
-  assert.deepEqual(p.usedSlots, { spell1: 3, spell2: 3, spell3: 0 });
+  assert.deepEqual(p.usedSlots, { 1: 3, 2: 3, 3: 0 });
 });
 
 test("buildStatePatch copies only valid currency keys", () => {
@@ -222,4 +236,24 @@ test("buildActorStateUpdate clamps and degrades safely on empty state", () => {
   const { system } = buildActorStateUpdate({ exhaustion: 99, deathSaves: { success: 9, failure: -1 } });
   assert.equal(system.attributes.exhaustion, 10);
   assert.deepEqual(system.attributes.death, { success: 3, failure: 0 });
+});
+
+import { readUsedSlots } from "../scripts/data/site-character-mapper.js";
+
+test("site-format character: RU sheet skill labels, free-text speed, {successes,failures}", () => {
+  const u = buildCharacterActorUpdate(SITE_CHAR);
+  assert.deepEqual(Object.keys(u.system.skills).sort(), ["ani", "arc", "his", "inv"]);
+  assert.equal(u.system.attributes.movement.walk, 30);
+  assert.deepEqual(u.system.attributes.death, { success: 2, failure: 1 });
+});
+
+test("buildActorStateUpdate reads the site's {successes, failures} death saves", () => {
+  const { system } = buildActorStateUpdate({ deathSaves: { successes: 2, failures: 1 } });
+  assert.deepEqual(system.attributes.death, { success: 2, failure: 1 });
+});
+
+test("readUsedSlots accepts site keys (\"1\") and legacy keys (\"spell1\")", () => {
+  assert.deepEqual(readUsedSlots({ 1: 2, 3: "1" }), { 1: 2, 3: 1 });
+  assert.deepEqual(readUsedSlots({ spell2: 1 }), { 2: 1 });
+  assert.deepEqual(readUsedSlots(null), {});
 });
