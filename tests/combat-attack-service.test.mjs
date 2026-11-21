@@ -81,6 +81,7 @@ TestRoll.messages = [];
 globalThis.Roll = TestRoll;
 
 const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
+const { MidiReactionAdapter } = await import("../scripts/integrations/midi-reaction-adapter.js");
 const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
 const { ReactionCapabilityIndex } = await import("../scripts/combat/reaction-capability-index.js");
@@ -358,6 +359,22 @@ test("concurrent native reaction receipts spend distinct available uses exactly 
   const reconnected = new CombatAttackService({});
   assert.equal((await reconnected.consumeReaction(actor, {idempotencyKey: 'native-a', reactionType: 'midi-native'})).consumed, true);
   assert.equal(reconnected.getReactionState(actor).usesRemaining, 0);
+});
+
+test("a native MIDI receipt leaves its existing marker and reset policy to MIDI", async t => {
+  const actor = makeActor([]);
+  const calls = [];
+  const previousCombat = globalThis.Combat;
+  globalThis.Combat = class Combat {};
+  t.after(() => { globalThis.Combat = previousCombat; });
+  const api = { midiReactionAdapter: new MidiReactionAdapter({}, {
+    midiProvider: () => ({ setReactionUsed: (...args) => calls.push(args) })
+  }) };
+  const service = new CombatAttackService(api);
+  await service.consumeReaction(actor, { idempotencyKey: "native", reactionType: "midi-native" });
+  await service.refreshReaction(actor, { round: 1, turn: 1 });
+  assert.deepEqual(calls, []);
+  assert.equal(service.getReactionState(actor).usesRemaining, 1);
 });
 
 test("ordinary turn refresh uses the confirmed combatant while weapon turn work is pending", async t => {
@@ -4402,6 +4419,18 @@ async function defenceFixture(t, feat, { targetFeat = false, self = false, dista
 
 test("Interception absorbs the maximum Hit Dice only once and leaves at least one damage to self", async t => {
   const h = await defenceFixture(t, "perehvat", { self: true });
+  const previousCombat = globalThis.Combat;
+  globalThis.Combat = class Combat {};
+  t.after(() => { globalThis.Combat = previousCombat; });
+  const markers = new Map();
+  const writes = [];
+  MidiQOL.hasUsedReaction = actor => markers.has(actor.id);
+  MidiQOL.setReactionUsed = async (actor, active) => {
+    writes.push([actor.id, active]);
+    if (active) markers.set(actor.id, (markers.get(actor.id) ?? 0) + 1);
+    else markers.delete(actor.id);
+  };
+  h.api.midiReactionAdapter = new MidiReactionAdapter({});
   const detail = [{ type: "slashing", value: 3 }, { type: "fire", value: 2 }];
   const packet = { damageDetail: detail, damageDetails: { combinedDamage: detail } };
   await Promise.all([h.service.applyMidiInterception(h.allyToken, { workflow: h.workflow, damageItem: packet }),
@@ -4412,6 +4441,16 @@ test("Interception absorbs the maximum Hit Dice only once and leaves at least on
   assert.equal(packet.newHP, 12);
   assert.deepEqual(packet.damageDetail.map(row => row.type), ["slashing", "fire"]);
   assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
+  assert.equal(markers.get(h.guard.id), 1);
+  const turns = [h.workflow.actor, h.guard].map(actor => ({ id: actor.id, actor }));
+  const combat = Object.assign(new Combat(), { id: "fight", round: 1, turn: 0, turns, combatant: turns[0] });
+  await h.service.handleCombatTurnChange(combat, { turn: 0 });
+  assert.equal(markers.get(h.guard.id), 1);
+  Object.assign(combat, { turn: 1, combatant: turns[1] });
+  await h.service.handleCombatTurnChange(combat, { turn: 1 });
+  assert.equal(h.service.getReactionState(h.guard).usesRemaining, 1);
+  assert.equal(markers.has(h.guard.id), false);
+  assert.deepEqual(writes, [[h.guard.id, true], [h.guard.id, false]]);
   assert.equal(h.guard.updateCalls.some(patch => Object.hasOwn(patch, "system.attributes.hp.value")), false);
 });
 

@@ -29,6 +29,16 @@ export class MidiReactionAdapter {
   now() { return this._options.now?.() ?? Date.now(); }
   resolve(uuid) { return (this._options.resolver ?? globalThis.fromUuid)?.(uuid); }
 
+  async syncModuleReactionMarker(actor, spent) {
+    try {
+      const midi = this._options.midiProvider?.() ?? globalThis.MidiQOL;
+      if (spent && midi?.hasUsedReaction?.(actor)) return;
+      await midi?.setReactionUsed?.(actor, spent);
+    } catch (error) {
+      (this._options.logger ?? console).error("Failed to sync the Midi-QOL reaction marker", error);
+    }
+  }
+
   async getShieldAttackContext(workflow, target) {
     const actor = target?.actor;
     if (!actor || !workflow?.attackRoll || !workflow.activity?.attack) return null;

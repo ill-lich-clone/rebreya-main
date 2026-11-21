@@ -5689,18 +5689,7 @@ export class CombatAttackService {
     };
   }
 
-  async #setReactionState(actor, patch = {}) {
-    const current = this.getReactionState(actor) ?? {
-      actorId: actor.id,
-      usesMax: REACTION_DEFAULT_MAX_USES,
-      usesRemaining: REACTION_DEFAULT_MAX_USES,
-      available: true,
-      lastRefreshCombatId: "",
-      lastRefreshRound: 0,
-      lastRefreshTurn: -1,
-      lastReactionType: "",
-      lastReactionAt: null
-    };
+  async #setReactionState(actor, current, patch) {
     const next = {
       ...current,
       ...foundry.utils.deepClone(patch ?? {})
@@ -5769,18 +5758,20 @@ export class CombatAttackService {
     const turn = Math.floor(toNumber(options.turn, combat?.turn ?? -1));
     const combatId = String(options.combatId ?? combat?.id ?? "");
 
-    return this.#queueReactionChange(actor, () => {
-      if (options.skipFull === true) {
-        const state = this.getReactionState(actor);
-        if (state.usesMax === usesMax && state.usesRemaining === usesMax) return state;
-      }
-      return this.#setReactionState(actor, {
+    return this.#queueReactionChange(actor, async () => {
+      const state = this.getReactionState(actor);
+      if (options.skipFull === true && state.usesMax === usesMax && state.usesRemaining === usesMax) return state;
+      const refreshed = await this.#setReactionState(actor, state, {
         usesMax,
         usesRemaining: usesMax,
         lastRefreshCombatId: combatId,
         lastRefreshRound: round,
         lastRefreshTurn: turn
       });
+      if (!state.available && state.lastReactionType !== "midi-native") {
+        await this.moduleApi?.midiReactionAdapter?.syncModuleReactionMarker?.(actor, false);
+      }
+      return refreshed;
     });
   }
 
@@ -5828,12 +5819,15 @@ export class CombatAttackService {
       };
     }
 
-    const nextState = await this.#setReactionState(actor, {
+    const nextState = await this.#setReactionState(actor, check.state, {
       usesRemaining: Math.max(0, (check.state?.usesRemaining ?? 0) - safeUses),
       lastReactionType: String(options.reactionType ?? ""),
       lastReactionAt: new Date().toISOString(),
       ...(idempotencyKey ? { reactionSpendKeys: [...spendKeys, idempotencyKey].slice(-64) } : {})
     });
+    if (!nextState.available && nextState.lastReactionType !== "midi-native") {
+      await this.moduleApi?.midiReactionAdapter?.syncModuleReactionMarker?.(actor, true);
+    }
 
     return {
       actorId: actor.id,
