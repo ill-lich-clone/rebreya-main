@@ -1,8 +1,6 @@
-import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
+import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js?v=1.6.3";
 import { MODULE_ID } from "../constants.js";
 import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
-
-const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
 
 const CHARACTER_SIZE_RULES = Object.freeze({
   tiny: Object.freeze({
@@ -157,26 +155,13 @@ export function buildCharacterSizeEffectData(size) {
     img: "icons/svg/upgrade.svg",
     disabled: false,
     transfer: false,
-    changes: [
-      {
-        key: "system.attributes.ac.bonus",
-        mode: EFFECT_MODE_ADD,
-        value: String(rule.ac),
-        priority: 20
-      },
-      {
-        key: "system.abilities.str.bonuses.check",
-        mode: EFFECT_MODE_ADD,
-        value: String(rule.strengthChecks),
-        priority: 20
-      },
-      {
-        key: "system.abilities.dex.bonuses.check",
-        mode: EFFECT_MODE_ADD,
-        value: String(rule.dexterityChecks),
-        priority: 20
-      }
-    ],
+    system: {
+      changes: [
+        { key: "system.attributes.ac.bonus", type: "add", value: rule.ac, priority: 20 },
+        { key: "system.abilities.str.bonuses.check", type: "add", value: rule.strengthChecks, priority: 20 },
+        { key: "system.abilities.dex.bonuses.check", type: "add", value: rule.dexterityChecks, priority: 20 }
+      ]
+    },
     flags: {
       [MODULE_ID]: {
         sizeAutomation: {

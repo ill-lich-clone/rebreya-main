@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { getCharacterSizeRule } from "./size-automation-service.js?v=1.5.61";
+import { getCharacterSizeRule } from "./size-automation-service.js?v=1.6.3";
 import { isRuneKnightEffectActive } from "../data/rune-knight-automation.js?v=1.5.70";
 
 function collectionValues(collection) {

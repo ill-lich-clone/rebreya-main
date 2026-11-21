@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { nativeEffectUpdate } from "../shared/active-effect-changes.js?v=1.6.3";
 import { whirlwindEffectTargets } from "./whirlwind-attack.js?v=1.5.70";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -596,10 +597,6 @@ function combatTurnKey(actor, workflow) {
 
 function actorAutomationKey(actor, fallback = "actor") {
   return cleanText(actor?.uuid ?? actor?.id ?? actor?.name, fallback);
-}
-
-function activeEffectAddMode() {
-  return globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
 }
 
 function actorFromItem(item) {
@@ -1476,7 +1473,7 @@ export class PaladinAutomationService {
     }
 
     if (this.#canUpdate(target) && typeof target.createEmbeddedDocuments === "function") {
-      await target.createEmbeddedDocuments("ActiveEffect", [data]);
+      await target.createEmbeddedDocuments("ActiveEffect", [nativeEffectUpdate(data)]);
       return true;
     }
 
@@ -1488,8 +1485,8 @@ export class PaladinAutomationService {
     const changes = effect === "detentionSlow"
       ? MOVEMENT_KEYS.map((movement) => ({
         key: `system.attributes.movement.${movement}`,
-        mode: activeEffectAddMode(),
-        value: "-10",
+        type: "add",
+        value: -10,
         priority: 20
       }))
       : [];
@@ -1498,8 +1495,7 @@ export class PaladinAutomationService {
       name,
       type: "base",
       img: MAGISTRATE_EFFECT_ICONS[effect] ?? "icons/svg/aura.svg",
-      system: {},
-      changes,
+      system: { changes },
       disabled: false,
       origin: cleanText(sourceActor?.uuid) || null,
       transfer: false,
@@ -1864,7 +1860,7 @@ export class PaladinAutomationService {
       return false;
     }
 
-    await target.createEmbeddedDocuments("ActiveEffect", [data]);
+    await target.createEmbeddedDocuments("ActiveEffect", [nativeEffectUpdate(data)]);
     return true;
   }
 
@@ -1877,8 +1873,7 @@ export class PaladinAutomationService {
       name: JURISDICTION_EFFECT_LABELS[effect] ?? cleanText(item?.name, "Державная юрисдикция"),
       type: "base",
       img: JURISDICTION_EFFECT_ICONS[effect] ?? "icons/svg/aura.svg",
-      system: {},
-      changes: this.#jurisdictionEffectChanges(effect),
+      system: { changes: this.#jurisdictionEffectChanges(effect) },
       disabled: false,
       origin: cleanText(sourceActor?.uuid) || null,
       transfer: false,
@@ -1919,14 +1914,14 @@ export class PaladinAutomationService {
     return [
       {
         key: "system.attributes.ac.bonus",
-        mode: activeEffectAddMode(),
-        value: "-2",
+        type: "add",
+        value: -2,
         priority: 20
       },
       {
         key: "system.abilities.dex.bonuses.save",
-        mode: activeEffectAddMode(),
-        value: "-2",
+        type: "add",
+        value: -2,
         priority: 20
       }
     ];

@@ -20,7 +20,7 @@ import {
   isCompatibleAmmunition,
   resolveAmmunitionProfile
 } from "../data/ammunition-compatibility.js?v=1.5.31";
-import { getCharacterSizeRule } from "./size-automation-service.js?v=1.5.61";
+import { getCharacterSizeRule } from "./size-automation-service.js?v=1.6.3";
 import { getNaturalReachFeet } from "./natural-reach.js?v=1.5.70";
 import { calculateFlatDamageRatios } from "./curse-upgrade-damage.js?v=1.5.101";
 import { whirlwindActivityUpdates, isWhirlwindActivity, collectWhirlwindTargets, whirlwindHitTargets, whirlwindEffectTargets, markWhirlwindDamageRolls, applyWhirlwindDamage, registerWhirlwindNativeTargetOptions, routeWhirlwindConsumption } from "./whirlwind-attack.js?v=1.5.70";
@@ -6025,7 +6025,7 @@ export class CombatAttackService {
     if(existing instanceof Promise)return existing;
     if(existing?.rendered){existing.bringToFront();return existing;}
     const opening=(async()=>{
-      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.5.95");
+      const {AmmunitionMagazineApp}=await import("../ui/ammunition-magazine-app.js?v=1.6.3");
       const app=new AmmunitionMagazineApp(this,actor,weapon);await app.render({force:true});return app;
     })();
     this._magazineEditors.set(key,opening);

@@ -3693,7 +3693,10 @@ test("Elemental Affinity ignores spells that do not match the draconic damage ty
   assert.equal(activity.damage.parts.some((part) => part._id === "rebreya-draconic-elemental-affinity"), false);
 });
 
-test("Draconic Dragon Protection creates a temporary resistance effect with its Sorcery Point cost", async () => {
+test("Draconic Dragon Protection creates a temporary resistance effect with its Sorcery Point cost", async (t) => {
+  const currentGame = game;
+  currentGame.release = { generation: 14 };
+  t.after(() => { delete currentGame.release; });
   const actor = metamagicActor();
   addMetamagic(actor, "draconic-dragon-protection", 1, "base", {
     metamagicAutomation: "draconic-dragon-protection"
@@ -3712,8 +3715,10 @@ test("Draconic Dragon Protection creates a temporary resistance effect with its 
   assert.equal(pointsItem(actor).system.uses.spent, 3);
   assert.equal(actor.createdEffects.length, 1);
   const effect = actor.createdEffects[0].rows[0];
-  const resistance = effect.changes.find((change) => change.key === "system.traits.dr.value");
-  assert.equal(resistance.mode, 2);
+  assert.equal(effect.changes, undefined);
+  const resistance = effect.system.changes.find((change) => change.key === "system.traits.dr.value");
+  assert.equal(resistance.type, "add");
+  assert.equal(resistance.priority, 20);
   assert.equal(resistance.value, "acid");
   assert.deepEqual(effect.flags.dae.specialDuration, ["turnStartSource", "combatEnd"]);
   assert.equal(effect.flags[MODULE_ID].sorcererAutomation.kind, "draconicDragonProtection");
@@ -3764,7 +3769,10 @@ test("Draconic Dragon Spell requires spell damage matching the dragon ancestor b
   assert.equal(activity.damage.parts.some((part) => part._id === "rebreya-draconic-dragon-spell"), false);
 });
 
-test("Draconic Dragon Wing creates temporary flight equal to ten feet per selected Sorcery Point", async () => {
+test("Draconic Dragon Wing creates temporary flight equal to ten feet per selected Sorcery Point", async (t) => {
+  const currentGame = game;
+  currentGame.release = { generation: 14 };
+  t.after(() => { delete currentGame.release; });
   const actor = metamagicActor();
   addMetamagic(actor, "draconic-dragon-wing", 3, "base", {
     costMode: "variable",
@@ -3787,9 +3795,11 @@ test("Draconic Dragon Wing creates temporary flight equal to ten feet per select
   assert.equal(pointsItem(actor).system.uses.spent, 4);
   assert.equal(actor.createdEffects.length, 1);
   const effect = actor.createdEffects[0].rows[0];
-  const flight = effect.changes.find((change) => change.key === "system.attributes.movement.fly");
-  assert.equal(flight.mode, 4);
-  assert.equal(flight.value, "20");
+  assert.equal(effect.changes, undefined);
+  const flight = effect.system.changes.find((change) => change.key === "system.attributes.movement.fly");
+  assert.equal(flight.type, "upgrade");
+  assert.equal(flight.value, 20);
+  assert.equal(flight.priority, 20);
   assert.deepEqual(effect.flags.dae.specialDuration, ["turnEndSource", "combatEnd"]);
   assert.equal(effect.flags[MODULE_ID].sorcererAutomation.kind, "draconicDragonWing");
 });

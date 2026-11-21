@@ -283,7 +283,10 @@ test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage f
   assert.match(config.rolls[0].options.flavor, /Hamstring/u);
 });
 
-test("rogue hamstring cunning strike applies a speed penalty and writes the attack card", async () => {
+test("rogue hamstring cunning strike applies a speed penalty and writes the attack card", async (t) => {
+  const currentGame = game;
+  currentGame.release = { generation: 14 };
+  t.after(() => { delete currentGame.release; });
   const sneakAttack = makeFeatureItem({
     id: "sneak-attack",
     name: "Sneak Attack",
@@ -314,9 +317,12 @@ test("rogue hamstring cunning strike applies a speed penalty and writes the atta
   assert.equal(target.createdDocuments.length, 1);
   assert.equal(target.createdDocuments[0].type, "ActiveEffect");
   const [effect] = target.createdDocuments[0].documents;
-  const changesByKey = new Map(effect.changes.map((change) => [change.key, change]));
-  assert.equal(changesByKey.get("system.attributes.movement.walk").value, "-10");
-  assert.equal(changesByKey.get("system.attributes.movement.fly").value, "-10");
+  assert.equal(effect.changes, undefined);
+  const changesByKey = new Map(effect.system.changes.map((change) => [change.key, change]));
+  for (const movement of ["walk", "fly"]) {
+    const key = `system.attributes.movement.${movement}`;
+    assert.deepEqual(changesByKey.get(key), { key, type: "add", value: -10, priority: 20 });
+  }
   assert.deepEqual(effect.flags.dae.specialDuration, ["turnStartSource", "combatEnd"]);
   assert.equal(effect.origin, rogue.uuid);
   assert.equal(message.updates.length, 1);
@@ -325,7 +331,10 @@ test("rogue hamstring cunning strike applies a speed penalty and writes the atta
   assert.match(message.content, /Speed is reduced by 10 feet/u);
 });
 
-test("rogue disrupt aim cunning strike gives the target disadvantage on its next attack", async () => {
+test("rogue disrupt aim cunning strike gives the target disadvantage on its next attack", async (t) => {
+  const currentGame = game;
+  currentGame.release = { generation: 14 };
+  t.after(() => { delete currentGame.release; });
   const sneakAttack = makeFeatureItem({
     id: "sneak-attack",
     name: "Sneak Attack",
@@ -353,10 +362,11 @@ test("rogue disrupt aim cunning strike gives the target disadvantage on its next
 
   assert.equal(target.createdDocuments.length, 1);
   const [effect] = target.createdDocuments[0].documents;
-  assert.deepEqual(effect.changes, [{
+  assert.equal(effect.changes, undefined);
+  assert.deepEqual(effect.system.changes, [{
     key: "flags.midi-qol.disadvantage.attack.all",
-    mode: 0,
-    value: "1",
+    type: "custom",
+    value: 1,
     priority: 20
   }]);
   assert.deepEqual(effect.flags.dae.specialDuration, ["1Attack", "turnStartSource", "combatEnd"]);

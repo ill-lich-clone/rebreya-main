@@ -1,5 +1,6 @@
 import { originatingCardId } from "../integrations/midi-usage-card.js?v=1.5.61";
 import { MODULE_ID, SUBCLASSES_COMPENDIUM_NAME } from "../constants.js";
+import { nativeEffectUpdate } from "../shared/active-effect-changes.js?v=1.6.3";
 
 const SORCERER_ADVANCEMENT_ROOT = "sorcerer-rework-v011";
 const REBREYA_SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
@@ -37,8 +38,6 @@ const RESET_COOLDOWN_CONTEXT_CLASS = "rebreya-reset-sorcerer-cooldown-context-it
 let cooldownContextHookRegistered = false;
 let cooldownContextClickFallbackRegistered = false;
 const cooldownContextRows = new WeakMap();
-const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
-const EFFECT_MODE_UPGRADE = globalThis.CONST?.ACTIVE_EFFECT_MODES?.UPGRADE ?? 4;
 const COMPONENT_PROPERTY_KEYS = Object.freeze(new Set(["vocal", "somatic", "verbal", "s"]));
 const DRACONIC_PROTECTION_DAMAGE_TYPES = Object.freeze(new Set(["acid", "cold", "fire", "lightning", "poison"]));
 const DAMAGE_TYPE_BY_LABEL = Object.freeze(new Map([
@@ -891,7 +890,7 @@ function temporaryMetamagicEffectData(activity, { name, kind, changes, specialDu
     origin: origin || null,
     disabled: false,
     transfer: false,
-    changes: deepClone(changes ?? []),
+    system: { changes: deepClone(changes ?? []) },
     duration: {
       rounds: 1,
       turns: 1,
@@ -917,7 +916,7 @@ function draconicProtectionEffectData(activity, damageType) {
     kind: "draconicDragonProtection",
     changes: [{
       key: "system.traits.dr.value",
-      mode: EFFECT_MODE_ADD,
+      type: "add",
       value: type,
       priority: 20
     }],
@@ -934,8 +933,8 @@ function draconicDragonWingEffectData(activity, spent) {
     kind: "draconicDragonWing",
     changes: [{
       key: "system.attributes.movement.fly",
-      mode: EFFECT_MODE_UPGRADE,
-      value: String(flySpeed),
+      type: "upgrade",
+      value: flySpeed,
       priority: 20
     }],
     specialDuration: ["turnEndSource", "combatEnd"],
@@ -962,7 +961,7 @@ async function createActorEffects(actor, effects = []) {
   const rows = (effects ?? []).filter(Boolean).map((effect) => {
     const data = deepClone(effect);
     delete data._id;
-    return data;
+    return nativeEffectUpdate(data);
   });
   if (!rows.length || typeof actor?.createEmbeddedDocuments !== "function") {
     return [];

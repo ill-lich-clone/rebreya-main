@@ -141,6 +141,47 @@ async function harness(value=fixture()){
   return {app,input,click,preset,commits:()=>commits,closed:()=>closed};
 }
 
+test("confirming an empty single-shot chamber loads the sole available ammunition type", async () => {
+  const h = await harness({ ...fixture(), capacity: 1, groupSize: 1, stock: [{ key: "a", quantity: 36 }] });
+  await h.click("load");
+  assert.deepEqual(h.app.draft.value.rounds, ["a"]);
+  assert.equal(h.commits(), 1);
+  assert.equal(h.closed(), 1);
+});
+
+test("an empty single-shot chamber stays open when ammunition needs a choice or is unavailable", async () => {
+  for (const stock of [fixture().stock, []]) {
+    const h = await harness({ ...fixture(), capacity: 1, groupSize: 1, stock });
+    await h.click("load");
+    assert.equal(h.commits(), 0);
+    assert.equal(h.closed(), 0);
+    assert.match(h.app.error, stock.length ? /Выберите/u : /Нет подходящих/u);
+    if (stock.length) {
+      await h.click("place", { key: "b" });
+      await h.click("load");
+      assert.deepEqual(h.app.draft.value.rounds, ["b"]);
+      assert.equal(h.commits(), 1);
+    }
+  }
+});
+
+test("a loaded single-shot chamber can still be unloaded through the editor", async () => {
+  const h = await harness({ ...fixture(), capacity: 1, groupSize: 1, rounds: ["a"], stock: [{ key: "a", quantity: 35 }] });
+  await h.click("clear");
+  await h.click("load");
+  assert.deepEqual(h.app.draft.value.rounds, []);
+  assert.equal(h.commits(), 1);
+});
+
+test("confirming edits to a preset can save an empty single-shot chamber", async () => {
+  const h = await harness({ ...fixture(), capacity: 1, groupSize: 1, stock: [{ key: "a", quantity: 36 }] });
+  await h.click("save-preset");
+  await h.click("load");
+  assert.deepEqual(h.app.draft.value.rounds, []);
+  assert.deepEqual(h.app.draft.value.presets, [{ name: "Новая", rounds: [] }]);
+  assert.equal(h.commits(), 1);
+});
+
 test("row click replaces selected group without auto-advance or writes; shortage remains atomic",async()=>{
   const h=await harness();await h.click("place",{key:"a"});assert.equal(h.app.selectedGroup,0);assert.deepEqual(h.app.draft.value.rounds,["a","a","a"]);assert.equal(h.commits(),0);
   h.app.draft.value.stock[1].quantity=2;await h.click("place",{key:"b"});assert.deepEqual(h.app.draft.value.rounds,["a","a","a"]);assert.match(h.app.error,/хватает/);

@@ -338,9 +338,9 @@ import { createGroupedCombatEffects } from "./integrations/grouped-combat-effect
 import { registerGroupedCombatRuntime, runStartCombatMacro, runEndCombatTurnMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.96";
 import { installDnd5eRoundRecoveryOptimization } from "./integrations/dnd5e-round-recovery.js?v=1.5.90";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.87";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.6.2";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.6.3";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
-import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.5.61";
+import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.6.3";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.5.108";
 import { registerEquipmentSizeCommands } from "./application/equipment-size-commands.js?v=1.4.393";
 import { runCreatureSizeMacro } from "./integrations/creature-size-macro.js?v=1.4.393";
@@ -371,14 +371,14 @@ import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.5.46";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.5.95";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.6.0";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.6.3";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
-} from "./combat/paladin-automation-service.js?v=1.5.81";
+} from "./combat/paladin-automation-service.js?v=1.6.3";
 import { PaladinDogmaAutomationService } from "./combat/paladin-dogma-automation-service.js?v=1.4.111-paladin-dogmas";
-import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.5.70";
+import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.6.3";
 import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService

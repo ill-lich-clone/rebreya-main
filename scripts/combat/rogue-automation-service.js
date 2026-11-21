@@ -1,11 +1,10 @@
 import { MODULE_ID } from "../constants.js";
+import { nativeEffectUpdate } from "../shared/active-effect-changes.js?v=1.6.3";
 import { whirlwindEffectTargets, isWhirlwindActivity, markWhirlwindDamageRolls } from "./whirlwind-attack.js?v=1.5.70";
 
 const ROGUE_CLASS_IDENTIFIER = "rogue-rework-v00";
 const SNEAK_ATTACK_FEATURE_ID = "rogue-sneak-attack";
 const CUNNING_STRIKE_SOURCE_TYPE = "rogueCunningStrike";
-const EFFECT_MODE_CUSTOM = globalThis.CONST?.ACTIVE_EFFECT_MODES?.CUSTOM ?? 0;
-const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
 const MOVEMENT_SPEED_KEYS = Object.freeze([
   "system.attributes.movement.walk",
   "system.attributes.movement.burrow",
@@ -684,8 +683,7 @@ export class RogueAutomationService {
       name: `${CUNNING_STRIKE_TEXT.cunningStrike}: ${cleanText(selectedStrike?.name, cleanText(effect.kind, "effect"))}`,
       type: "base",
       img: "icons/svg/target.svg",
-      system: {},
-      changes: [],
+      system: { changes: [] },
       disabled: false,
       duration: this.#cunningStrikeDuration(effect),
       origin: cleanText(sourceActor?.uuid) || null,
@@ -714,12 +712,9 @@ export class RogueAutomationService {
       return {
         ...base,
         img: "icons/svg/daze.svg",
-        changes: MOVEMENT_SPEED_KEYS.map((key) => ({
-          key,
-          mode: EFFECT_MODE_ADD,
-          value: String(amount),
-          priority: 20
-        }))
+        system: {
+          changes: MOVEMENT_SPEED_KEYS.map((key) => ({ key, type: "add", value: amount, priority: 20 }))
+        }
       };
     }
 
@@ -727,12 +722,9 @@ export class RogueAutomationService {
       return {
         ...base,
         img: "icons/svg/downgrade.svg",
-        changes: [{
-          key: "flags.midi-qol.disadvantage.attack.all",
-          mode: EFFECT_MODE_CUSTOM,
-          value: "1",
-          priority: 20
-        }]
+        system: {
+          changes: [{ key: "flags.midi-qol.disadvantage.attack.all", type: "custom", value: 1, priority: 20 }]
+        }
       };
     }
 
@@ -836,8 +828,7 @@ export class RogueAutomationService {
       name: statusId,
       type: "base",
       img: "icons/svg/aura.svg",
-      system: {},
-      changes: [],
+      system: { changes: [] },
       disabled: false,
       duration: this.#cunningStrikeDuration(status),
       origin: cleanText(sourceActor?.uuid) || null,
@@ -938,7 +929,7 @@ export class RogueAutomationService {
 
     const data = foundry.utils.deepClone(effectData);
     delete data._id;
-    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+    await actor.createEmbeddedDocuments("ActiveEffect", [nativeEffectUpdate(data)]);
     return true;
   }
 

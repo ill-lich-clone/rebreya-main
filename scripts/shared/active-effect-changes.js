@@ -31,8 +31,20 @@ export function comparableEffectChanges(effect) {
 }
 
 export function nativeEffectUpdate(data, existing) {
-  if (!Array.isArray(data?.changes) || !(globalThis.game?.release?.generation >= 14 || existing?.system?.changes)) return data;
-  const {changes, ...rest} = data;
+  const {changes: legacyChanges, system, ...rest} = data ?? {};
+  const changes = legacyChanges ?? system?.changes;
+  if (!Array.isArray(changes)) return data;
+  if (!(globalThis.game?.release?.generation >= 14 || existing?.system?.changes)) {
+    if (Array.isArray(legacyChanges)) return data;
+    const {changes: nativeChanges, ...systemData} = system;
+    return {
+      ...rest,
+      ...(Object.keys(systemData).length ? {system: systemData} : {}),
+      changes: nativeChanges.map(({type, value, key, priority}) => ({
+        key, mode: types.indexOf(type), value: typeof value === "string" ? value : JSON.stringify(value), priority
+      }))
+    };
+  }
   const old = Array.from(activeEffectChanges(existing));
   const rows = changes.map(change => {
     const row = nativeRow(change);
@@ -43,5 +55,5 @@ export function nativeEffectUpdate(data, existing) {
     }
     return row;
   });
-  return { ...rest, system: { ...rest.system, changes: rows } };
+  return { ...rest, system: { ...system, changes: rows } };
 }

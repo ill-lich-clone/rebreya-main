@@ -1118,7 +1118,10 @@ test("Magistrate accusation smite strips target advantage after a failed Charism
   assert.deepEqual(accusationEffect.flags.dae.specialDuration, ["turnStartSource", "combatEnd"]);
 });
 
-test("Magistrate detention smite slows on success and suppresses reactions on failure", async () => {
+test("Magistrate detention smite slows on success and suppresses reactions on failure", async (t) => {
+  const currentGame = game;
+  currentGame.release = { generation: 14 };
+  t.after(() => { delete currentGame.release; });
   const paladin = magistratePaladinWithSmiteVariant("magistrate-detention-smite");
   const target = new TestActor({ id: "target", name: "Задержанный", items: [] });
   const service = new PaladinAutomationService({}, {
@@ -1138,6 +1141,11 @@ test("Magistrate detention smite slows on success and suppresses reactions on fa
   assert.equal(config.rolls.length, 1);
   assert.equal(effects.includes("detentionSlow"), true);
   assert.equal(effects.includes("detentionNoReaction"), true);
+  const slow = target.effects.contents[effects.indexOf("detentionSlow")];
+  assert.equal(slow.changes, undefined);
+  assert.deepEqual(slow.system.changes, ["burrow", "climb", "fly", "swim", "walk"].map(movement => ({
+    key: `system.attributes.movement.${movement}`, type: "add", value: -10, priority: 20
+  })));
 });
 
 test("Magistrate smite sends a constrained GM request when the player cannot update the target", async () => {
@@ -1301,7 +1309,10 @@ test("Magistrate source-next-turn effects expire at the start of the Paladin tur
   assert.deepEqual(deletedEffects.sort(), ["accusationNoAdvantage", "detentionNoReaction", "detentionSlow"]);
 });
 
-test("Sovereign Jurisdiction applies supervised law status to a hostile target", async () => {
+test("Sovereign Jurisdiction applies supervised law status to a hostile target", async (t) => {
+  const currentGame = game;
+  currentGame.release = { generation: 14 };
+  t.after(() => { delete currentGame.release; });
   const previousTargets = globalThis.game.user.targets;
   const jurisdiction = makeFeatureItem({
     id: "jurisdiction",
@@ -1345,6 +1356,10 @@ test("Sovereign Jurisdiction applies supervised law status to a hostile target",
   assert.equal(status.origin, paladin.uuid);
   assert.equal(status.transfer, false);
   assert.equal(status.duration.seconds, 60);
+  assert.equal(status.changes, undefined);
+  assert.deepEqual(status.system.changes, ["system.attributes.ac.bonus", "system.abilities.dex.bonuses.save"].map(key => ({
+    key, type: "add", value: -2, priority: 20
+  })));
   assert.equal(status.flags["rebreya-main"].paladinAutomation.sourceActorUuid, paladin.uuid);
 });
 

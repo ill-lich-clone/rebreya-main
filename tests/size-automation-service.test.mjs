@@ -67,10 +67,11 @@ test("Medium has no managed modifier effect and Large has three visible changes"
   assert.equal(buildCharacterSizeEffectData("med"), null);
 
   const large = buildCharacterSizeEffectData("lg");
-  assert.deepEqual(large.changes.map(({ key, value }) => [key, value]), [
-    ["system.attributes.ac.bonus", "-1"],
-    ["system.abilities.str.bonuses.check", "1"],
-    ["system.abilities.dex.bonuses.check", "-1"]
+  assert.equal(large.changes, undefined);
+  assert.deepEqual(large.system.changes.map(({ key, type, value, priority }) => [key, type, value, priority]), [
+    ["system.attributes.ac.bonus", "add", -1, 20],
+    ["system.abilities.str.bonuses.check", "add", 1, 20],
+    ["system.abilities.dex.bonuses.check", "add", -1, 20]
   ]);
   assert.equal(large.flags["rebreya-main"].sizeAutomation.managed, true);
 });
@@ -81,6 +82,7 @@ test("syncActor creates, updates, deduplicates, and removes the managed size eff
 
   await service.syncActor(actor);
   assert.equal(actor.effects.contents.length, 1);
+  assert.equal(actor.effects.contents[0].changes[0].mode, 2);
   assert.equal(actor.effects.contents[0].flags["rebreya-main"].sizeAutomation.size, "lg");
 
   actor.effects.contents.push(structuredClone(actor.effects.contents[0]));
@@ -172,7 +174,7 @@ test("removing a managed size effect is idempotent when another client already d
 });
 test("v14 size sync preserves the existing effect on repeat and repairs a changed bonus in native system.changes", async () => {
   const actor=makeActor({size:"lg"}), service=new SizeAutomationService({});
-  const desired=buildCharacterSizeEffectData("lg"), effect={...desired,id:"stable",system:{changes:desired.changes.map((c,index)=>({
+  const desired=buildCharacterSizeEffectData("lg"), effect={...desired,id:"stable",system:{changes:(desired.system?.changes ?? desired.changes).map((c,index)=>({
     _id:"change"+index,key:c.key,type:"add",value:Number(c.value),priority:c.priority,phase:"initial",replacement:"",conditions:"{}"
   }))}};
   delete effect.changes; actor.effects.contents=[effect];
@@ -180,7 +182,7 @@ test("v14 size sync preserves the existing effect on repeat and repairs a change
   effect.system.changes[0].value=77;
   assert.equal(await service._syncActorNow(actor),true);
   assert.equal(effect.system.changes[0]._id,"change0");
-  assert.equal(effect.system.changes[0].value,Number(desired.changes[0].value));
+  assert.equal(effect.system.changes[0].value,-1);
   assert.equal(effect.changes,undefined);
   assert.equal(await service._syncActorNow(actor),false);
 });

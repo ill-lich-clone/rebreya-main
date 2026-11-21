@@ -112,7 +112,9 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
   static PARTS={main:{template:"modules/"+MODULE_ID+"/templates/ammunition-magazine.hbs"}};
   constructor(service,actor,weapon,options={}){
     super(options);this.service=service;this.actor=actor;this.weapon=weapon;
-    this.draft=new MagazineDraft(service.getMagazineEditorData(actor,weapon));this.error="";this.busy=false;this.selectedPreset=null;this.selectedGroup=0;this.selectedAmmoKey=null;this.editingPreset=false;
+    const data=service.getMagazineEditorData(actor,weapon);
+    this.originalPresets=data.presets;
+    this.draft=new MagazineDraft(data);this.error="";this.busy=false;this.selectedPreset=null;this.selectedGroup=0;this.selectedAmmoKey=null;this.editingPreset=false;
     this.moveSourceGroup=null;
   }
   get title(){return this.draft?`${this.weapon.name.replace(/\s+\(\d+\/\d+\)$/u,"")} · ${this.draft.value.rounds.length}/${this.draft.value.capacity}`:"Снаряжение магазина";}
@@ -207,7 +209,17 @@ export class AmmunitionMagazineApp extends HandlebarsApplicationMixin(Applicatio
       if(action==="clear"){this.draft.value.rounds=[];this.selectedGroup=0;}
       if(action==="cancel"){await this.close();return;}
       if(action==="last"){this.draft.usePattern(this.draft.value.lastPattern);await this.#confirm();return;}
-      if(action==="load"){await this.#confirm();return;}
+      if(action==="load"){
+        const {capacity,rounds,originalRounds,stock,presets}=this.draft.value;
+        if(capacity===1 && !rounds.length && !originalRounds.length && this.selectedPreset===null
+          && JSON.stringify(presets)===JSON.stringify(this.originalPresets)){
+          const available=stock.filter(row=>row.quantity>0);
+          if(!available.length)throw new Error("Нет подходящих патронов в инвентаре.");
+          if(available.length>1)throw new Error("Выберите патрон в списке боеприпасов.");
+          this.draft.selectGroup(0,available[0].key);
+        }
+        await this.#confirm();return;
+      }
     }catch(error){this.error=error.message;}
     await this.render();
   }
