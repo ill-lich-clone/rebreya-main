@@ -422,6 +422,16 @@ export function registerSettings() {
     default: {}
   });
 
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_AUTO_SYNC, {
+    name: "REBREYA_MAIN.Settings.SiteAutoSync.Name",
+    hint: "REBREYA_MAIN.Settings.SiteAutoSync.Hint",
+    scope: "world",
+    config: true,
+    restricted: true,
+    type: Boolean,
+    default: true
+  });
+
   game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_ALLOW_LOCALHOST, {
     name: "REBREYA_MAIN.Settings.SiteAllowLocalhost.Name",
     hint: "REBREYA_MAIN.Settings.SiteAllowLocalhost.Hint",

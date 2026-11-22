@@ -109,6 +109,18 @@ export class SiteShareImport {
     }
 
     await site.setLinkToken(target.id, { token: linkToken, siteId: character?.id ?? null });
+    // Record whose browser holds the token: that client runs auto-sync for it.
+    if (typeof target.update === "function" && user?.id) {
+      await target.update({ [`flags.${MODULE_ID}.siteCharacter.linkHolderUserId`]: user.id }, { rebreyaSiteSync: true });
+    }
+    // Site in-play state (slots, hit dice, conditions…) + sync baseline.
+    if (typeof this.characterSync?.applySiteState === "function") {
+      try {
+        await this.characterSync.applySiteState(target);
+      } catch (error) {
+        (result.warnings ??= []).push(`Не удалось подтянуть состояние с сайта: ${error.message}`);
+      }
+    }
     return { actor: target, result, route };
   }
 

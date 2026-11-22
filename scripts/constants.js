@@ -108,7 +108,9 @@ export const SETTINGS_KEYS = {
   // Per-character link tokens from share codes (client scope — see settings.js).
   SITE_LINK_TOKENS: "siteLinkTokens",
   // Dev only: allow http://127.0.0.1 / localhost as the site base URL.
-  SITE_ALLOW_LOCALHOST: "siteAllowLocalhost"
+  SITE_ALLOW_LOCALHOST: "siteAllowLocalhost",
+  // Automatic in-play state sync for linked Actors (world switch; per Actor via flag).
+  SITE_AUTO_SYNC: "siteAutoSync"
 };
 
 export const DATA_SOURCE_MODES = {

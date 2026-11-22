@@ -13,6 +13,8 @@
   "REBREYA_MAIN.Settings.SiteIntegrationEnabled.Hint": "Разрешить модулю обращаться к rebreya.com за официальными справочниками и листами персонажей.",
   "REBREYA_MAIN.Settings.SiteBaseUrl.Name": "Адрес сайта Ребреи",
   "REBREYA_MAIN.Settings.SiteBaseUrl.Hint": "Базовый адрес сайта (по умолчанию https://rebreya.com). Локальные адреса недопустимы, если не включён режим разработки ниже.",
+  "REBREYA_MAIN.Settings.SiteAutoSync.Name": "Автосинхронизация состояния с сайтом",
+  "REBREYA_MAIN.Settings.SiteAutoSync.Hint": "Хиты, ячейки, кости хитов, спасброски от смерти, вдохновение, истощение, состояния и деньги связанных по коду персонажей сами уходят на сайт и подтягиваются с него. Синхронизирует браузер игрока, связавшего персонажа. Отключить для одного персонажа можно в панели Rebreya на листе.",
   "REBREYA_MAIN.Settings.SiteAllowLocalhost.Name": "Разработка: разрешить локальный сайт",
   "REBREYA_MAIN.Settings.SiteAllowLocalhost.Hint": "Только для разработки: разрешает адрес сайта вида http://127.0.0.1:8000. В игре держите выключенным.",
   "REBREYA_MAIN.Settings.SiteCatalogMode.Name": "Источник справочников",

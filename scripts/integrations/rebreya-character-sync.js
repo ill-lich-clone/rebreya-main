@@ -16,11 +16,20 @@ import {
   detectStateConflict,
   buildSlotValueUpdate,
 } from "../data/site-character-mapper.js";
+import {
+  sumSpentHitDice,
+  distributeSpentHitDice,
+  diffStatuses,
+  fromSiteConditions,
+  stateSignature,
+} from "../data/site-state-mapping.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
 import { SiteBuildImporter } from "./site-build-importer.js";
 import { LinkRevoked } from "./rebreya-site-api.js";
 
 const SPELLS_PACK_ID = `world.${SITE_SPELLS_COMPENDIUM_NAME}`;
+/** Link-flag fields that survive a re-import (sync state, not build data). */
+const PRESERVED_LINK_KEYS = ["lastStateHash", "lastSyncedSignature", "linkHolderUserId", "autoSync", "extraConditions"];
 const stripPrefix = (slug) => String(slug ?? "").replace(/^\d+-/u, "");
 
 export class RebreyaCharacterSync {
@@ -94,8 +103,18 @@ export class RebreyaCharacterSync {
   /** Re-import the build of an already-linked Actor. */
   async refreshBuild(actor, opts = {}) {
     const character = await this.fetchLinkedCharacter(actor);
-    const syncMode = this.getLinkToken(actor) ? "link-token" : "manual-state-push";
-    return { character, ...(await this.importBuild(actor, character, { ...opts, syncMode })) };
+    const viaToken = Boolean(this.getLinkToken(actor));
+    const result = await this.importBuild(actor, character, { ...opts, syncMode: viaToken ? "link-token" : "manual-state-push" });
+    if (viaToken) {
+      // The site is the truth right after a re-import: take its in-play state
+      // and make it the sync baseline (no false conflict on the next poll).
+      try {
+        await this.applySiteState(actor);
+      } catch (error) {
+        result.warnings.push(`Не удалось подтянуть состояние с сайта: ${error.message}`);
+      }
+    }
+    return { character, ...result };
   }
 
   async #getRemoteState(actor, link) {
@@ -158,6 +177,12 @@ export class RebreyaCharacterSync {
       syncMode,
       ownerUserId: ownerUserId ?? previous?.ownerUserId ?? game.user?.id ?? "",
     });
+    // Re-import of the same site character keeps the sync bookkeeping.
+    if (previous && String(previous.id) === String(character?.id ?? "")) {
+      const kept = {};
+      for (const key of PRESERVED_LINK_KEYS) if (previous[key] !== undefined) kept[key] = previous[key];
+      Object.assign(update.flags[MODULE_ID].siteCharacter, kept);
+    }
     await actor.update(update);
 
     // Classes before spells: dnd5e assigns a spell's sourceClass on creation.
@@ -207,20 +232,77 @@ export class RebreyaCharacterSync {
    * @param {{force?:boolean}} [options]
    * @returns {Promise<{ok:boolean, conflict:boolean, stateHash?:string, remote?:object, remoteHash?:string}>}
    */
-  async pushState(actor, { force = false } = {}) {
+  /** Class Items of the Actor (for hit dice). */
+  #classItems(actor) {
+    return (actor?.items ?? []).filter?.((i) => i.type === "class") ?? [];
+  }
+
+  /**
+   * The Actor's in-play state as the site PATCH body. `extraConditions` are
+   * site conditions with no dnd5e status (kept so a push does not drop them).
+   */
+  localStatePatch(actor, { previousHash = "", extraConditions = undefined } = {}) {
+    const link = this.getLink(actor) ?? {};
+    const statuses = actor?.statuses ? [...actor.statuses] : [];
+    const extras = extraConditions ?? link.extraConditions;
+    return buildStatePatch(actor?.system ?? {}, {
+      statuses,
+      extraConditions: Array.isArray(extras) ? extras : [],
+      usedHitDice: sumSpentHitDice(this.#classItems(actor)),
+      moduleId: MODULE_ID,
+      moduleVersion: globalThis.game?.modules?.get?.(MODULE_ID)?.version ?? "",
+      actorUuid: actor?.uuid ?? "",
+      previousHash,
+    });
+  }
+
+  /** Fingerprint of the Actor's current synced state. */
+  localSignature(actor) {
+    return stateSignature(this.localStatePatch(actor));
+  }
+
+  /** Changed in Foundry since the last push/pull (unknown baseline counts as changed). */
+  isLocallyDirty(actor) {
+    const last = this.getLink(actor)?.lastSyncedSignature ?? "";
+    return !last || last !== this.localSignature(actor);
+  }
+
+  /** Read the site's state (link token, else logged-in account). */
+  async fetchRemoteState(actor) {
+    return this.#getRemoteState(actor, this.getLink(actor));
+  }
+
+  async #acknowledge(actor, stateHash, extra = {}) {
+    const link = this.getLink(actor);
+    if (!link) return;
+    const updatedLink = {
+      ...link,
+      ...extra,
+      lastSyncAt: new Date().toISOString(),
+      lastStateHash: stateHash,
+      lastSyncHash: stateHash,
+    };
+    // Signature of the state as it will read once this flag is written
+    // (extraConditions included) — otherwise the next check sees a false change.
+    updatedLink.lastSyncedSignature = stateSignature(this.localStatePatch(actor, { extraConditions: updatedLink.extraConditions ?? [] }));
+    await actor.update({ [`flags.${MODULE_ID}.siteCharacter`]: updatedLink }, { rebreyaSiteSync: true });
+  }
+
+  async pushState(actor, { force = false, remote: knownRemote = undefined } = {}) {
     if (!actor) throw new Error("Не передан Actor.");
-    const site = this.#site;
     if (!this.canSync(actor)) throw new Error("Нет связи с сайтом: свяжите персонажа по коду с rebreya.com или войдите.");
     const link = this.getLink(actor);
     if (!link?.id && !this.getLinkToken(actor)) throw new Error("Actor не связан с персонажем сайта.");
 
     if (!force) {
-      let remote = null;
-      try {
-        remote = await this.#getRemoteState(actor, link);
-      } catch (error) {
-        if (error instanceof LinkRevoked) throw error;
-        remote = null; // no state yet / transient — treat as no conflict
+      let remote = knownRemote ?? null;
+      if (knownRemote === undefined) {
+        try {
+          remote = await this.#getRemoteState(actor, link);
+        } catch (error) {
+          if (error instanceof LinkRevoked) throw error;
+          remote = null; // no state yet / transient — treat as no conflict
+        }
       }
       const remoteHash = remote?.stateHash ?? "";
       if (detectStateConflict(remoteHash, link.lastStateHash ?? "")) {
@@ -228,33 +310,24 @@ export class RebreyaCharacterSync {
       }
     }
 
-    const statuses = actor.statuses ? [...actor.statuses] : [];
-    const patch = buildStatePatch(actor.system ?? {}, {
-      statuses,
-      moduleId: MODULE_ID,
-      moduleVersion: game.modules?.get?.(MODULE_ID)?.version ?? "",
-      actorUuid: actor.uuid,
-      previousHash: link.lastStateHash ?? "",
-    });
-
+    const patch = this.localStatePatch(actor, { previousHash: link.lastStateHash ?? "" });
     const result = await this.#patchRemoteState(actor, link, patch);
     const newHash = result?.stateHash ?? "";
     // Acknowledge the pushed state so the next push is conflict-free.
-    const updatedLink = { ...link, lastSyncAt: new Date().toISOString(), lastStateHash: newHash, lastSyncHash: newHash };
-    await actor.update({ [`flags.${MODULE_ID}.siteCharacter`]: updatedLink });
+    await this.#acknowledge(actor, newHash);
     return { ok: true, conflict: false, stateHash: newHash };
   }
 
   /**
-   * «Принять сайт» (ТЗ §9.3): pull the site's current mutable state into the
-   * Actor — hp, death saves, inspiration, exhaustion, currency, spent spell
-   * slots, and (best-effort) conditions — then acknowledge that state hash so a
-   * subsequent push is conflict-free. Does NOT strip user-applied statuses.
+   * «Принять сайт» (ТЗ §9.3) and auto-pull: bring the site's in-play state into
+   * the Actor — hp, death saves, inspiration, exhaustion, currency, spent spell
+   * slots, spent hit dice and conditions (mapped statuses are added AND
+   * removed; site-only conditions are remembered so pushes keep them) — then
+   * acknowledge that state hash so a subsequent push is conflict-free.
    * @returns {Promise<{ok:boolean, warnings:string[]}>}
    */
   async applySiteState(actor, remoteState = null) {
     if (!actor) throw new Error("Не передан Actor.");
-    const site = this.#site;
     const link = this.getLink(actor);
     let state = remoteState;
     if (!state) {
@@ -262,6 +335,7 @@ export class RebreyaCharacterSync {
       state = await this.#getRemoteState(actor, link);
     }
     if (!state) throw new Error("Не удалось получить состояние с сайта.");
+    const opts = { rebreyaSiteSync: true };
 
     const update = buildActorStateUpdate(state);
     // Spell slots: state.usedSlots is spent-count per level; value = max − used.
@@ -270,26 +344,33 @@ export class RebreyaCharacterSync {
       update.system = update.system ?? {};
       update.system.spells = slots;
     }
-    await actor.update(update);
+    await actor.update(update, opts);
 
-    // Conditions: add the site's conditions this Actor is missing (best-effort).
+    // Hit dice: one site number → per-class hd.spent, largest die first.
     const warnings = [];
-    const wanted = Array.isArray(state.conditions) ? state.conditions : [];
-    const current = actor.statuses ? new Set(actor.statuses) : new Set();
-    for (const cond of wanted) {
-      if (current.has(String(cond))) continue;
-      try {
-        await actor.toggleStatusEffect(String(cond), { active: true });
-      } catch (_error) {
-        warnings.push(`Не удалось применить состояние «${cond}».`);
+    if (state.usedHitDice != null && typeof state.usedHitDice !== "object") {
+      const hdUpdates = distributeSpentHitDice(this.#classItems(actor).map((c) => ({ _id: c.id, system: c.system })), state.usedHitDice);
+      if (hdUpdates.length) await actor.updateEmbeddedDocuments("Item", hdUpdates, opts);
+    }
+
+    // Conditions: mapped statuses follow the site; unknown ones are only added.
+    // A site condition Foundry has no status effect for is remembered on the
+    // link so the next push sends it back instead of dropping it.
+    let extraConditions = [];
+    if (Array.isArray(state.conditions)) {
+      const statusIds = new Set((globalThis.CONFIG?.statusEffects ?? []).map((e) => e?.id).filter(Boolean));
+      const exists = (id) => !statusIds.size || statusIds.has(id);
+      extraConditions = fromSiteConditions(state.conditions).filter((id) => !exists(id));
+      const { add, remove } = diffStatuses(actor.statuses ? [...actor.statuses] : [], state.conditions);
+      for (const id of remove) {
+        try { await actor.toggleStatusEffect(id, { active: false }); } catch (_error) { warnings.push(`Не удалось снять состояние «${id}».`); }
+      }
+      for (const id of add.filter(exists)) {
+        try { await actor.toggleStatusEffect(id, { active: true }); } catch (_error) { warnings.push(`Не удалось применить состояние «${id}».`); }
       }
     }
 
-    const newHash = state.stateHash ?? "";
-    if (link) {
-      const updatedLink = { ...link, lastSyncAt: new Date().toISOString(), lastStateHash: newHash, lastSyncHash: newHash };
-      await actor.update({ [`flags.${MODULE_ID}.siteCharacter`]: updatedLink });
-    }
+    await this.#acknowledge(actor, state.stateHash ?? "", { extraConditions });
     return { ok: true, warnings };
   }
 

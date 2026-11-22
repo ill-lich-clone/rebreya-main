@@ -58,6 +58,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js";
 import { registerSiteShareImport } from "./integrations/site-share-import.js";
+import { registerSiteAutoSync } from "./integrations/site-auto-sync.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.84";
@@ -3446,6 +3447,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register rebreya.com share-code import.`, error);
+  }
+
+  try {
+    await registerSiteAutoSync(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register rebreya.com auto state sync.`, error);
   }
 
   try {

@@ -12,6 +12,8 @@
  * wrong (integration ТЗ §8.2).
  */
 
+import { toSiteConditions } from "./site-state-mapping.js";
+
 const ABILITY_BY_ALIAS = {};
 for (const [code, aliases] of Object.entries({
   str: ["str", "strength", "сила"],
@@ -256,7 +258,7 @@ export function buildSiteCharacterFlags(character = {}, { moduleId = "rebreya-ma
  * site push, ТЗ §9.2). Pure over `system` + an optional list of active status
  * ids, so it is unit tested with a fake system object.
  */
-export function buildStatePatch(system = {}, { statuses = [], moduleId = "rebreya-main", moduleVersion = "", actorUuid = "", previousHash = "" } = {}) {
+export function buildStatePatch(system = {}, { statuses = null, extraConditions = [], usedHitDice = null, moduleId = "rebreya-main", moduleVersion = "", actorUuid = "", previousHash = "" } = {}) {
   const attrs = system.attributes ?? {};
   const patch = {};
 
@@ -293,7 +295,12 @@ export function buildStatePatch(system = {}, { statuses = [], moduleId = "rebrey
   }
   if (Object.keys(currency).length) patch.currency = currency;
 
-  if (Array.isArray(statuses) && statuses.length) patch.conditions = [...statuses];
+  // Conditions as site catalogue slugs (mapped dnd5e statuses + pass-through).
+  // Sent even when empty so a removal reaches the site.
+  if (Array.isArray(statuses)) {
+    patch.conditions = [...new Set([...toSiteConditions(statuses), ...(extraConditions ?? []).map(String)])].sort();
+  }
+  if (usedHitDice != null) patch.usedHitDice = Math.max(0, toInt(usedHitDice, 0) ?? 0);
 
   patch.clientSync = {
     source: "foundry",

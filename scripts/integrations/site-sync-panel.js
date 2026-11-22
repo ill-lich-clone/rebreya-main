@@ -59,7 +59,7 @@ function describeState(state) {
  * State-push conflict resolution dialog (integration ТЗ §9.3). MVP actions:
  * «Оставить Foundry» (force-push), «Принять сайт» (pull), «Отменить».
  */
-async function resolveStateConflict(actor, moduleApi, conflict) {
+export async function resolveStateConflict(actor, moduleApi, conflict) {
   const DV2 = dialogV2();
   const characterSync = moduleApi?.characterSync;
   if (!DV2) { await notify("error", "DialogV2 недоступен в этой версии Foundry."); return; }
@@ -216,6 +216,15 @@ export async function runShareCodeImport(moduleApi, { actor = null } = {}) {
   }
 }
 
+/** One-line auto-sync status for the panel. */
+function autoSyncLabel(actor, moduleApi, link) {
+  const auto = moduleApi?.siteAutoSync;
+  if (link.autoSync === false) return "выключена для персонажа";
+  if (auto && !auto.isWorldEnabled()) return "выключена в настройках мира";
+  if (auto?.isElected?.(actor)) return "включена (синхронизирует этот браузер)";
+  return "включена (синхронизирует браузер игрока, связавшего персонажа)";
+}
+
 /** Build the status + actions dialog for a linked/unlinked actor. */
 async function openSyncDialog(actor, moduleApi) {
   const DV2 = dialogV2();
@@ -235,6 +244,7 @@ async function openSyncDialog(actor, moduleApi) {
     `<div><strong>Связь:</strong> ${link ? `персонаж #${escapeHtml(String(link.id))}${link.slug ? ` (${escapeHtml(link.slug)})` : ""}` : "не связан"}</div>`,
     `<div><strong>Доступ:</strong> ${hasToken ? "по коду (в этом браузере)" : authed ? "вход по паролю" : "нет — свяжите по коду"}</div>`,
     link?.lastSyncAt ? `<div><strong>Последняя синхронизация:</strong> ${escapeHtml(new Date(link.lastSyncAt).toLocaleString())}</div>` : "",
+    link ? `<div><strong>Автосинхронизация:</strong> ${autoSyncLabel(actor, moduleApi, link)}</div>` : "",
   ].filter(Boolean).join("");
 
   const buttons = [];
@@ -245,6 +255,7 @@ async function openSyncDialog(actor, moduleApi) {
   buttons.push({ action: "code", label: link ? "Связать заново по коду" : "Связать по коду", default: !(link && canSync) });
   if (authed && !link) buttons.push({ action: "link", label: "Выбрать из аккаунта" });
   if (!authed) buttons.push({ action: "login", label: "Войти паролем" });
+  if (link && hasToken) buttons.push({ action: "autosync", label: link.autoSync === false ? "Включить автосинхронизацию" : "Выключить автосинхронизацию" });
   if (link) buttons.push({ action: "open", label: "Открыть на сайте" });
   buttons.push({ action: "close", label: "Закрыть" });
 
@@ -259,6 +270,13 @@ async function openSyncDialog(actor, moduleApi) {
 
   if (action === "code") {
     await runShareCodeImport(moduleApi, { actor });
+    return;
+  }
+  if (action === "autosync") {
+    const on = link.autoSync === false;
+    await actor.update({ [`flags.${MODULE_ID}.siteCharacter.autoSync`]: on }, { rebreyaSiteSync: true });
+    await notify("info", on ? "Автосинхронизация включена." : "Автосинхронизация выключена для этого персонажа.");
+    if (on) moduleApi?.siteAutoSync?.pullActor?.(actor);
     return;
   }
   if (action === "login") {

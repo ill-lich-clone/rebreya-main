@@ -194,7 +194,7 @@ test("buildStatePatch copies only valid currency keys", () => {
 
 test("buildStatePatch carries conditions + clientSync provenance", () => {
   const p = buildStatePatch(SYSTEM, { statuses: ["poisoned", "prone"], moduleVersion: "1.4.84", actorUuid: "Actor.x", previousHash: "sha256:old" });
-  assert.deepEqual(p.conditions, ["poisoned", "prone"]);
+  assert.deepEqual(p.conditions, ["otravlennyy", "sbityy-s-nog"]); // site catalogue slugs
   assert.equal(p.clientSync.source, "foundry");
   assert.equal(p.clientSync.moduleVersion, "1.4.84");
   assert.equal(p.clientSync.actorUuid, "Actor.x");
