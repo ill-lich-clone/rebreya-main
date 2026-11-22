@@ -121,3 +121,15 @@ test("allowLocal dev setting reaches the API factory", () => {
   assert.equal(svc.api.baseUrl, "http://127.0.0.1:8000");
   assert.equal(factory.created[0]._opts.allowLocal, true);
 });
+
+import { isLocalPage, createFoundrySettingsAdapter } from "../scripts/integrations/rebreya-site-service.js";
+
+test("dev localhost override only counts when Foundry itself is opened locally", () => {
+  assert.equal(isLocalPage("localhost"), true);
+  assert.equal(isLocalPage("127.0.0.1"), true);
+  assert.equal(isLocalPage("foundry.example.com"), false);
+  assert.equal(isLocalPage(""), false);
+  const fakeGame = { settings: { get: (_m, key) => (key === "siteAllowLocalhost" ? true : "") } };
+  // node has no `location` → treated as not local → override off
+  assert.equal(createFoundrySettingsAdapter(fakeGame).allowLocal(), false);
+});

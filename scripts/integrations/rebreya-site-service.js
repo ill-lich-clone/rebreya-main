@@ -11,6 +11,12 @@
 import { RebreyaSiteApi, normalizeBaseUrl } from "./rebreya-site-api.js";
 import { MODULE_ID, SETTINGS_KEYS, DEFAULT_SITE_BASE_URL } from "../constants.js";
 
+/** True when this page (the Foundry client) is served from localhost. */
+export function isLocalPage(hostname = globalThis.location?.hostname) {
+  const host = String(hostname ?? "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]" || host.endsWith(".localhost");
+}
+
 /** Adapter over Foundry `game.settings` (client-scoped tokens + config). */
 export function createFoundrySettingsAdapter(game) {
   const get = (key, fallback = "") => {
@@ -31,7 +37,9 @@ export function createFoundrySettingsAdapter(game) {
   return {
     getBaseUrl: () => get(SETTINGS_KEYS.SITE_BASE_URL, DEFAULT_SITE_BASE_URL) || DEFAULT_SITE_BASE_URL,
     isEnabled: () => Boolean(get(SETTINGS_KEYS.SITE_INTEGRATION_ENABLED, false)),
-    allowLocal: () => Boolean(get(SETTINGS_KEYS.SITE_ALLOW_LOCALHOST, false)),
+    // Dev-only: honoured only while Foundry itself is opened from this machine,
+    // so a forgotten checkbox cannot point a real game at a local backend.
+    allowLocal: () => Boolean(get(SETTINGS_KEYS.SITE_ALLOW_LOCALHOST, false)) && isLocalPage(),
     worldId: () => String(game?.world?.id ?? ""),
     getLinkTokens: () => {
       const value = get(SETTINGS_KEYS.SITE_LINK_TOKENS, {});
