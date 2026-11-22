@@ -14,7 +14,7 @@ import {
   buildStatePatch,
   buildActorStateUpdate,
   detectStateConflict,
-  readUsedSlots,
+  buildSlotValueUpdate,
 } from "../data/site-character-mapper.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
 import { SiteBuildImporter } from "./site-build-importer.js";
@@ -176,6 +176,14 @@ export class RebreyaCharacterSync {
       }
     }
 
+    // Available slots = max (now derived from the class Items) − spent on the site.
+    try {
+      const slots = buildSlotValueUpdate(actor.system?.spells ?? {}, character?.data?.usedSlots, { fillMissing: true });
+      if (Object.keys(slots).length) await actor.update({ system: { spells: slots } });
+    } catch (error) {
+      warnings.push(`Не удалось выставить ячейки заклинаний: ${error.message}`);
+    }
+
     let spellsAdded = 0;
     if (embedSpells) {
       try {
@@ -257,16 +265,7 @@ export class RebreyaCharacterSync {
 
     const update = buildActorStateUpdate(state);
     // Spell slots: state.usedSlots is spent-count per level; value = max − used.
-    const spells = actor.system?.spells ?? {};
-    const slots = {};
-    const used = readUsedSlots(state.usedSlots);
-    for (let level = 1; level <= 9; level += 1) {
-      const key = `spell${level}`;
-      const max = Number(spells[key]?.max) || 0;
-      if (max > 0 && used[level] != null) {
-        slots[key] = { value: Math.max(0, max - used[level]) };
-      }
-    }
+    const slots = buildSlotValueUpdate(actor.system?.spells ?? {}, state.usedSlots);
     if (Object.keys(slots).length) {
       update.system = update.system ?? {};
       update.system.spells = slots;

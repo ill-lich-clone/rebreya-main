@@ -261,3 +261,14 @@ test("readUsedSlots accepts site keys (\"1\") and legacy keys (\"spell1\")", () 
   assert.deepEqual(readUsedSlots({ spell2: 1 }), { 2: 1 });
   assert.deepEqual(readUsedSlots(null), {});
 });
+
+import { buildSlotValueUpdate } from "../scripts/data/site-character-mapper.js";
+
+test("buildSlotValueUpdate: max − site spent; fillMissing fills fresh class slots (dnd5e leaves value 0)", () => {
+  const spells = { spell1: { max: 4, value: 0 }, spell2: { max: 3, value: 0 }, spell3: { max: 2, value: 0 }, spell4: { max: 0, value: 0 } };
+  assert.deepEqual(buildSlotValueUpdate(spells, { 1: 1 }, { fillMissing: true }), {
+    spell1: { value: 3 }, spell2: { value: 3 }, spell3: { value: 2 },
+  });
+  assert.deepEqual(buildSlotValueUpdate(spells, { spell2: 5 }), { spell2: { value: 0 } }); // legacy key, clamped, no fill
+  assert.deepEqual(buildSlotValueUpdate({}, {}, { fillMissing: true }), {});
+});

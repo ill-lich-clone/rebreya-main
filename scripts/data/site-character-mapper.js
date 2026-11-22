@@ -99,6 +99,28 @@ export function readUsedSlots(raw) {
   return out;
 }
 
+/**
+ * Available spell slots from the Actor's (prepared) slot maxima and the site's
+ * spent counts: value = max − used. With `fillMissing`, levels the site has no
+ * spent count for are set full — dnd5e leaves `value` at 0 when slots come from
+ * newly created class Items, so a fresh import would otherwise start with no
+ * slots until a long rest.
+ * @param {Record<string, {max?:number}>} spells actor.system.spells
+ * @returns {Record<string, {value:number}>}
+ */
+export function buildSlotValueUpdate(spells = {}, usedRaw = {}, { fillMissing = false } = {}) {
+  const used = readUsedSlots(usedRaw);
+  const out = {};
+  for (let level = 1; level <= 9; level += 1) {
+    const key = `spell${level}`;
+    const max = Number(spells?.[key]?.max) || 0;
+    if (max <= 0) continue;
+    if (used[level] != null) out[key] = { value: Math.max(0, max - used[level]) };
+    else if (fillMissing) out[key] = { value: max };
+  }
+  return out;
+}
+
 const escapeHtml = (value) =>
   String(value ?? "")
     .replace(/&/gu, "&amp;")
