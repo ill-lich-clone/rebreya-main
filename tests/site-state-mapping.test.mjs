@@ -52,3 +52,8 @@ test("stateSignature ignores key order and clientSync, changes with state", () =
   assert.notEqual(a, stateSignature({ currentHp: 6, currency: { gp: 1, sp: 2 } }));
   assert.match(a, /^fnv1a:[0-9a-f]{8}$/u);
 });
+
+test("dnd5e's derived 'bloodied' status is not synced in either direction", () => {
+  assert.deepEqual(toSiteConditions(["bloodied", "poisoned"]), ["otravlennyy"]);
+  assert.deepEqual(fromSiteConditions(["bloodied", "otravlennyy"]), ["poisoned"]);
+});

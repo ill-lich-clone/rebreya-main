@@ -34,8 +34,12 @@ export const STATUS_TO_SITE_CONDITION = Object.freeze(
   Object.fromEntries(Object.entries(SITE_CONDITION_TO_STATUS).map(([slug, id]) => [id, slug])),
 );
 
-/** Statuses that never go into `conditions` (sent as their own fields). */
-const NON_CONDITION_STATUSES = new Set(["exhaustion"]);
+/**
+ * Statuses that never go into `conditions`: exhaustion travels as its own
+ * numeric field; "bloodied" is derived by dnd5e from HP (<= half) on every HP
+ * change, so the site can compute it and it must not round-trip.
+ */
+const NON_CONDITION_STATUSES = new Set(["exhaustion", "bloodied"]);
 const SITE_EXHAUSTION_SLUG = "istoschenie";
 
 /** Statuses the sync fully owns (added AND removed to match the site). */
@@ -57,7 +61,7 @@ export function fromSiteConditions(conditions = []) {
   const out = new Set();
   for (const raw of Array.isArray(conditions) ? conditions : []) {
     const slug = String(raw ?? "").trim();
-    if (!slug || slug === SITE_EXHAUSTION_SLUG) continue;
+    if (!slug || slug === SITE_EXHAUSTION_SLUG || NON_CONDITION_STATUSES.has(slug)) continue;
     out.add(SITE_CONDITION_TO_STATUS[slug] ?? slug);
   }
   return [...out].sort();
