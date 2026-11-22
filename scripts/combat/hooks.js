@@ -401,10 +401,21 @@ export function registerCombatHooks(moduleApi) {
       simpleUpgrades?.requestSync?.(tokenDocument?.actor,"token-light")?.catch(error=>console.error(`${MODULE_ID} | Weapon mod light sync failed.`,error));
     });
     Hooks.on("updateUser", () => index.rebuildScene(globalThis.canvas?.scene));
-    Hooks.on("deleteCombat", (combat) => {
-      index.invalidateScene(combat?.scene?.id ?? combat?.scene?._id ?? combat?.scene ?? globalThis.canvas?.scene?.id);
-      moduleApi.combatAttackService?.handleWeaponModTurnChange?.(combat,{ended:true})?.catch(error=>console.error(`${MODULE_ID} | Weapon mod combat cleanup failed.`,error));
+  }
+
+  const clearCombatReaction = (combat, combatant) => moduleApi.combatAttackService?.handleReactionCombatEnd?.(combat, combatant);
+  if (hasAttackService || hasReactionCapabilityIndex) {
+    Hooks.on("deleteCombat", combat => {
+      moduleApi.reactionCapabilityIndex?.invalidateScene(combat?.scene?.id ?? combat?.scene?._id ?? combat?.scene ?? globalThis.canvas?.scene?.id);
+      moduleApi.combatAttackService?.handleWeaponModTurnChange?.(combat, { ended: true })?.catch(error => console.error(`${MODULE_ID} | Weapon mod combat cleanup failed.`, error));
+      return clearCombatReaction(combat);
     });
+  }
+  if (hasAttackService) {
+    Hooks.on("deleteCombatant", combatant => clearCombatReaction(combatant.parent, combatant));
+    if (moduleApi.midiReactionAdapter) {
+      Hooks.on("midi-qol.preSetReactionUsed", actor => moduleApi.combatAttackService.isReactionTracked(actor));
+    }
   }
 
   if (hasRuneKnightService) {

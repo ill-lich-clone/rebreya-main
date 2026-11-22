@@ -44,3 +44,23 @@ test("v13 forward turn boundary expires only active Rebreya Shield effects on th
     assert.deepEqual(deleted, [["ActiveEffect", ["shield"]]]);
   } finally { Object.assign(globalThis, old); }
 });
+
+test("reaction hooks route combat exit and only permit native MIDI markers in combat", async t => {
+  const previous = { game: globalThis.game, Hooks: globalThis.Hooks };
+  const hooks = new Map();
+  const exits = [];
+  globalThis.game = { release: { generation: 14 } };
+  globalThis.Hooks = { on: (name, callback) => hooks.set(name, callback) };
+  t.after(() => Object.assign(globalThis, previous));
+  registerCombatHooks({ midiReactionAdapter: {}, combatAttackService: {
+    handleReactionCombatEnd: (...args) => exits.push(args),
+    isReactionTracked: actor => actor.inCombat
+  } });
+  const combat = { id: "fight" };
+  const combatant = { parent: combat };
+  assert.equal(hooks.get("midi-qol.preSetReactionUsed")({ inCombat: false }), false);
+  assert.equal(hooks.get("midi-qol.preSetReactionUsed")({ inCombat: true }), true);
+  await hooks.get("deleteCombatant")(combatant);
+  await hooks.get("deleteCombat")(combat);
+  assert.deepEqual(exits, [[combat, combatant], [combat, undefined]]);
+});

@@ -390,8 +390,78 @@ test("area damage applies its saved ammunition once and preserves the authored a
   service.applyDnd5eDamageRollConfig(config);assert.deepEqual(config.rolls[0].parts,["4d8"]);assert.deepEqual(config.rolls[1].parts,["1d6"]);
 });
 
-test("concurrent native reaction receipts spend distinct available uses exactly once", async () => {
+function testReactionCombat(actors, id) {
+  const combatants = actors.map(actor => ({ actor }));
+  return { id, started: true, active: true, combatants,
+    getCombatantsByActor: actor => combatants.filter(entry => entry.actor === actor) };
+}
+
+test("a legacy spent reaction does not limit uses or add a marker outside combat", async t => {
   const actor = makeActor([]);
+  actor.flags[MODULE_ID].reactionState = { usesMax: 1, usesRemaining: 0, lastRefreshCombatId: "old" };
+  const writes = [];
+  t.mock.method(actor, "setFlag", (...args) => writes.push(args));
+  const markers = [];
+  const service = new CombatAttackService({ midiReactionAdapter: {
+    syncModuleReactionMarker: (_actor, active) => markers.push(active)
+  } });
+  assert.equal(service.canUseReaction(actor).canUse, true);
+  const first = await service.consumeReaction(actor, { reactionType: "interception" });
+  const second = await service.consumeReaction(actor, { reactionType: "interception" });
+  assert.equal(first.consumed, true);
+  assert.equal(second.consumed, true);
+  assert.equal(second.state.usesRemaining, 1);
+  assert.equal(actor.getFlag(MODULE_ID, "reactionState"), undefined);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(markers, [false]);
+});
+
+test("the active GM clears the spent ledger and marker at combat end, keeping another encounter intact", async t => {
+  const actor = makeActor([]);
+  const other = makeActor([], { id: "other" });
+  const gm = { id: "gm", isGM: true, active: true };
+  const ended = testReactionCombat([actor, other], "ended");
+  const continuing = testReactionCombat([other], "continuing");
+  const previousGame = globalThis.game;
+  globalThis.game = { user: gm, users: [gm], combat: ended, combats: [ended] };
+  t.after(() => { globalThis.game = previousGame; });
+  const markers = [];
+  const service = new CombatAttackService({ midiReactionAdapter: {
+    syncModuleReactionMarker: (actor, active) => markers.push([actor.id, active])
+  } });
+  const spend = () => service.consumeReaction(actor, { reactionType: "interception" });
+  const results = await Promise.all([spend(), spend()]);
+  assert.deepEqual(results.map(result => result.consumed), [true, false]);
+  game.combat = continuing;
+  game.combats = [continuing];
+  await service.consumeReaction(other, { reactionType: "interception" });
+  await service.handleReactionCombatEnd(ended);
+  assert.equal(actor.getFlag(MODULE_ID, "reactionState"), undefined);
+  assert.equal(service.getReactionState(actor).usesRemaining, 1);
+  assert.equal(service.getReactionState(other).usesRemaining, 0);
+  assert.deepEqual(markers, [[actor.id, true], [other.id, true], [actor.id, false]]);
+});
+
+test("a new combat starts with a full reaction even before the actor takes a turn", async t => {
+  const actor = makeActor([]);
+  actor.flags[MODULE_ID].reactionState = {
+    lastRefreshCombatId: "old", usesRemaining: 0, reactionSpendKeys: ["reused-key"]
+  };
+  game.combat = testReactionCombat([actor], "new");
+  t.after(() => { delete game.combat; });
+  const service = new CombatAttackService({});
+  assert.equal(service.getReactionState(actor).usesRemaining, 1);
+  const result = await service.consumeReaction(actor, { idempotencyKey: "reused-key" });
+  assert.equal(result.consumed, true);
+  assert.equal(result.replayed, undefined);
+  assert.equal(result.state.usesRemaining, 0);
+  assert.equal(actor.getFlag(MODULE_ID, "reactionState").combatId, "new");
+});
+
+test("concurrent native reaction receipts spend distinct available uses exactly once", async t => {
+  const actor = makeActor([]);
+  game.combat = testReactionCombat([actor], "native");
+  t.after(() => { delete game.combat; });
   actor.flags[MODULE_ID].reactionState = {usesMax: 2, usesRemaining: 2};
   const originalSetFlag = actor.setFlag.bind(actor);
   actor.setFlag = async (...args) => { await Promise.resolve(); return originalSetFlag(...args); };
@@ -406,6 +476,8 @@ test("concurrent native reaction receipts spend distinct available uses exactly 
 
 test("a native MIDI receipt leaves its existing marker and reset policy to MIDI", async t => {
   const actor = makeActor([]);
+  game.combat = testReactionCombat([actor], "native");
+  t.after(() => { delete game.combat; });
   const calls = [];
   const previousCombat = globalThis.Combat;
   globalThis.Combat = class Combat {};
@@ -432,9 +504,12 @@ test("ordinary turn refresh uses the confirmed combatant while weapon turn work 
   for (const actor of [first, second]) actor.flags[MODULE_ID].reactionState = { usesMax: 1, usesRemaining: 0 };
   const turns = [first, second].map(actor => ({ id: actor.id, actor }));
   const combat = Object.assign(new Combat(), {
+    ...testReactionCombat([first, second], "combat"),
     id: "combat", round: 1, turn: 0, combatant: turns[0], turns,
     combatants: new Map(turns.map(entry => [entry.id, entry]))
   });
+  game.combat = combat;
+  t.after(() => { delete game.combat; });
   const service = new CombatAttackService({});
   const weaponUpdate = Promise.withResolvers();
   service.handleWeaponModTurnChange = () => weaponUpdate.promise;
@@ -500,6 +575,11 @@ function makeActor(items, {
     async setFlag(scope, key, value) {
       this.flags[scope] ??= {};
       this.flags[scope][key] = value;
+      return this;
+    }
+
+    async unsetFlag(scope, key) {
+      delete this.flags[scope]?.[key];
       return this;
     }
 
@@ -4442,7 +4522,7 @@ async function defenceFixture(t, feat, { targetFeat = false, self = false, dista
   const prompts = [], attacks = [];
   const old = { game: globalThis.game, MidiQOL: globalThis.MidiQOL };
   t.after(() => Object.assign(globalThis, old));
-  globalThis.game = { user: gm, users: [gm] };
+  globalThis.game = { user: gm, users: [gm], combat: testReactionCombat([guard, enemy, ally], "fight") };
   globalThis.MidiQOL = {
     computeDistance: () => distance, canSee: () => visible,
     async completeActivityUse(activity, config) { attacks.push([activity, config.midiOptions.targetUuids]); return { activity }; }
@@ -4486,7 +4566,8 @@ test("Interception absorbs the maximum Hit Dice only once and leaves at least on
   assert.equal(h.service.getReactionState(h.guard).usesRemaining, 0);
   assert.equal(markers.get(h.guard.id), 1);
   const turns = [h.workflow.actor, h.guard].map(actor => ({ id: actor.id, actor }));
-  const combat = Object.assign(new Combat(), { id: "fight", round: 1, turn: 0, turns, combatant: turns[0] });
+  const combat = Object.assign(new Combat(), game.combat, { round: 1, turn: 0, turns, combatant: turns[0] });
+  game.combat = combat;
   await h.service.handleCombatTurnChange(combat, { turn: 0 });
   assert.equal(markers.get(h.guard.id), 1);
   Object.assign(combat, { turn: 1, combatant: turns[1] });
@@ -4649,9 +4730,11 @@ test("combat reaction ledger rejects actors suppressed by Magistrate detention",
   assert.equal(result.reason, "reactionSuppressed");
 });
 
-test("manual parry resolution uses the global ten-second reaction workflow", async () => {
+test("manual parry resolution uses the global ten-second reaction workflow", async t => {
   const weapon = makeWeaponItem();
   const defender = makeActor([weapon], { id: "defender", prof: 2 });
+  game.combat = testReactionCombat([defender], "parry");
+  t.after(() => { delete game.combat; });
   defender.system.attributes.ac = { value: 15 };
   defender.setFlag = async (scope, key, value) => {
     defender.flags[scope] ??= {};
@@ -4723,6 +4806,7 @@ test("one provoked-attack trigger lets every eligible reactor act in initiative 
   globalThis.game = {
     user: gm,
     users,
+    combat: testReactionCombat([first, second, target], "provoked"),
     actors: { get: (id) => actors.get(id) ?? null }
   };
   const moduleApi = {};

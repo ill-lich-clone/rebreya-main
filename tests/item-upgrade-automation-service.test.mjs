@@ -54,7 +54,8 @@ test("one ordinary turn with five participants leaves equipment and world lighti
   } });
   api.itemUpgradeAutomationService.manifest = [];
   registerCombatHooks(api);
-  const combat = Object.assign(new Combat(), { id: "fight", round: 1, turn: 1, combatants: actors.map(actor => ({ id: actor.id, actor })) });
+  const combat = Object.assign(new Combat(), { id: "fight", started: true, round: 1, turn: 1,
+    combatants: actors.map(actor => ({ id: actor.id, actor })) });
   combat.combatant = combat.combatants[1];
   game.combat = combat;
   await api.combatAttackService.handleCombatTurnChange(combat, { round: 1, turn: 1 });

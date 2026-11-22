@@ -5664,11 +5664,24 @@ export class CombatAttackService {
 
   getReactionState(actorOrId) {
     const actor = this.#resolveActor(actorOrId);
-    if (!(actor instanceof Actor)) {
-      return null;
-    }
+    return actor instanceof Actor ? this.#readReactionState(actor, this.#reactionCombat(actor)) : null;
+  }
 
-    const raw = actor.getFlag(MODULE_ID, REACTION_STATE_FLAG) ?? {};
+  #reactionCombat(actor, excludedId) {
+    const matches = combat => combat?.started && combat.id !== excludedId
+      && (combat.getCombatantsByActor?.(actor) ?? combatantsOf(combat)).some(entry => entry.actor?.uuid === actor.uuid);
+    const current = globalThis.game?.combat;
+    return matches(current) ? current : globalThis.game?.combats?.find?.(combat => combat !== current && combat.active && matches(combat));
+  }
+
+  isReactionTracked(actor) {
+    return Boolean(actor?.uuid && this.#reactionCombat(actor));
+  }
+
+  #readReactionState(actor, combat) {
+    const saved = combat && actor.getFlag(MODULE_ID, REACTION_STATE_FLAG);
+    const savedCombatId = saved?.combatId ?? saved?.lastRefreshCombatId;
+    const raw = combat && (!savedCombatId || savedCombatId === combat.id) ? saved ?? {} : {};
     const usesMax = Math.max(1, Math.floor(toNumber(raw.usesMax, REACTION_DEFAULT_MAX_USES)));
     const usesRemaining = clampInteger(
       Object.hasOwn(raw, "usesRemaining") ? raw.usesRemaining : usesMax,
@@ -5689,19 +5702,18 @@ export class CombatAttackService {
     };
   }
 
-  async #setReactionState(actor, current, patch) {
+  async #setReactionState(actor, combat, current, patch) {
     const next = {
       ...current,
-      ...foundry.utils.deepClone(patch ?? {})
+      ...patch
     };
 
     next.usesMax = Math.max(1, Math.floor(toNumber(next.usesMax, REACTION_DEFAULT_MAX_USES)));
     next.usesRemaining = clampInteger(next.usesRemaining, 0, next.usesMax);
     next.available = next.usesRemaining > 0;
 
-    const spendKeys = patch.reactionSpendKeys ?? actor.getFlag(MODULE_ID, REACTION_STATE_FLAG)?.reactionSpendKeys;
-
     await actor.setFlag(MODULE_ID, REACTION_STATE_FLAG, {
+      combatId: combat.id,
       usesMax: next.usesMax,
       usesRemaining: next.usesRemaining,
       lastRefreshCombatId: String(next.lastRefreshCombatId ?? ""),
@@ -5709,15 +5721,20 @@ export class CombatAttackService {
       lastRefreshTurn: Math.floor(toNumber(next.lastRefreshTurn, -1)),
       lastReactionType: String(next.lastReactionType ?? ""),
       lastReactionAt: next.lastReactionAt ?? null,
-      ...(Array.isArray(spendKeys) ? { reactionSpendKeys: spendKeys.slice(-64) } : {})
+      reactionSpendKeys: patch.reactionSpendKeys.slice(-64)
     });
 
-    return this.getReactionState(actor);
+    return this.#readReactionState(actor, combat);
   }
 
   canUseReaction(actorOrId, requiredUses = 1) {
     const actor = this.#resolveActor(actorOrId);
-    const state = actor instanceof Actor ? this.getReactionState(actor) : null;
+    const combat = actor instanceof Actor ? this.#reactionCombat(actor) : null;
+    return this.#checkReaction(actor, combat, requiredUses);
+  }
+
+  #checkReaction(actor, combat, requiredUses) {
+    const state = actor instanceof Actor ? this.#readReactionState(actor, combat) : null;
     if (!state) {
       return {
         actorId: null,
@@ -5740,7 +5757,7 @@ export class CombatAttackService {
 
     return {
       actorId: state.actorId,
-      canUse: state.usesRemaining >= safeRequiredUses,
+      canUse: !combat || state.usesRemaining >= safeRequiredUses,
       requiredUses: safeRequiredUses,
       state
     };
@@ -5759,14 +5776,21 @@ export class CombatAttackService {
     const combatId = String(options.combatId ?? combat?.id ?? "");
 
     return this.#queueReactionChange(actor, async () => {
-      const state = this.getReactionState(actor);
+      const active = this.#reactionCombat(actor);
+      const state = this.#readReactionState(actor, active);
+      if (!active) {
+        if (actor.getFlag(MODULE_ID, REACTION_STATE_FLAG)) await this.#clearReactionAfterCombat(actor);
+        return state;
+      }
+      if (combatId && active.id !== combatId) return state;
       if (options.skipFull === true && state.usesMax === usesMax && state.usesRemaining === usesMax) return state;
-      const refreshed = await this.#setReactionState(actor, state, {
+      const refreshed = await this.#setReactionState(actor, active, state, {
         usesMax,
         usesRemaining: usesMax,
         lastRefreshCombatId: combatId,
         lastRefreshRound: round,
-        lastRefreshTurn: turn
+        lastRefreshTurn: turn,
+        reactionSpendKeys: this.#reactionSpendKeys(actor, active)
       });
       if (!state.available && state.lastReactionType !== "midi-native") {
         await this.moduleApi?.midiReactionAdapter?.syncModuleReactionMarker?.(actor, false);
@@ -5802,14 +5826,15 @@ export class CombatAttackService {
   }
 
   async #consumeReactionNow(actor, options = {}) {
+    const combat = this.#reactionCombat(actor);
     const idempotencyKey = cleanText(options.idempotencyKey);
-    const spendKeys = actor.getFlag(MODULE_ID, REACTION_STATE_FLAG)?.reactionSpendKeys ?? [];
+    const spendKeys = combat ? this.#reactionSpendKeys(actor, combat) : [];
     if (idempotencyKey && spendKeys.includes(idempotencyKey)) {
-      return { actorId: actor.id, consumed: true, replayed: true, state: this.getReactionState(actor) };
+      return { actorId: actor.id, consumed: true, replayed: true, state: this.#readReactionState(actor, combat) };
     }
 
     const safeUses = Math.max(1, Math.floor(toNumber(options.uses, 1)));
-    const check = this.canUseReaction(actor, safeUses);
+    const check = this.#checkReaction(actor, combat, safeUses);
     if (!check.canUse) {
       return {
         actorId: actor.id,
@@ -5819,11 +5844,16 @@ export class CombatAttackService {
       };
     }
 
-    const nextState = await this.#setReactionState(actor, check.state, {
+    if (!combat) {
+      if (actor.getFlag(MODULE_ID, REACTION_STATE_FLAG)) await this.#clearReactionAfterCombat(actor);
+      return { actorId: actor.id, consumed: true, state: check.state };
+    }
+
+    const nextState = await this.#setReactionState(actor, combat, check.state, {
       usesRemaining: Math.max(0, (check.state?.usesRemaining ?? 0) - safeUses),
       lastReactionType: String(options.reactionType ?? ""),
       lastReactionAt: new Date().toISOString(),
-      ...(idempotencyKey ? { reactionSpendKeys: [...spendKeys, idempotencyKey].slice(-64) } : {})
+      reactionSpendKeys: idempotencyKey ? [...spendKeys, idempotencyKey] : spendKeys
     });
     if (!nextState.available && nextState.lastReactionType !== "midi-native") {
       await this.moduleApi?.midiReactionAdapter?.syncModuleReactionMarker?.(actor, true);
@@ -5834,6 +5864,30 @@ export class CombatAttackService {
       consumed: true,
       state: nextState
     };
+  }
+
+  #reactionSpendKeys(actor, combat) {
+    const saved = actor.getFlag(MODULE_ID, REACTION_STATE_FLAG);
+    const id = saved?.combatId ?? saved?.lastRefreshCombatId;
+    return (!id || id === combat.id) && Array.isArray(saved?.reactionSpendKeys) ? saved.reactionSpendKeys : [];
+  }
+
+  async #clearReactionAfterCombat(actor) {
+    if (actor.getFlag(MODULE_ID, REACTION_STATE_FLAG)) await actor.unsetFlag(MODULE_ID, REACTION_STATE_FLAG);
+    await this.moduleApi?.midiReactionAdapter?.syncModuleReactionMarker?.(actor, false);
+  }
+
+  async handleReactionCombatEnd(combat, removedCombatant) {
+    if (!isActiveGmClient(globalThis.game)) return;
+    const entries = removedCombatant ? [removedCombatant] : combatantsOf(combat);
+    const actors = new Map(entries.map(({ actor }) => [actor?.uuid, actor]));
+    const results = await Promise.allSettled([...actors.values()].filter(Boolean).map(actor => this.#queueReactionChange(actor, async () => {
+      if (this.#reactionCombat(actor, removedCombatant ? undefined : combat?.id)) return;
+      await this.#clearReactionAfterCombat(actor);
+    })));
+    for (const result of results) if (result.status === "rejected") {
+      console.error(`${MODULE_ID} | Failed to clear combat reaction state.`, result.reason);
+    }
   }
 
   #resolveFirearmWeapon(actorOrItem, weaponOrId = null) {
