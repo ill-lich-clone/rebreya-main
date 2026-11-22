@@ -193,7 +193,21 @@ export const SETTINGS_KEYS = {
   STATE_POLICIES: "statePolicies",
   COSMOLOGY_STATE: "cosmologyState",
   GLOBAL_EVENTS_STATE: "globalEventsState",
-  LOOTGEN_TEMPLATES: "lootgenTemplates"
+  LOOTGEN_TEMPLATES: "lootgenTemplates",
+  // rebreya.com site integration
+  SITE_INTEGRATION_ENABLED: "siteIntegrationEnabled",
+  SITE_BASE_URL: "siteBaseUrl",
+  SITE_CATALOG_MODE: "siteCatalogMode",
+  SITE_ACCESS_TOKEN: "siteAccessToken",
+  SITE_REFRESH_TOKEN: "siteRefreshToken",
+  SITE_CHARACTER_SYNC_MODE: "siteCharacterSyncMode",
+  SITE_LAST_CATALOG_SYNC: "siteLastCatalogSyncAt",
+  // Per-character link tokens from share codes (client scope — see settings.js).
+  SITE_LINK_TOKENS: "siteLinkTokens",
+  // Dev only: allow http://127.0.0.1 / localhost as the site base URL.
+  SITE_ALLOW_LOCALHOST: "siteAllowLocalhost",
+  // Automatic in-play state sync for linked Actors (world switch; per Actor via flag).
+  SITE_AUTO_SYNC: "siteAutoSync"
 };
 
 export const REBREYA_STORAGE_FLAGS = {
@@ -208,6 +222,25 @@ export const DATA_SOURCE_MODES = {
 
 export const BUILTIN_DATA_PATH = `modules/${MODULE_ID}/data`;
 export const DEFAULT_DISPLAY_PRECISION = 2;
+
+export const DEFAULT_SITE_BASE_URL = "https://rebreya.com";
+
+// How catalogue data is sourced: local JSON only, site API only, or local with
+// the site allowed to refresh official catalogues (default).
+export const SITE_CATALOG_MODES = {
+  LOCAL: "local",
+  SITE_API: "site-api",
+  HYBRID: "hybrid"
+};
+
+// Character sync direction (default: site owns the build, Foundry pushes
+// mutable state back).
+export const SITE_CHARACTER_SYNC_MODES = {
+  OFF: "off",
+  IMPORT_ONCE: "import-once",
+  SITE_TO_FOUNDRY: "site-to-foundry",
+  MANUAL_STATE_PUSH: "manual-state-push"
+};
 export const DEFAULT_CITY_SORT = "population";
 export const DEFAULT_ROUTE_SORT = "usageDesc";
 export const DEFAULT_STATE_SORT = "population";

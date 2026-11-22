@@ -21,6 +21,7 @@ import { bindHeroDollPresetControls } from "../ui/hero-doll-presets-ui.js?v=1.4.
 import { bringAppToFront } from "../ui.js";
 import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.392";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
+import { bindSiteSyncPanel } from "./site-sync-panel.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 import { REBREYA_AMMUNITION_SUBTYPES } from "../data/ammunition-types.js";
@@ -7564,6 +7565,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses.`, error);
       }
+      try {
+        bindSiteSyncPanel(root, app, moduleApi);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind Rebreya site sync panel.`, error);
+      }
     }
 
     try {
@@ -7691,6 +7698,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses on ApplicationV2 render.`, error);
+      }
+      try {
+        bindSiteSyncPanel(root, app, moduleApi);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind Rebreya site sync panel on ApplicationV2 render.`, error);
       }
     }
 

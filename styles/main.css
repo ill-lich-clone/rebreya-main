@@ -14396,3 +14396,31 @@ summary:focus-visible {
 .rm-alchemy-extraction fieldset { max-height: 50vh; overflow: auto; }
 .rm-alchemy-extraction-row { display: grid; grid-template-columns: minmax(0, 1fr) 75px; gap: 6px; margin-bottom: 4px; align-items: center; }
 .rm-alchemy-extraction-row small { display: block; }
+
+/* Rebreya site sync control on the dnd5e character sheet */
+.rebreya-site-sync-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid var(--rm-brass, #c9a24b);
+  border-radius: 6px;
+  background: rgba(201, 162, 75, 0.12);
+  color: inherit;
+  cursor: pointer;
+  width: fit-content;
+}
+.rebreya-site-sync-button:hover { background: rgba(201, 162, 75, 0.25); }
+.rebreya-site-sync-status > div { margin-bottom: 4px; }
+
+/* Rebreya catalogue-sync app (settings menu) */
+.rebreya-site-catalog-sync { padding: 8px; }
+.rebreya-site-catalog-sync .notes { font-size: 12px; color: var(--rm-muted, #b9a980); margin: 0 0 8px; }
+.rebreya-site-catalog-sync .rebreya-warning { color: #d08a3a; font-weight: 600; }
+.rebreya-sync-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rebreya-sync-table th, .rebreya-sync-table td { text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(201,162,75,0.2); }
+.rebreya-sync-table th { color: var(--rm-brass, #c9a24b); font-size: 11px; text-transform: uppercase; }
+.rebreya-sync-table button, .rebreya-sync-all button { cursor: pointer; }
+.rebreya-sync-all { margin-top: 10px; text-align: right; }

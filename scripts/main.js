@@ -422,6 +422,13 @@ import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-co
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.6.1";
+import { RebreyaSiteService, createFoundrySettingsAdapter } from "./integrations/rebreya-site-service.js";
+import { SiteSpellsCompendiumService } from "./data/site-spells-compendium.js";
+import { RebreyaCharacterSync } from "./integrations/rebreya-character-sync.js";
+import { SiteArticlesCompendiumService } from "./data/site-articles-compendium.js";
+import { SiteBestiaryCompendiumService } from "./data/site-bestiary-compendium.js";
+import { registerSiteShareImport } from "./integrations/site-share-import.js";
+import { registerSiteAutoSync } from "./integrations/site-auto-sync.js";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js?v=1.5.82";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -2201,6 +2208,12 @@ export class RebreyaMainModule {
       service.registerLongRestSteps?.(this.longRestPipelineService);
     }
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
+    // rebreya.com site integration entry point (game.rebreyaMain.site).
+    this.site = new RebreyaSiteService({ adapter: createFoundrySettingsAdapter(globalThis.game) });
+    this.siteSpellsCompendium = new SiteSpellsCompendiumService(this);
+    this.characterSync = new RebreyaCharacterSync(this);
+    this.siteArticlesCompendium = new SiteArticlesCompendiumService(this);
+    this.siteBestiaryCompendium = new SiteBestiaryCompendiumService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
     this.economyApp = null;
     this.worldTradeRoutesApp = null;
@@ -9019,6 +9032,20 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register inventory sync hooks.`, error);
+  }
+
+  try {
+    await registerSiteShareImport(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register rebreya.com share-code import.`, error);
+  }
+
+  try {
+    await registerSiteAutoSync(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register rebreya.com auto state sync.`, error);
   }
 
   try {

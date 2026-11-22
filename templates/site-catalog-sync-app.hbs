@@ -1,0 +1,31 @@
+<div class="rebreya-site-catalog-sync">
+  <p class="notes">Импорт официальных справочников с <strong>rebreya.com</strong> в управляемые компендии. Повторный запуск обновляет только изменившееся; ваши записи не трогаются.</p>
+
+  {{#unless isGM}}
+    <p class="rebreya-warning">Синхронизация доступна только Мастеру.</p>
+  {{/unless}}
+
+  <table class="rebreya-sync-table">
+    <thead><tr><th>Справочник</th><th>В компендии</th><th>Последняя синхронизация</th><th></th></tr></thead>
+    <tbody>
+      {{#each resources}}
+        <tr>
+          <td>{{this.label}}</td>
+          <td>{{this.packCount}}</td>
+          <td>{{this.lastSync}}</td>
+          <td>
+            <button type="button" data-action="sync" data-resource="{{this.key}}" {{#unless ../isGM}}disabled{{/unless}}>
+              <i class="fa-solid fa-rotate"></i> Синхронизировать
+            </button>
+          </td>
+        </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="rebreya-sync-all">
+    <button type="button" data-action="sync-all" {{#unless isGM}}disabled{{/unless}}>
+      <i class="fa-solid fa-cloud-arrow-down"></i> Синхронизировать всё
+    </button>
+  </div>
+</div>

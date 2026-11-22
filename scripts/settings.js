@@ -1,4 +1,5 @@
-import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js?v=1.5.90";
+import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, DEFAULT_SITE_BASE_URL, MODULE_ID, SETTINGS_KEYS, SITE_CATALOG_MODES, SITE_CHARACTER_SYNC_MODES } from "./constants.js?v=1.5.90";
+import { getSiteCatalogSyncAppClass } from "./ui/site-catalog-sync-app.js";
 import { refreshEconomyLauncher } from "./hooks.js?v=1.5.71";
 export {
   SOCKET_EVENT_SET_SETTING,
@@ -315,4 +316,123 @@ export function registerSettings() {
     onChange: () => game.rebreyaMain?.refreshOpenApps?.()
   });
 
+  // --- rebreya.com site integration -------------------------------------------
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_INTEGRATION_ENABLED, {
+    name: "REBREYA_MAIN.Settings.SiteIntegrationEnabled.Name",
+    hint: "REBREYA_MAIN.Settings.SiteIntegrationEnabled.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => globalThis.game?.rebreyaMain?.siteAutoSync?.syncLoop?.()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_BASE_URL, {
+    name: "REBREYA_MAIN.Settings.SiteBaseUrl.Name",
+    hint: "REBREYA_MAIN.Settings.SiteBaseUrl.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: DEFAULT_SITE_BASE_URL
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_CATALOG_MODE, {
+    name: "REBREYA_MAIN.Settings.SiteCatalogMode.Name",
+    hint: "REBREYA_MAIN.Settings.SiteCatalogMode.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: SITE_CATALOG_MODES.HYBRID,
+    choices: {
+      [SITE_CATALOG_MODES.LOCAL]: "Только локальные данные модуля",
+      [SITE_CATALOG_MODES.SITE_API]: "Только данные сайта",
+      [SITE_CATALOG_MODES.HYBRID]: "Гибрид: локальные + обновления с сайта"
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_CHARACTER_SYNC_MODE, {
+    name: "REBREYA_MAIN.Settings.SiteCharacterSyncMode.Name",
+    hint: "REBREYA_MAIN.Settings.SiteCharacterSyncMode.Hint",
+    scope: "client",
+    config: true,
+    type: String,
+    default: SITE_CHARACTER_SYNC_MODES.MANUAL_STATE_PUSH,
+    choices: {
+      [SITE_CHARACTER_SYNC_MODES.OFF]: "Выключено",
+      [SITE_CHARACTER_SYNC_MODES.IMPORT_ONCE]: "Импорт с сайта один раз",
+      [SITE_CHARACTER_SYNC_MODES.SITE_TO_FOUNDRY]: "Сайт → Foundry",
+      [SITE_CHARACTER_SYNC_MODES.MANUAL_STATE_PUSH]: "Сайт → Foundry, состояние вручную обратно"
+    }
+  });
+
+  // Client-scoped secrets: a player's site token is stored only in their own
+  // client settings, never in world settings or the socket.
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_ACCESS_TOKEN, {
+    scope: "client",
+    config: false,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_REFRESH_TOKEN, {
+    scope: "client",
+    config: false,
+    type: String,
+    default: ""
+  });
+
+  // Link tokens (share-code import) are per-character credentials for the
+  // site. They live ONLY in this browser's client settings (localStorage):
+  // Foundry sends every world- and user-scoped Setting document to every
+  // connected client, and Actor flags reach everyone who can see the Actor, so
+  // neither is private. Cost: a token is per device — on another browser the
+  // player links again with a fresh code. Never sent over the socket.
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_LINK_TOKENS, {
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_AUTO_SYNC, {
+    name: "REBREYA_MAIN.Settings.SiteAutoSync.Name",
+    hint: "REBREYA_MAIN.Settings.SiteAutoSync.Hint",
+    scope: "world",
+    config: true,
+    restricted: true,
+    type: Boolean,
+    default: true,
+    onChange: () => globalThis.game?.rebreyaMain?.siteAutoSync?.syncLoop?.()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_ALLOW_LOCALHOST, {
+    name: "REBREYA_MAIN.Settings.SiteAllowLocalhost.Name",
+    hint: "REBREYA_MAIN.Settings.SiteAllowLocalhost.Hint",
+    scope: "world",
+    config: true,
+    restricted: true,
+    type: Boolean,
+    default: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_LAST_CATALOG_SYNC, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
+  // GM control to import site catalogues (spells, articles) into compendia.
+  // Guarded on the ApplicationV2 API being present so registerSettings stays
+  // callable outside Foundry (unit tests mock game.settings, not foundry).
+  if (globalThis.foundry?.applications?.api && typeof game.settings.registerMenu === "function") {
+    game.settings.registerMenu(MODULE_ID, "siteCatalogSyncMenu", {
+      name: "REBREYA_MAIN.Settings.SiteCatalogSync.Name",
+      label: "REBREYA_MAIN.Settings.SiteCatalogSync.Label",
+      hint: "REBREYA_MAIN.Settings.SiteCatalogSync.Hint",
+      icon: "fa-solid fa-cloud-arrow-down",
+      type: getSiteCatalogSyncAppClass(),
+      restricted: true
+    });
+  }
 }
