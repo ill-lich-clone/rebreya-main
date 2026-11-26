@@ -10075,12 +10075,12 @@ summary:focus-visible {
 
 .rm-modification-tab__copy h2,
 .rm-modification-tab__copy p,
-.rm-modification-tab__empty p {
+.rm-modification-tab__list h3,
+.rm-modification-tab__list ul {
   margin: 0;
 }
 
-.rm-modification-tab__copy p,
-.rm-modification-tab__empty p {
+.rm-modification-tab__copy p {
   margin-top: 4px;
   color: var(--rm-muted);
   font-size: 12px;
@@ -10108,16 +10108,12 @@ summary:focus-visible {
   font-size: 20px;
 }
 
-.rm-modification-tab__empty {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 18px;
+.rm-modification-tab__list {
+  padding: 12px 14px;
 }
 
-.rm-modification-tab__empty > i {
-  color: var(--rm-accent);
-  font-size: 24px;
+.rm-modification-tab__list li {
+  margin-top: 4px;
 }
 
 .rm-implant-dialog .rm-implant-dialog__item .item-row {

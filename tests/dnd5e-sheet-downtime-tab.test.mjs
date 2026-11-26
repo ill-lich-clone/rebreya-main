@@ -396,16 +396,38 @@ test("NPC doll listeners bind through both actor sheet and ApplicationV2 renders
     assert.equal(root.style.getPropertyValue("--rm-character-sheet-header-image"),"");
   } finally {stubs.restore();}
 });
-test("registerDnd5eSheetExtensions registers hero doll and downtime without replacing native class templates", async () => {
+test("registerDnd5eSheetExtensions prepares the three character tabs and lists implants independently of inventory", async () => {
   const stubs = installSheetExtensionStubs();
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-tabs=${Date.now()}`);
+    const { ImplantService } = await import("../scripts/data/implant-service.js");
     const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
-    actor.items.push({
-      id: "craftsman-class",
-      type: "class",
-      system: { identifier: "craftsman-v01", levels: 1 }
+    actor.system.attributes = { prof: 3 };
+    const implant = (id, data = {}, { installed = false, quantity = 1, container = null, gearId } = {}) => ({
+      id,
+      uuid: `Actor.${actor.id}.Item.${id}`,
+      name: id,
+      type: "equipment",
+      system: { quantity, container },
+      flags: { "rebreya-main": {
+        gearId,
+        implant: { pointsMin: 1, pointsMax: 1, ...data },
+        implantInstallation: { installed }
+      } }
     });
+    const armor = implant("Навесная броня", {}, { installed: true });
+    const contained = implant("Встроенный станок", { pointsMin: 2, pointsMax: 2 }, { container: "bag" });
+    const union = implant("Система термоконтроля", { type: "Общая" });
+    const bag = { id: "bag", name: "Сумка", type: "container" };
+    const implantService = new ImplantService();
+    actor.items.push(
+      { id: "craftsman-class", type: "class", system: { identifier: "craftsman-v01", levels: 1 } },
+      bag, armor, contained, union,
+      implant("Военный имплант", { type: "Военная" }),
+      implant("Дорогой имплант", { pointsMin: 3, pointsMax: 3 }),
+      implant("Имплант без цены", { pointsMax: null }),
+      implant("Пустой стак", {}, { quantity: 0, gearId: "dopolnitelnaya-konechnost" })
+    );
     const calls = [];
     const moduleApi = {
       heroDollService: {
@@ -423,13 +445,7 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
       implantService: {
         getActorSnapshot(targetActor) {
           calls.push(["modification", targetActor.id]);
-          return {
-            actorId: targetActor.id,
-            capacity: 2,
-            used: 1,
-            remaining: 1,
-            entries: []
-          };
+          return implantService.getActorSnapshot(targetActor);
         }
       },
       async refreshOpenApps() {}
@@ -443,11 +459,7 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
     );
     assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.modification.template, /modification-tab\.hbs$/u);
-    assert.ok(
-      stubs.CharacterActorSheet.PARTS.modification.templates.includes(
-        "systems/dnd5e/templates/inventory/inventory.hbs"
-      )
-    );
+    assert.equal(stubs.CharacterActorSheet.PARTS.modification.templates, undefined);
     assert.match(stubs.CharacterActorSheet.PARTS.downtime.template, /character-downtime-tab\.hbs$/u);
     assert.equal(
       stubs.CharacterActorSheet.PARTS.features.template,
@@ -461,8 +473,14 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
     const downtimeContext = await sheet._preparePartContext("downtime", { base: true }, {});
 
     assert.equal(heroContext.heroDoll.actorId, "actor-a");
-    assert.equal(modificationContext.modification.actorId, "actor-a");
-    assert.equal(modificationContext.preparedPartId, "inventory");
+    assert.equal(modificationContext.preparedPartId, "modification");
+    assert.deepEqual(modificationContext.modification.installedEntries.map(({ name, uuid }) => ({ name, uuid })),
+      [{ name: armor.name, uuid: armor.uuid }]);
+    assert.deepEqual(modificationContext.installableImplants.map(({ name, uuid }) => ({ name, uuid })),
+      [contained, union].map(({ name, uuid }) => ({ name, uuid })));
+    assert.equal(modificationContext.modification.capacity, 2);
+    assert.equal(modificationContext.modification.used, 1);
+    assert.equal(modificationContext.modification.remaining, 1);
     assert.equal(downtimeContext.characterDowntime.actorId, "actor-a");
     assert.deepEqual(calls, [
       ["heroDoll", "actor-a"],

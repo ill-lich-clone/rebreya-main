@@ -2382,10 +2382,6 @@ function ensureHeroDollTabDefinition(CharacterActorSheet, { characterTabs = true
       classes: ["flexcol"],
       container: { classes: ["tab-body"], id: "tabs" },
       template: MODIFICATION_TEMPLATE,
-      templates: [
-        "systems/dnd5e/templates/inventory/inventory.hbs",
-        "systems/dnd5e/templates/inventory/activity.hbs"
-      ],
       scrollable: [""]
     },
     [CHARACTER_DOWNTIME_TAB_ID]: {
@@ -2475,8 +2471,7 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi, { characterTab
     if (!characterTabs && partId !== HERO_DOLL_TAB_ID) {
       return originalPreparePartContext.call(this, partId, context, options);
     }
-    const preparedPartId = partId === MODIFICATION_TAB_ID ? "inventory" : partId;
-    const prepared = await originalPreparePartContext.call(this, preparedPartId, context, options);
+    const prepared = await originalPreparePartContext.call(this, partId, context, options);
     const preparedWithFeatGroups = partId === "features"
       ? await splitRebreyaFeatSectionsInContext(prepared)
       : prepared;
@@ -2491,21 +2486,18 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi, { characterTab
     if (partId === MODIFICATION_TAB_ID) {
       const tab = buildModificationTabState(this);
       const modification = moduleApi.implantService.getActorSnapshot(this.actor);
-      const implantIds = new Set(modification.entries.map((entry) => entry.itemId));
-      const sections = (preparedWithFeatGroups.sections ?? [])
-        .map((section) => ({
-          ...section,
-          items: (section.items ?? []).filter((item) => implantIds.has(item?.id))
-        }))
-        .filter((section) => section.items.length > 0);
+      const installableImplants = modification.availableEntries.filter((entry) => (
+        entry.installable
+        && !entry.compatibility.impossible
+        && entry.maximumInstallableCount > 0
+        && entry.pointsMin <= modification.capacity
+      ));
       return {
         ...preparedWithFeatGroups,
         tab,
         modificationTab: tab,
         modification,
-        sections,
-        showCurrency: false,
-        listControls: null
+        installableImplants
       };
     }
 

@@ -3,11 +3,7 @@
   <header class="rm-modification-tab__header card">
     <div class="rm-modification-tab__copy">
       <h2>Модифицирование</h2>
-      <p>
-        Здесь показаны настоящие предметы Foundry из инвентаря персонажа.
-        Откройте строку, чтобы прочитать описание, посмотреть эффекты или скопировать ссылку.
-        Установленный набор меняется во время продолжительного отдыха.
-      </p>
+      <p>Набор имплантов можно сменить во время продолжительного отдыха.</p>
     </div>
     <div class="rm-modification-tab__points" aria-label="Очки модификации">
       <span>Очки модификации</span>
@@ -16,15 +12,25 @@
     </div>
   </header>
 
-  {{#if modification.hasImplants}}
-    {{> "systems/dnd5e/templates/inventory/inventory.hbs" }}
-  {{else}}
-    <section class="rm-modification-tab__empty card">
-      <i class="fa-solid fa-microchip"></i>
-      <div>
-        <strong>В инвентаре нет имплантов</strong>
-        <p>Перетащите Foundry Item импланта в инвентарь персонажа — он появится здесь без копирования данных.</p>
-      </div>
-    </section>
-  {{/if}}
+  <section class="rm-modification-tab__list card">
+    <h3>Установленные</h3>
+    <ul class="unlist">
+      {{#each modification.installedEntries}}
+        <li><a class="content-link" data-link data-uuid="{{uuid}}" href="#">{{name}}</a></li>
+      {{else}}
+        <li>Нет установленных имплантов</li>
+      {{/each}}
+    </ul>
+  </section>
+
+  <section class="rm-modification-tab__list card">
+    <h3>Доступные к установке</h3>
+    <ul class="unlist">
+      {{#each installableImplants}}
+        <li><a class="content-link" data-link data-uuid="{{uuid}}" href="#">{{name}}</a></li>
+      {{else}}
+        <li>Нет доступных имплантов</li>
+      {{/each}}
+    </ul>
+  </section>
 </section>
