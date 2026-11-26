@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { buildUpgradeAutomationManifest, getUpgradeAvailability } from "../scripts/data/upgrade-automation-manifest.js";
+import { buildUpgradeAutomationManifest, getUpgradeAvailability, resolveUpgradeCatalogEntry } from "../scripts/data/upgrade-automation-manifest.js";
 const read = async name => JSON.parse(await readFile(new URL(`../data/${name}.json`, import.meta.url)));
 const [upgrades, gear, decisions] = await Promise.all([read("upgrades"), read("gear"), read("upgrade-automation-manifest")]);
 test("all 124 stable IDs have one explicit, source-backed decision", () => {
@@ -22,6 +22,13 @@ test("missing, duplicate and orphan mappings fail explicitly without name matchi
     [upgrades, gear, [...decisions, { ...decisions[0], productId: "orphan" }]]]) {
     assert.throws(() => buildUpgradeAutomationManifest(...args), /upgrade-manifest/);
   }
+});
+test("a normalized alias is suppressed when another gear entry normalizes to the same ID", () => {
+  const productId = "шипастая-отделка-доспеха";
+  const alias = "shipastaya-otdelka-dospekha";
+  const rows = buildUpgradeAutomationManifest(upgrades, [...gear, { id: alias }], decisions);
+  assert.equal(resolveUpgradeCatalogEntry(alias, rows).entry, undefined);
+  assert.equal(resolveUpgradeCatalogEntry(productId, rows).entry.normalizedGearId, null);
 });
 test("build is detached and validates decisions and implemented evidence", () => {
   const before = JSON.stringify({ upgrades, gear, decisions });

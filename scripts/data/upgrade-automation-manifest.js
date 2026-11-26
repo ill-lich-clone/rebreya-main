@@ -1,3 +1,5 @@
+import { canonicalCatalogId } from "../shared/canonical-catalog-id.js";
+
 const DECISIONS = new Set(["existing-curse", "simple-candidate", "simple-implemented", "unavailable-complex", "unavailable-no-rule"]);
 export const UPGRADE_UNAVAILABLE_LABEL = "Усовершенствования нет в реализации";
 const fail = (code, id) => { throw new Error(`upgrade-manifest: ${code}: ${id ?? ""}`); };
@@ -16,6 +18,11 @@ function indexRows(rows, field) {
 export function buildUpgradeAutomationManifest(upgrades, gear, decisions) {
   const sources = indexRows(upgrades, "productId"), gearById = indexRows(gear, "id"), decisionById = indexRows(decisions, "productId");
   for (const productId of decisionById.keys()) if (!sources.has(productId)) fail("orphan-decision", productId);
+  const normalizedGearIdCounts = new Map();
+  for (const id of gearById.keys()) {
+    const normalized = canonicalCatalogId(id);
+    normalizedGearIdCounts.set(normalized, (normalizedGearIdCounts.get(normalized) ?? 0) + 1);
+  }
   return [...sources.keys()].sort().map(productId => {
     const source = sources.get(productId), decision = decisionById.get(productId);
     if (!gearById.has(productId)) fail("missing-gear", productId);
@@ -24,17 +31,33 @@ export function buildUpgradeAutomationManifest(upgrades, gear, decisions) {
     if (["existing-curse", "simple-implemented"].includes(decision.decision)
       && (!decision.owner.length || !decision.tests.some(test => test.status === "existing"))) fail("missing-evidence", productId);
     if (!source.upgrade || typeof source.upgrade !== "object") fail("missing-profile", productId);
-    return structuredClone({ ...decision, gearId: productId, type: source.upgrade.type, profile: source.upgrade,
+    const normalized = canonicalCatalogId(productId);
+    const normalizedGearId = normalizedGearIdCounts.get(normalized) === 1 ? normalized : null;
+    return structuredClone({ ...decision, gearId: productId, normalizedGearId, type: source.upgrade.type, profile: source.upgrade,
       ruleSource: { file: "data/upgrades.json", productId, sourceSheet: source.upgrade.sourceSheet, sourceSheetRow: source.upgrade.sourceSheetRow } });
   });
 }
 
-export function getUpgradeAvailability(productId, manifest = []) {
-  const row = manifest.find(row => row.productId === productId);
-  const decision = row?.decision ?? "unavailable-no-rule";
+export function resolveUpgradeCatalogEntry(gearId, manifest = []) {
+  let entry;
+  if (gearId) {
+    for (const row of manifest) {
+      if (row.productId === gearId || row.gearId === gearId) {
+        entry = row;
+        break;
+      }
+      if (row.normalizedGearId === gearId) entry = row;
+    }
+  }
+  const decision = entry?.decision ?? "unavailable-no-rule";
   const available = ["existing-curse", "simple-implemented"].includes(decision);
-  return { decision, available, label: available ? "Доступно" : UPGRADE_UNAVAILABLE_LABEL,
-    reason: row?.reason ?? "Нет проверенного правила для этого stable ID." };
+  const availability = { decision, available, label: available ? "Доступно" : UPGRADE_UNAVAILABLE_LABEL,
+    reason: entry?.reason ?? "Нет проверенного правила для этого stable ID." };
+  return { entry, availability };
+}
+
+export function getUpgradeAvailability(productId, manifest = []) {
+  return resolveUpgradeCatalogEntry(productId, manifest).availability;
 }
 
 let manifestPromise;

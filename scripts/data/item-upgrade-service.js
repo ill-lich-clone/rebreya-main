@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";
-import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.255";
+import { loadUpgradeAutomationManifest, resolveUpgradeCatalogEntry } from "./upgrade-automation-manifest.js?v=1.6.8";
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.5.98";
 import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.5.29";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js?v=1.5.29";
@@ -550,13 +550,13 @@ export class ItemUpgradeService {
 
   async getUpgradeProjection(item) {
     const manifest = await this.getManifest();
-    const sourceId = cleanText(readModuleFlag(item, "gearId"));
-    const row = manifest.find(row => row.gearId === sourceId);
+    const gearId = cleanText(readModuleFlag(item, "gearId"));
+    const { entry: row, availability } = resolveUpgradeCatalogEntry(gearId, manifest);
+    const sourceId = row?.productId ?? gearId;
     const stored = readModuleFlag(item, "upgrade");
     const profile = resolveUpgradeProfile(stored, row?.profile);
     const legacyOverride = Boolean(stored && typeof stored === "object" && !Array.isArray(stored)
       && profileSignature(stored) !== profileSignature(row?.profile));
-    const availability = getUpgradeAvailability(sourceId, manifest);
     if (legacyOverride) Object.assign(availability, { available: false, decision: "unavailable-no-rule",
       label: "Усовершенствования нет в реализации", reason: "Сохранён пользовательский профиль; его полная автоматизация не подтверждена." });
     else if (!availability.available && profile) availability.label = "Без автоматизации";

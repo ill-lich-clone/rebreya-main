@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { getInstalledUpgradeItems } from "../scripts/data/item-upgrade-service.js";
+import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
+import { mergeGearCatalogExtensions } from "../scripts/data/importer.js";
+import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
+import { buildUpgradeAutomationManifest, resolveUpgradeCatalogEntry } from "../scripts/data/upgrade-automation-manifest.js";
 
 test("installed upgrades use keyed lookups in slot order and support array actors", () => {
   const first = {id:"first"}, second = {id:"second"};
@@ -144,6 +148,55 @@ function makeService(Service) {
   return new Service(null, { getManifest: async () => [{ productId: "mithril-upgrade", gearId: "mithril-upgrade",
     profile: { compatibility: ["any"] }, decision: "simple-implemented", reason: "Approved test fixture" }] });
 }
+
+test("an imported spiked armor trim installs with either catalog ID and preserves its stored profile", async () => {
+  const restore = installFoundryStubs();
+  const oldConst = globalThis.CONST;
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+  try {
+    const read = async name => JSON.parse(await readFile(new URL(`../data/${name}.json`, import.meta.url), "utf8"));
+    const [gear, upgrades, implants, decisions] = await Promise.all(
+      ["gear", "upgrades", "implants", "upgrade-automation-manifest"].map(read)
+    );
+    const manifest = buildUpgradeAutomationManifest(upgrades, gear, decisions);
+    const normalized = normalizeEconomyDataset({ gear: mergeGearCatalogExtensions(gear, { upgrades, implants }) });
+    const importedUpgrades = normalized.gear.filter(row => row.upgrade);
+    assert.equal(importedUpgrades.length, manifest.length);
+    for (const row of importedUpgrades) {
+      assert.deepEqual(resolveUpgradeCatalogEntry(row.id, manifest).entry?.profile, row.upgrade, row.id);
+    }
+    const imported = normalized.gear.find(row => row.id === "shipastaya-otdelka-dospekha");
+    assert.ok(imported);
+    const rawId = upgrades.find(row => row.name === imported.name).productId;
+    assert.notEqual(rawId, imported.id);
+
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const service = new ItemUpgradeService(null, { getManifest: async () => manifest });
+    for (const gearId of [imported.id, rawId]) {
+      const actor = new FakeActor();
+      const host = actor.addItem({ _id: "armor", type: "equipment", system: { quantity: 1, type: { value: "heavy" } } });
+      const data = createDnd5eItemData(imported, new Map());
+      data.flags[MODULE_ID].gearId = gearId;
+      const trim = actor.addItem(data);
+      const projection = await service.getUpgradeProjection(trim);
+      assert.equal(projection.legacyOverride, false);
+      assert.equal(projection.availability.decision, "unavailable-complex");
+      assert.equal(projection.availability.available, false);
+      assert.equal(await service.installItemUpgrade(host, trim), trim);
+      assert.equal(trim.system.container, host.id);
+      assert.equal(trim.flags[MODULE_ID].gearId, gearId);
+      assert.deepEqual(trim.flags[MODULE_ID].upgrade, imported.upgrade);
+
+      const custom = actor.addItem({ ...data, _id: "custom" });
+      custom.flags[MODULE_ID].upgrade.effect += " custom";
+      await assert.rejects(service.installItemUpgrade(host, custom), error => error.code === "unavailable");
+      assert.deepEqual(custom.updates, []);
+    }
+  } finally {
+    restore();
+    globalThis.CONST = oldConst;
+  }
+});
 
 test("upgrade hosts are limited to weapons, outerwear and explicit wondrous item types", async () => {
   const { buildUpgradeHostDescriptor, getItemUpgradeCategory } = await import("../scripts/data/item-upgrade-service.js");

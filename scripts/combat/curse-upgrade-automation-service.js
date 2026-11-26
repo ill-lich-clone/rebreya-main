@@ -1,7 +1,7 @@
 import { comparableEffectChanges, nativeEffectUpdate } from "../shared/active-effect-changes.js";
 import { isTurnFlagOnlyUpdate } from "../shared/actor-update.js";
 import { MODULE_ID } from "../constants.js";
-import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.5.98";
+import { getInstalledUpgradeItems } from "../data/item-upgrade-service.js?v=1.6.8";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { CurseUpgradeSaveAdapter } from "./curse-upgrade-saves.js";
 import { CurseUpgradeDamageAdapter } from "./curse-upgrade-damage.js?v=1.5.101";

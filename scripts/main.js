@@ -11,7 +11,7 @@ import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.396";
 import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.5.75";
 import { buildJournalRecordItemData } from "./data/journal-record-item.js?v=1.4.217-journal-record-items";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.5.23";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.6.8";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js?v=1.4.397";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { clearNamedIconCache } from "./data/compendium-utils.js?v=1.4.327";
@@ -129,9 +129,9 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js?v=1.5.88";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.5.98";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.6.8";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.87";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.6.0";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.6.8";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.95";
@@ -7817,7 +7817,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.5.69");
+      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.6.8");
       let app = null;
 
       if (!viewer && !newWindow && !templateUuid) {
