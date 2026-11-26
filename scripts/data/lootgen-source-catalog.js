@@ -1,5 +1,5 @@
-import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.5.23";
-import { loadUpgradeAutomationManifest } from "./upgrade-automation-manifest.js?v=1.6.8";
+import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.6.9";
+import { loadUpgradeAutomationManifest } from "./upgrade-automation-manifest.js?v=1.6.9";
 import { MODULE_ID, GEAR_COMPENDIUM_NAME, MAGIC_ITEMS_COMPENDIUM_NAME } from "../constants.js";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.393";
 import { collectBreakableManagedGearIds } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";

@@ -32,6 +32,15 @@ test("shield alternatives differ from weapon qualifiers; unknown tags fail close
   assert.equal(validateUpgradeInstallation({ ...host, compatibilityTags: ["shield"] }, [], c).allowed, true);
   assert.throws(() => validateUpgradeInstallation(host, [], { ...candidate, profile: { compatibility: ["any", "unknown"] } }), e => e.code === "incompatible");
 });
+test("catalog qualifiers all remain mandatory, including for event-driven upgrades", () => {
+  const event = { ...candidate, availability: "event-implemented" };
+  assert.equal(validateUpgradeInstallation(host, [], event).allowed, true);
+  for (const qualifier of ["spellcasting-focus", "grip-change", "metallic", "bow-or-crossbow", "closable-container", "worn"]) {
+    const qualified = { ...event, profile: { compatibility: ["weapon", qualifier] } };
+    assert.equal(validateUpgradeInstallation({ ...host, compatibilityTags: ["weapon", qualifier] }, [], qualified).allowed, true);
+    assert.throws(() => validateUpgradeInstallation(host, [], qualified), e => e.code === "incompatible");
+  }
+});
 test("capacity respects occupied slot positions, integer bounds and singleton host", () => {
   assert.equal(validateUpgradeCapacity(host, [{ slotIndex: 2 }], 2), 2);
   for (const next of [1, 0, 4, 1.5, NaN]) assert.throws(() => validateUpgradeCapacity(host, [{ slotIndex: 2 }], next), e => e.code === "capacity");

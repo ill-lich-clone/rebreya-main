@@ -1,5 +1,8 @@
 const BASE_TAGS = new Set(["any", "weapon", "armor", "outerwear", "shield", "wondrous-item"]);
-const QUALIFIERS = new Set(["melee", "ranged", "nonmetal", "brass-knuckles-or-metal-gauntlet"]);
+const QUALIFIERS = new Set([
+  "melee", "ranged", "nonmetal", "brass-knuckles-or-metal-gauntlet",
+  "spellcasting-focus", "grip-change", "metallic", "bow-or-crossbow", "closable-container", "worn"
+]);
 const MESSAGES = {
   unavailable: "Усовершенствования нет в реализации",
   incompatible: "Усовершенствование несовместимо с этим предметом.",
@@ -37,7 +40,7 @@ export function validateUpgradeCapacity(host, installed, capacity) {
 export function validateUpgradeInstallation(host, installed, candidate, { allowManual = false } = {}) {
   const availability = candidate?.availability;
   const decision = typeof availability === "string" ? availability : availability?.decision;
-  if (!(allowManual && candidate?.profile) && !["existing-curse", "simple-implemented"].includes(decision)) {
+  if (!(allowManual && candidate?.profile) && !["existing-curse", "simple-implemented", "event-implemented"].includes(decision)) {
     throw new UpgradeRuleError("unavailable", { reason: availability?.reason });
   }
   const capacity = validateUpgradeCapacity(host, installed, host?.capacity);

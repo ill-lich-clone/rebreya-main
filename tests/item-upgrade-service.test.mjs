@@ -180,8 +180,8 @@ test("an imported spiked armor trim installs with either catalog ID and preserve
       const trim = actor.addItem(data);
       const projection = await service.getUpgradeProjection(trim);
       assert.equal(projection.legacyOverride, false);
-      assert.equal(projection.availability.decision, "unavailable-complex");
-      assert.equal(projection.availability.available, false);
+      assert.equal(projection.availability.decision, "event-implemented");
+      assert.equal(projection.availability.available, true);
       assert.equal(await service.installItemUpgrade(host, trim), trim);
       assert.equal(trim.system.container, host.id);
       assert.equal(trim.flags[MODULE_ID].gearId, gearId);
@@ -195,6 +195,72 @@ test("an imported spiked armor trim installs with either catalog ID and preserve
   } finally {
     restore();
     globalThis.CONST = oldConst;
+  }
+});
+
+test("catalog upgrades require the focus, grip, material, bow, closure or worn evidence on their hosts", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const read = async name => JSON.parse(await readFile(new URL(`../data/${name}.json`, import.meta.url), "utf8"));
+    const [gear, upgrades, decisions, materials] = await Promise.all(["gear", "upgrades", "upgrade-automation-manifest", "materials"].map(read));
+    const manifest = buildUpgradeAutomationManifest(upgrades, gear, decisions);
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const materialById = new Map(materials.map(material => [material.id, material]));
+    let modelReads = 0;
+    const service = new ItemUpgradeService({
+      async getModel() {
+        modelReads++;
+        return { materialById };
+      }
+    }, { getManifest: async () => manifest });
+    const host = (type, system = {}, flags = {}) => ({ type, system: { quantity: 1, ...system }, flags: { [MODULE_ID]: flags } });
+    const equipment = (value, system = {}, flags = {}) => host("equipment", { type: { value }, ...system }, flags);
+    const weapon = (baseItem, properties = [], flags = {}) => host("weapon", { type: { value: "martialM", baseItem }, properties }, flags);
+    const container = (identifier, flags = {}) => host("container", { identifier, properties: new Set(["mgc"]) }, flags);
+
+    for (const [qualifier, accepted, rejected] of [
+      ["spellcasting-focus", [
+        equipment("trinket", { properties: new Set(["foc"]) }),
+        host("loot", { type: { value: "gear" } }, { gearId: "kristall-fokusirovka" })
+      ], [equipment("wondrous"), equipment("wand", { properties: ["mgc"] })]],
+      ["grip-change", [weapon("longsword", ["lchGrip"])], [weapon("longsword", ["ver"])]],
+      ["metallic", [
+        weapon("longsword", [], { predominantMaterialId: "stal" }),
+        weapon("dagger", [], { predominantMaterialId: "material-168" }),
+        weapon("longsword", [], { upgradeCompatibilityTags: ["metallic"] })
+      ], [weapon("longsword", [], { predominantMaterialId: "derevo" }), weapon("longsword", [], { predominantMaterialName: "Металл" })]],
+      ["bow-or-crossbow", [
+        weapon("shortbow"), weapon("lightcrossbow")
+      ], [weapon("pistol", ["fir", "amm"]), weapon("sling", ["amm"])]],
+      ["closable-container", [
+        container("bag-of-holding"), container("chest"), container("custom-chest", { upgradeCompatibilityTags: ["closable-container"] })
+      ], [container("bucket"), container("custom-basket"), equipment("wondrous", {}, { upgradeCompatibilityTags: ["worn"] })]],
+      ["worn", [
+        equipment("wondrous", { identifier: "cloak-of-protection" }),
+        equipment("clothing", { properties: ["mgc"] }),
+        equipment("wondrous", {}, { heroDollSlots: ["neck"] })
+      ], [equipment("wondrous", { identifier: "pearl-of-power", equipped: true }), equipment("clothing")]]
+    ]) {
+      const entry = manifest.find(row => row.profile.compatibility.includes(qualifier));
+      assert.ok(entry, qualifier);
+      for (const data of accepted) {
+        const actor = new FakeActor();
+        const target = actor.addItem({ ...data, _id: "host" });
+        const upgrade = makeUpgrade(actor, { gearId: entry.normalizedGearId, flags: { [MODULE_ID]: { upgrade: entry.profile } } });
+        assert.equal(await service.installItemUpgrade(target, upgrade), upgrade, qualifier);
+        assert.equal(upgrade.system.container, target.id, qualifier);
+      }
+      for (const data of rejected) {
+        const actor = new FakeActor();
+        const target = actor.addItem({ ...data, _id: "host" });
+        const upgrade = makeUpgrade(actor, { gearId: entry.normalizedGearId, flags: { [MODULE_ID]: { upgrade: entry.profile } } });
+        await assert.rejects(service.installItemUpgrade(target, upgrade), e => e.code === "incompatible", qualifier);
+        assert.equal(target.updates.length + upgrade.updates.length + actor.created.length, 0, qualifier);
+      }
+    }
+    assert.equal(modelReads, 3);
+  } finally {
+    restore();
   }
 });
 

@@ -11,7 +11,7 @@ import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.396";
 import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.5.75";
 import { buildJournalRecordItemData } from "./data/journal-record-item.js?v=1.4.217-journal-record-items";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.6.8";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.6.9";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js?v=1.4.397";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { clearNamedIconCache } from "./data/compendium-utils.js?v=1.4.327";
@@ -129,9 +129,10 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js?v=1.5.88";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.377";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.6.8";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.6.9";
+import { SpikedTrimService, registerSpikedTrimHooks } from "./combat/spiked-trim-service.js?v=1.6.9";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.87";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.6.8";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.6.9";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.95";
@@ -407,7 +408,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.5.72";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.6.9";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.5.48";
 import { registerEquipmentBonusPatches } from "./integrations/equipment-bonuses.js?v=1.5.59";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
@@ -2049,6 +2050,7 @@ export class RebreyaMainModule {
       downtimeService: this.downtimeService
     });
     this.itemUpgradeService = new ItemUpgradeService(this);
+    this.spikedTrimService = new SpikedTrimService(this);
     this.itemUpgradeAutomationService = new ItemUpgradeAutomationService(this);
     this.calendarService = new CalendarService({
       groupContextService: this.groupContextService,
@@ -2542,6 +2544,7 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    this.spikedTrimService.registerCommand(this.privilegedMutationGateway);
     registerAntagonizeCommand(this.privilegedMutationGateway);
     registerGroupedCombatCommands(this);
     registerWeaponModCommands(this,{register:(command,definition)=>this.privilegedMutationGateway.registerCommand(command,definition)});
@@ -7817,7 +7820,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.6.8");
+      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.6.9");
       let app = null;
 
       if (!viewer && !newWindow && !templateUuid) {
@@ -8922,6 +8925,7 @@ Hooks.once("ready", async () => {
 
   try {
     registerCombatHooks(moduleApi);
+    registerSpikedTrimHooks(Hooks, moduleApi.spikedTrimService);
     installDnd5eRoundRecoveryOptimization();
     registerImplantAutomationHooks(moduleApi);
     if (releaseGroupedCombat) {

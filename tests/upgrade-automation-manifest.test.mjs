@@ -9,6 +9,7 @@ test("all 124 stable IDs have one explicit, source-backed decision", () => {
   assert.equal(rows.length, 124);
   assert.equal(new Set(rows.map(r => r.productId)).size, 124);
   assert.equal(rows.filter(r => r.decision === "existing-curse").length, 11);
+  assert.equal(getUpgradeAvailability("shipastaya-otdelka-dospekha", rows).decision, "event-implemented");
   assert.ok(rows.every(r => r.gearId === r.productId && r.reason && r.ruleSource.productId === r.productId));
   assert.deepEqual(rows.map(r => r.productId), rows.map(r => r.productId).sort());
   assert.ok(rows.filter(r => r.decision === "simple-candidate").every(r => !getUpgradeAvailability(r.productId, rows).available));

@@ -1,6 +1,6 @@
 import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.396";
 import { evaluateItemValue } from "./item-value.js";
-import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.5.98";
+import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.6.9";
 import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";
 
 /** Finite variant search inside the generator's remaining budget; no documents or writes. */

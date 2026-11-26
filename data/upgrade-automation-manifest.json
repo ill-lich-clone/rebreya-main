@@ -1457,12 +1457,12 @@
   },
   {
     "productId": "шипастая-отделка-доспеха",
-    "decision": "unavailable-complex",
-    "effectKind": "none",
-    "reason": "Отдельный ответный урон после каждой атаки с защитой от повторов.",
-    "owner": [],
-    "tests": [],
-    "capabilities": []
+    "decision": "event-implemented",
+    "effectKind": "retaliation",
+    "reason": "Экипированная отделка наносит атакующему 2 колющего урона после рукопашной атаки, включая промах.",
+    "owner": ["scripts/combat/spiked-trim-service.js"],
+    "tests": [{ "path": "tests/spiked-trim.test.mjs", "status": "existing" }],
+    "capabilities": ["damage"]
   },
   {
     "productId": "proklyat-e-molnienosnoy-reaktsii",

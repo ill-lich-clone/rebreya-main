@@ -1,8 +1,8 @@
 import { MODULE_ID } from "../constants.js";
 import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";
-import { loadUpgradeAutomationManifest, resolveUpgradeCatalogEntry } from "./upgrade-automation-manifest.js?v=1.6.8";
-import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.5.98";
-import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.5.29";
+import { loadUpgradeAutomationManifest, resolveUpgradeCatalogEntry } from "./upgrade-automation-manifest.js?v=1.6.9";
+import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.6.9";
+import { isRebreyaWearableClothingGearId, normalizeHeroDollSlotGroup } from "./item-classification.js?v=1.5.29";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js?v=1.5.29";
 import { loadWeaponModCatalog, getWeaponModCandidate } from "./weapon-mod-catalog.js?v=1.5.23";
 import { getWeaponModHostDescriptor, getWeaponModEffectiveHost, readWeaponMods, weaponModFlag, validateWeaponAttachmentInstallation, WeaponModRuleError } from "./weapon-mod-rules.js?v=1.5.23";
@@ -14,6 +14,7 @@ import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildWeaponRebuildQuote } from "./weapon-rebuild-rules.js?v=1.5.23";
 import { resolveWeaponModActivity, getWeaponModGrenadeCandidate, buildWeaponModGrenadeActivity, reconcileWeaponModActivities } from "./weapon-mod-activities.js?v=1.5.95";
+import { canonicalCatalogId } from "../shared/canonical-catalog-id.js";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";
@@ -24,6 +25,39 @@ const DEFAULT_UPGRADE_CAPACITY = 1;
 const MAX_UPGRADE_CAPACITY = 3;
 const WONDROUS_DND5E_TYPES = new Set(["wondrous", "staff", "rod", "wand"]);
 const WONDROUS_SOURCE_TYPES = new Set(["чудесный предмет", "посох", "жезл", "волшебная палочка"]);
+const REBREYA_FOCUS_GEAR_IDS = new Set([
+  "derevyannyy-posokh-fokusirovka-druidov", "kristall-fokusirovka", "posokh-fokusirovka", "sfera-fokusirovka",
+  "tisovaya-palochka-fokusirovka-druidov", "totem-fokusirovka-druidov", "vetochka-omely-fokusirovka-druidov",
+  "volshebnaya-palochka-fokusirovka", "zhezl-fokusirovka"
+]);
+const BOW_BASE_ITEMS = new Set(["shortbow", "longbow", "handcrossbow", "lightcrossbow", "heavycrossbow"]);
+const REBREYA_BOW_GEAR_IDS = new Set([
+  "arbalet-legkiy", "arbalet-ruchnoy", "arbalet-tyazhelyy", "dlinnyy-luk",
+  "kompozitnyy-luk", "korotkiy-luk", "luk-vsadnika", "mnogozaryadnyy-arbalet"
+]);
+const CLOSABLE_CONTAINER_IDENTIFIERS = new Set([
+  "backpack", "chest", "flask", "pouch", "sack", "saddlebags", "waterskin",
+  "bag-of-devouring", "bag-of-holding", "handy-haversack"
+]);
+// The material catalog classifies common metals by ore or source rather than by the generic metal subtype.
+const BASE_METAL_MATERIAL_IDS = new Set(["med", "olovo", "platina", "serebro", "stal", "svinets", "zhelezo", "zoloto"]);
+const WORN_SLOT_GROUPS = new Set(["head", "neck", "shoulders", "chest", "belt", "legs", "bracers", "ring"]);
+// dnd5e wondrous equipment has no separate body slot field. These are exact SRD identifiers for worn items.
+const WORN_WONDROUS_IDENTIFIERS = new Set([
+  "amulet-of-health", "amulet-of-proof-against-detection-and-location", "amulet-of-the-planes",
+  "belt-of-dwarvenkind", "belt-of-giant-strength", "boots-of-elvenkind", "boots-of-levitation",
+  "boots-of-speed", "boots-of-striding-and-springing", "boots-of-the-winterlands",
+  "bracers-of-archery", "bracers-of-defense", "brooch-of-shielding", "cape-of-the-mountebank", "circlet-of-blasting",
+  "cloak-of-arachnida", "cloak-of-displacement", "cloak-of-elvenkind", "cloak-of-invisibility",
+  "cloak-of-protection", "cloak-of-the-bat", "cloak-of-the-manta-ray", "eyes-of-charming", "eyes-of-minute-seeing",
+  "eyes-of-the-eagle", "gauntlets-of-ogre-power", "gloves-of-missile-snaring", "gloves-of-swimming-and-climbing",
+  "gloves-of-thievery", "goggles-of-night", "handy-haversack", "hat-of-disguise", "hat-of-many-spells",
+  "headband-of-intellect", "helm-of-brilliance", "helm-of-comprehending-languages", "helm-of-telepathy", "helm-of-teleportation",
+  "necklace-of-adaptation", "necklace-of-fireballs", "necklace-of-prayer-beads",
+  "periapt-of-health", "periapt-of-proof-against-poison", "periapt-of-wound-closure",
+  "robe-of-eyes", "robe-of-scintillating-colors", "robe-of-stars", "robe-of-the-archmagi", "robe-of-useful-items",
+  "slippers-of-spider-climbing", "winged-boots", "wings-of-flying"
+]);
 
 function getProperty(source, path) {
   return globalThis.foundry?.utils?.getProperty?.(source, path)
@@ -101,6 +135,16 @@ function getItemId(item) {
 function readModuleFlag(document, key) {
   return document?.getFlag?.(MODULE_ID, key)
     ?? getProperty(document, `flags.${MODULE_ID}.${key}`);
+}
+
+function upgradeHostHasProperty(item, property) {
+  const properties = getProperty(item, "system.properties");
+  return properties?.has?.(property) === true || (Array.isArray(properties) && properties.includes(property));
+}
+
+function isSpellcastingFocus(item) {
+  return (["equipment", "weapon"].includes(item?.type) && upgradeHostHasProperty(item, "foc"))
+    || (item?.type === "loot" && REBREYA_FOCUS_GEAR_IDS.has(readModuleFlag(item, "gearId")));
 }
 
 function getItemQuantity(item) {
@@ -190,7 +234,9 @@ export function getItemUpgradeCategory(hostItem) {
     return "outerwear";
   }
 
-  if (WONDROUS_DND5E_TYPES.has(typeValue) || WONDROUS_SOURCE_TYPES.has(itemType)) {
+  if (WONDROUS_DND5E_TYPES.has(typeValue) || WONDROUS_SOURCE_TYPES.has(itemType)
+    || isSpellcastingFocus(hostItem)
+    || (type === "container" && upgradeHostHasProperty(hostItem, "mgc"))) {
     return "wondrous";
   }
 
@@ -241,19 +287,36 @@ function buildHostStatePatch(hostItem, installedEntries, capacity = null) {
   };
 }
 
-export function buildUpgradeHostDescriptor(item) {
+export function buildUpgradeHostDescriptor(item, { material } = {}) {
   const category = getItemUpgradeCategory(item);
   const tags = new Set(category === "wondrous" ? ["wondrous-item"] : category ? [category] : []);
   const type = getProperty(item, "system.type.value");
+  const identifier = getProperty(item, "system.identifier");
   if (["light", "medium", "heavy"].includes(type)) tags.add("armor");
   if (type === "shield") tags.add("shield");
   if (item?.type === "weapon") {
     if (["simpleM", "martialM"].includes(type)) tags.add("melee");
     if (["simpleR", "martialR"].includes(type)) tags.add("ranged");
+    if (upgradeHostHasProperty(item, "lchGrip")) tags.add("grip-change");
+    const baseItem = cleanText(getProperty(item, "system.type.baseItem")).toLowerCase();
+    if (BOW_BASE_ITEMS.has(baseItem) || REBREYA_BOW_GEAR_IDS.has(readModuleFlag(item, "gearId"))) tags.add("bow-or-crossbow");
   }
-  // Unrepresented material/shape qualifiers need explicit canonical metadata, never a name guess.
+  if (isSpellcastingFocus(item)) {
+    tags.add("wondrous-item");
+    tags.add("spellcasting-focus");
+  }
+  if (item?.type === "equipment" && type === "clothing" && upgradeHostHasProperty(item, "mgc")) tags.add("wondrous-item");
+  if (item?.type === "container" && CLOSABLE_CONTAINER_IDENTIFIERS.has(identifier)) tags.add("closable-container");
+  if (BASE_METAL_MATERIAL_IDS.has(material?.id) || cleanText(material?.subtype).toLowerCase() === "металл") tags.add("metallic");
+
   const explicit = readModuleFlag(item, "upgradeCompatibilityTags");
   if (Array.isArray(explicit)) for (const tag of explicit) tags.add(tag);
+  if (tags.has("wondrous-item")) {
+    const bodySlot = normalizeHeroDollSlotGroup(readModuleFlag(item, "itemSlot"))
+      || normalizeHeroDollSlotGroup(readModuleFlag(item, "heroDollSlots"));
+    if (type === "clothing" || WORN_SLOT_GROUPS.has(bodySlot) || WORN_WONDROUS_IDENTIFIERS.has(identifier)) tags.add("worn");
+  }
+
   return { id: getItemId(item), compatibilityTags: [...tags], capacity: getItemUpgradeHostState(item).capacity,
     quantity: Number(getProperty(item, "system.quantity") ?? 1), isEquipped: isItemEquipped(item),
     isAttuned: getProperty(item, "system.attuned") === true, isHeld: isItemEquipped(item) && getItemHeldHands(item).length > 0,
@@ -578,6 +641,14 @@ export class ItemUpgradeService {
     return this.setItemUpgradeCapacity(hostItem, capacity);
   }
 
+  async #readHostMaterial(item) {
+    const explicit = readModuleFlag(item, "upgradeCompatibilityTags");
+    const materialId = cleanText(readModuleFlag(item, "predominantMaterialId"));
+    if (!materialId || (Array.isArray(explicit) && explicit.includes("metallic"))) return null;
+    const model = await this.moduleApi?.getModel?.();
+    return model?.materialById?.get(materialId) ?? model?.materialById?.get(canonicalCatalogId(materialId)) ?? null;
+  }
+
   async installItemUpgrade(hostItem, upgradeItem, options = {}) {
     const actor = getItemActor(hostItem);
     if (!actor?.isOwner) {
@@ -602,7 +673,10 @@ export class ItemUpgradeService {
     if (options.capacity != null && options.capacity !== capacity) throw new UpgradeRuleError("capacity");
     const previousHost = readModuleFlag(upgradeItem, INSTALLED_UPGRADE_FLAG)?.hostItemId;
     if (previousHost && previousHost !== getItemId(hostItem)) throw new UpgradeRuleError("slot-conflict");
-    const { slotIndex } = validateUpgradeInstallation(buildUpgradeHostDescriptor(hostItem), installed,
+    const tags = projection.profile?.compatibility;
+    const material = !projection.legacyOverride && Array.isArray(tags) && tags.includes("metallic")
+      ? await this.#readHostMaterial(hostItem) : null;
+    const { slotIndex } = validateUpgradeInstallation(buildUpgradeHostDescriptor(hostItem, { material }), installed,
       { ...projection, slotIndex: options.slotIndex }, { allowManual: !projection.legacyOverride });
     const choices = validateUpgradeChoices(projection.sourceId, options.choices ?? projection.choices);
 
