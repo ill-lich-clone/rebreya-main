@@ -919,6 +919,10 @@ export function registerCombatHooks(moduleApi) {
       }
     });
 
+    Hooks.on("dnd5e.preApplyDamage", (actor, amount, updates, options) => {
+      moduleApi.combatAttackService.captureMidiDeadlyDamage?.(actor, amount, updates, options);
+    });
+
     Hooks.on("dnd5e.applyDamage", (actor, amount, options) => {
       try {
         return moduleApi.combatAttackService.applyDnd5eApplyDamage(

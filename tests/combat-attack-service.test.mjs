@@ -869,6 +869,78 @@ test("deadly uses current character level or monster challenge plus weapon and r
   } finally { globalThis.fromUuidSync = oldFromUuid; }
 });
 
+test("deadly executes a foreign synthetic target through MIDI's GM damage hooks only", async () => {
+  const weapon = makeWeaponItem({ lichWeaponPropertyValues: { deadly: 50000 } });
+  const source = makeActor([weapon], { id: "player-character" });
+  const target = makeActor([], { id: "dummy" });
+  const player = { id: "igor", isGM: false };
+  const gm = { id: "gm", isGM: true };
+  const hpPath = "system.attributes.hp.value";
+  target.uuid = "Scene.scene.Token.dummy.Actor.dummy";
+  target.token = { delta: { canUserModify: user => user.isGM } };
+  source.canUserModify = user => user === player;
+  const activity = { type: "attack", item: weapon };
+  const origin = { uuid: "ChatMessage.attack", author: player, getAssociatedActivity: () => activity };
+  const options = { midi: { applyDamage: true, isHit: true, sourceActorUuid: source.uuid, itemCardUuid: origin.uuid }, origin };
+  const hooks = new Map();
+  const previous = { Hooks: globalThis.Hooks, game: globalThis.game, fromUuidSync: globalThis.fromUuidSync };
+  const messageCount = ChatMessage.messages.length;
+  const update = target.update.bind(target);
+  let refusedUpdates = 0;
+  target.update = async patch => {
+    if (!target.token.delta.canUserModify(game.user)) {
+      refusedUpdates++;
+      throw new Error("User lacks permission to update ActorDelta");
+    }
+    return update(patch);
+  };
+
+  Object.assign(globalThis, {
+    Hooks: { on: (name, handler) => hooks.set(name, handler) },
+    game: { user: gm },
+    fromUuidSync: uuid => uuid === target.uuid ? target : null
+  });
+  try {
+    registerCombatHooks({ combatAttackService: new CombatAttackService({}) });
+    const apply = async (damageOptions, newHp, { applyDamage = true } = {}) => {
+      target.system.attributes.hp = { value: 20, max: 20 };
+      const updates = { [hpPath]: newHp };
+      hooks.get("dnd5e.preApplyDamage")?.(target, 1, updates, damageOptions);
+      if (!applyDamage) return;
+      await target.update(updates);
+      hooks.get("dnd5e.applyDamage")(target, 1, damageOptions);
+      await new Promise(resolve => setImmediate(resolve));
+    };
+    await apply({ ...options, midi: { ...options.midi, isHit: false } }, 19);
+    assert.equal(target.system.attributes.hp.value, 19);
+    await apply(options, 20);
+    assert.equal(target.system.attributes.hp.value, 20);
+    await apply({ ...options, origin: { ...origin, author: { id: "other" } } }, 19);
+    assert.equal(target.system.attributes.hp.value, 19);
+    await apply(options, 19, { applyDamage: false });
+    assert.equal(target.system.attributes.hp.value, 20);
+
+    game.user = player;
+    const complete = hooks.get("midi-qol.RollComplete");
+    const hit = id => ({ id, activity, damageList: [{ actorUuid: target.uuid, wasHit: true, hpDamage: 1 }] });
+    complete(hit("player-before-gm"));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(refusedUpdates, 0);
+
+    game.user = gm;
+    await apply(options, 19);
+    game.user = player;
+    complete(hit("player-after-gm"));
+    assert.equal(target.system.attributes.hp.value, 0);
+    assert.equal(target.updateCalls.filter(patch => patch[hpPath] === 0).length, 1);
+    assert.equal(ChatMessage.messages.length, messageCount + 1);
+    assert.match(ChatMessage.messages.at(-1).content, /Смертельное 50000/u);
+  } finally {
+    Object.assign(globalThis, previous);
+    ChatMessage.messages.length = messageCount;
+  }
+});
+
 function addRepeatingShotEffect(item, { disabled = false, suppressed = false } = {}) {
   const effect = {
     name: "Повторный выстрел",

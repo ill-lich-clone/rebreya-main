@@ -330,7 +330,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.91";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.6.5";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.6.7";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.96";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";
@@ -338,7 +338,7 @@ import { createGroupedCombatEffects } from "./integrations/grouped-combat-effect
 import { registerGroupedCombatRuntime, runStartCombatMacro, runEndCombatTurnMacro } from "./integrations/grouped-combat-runtime.js?v=1.5.96";
 import { installDnd5eRoundRecoveryOptimization } from "./integrations/dnd5e-round-recovery.js?v=1.5.90";
 import { planRebreyaCombatAutomation } from "./combat/grouped-turn-automation.js?v=1.5.87";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.6.5";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.6.7";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js?v=1.4.397";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.6.3";
 import { EquipmentSizeService } from "./application/equipment-size-service.js?v=1.6.4";

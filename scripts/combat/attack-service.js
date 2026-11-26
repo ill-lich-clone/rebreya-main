@@ -930,6 +930,7 @@ export class CombatAttackService {
     this.moduleApi = moduleApi;
     this._activityAttackOutcomes = new Map();
     this._pendingDeadlyExecutions = new Map();
+    this._midiDeadlyDamage = new WeakMap();
     this._processedDeadlyWorkflowTargets = new Set();
     this._reactionTriggerSequence = 0;
     this._reactionTriggerContexts = new Map();
@@ -3846,6 +3847,11 @@ export class CombatAttackService {
     return true;
   }
 
+  #canUpdateDeadlyTarget(actor, user) {
+    const document = actor.token?.delta ?? actor;
+    return document.canUserModify?.(user, "update") ?? (user === game.user && actor.isOwner !== false);
+  }
+
   #applyDeadlyExecution(actor, deadlyValue, context = {}) {
     if (!(actor instanceof Actor)) {
       return false;
@@ -3863,6 +3869,10 @@ export class CombatAttackService {
 
     const currentHp = toNumber(foundry.utils.getProperty(actor, "system.attributes.hp.value"), NaN);
     if (!Number.isFinite(currentHp) || currentHp <= 0 || currentHp > deadly) {
+      return false;
+    }
+
+    if (!this.#canUpdateDeadlyTarget(actor, game.user)) {
       return false;
     }
 
@@ -5307,12 +5317,48 @@ export class CombatAttackService {
     return true;
   }
 
+  captureMidiDeadlyDamage(actor, amount, updates, options = {}) {
+    const midi = options?.midi;
+    if (!game.user?.isGM || midi?.applyDamage !== true || midi.isHit !== true || !midi.itemCardUuid) {
+      return;
+    }
+
+    this._midiDeadlyDamage.delete(options);
+    const hpBefore = actor?.system?.attributes?.hp?.value;
+    const hpAfter = updates?.["system.attributes.hp.value"];
+    if (amount > 0 && Number.isFinite(hpAfter) && hpAfter > 0 && hpBefore > hpAfter) {
+      this._midiDeadlyDamage.set(options, { actor, hpBefore });
+    }
+  }
+
+  #resolveMidiDeadlyItem(actor, damage, options) {
+    if (damage?.actor !== actor || actor.system?.attributes?.hp?.value >= damage.hpBefore) {
+      return null;
+    }
+
+    const card = options.origin;
+    const author = card?.author;
+    if (card?.uuid !== options.midi.itemCardUuid || !author || this.#canUpdateDeadlyTarget(actor, author)) {
+      return null;
+    }
+
+    const activity = card.getAssociatedActivity?.();
+    const source = activity?.item?.actor;
+    if (this.#isWeaponAttackActivity(activity) && source?.uuid === options.midi.sourceActorUuid
+      && source?.canUserModify?.(author, "update")) {
+      return activity.item;
+    }
+    return null;
+  }
+
   applyDnd5eApplyDamage(actor, amount, options = {}) {
     if (!(actor instanceof Actor)) {
       return true;
     }
 
     try {
+      const midiDamage = this._midiDeadlyDamage.get(options);
+      this._midiDeadlyDamage.delete(options);
       const safeAmount = toNumber(amount, 0);
       if (safeAmount <= 0) {
         return true;
@@ -5323,12 +5369,14 @@ export class CombatAttackService {
         ?? options?.sourceItemUuid
         ?? ""
       ).trim();
-      if (!sourceItemUuid) {
+      const sourceItem = sourceItemUuid
+        ? this.#resolveItemFromUuid(sourceItemUuid)
+        : this.#resolveMidiDeadlyItem(actor, midiDamage, options);
+      if (!sourceItemUuid && !sourceItem) {
         return true;
       }
 
       let deadly = 0;
-      const sourceItem = this.#resolveItemFromUuid(sourceItemUuid);
       if (isWeaponItem(sourceItem)) {
         const automation = this.#getLichAutomationState(sourceItem);
         deadly = Math.max(0, Math.floor(toNumber(automation.deadly, 0)));
