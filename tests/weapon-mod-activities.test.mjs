@@ -1,3 +1,4 @@
+import { registerCombatHooks } from "../scripts/combat/hooks.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {makeCatalog,makeInstalled,gear,optionalModule,required,makeWeaponModMutationFixture,makeItem} from "./helpers/weapon-mod-fixture.mjs";
@@ -60,8 +61,10 @@ test("flashlight keeps foreign Token light and uses one separately owned native 
   const fx=await makeWeaponModMutationFixture({quantity:1}),previousScenes=globalThis.game?.scenes;try{
     fx.component.data.flags=makeItem("fonarik").flags;await fx.service.installWeaponAttachment(fx.host,fx.component,{operationId:"light",mountId:"side-1"});
     const sourceLight={bright:5,dim:10,angle:360,color:"#ff0000"},scene={id:"s",uuid:"Scene.s",grid:{size:100,units:"ft"},lights:{contents:[]}},token={uuid:"Scene.s.Token.t",id:"t",actor:fx.group,parent:scene,x:100,y:200,width:1,height:1,rotation:45,elevation:0,light:structuredClone(sourceLight)};
-    scene.createEmbeddedDocuments=async(type,rows)=>{assert.equal(type,"AmbientLight");const result=rows.map(row=>{const doc={...structuredClone(row),id:row._id,toObject:()=>structuredClone(Object.fromEntries(Object.entries(doc).filter(([,value])=>typeof value!=="function"))),async update(patch){Object.assign(doc,structuredClone(patch));},async delete(){scene.lights.contents=scene.lights.contents.filter(value=>value!==doc);}};scene.lights.contents.push(doc);return doc;});return result;};
-    const resolve=globalThis.fromUuid;globalThis.fromUuid=async uuid=>uuid===token.uuid?token:resolve(uuid);game.scenes={contents:[scene]};
+    scene.createEmbeddedDocuments=async(type,rows)=>{assert.equal(type,"AmbientLight");const result=rows.map(row=>{const doc={...structuredClone(row),id:row._id,toObject:()=>structuredClone(Object.fromEntries(Object.entries(doc).filter(([,value])=>typeof value!=="function"))),async update(patch){Object.assign(doc,structuredClone(patch));},async delete(){scene.lights.contents=scene.lights.contents.filter(value=>value!==doc);}};Object.defineProperty(doc,"parent",{value:scene});scene.lights.contents.push(doc);return doc;});return result;};
+    let tokenExists=true;const resolve=globalThis.fromUuid;globalThis.fromUuid=async uuid=>uuid===token.uuid?(tokenExists?token:null):resolve(uuid);scene.lights.get=id=>scene.lights.contents.find(light=>light.id===id);
+    let unrelatedLightReads=0;
+    game.scenes={contents:[scene,{lights:[{getFlag(){unrelatedLightReads++;}}]}]};
     const projection=await fx.service.getWeaponModsProjection(fx.host),activity=build({hostId:fx.host.id,mods:projection}).find(activity=>activity.flags[NS].weaponModActivity.action==="flashlight-toggle");fx.host.system.activities={[activity._id]:activity};
     // Boundary fixture exposes native Collection.get after source writes.
     const attachGet=()=>Object.defineProperty(fx.host.system.activities,"get",{enumerable:false,configurable:true,value:id=>fx.host.system.activities[id]});attachGet();
@@ -70,10 +73,32 @@ test("flashlight keeps foreign Token light and uses one separately owned native 
     const payload={actorUuid:fx.group.uuid,hostItemId:fx.host.id,childItemId:fx.component.id,activityId:activity._id,operationId:"on",decision:{kind:"light-token",tokenUuid:token.uuid}};
     await fx.service.useWeaponModActivity(payload,{sender:fx.sender});assert.equal(scene.lights.contents.length,1);let light=scene.lights.contents[0];assert.deepEqual([light.config.bright,light.config.dim,light.config.angle,light.rotation],[30,60,60,45]);assert.deepEqual(token.light,sourceLight);
     light.config.color="#ffee00";light.flags.foreign={kept:1};
-    token.x=300;token.rotation=90;await automation.syncActor(fx.group);light=scene.lights.contents[0];assert.equal(light.x,350);assert.equal(light.rotation,90);assert.equal(scene.lights.contents.length,1);assert.equal(light.config.color,"#ffee00");assert.equal(light.flags.foreign.kept,1);
-    token.light.bright=120;attachGet();await fx.service.useWeaponModActivity({...payload,operationId:"off",decision:null},{sender:fx.sender});assert.equal(scene.lights.contents.length,0);assert.equal(token.light.bright,120);
-    attachGet();await fx.service.useWeaponModActivity({...payload,operationId:"on-again"},{sender:fx.sender});assert.equal(scene.lights.contents.length,1);
-    token.actor=fx.hero;await automation.syncActor(fx.hero);assert.equal(scene.lights.contents.length,0);assert.equal(token.light.bright,120);
+    const previousHooks=globalThis.Hooks;
+    const hooks=new Map();
+    globalThis.Hooks={on(name,callback){const list=hooks.get(name)??[];list.push(callback);hooks.set(name,list);}};
+    const emit=async(name,...args)=>{for(const hook of hooks.get(name)??[]) await hook(...args);};
+    try {
+      registerCombatHooks(fx.api);
+      token.x=300;token.rotation=90;await emit("updateToken",token,{x:300,rotation:90},{});light=scene.lights.contents[0];assert.equal(light.x,350);assert.equal(light.rotation,90);assert.equal(scene.lights.contents.length,1);assert.equal(light.config.color,"#ffee00");assert.equal(light.flags.foreign.kept,1);
+      token.light.bright=120;attachGet();await fx.service.useWeaponModActivity({...payload,operationId:"off",decision:null},{sender:fx.sender});assert.equal(scene.lights.contents.length,0);assert.equal(token.light.bright,120);
+      attachGet();await fx.service.useWeaponModActivity({...payload,operationId:"on-again"},{sender:fx.sender});assert.equal(scene.lights.contents.length,1);
+      token.actor=fx.hero;
+      await emit("updateToken",token,{actorId:fx.hero.id},{});
+      assert.equal(scene.lights.contents.length,0);
+      assert.equal(token.light.bright,120);
+      token.actor=fx.group;
+      await emit("updateToken",token,{actorId:fx.group.id},{});
+      assert.equal(scene.lights.contents.length,1);
+      tokenExists=false;
+      await emit("deleteToken",token);
+      assert.equal(scene.lights.contents.length,0);
+      tokenExists=true;
+      await emit("createToken",token);
+      assert.equal(scene.lights.contents.length,1);
+      await fx.service.removeWeaponAttachment(fx.host,fx.component,{operationId:"remove-light"});
+      assert.equal(scene.lights.contents.length,0);
+      assert.equal(unrelatedLightReads,1);
+    } finally { globalThis.Hooks=previousHooks; }
   }finally{if(globalThis.game)game.scenes=previousScenes;fx.restore();}
 });
 

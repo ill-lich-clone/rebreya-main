@@ -132,7 +132,7 @@ import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.6.9";
 import { SpikedTrimService, registerSpikedTrimHooks } from "./combat/spiked-trim-service.js?v=1.6.9";
 import { registerWeaponModCommands } from "./application/weapon-mod-mutation-commands.js?v=1.5.87";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.6.9";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.6.12";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.384";
 import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.5.95";
@@ -331,7 +331,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.91";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.6.7";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.6.12";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.96";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";
@@ -550,7 +550,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.6.11";
+const MODULE_STYLE_VERSION = "1.6.12";
 const REBREYA_GROUPED_COMBAT_ENABLED = false; // Temporary native NEXT comparison.
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;

@@ -247,6 +247,17 @@ export function registerCombatHooks(moduleApi) {
     for (const event of ["updateActor", "updateItem", "updateActiveEffect"]) {
       Hooks.on(event, (document, changed, options) => run(simpleUpgrades.handleChanged(document, options, changed)));
     }
+    Hooks.on("createToken", token => run(simpleUpgrades.handleWeaponModLightTokenChange?.(token)));
+    Hooks.on("updateToken", (token, changed = {}) => {
+      const ownerChanged = Object.hasOwn(changed, "actorId") || Object.hasOwn(changed, "actorLink");
+      if (ownerChanged || ["x", "y", "rotation", "elevation"].some(key => Object.hasOwn(changed, key))) {
+        return run(simpleUpgrades.handleWeaponModLightTokenChange?.(token, { ownerChanged }));
+      }
+    });
+    Hooks.on("deleteToken", token => run(simpleUpgrades.handleWeaponModLightTokenChange?.(token, { deleted: true })));
+    for (const event of ["userConnected", "updateUser"]) {
+      Hooks.on(event, () => simpleUpgrades.invalidateWeaponModLightsOnAuthorityLoss?.());
+    }
   }
 
   if (curseUpgrades) {
@@ -388,17 +399,14 @@ export function registerCombatHooks(moduleApi) {
     }
     Hooks.on("createToken", (tokenDocument) => {
       index.refreshToken(tokenDocument);
-      simpleUpgrades?.requestSync?.(tokenDocument?.actor,"token-light")?.catch(error=>console.error(`${MODULE_ID} | Weapon mod light sync failed.`,error));
     });
     Hooks.on("updateToken", (tokenDocument,changed,options) => {
       index.refreshToken(tokenDocument);
       moduleApi.combatAttackService?.noteChargeMovement?.(tokenDocument, changed);
       moduleApi.combatAttackService?.handleWeaponModTokenMove?.(tokenDocument,changed,options)?.catch(error=>console.error(`${MODULE_ID} | Weapon mod movement failed.`,error));
-      if(["x","y","rotation","elevation","actorId","actorLink"].some(key=>Object.hasOwn(changed??{},key)))simpleUpgrades?.requestSync?.(tokenDocument?.actor,"token-light")?.catch(error=>console.error(`${MODULE_ID} | Weapon mod light sync failed.`,error));
     });
     Hooks.on("deleteToken", (tokenDocument) => {
       index.removeToken(tokenDocument?.uuid ?? tokenDocument?.document?.uuid ?? tokenDocument?.id);
-      simpleUpgrades?.requestSync?.(tokenDocument?.actor,"token-light")?.catch(error=>console.error(`${MODULE_ID} | Weapon mod light sync failed.`,error));
     });
     Hooks.on("updateUser", () => index.rebuildScene(globalThis.canvas?.scene));
   }

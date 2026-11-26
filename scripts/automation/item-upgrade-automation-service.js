@@ -27,6 +27,7 @@ const nativeSnapshot=system=>({weight:system.weight?.value,strength:system.stren
 /** Owns simple passive and roll contributions; installed links remain owned by ItemUpgradeService. */
 export class ItemUpgradeAutomationService {
   #startupSyncs = new Set();
+  #weaponModLights = null;
 
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi; this.options = options; this.manifest = null; this.pending = new Map(); this.hostAdapterReady = false;
@@ -85,7 +86,7 @@ export class ItemUpgradeAutomationService {
     }
     return result;
   }
-  requestSync(actorOrUuid, reason = "changed", startupLights) {
+  requestSync(actorOrUuid) {
     const uuid = typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid;
     if (!uuid || !this.isAuthority()) return Promise.resolve();
     if (!this.manifest) {
@@ -98,20 +99,19 @@ export class ItemUpgradeAutomationService {
     state.promise = this.moduleApi.worldMutationCoordinator.run(`simple-upgrades:${uuid}`, async () => {
       do {
         state.dirty = false;
-        await this.syncActor(uuid, { reason, lights: startupLights });
-        startupLights = undefined;
+        await this.syncActor(uuid);
       } while (state.dirty);
     }).finally(() => { if (this.pending.get(uuid) === state) this.pending.delete(uuid); });
     this.pending.set(uuid, state);
     return state.promise;
   }
-  async syncActor(actorOrUuid, { lights } = {}) {
+  async syncActor(actorOrUuid) {
     if (!this.manifest || !this.isAuthority()) return;
     const uuid = typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid;
     const actor = await (this.options.readActor?.(uuid) ?? globalThis.fromUuid?.(uuid));
     if (!actor?.items || !actor.createEmbeddedDocuments || !this.isAuthority()) return;
     await this.syncWeaponModActivities(actor);
-    await this.syncWeaponModLights(actor, lights);
+    await this.syncWeaponModLights(actor);
     const desired = new Map(this.project(actor).contributions.filter(c => c.scope === "actor").map(c => [c.key, {
       name: actor.items.get?.(c.upgradeItemId)?.name ?? c.sourceId, type: "base", transfer: false, disabled: false,
       changes: [{ key: c.path, mode: c.mode??2, value: String(c.value), priority: c.priority??20 }],
@@ -150,35 +150,82 @@ export class ItemUpgradeAutomationService {
       await host.update({"system.==activities":after},{rebreyaSimpleUpgradeSync:true,render:false});
     }
   }
-  *#managedWeaponModLights() {
+  #getWeaponModLightIndex() {
+    if (this.#weaponModLights) return this.#weaponModLights;
+    const byActor = new Map();
     for (const scene of values(globalThis.game?.scenes)) for (const light of values(scene.lights)) {
       const marker = getFlag(light, "weaponModLight");
       if (!marker?.actorUuid) continue;
       const expectedId = createStableGearDocumentId(`weapon-mod-light:${marker.actorUuid}:${marker.hostItemId}:${marker.childItemId}:${marker.tokenUuid}`);
-      if (light.id === expectedId) yield { light, marker };
+      if (light.id !== expectedId) continue;
+      if (!byActor.has(marker.actorUuid)) byActor.set(marker.actorUuid, new Map());
+      byActor.get(marker.actorUuid).set(light.id, { light, marker: { ...marker } });
+    }
+    this.#weaponModLights = byActor;
+    return byActor;
+  }
+
+  invalidateWeaponModLightsOnAuthorityLoss() {
+    if (!this.isAuthority()) this.#weaponModLights = null;
+  }
+
+  #readIndexedWeaponModLight({ light, marker }) {
+    const collection = light.parent?.lights;
+    const current = collection?.get ? collection.get(light.id) : light;
+    if (!current) return null;
+    const currentMarker = getFlag(current, "weaponModLight");
+    return currentMarker?.actorUuid === marker.actorUuid && currentMarker.hostItemId === marker.hostItemId
+      && currentMarker.childItemId === marker.childItemId && currentMarker.tokenUuid === marker.tokenUuid ? current : null;
+  }
+
+  async #removeWeaponModLight(lights, { light, marker }, current) {
+    if (!this.isAuthority()) return;
+    if (current) await current.delete({ rebreyaSimpleUpgradeSync: true });
+    lights.delete(light.id);
+    if (!lights.size && this.#weaponModLights?.get(marker.actorUuid) === lights) {
+      this.#weaponModLights.delete(marker.actorUuid);
     }
   }
 
   async #indexStartupWeaponModLights() {
-    const byActor = new Map();
+    const actors = new Map();
     const tokens = new Map();
-    for (const row of this.#managedWeaponModLights()) {
-      const { light, marker } = row;
-      if (!this.isAuthority()) break;
-      if (!tokens.has(marker.tokenUuid)) tokens.set(marker.tokenUuid, await globalThis.fromUuid?.(marker.tokenUuid));
-      const actor = tokens.get(marker.tokenUuid)?.actor;
-      if (actor?.uuid !== marker.actorUuid) {
-        if (!this.isAuthority()) break;
-        await light.delete({ rebreyaSimpleUpgradeSync: true });
-        continue;
+    for (const [actorUuid, lights] of this.#getWeaponModLightIndex()) {
+      for (const row of lights.values()) {
+        if (!this.isAuthority()) return actors;
+        const { tokenUuid } = row.marker;
+        if (!tokens.has(tokenUuid)) tokens.set(tokenUuid, await globalThis.fromUuid?.(tokenUuid));
+        const actor = tokens.get(tokenUuid)?.actor;
+        if (actor?.uuid === actorUuid) actors.set(actorUuid, actor);
+        else await this.#removeWeaponModLight(lights, row, row.light);
       }
-      if (!byActor.has(actor.uuid)) byActor.set(actor.uuid, { actor, lights: [] });
-      byActor.get(actor.uuid).lights.push(row);
     }
-    return byActor;
+    return actors;
   }
 
-  async syncWeaponModLights(actor, managedLights = this.#managedWeaponModLights()){
+  async handleWeaponModLightTokenChange(token, { deleted = false, ownerChanged = false } = {}) {
+    if (!this.isAuthority() || !token?.uuid) return;
+    if (this.manifest && (deleted || ownerChanged)) {
+      // Synthetic Actors can disappear with their Token. Clean up by the recorded Token UUID.
+      for (const [actorUuid, lights] of this.#getWeaponModLightIndex()) {
+        const previous = [...lights.values()].filter(({ marker }) => marker.tokenUuid === token.uuid && marker.actorUuid !== (deleted ? null : token.actor?.uuid));
+        if (!previous.length) continue;
+        await this.moduleApi.worldMutationCoordinator.run(`simple-upgrades:${actorUuid}`, async () => {
+          const current = await globalThis.fromUuid?.(token.uuid);
+          for (const row of previous) {
+            if (current?.actor?.uuid === actorUuid || lights.get(row.light.id) !== row) continue;
+            await this.#removeWeaponModLight(lights, row, this.#readIndexedWeaponModLight(row));
+          }
+        });
+      }
+    }
+    if (!deleted) await this.requestSync(token.actor);
+  }
+
+  async syncWeaponModLights(actor){
+    if (!this.isAuthority()) return;
+    const byActor = this.#getWeaponModLightIndex();
+    let managedLights = byActor.get(actor.uuid);
     const desired=new Map();
     for(const host of values(actor.items)){
       if(!getFlag(host,"weaponMods"))continue;
@@ -194,17 +241,15 @@ export class ItemUpgradeAutomationService {
           flags:{[MODULE_ID]:{weaponModLight:{actorUuid:actor.uuid,hostItemId:host.id,childItemId:mod.itemId,tokenUuid:token.uuid}}}}});
       }
     }
-    for(const { light, marker } of managedLights){
-      if (light.parent?.lights?.get && light.parent.lights.get(light.id) !== light) continue;
-      if(marker.actorUuid!==actor.uuid){
-        const linkedToken=await globalThis.fromUuid?.(marker.tokenUuid);
-        if(linkedToken?.actor?.uuid===marker.actorUuid)continue;
-        if(!this.isAuthority())return;
-        await light.delete({rebreyaSimpleUpgradeSync:true});continue;
+    for(const row of managedLights?.values() ?? []){
+      const light = this.#readIndexedWeaponModLight(row);
+      if (!light) {
+        managedLights.delete(row.light.id);
+        continue;
       }
       const wanted=desired.get(light.id);desired.delete(light.id);
       if(!this.isAuthority())return;
-      if(!wanted){await light.delete({rebreyaSimpleUpgradeSync:true});continue;}
+      if(!wanted){await this.#removeWeaponModLight(managedLights, row, light);continue;}
       if(wanted.token.actor?.uuid!==actor.uuid)continue;
       const current=light.toObject(),data=wanted.data,patch={};
       for(const field of ["x","y","elevation","rotation","hidden"])if(current[field]!==data[field])patch[field]=data[field];
@@ -214,12 +259,21 @@ export class ItemUpgradeAutomationService {
     for(const {scene,token,data} of desired.values()){
       if(!this.isAuthority())return;
       if(token.actor?.uuid!==actor.uuid)continue;
-      try{await scene.createEmbeddedDocuments("AmbientLight",[data],{keepId:true,rebreyaSimpleUpgradeSync:true});}
-      catch(error){
-        const observed=values(scene.lights).find(light=>light.id===data._id);
-        if(!observed || profileSignature(getFlag(observed,"weaponModLight"))!==profileSignature(data.flags[MODULE_ID].weaponModLight))throw error;
+      const marker = data.flags[MODULE_ID].weaponModLight;
+      let light;
+      try {
+        [light] = await scene.createEmbeddedDocuments("AmbientLight", [data], { keepId: true, rebreyaSimpleUpgradeSync: true });
+      } catch (error) {
+        light = scene.lights.get ? scene.lights.get(data._id) : values(scene.lights).find(candidate => candidate.id === data._id);
+        if (!light || profileSignature(getFlag(light, "weaponModLight")) !== profileSignature(marker)) throw error;
+      }
+      if (light) {
+        managedLights ??= new Map();
+        managedLights.set(light.id, { light, marker });
+        byActor.set(actor.uuid, managedLights);
       }
     }
+    if (!managedLights?.size) byActor.delete(actor.uuid);
   }
   async clearExpiredAimEffects(actor) {
     if (!this.isAuthority()) return;
@@ -440,18 +494,19 @@ export class ItemUpgradeAutomationService {
     this.weaponModCatalog = weaponModCatalog;
     this.manifest = manifest;
     this.registerItemDataPatch();
-    const lightsByActor = this.isAuthority() ? await this.#indexStartupWeaponModLights() : new Map();
+    this.#weaponModLights = null;
+    const lightActors = this.isAuthority() ? await this.#indexStartupWeaponModLights() : new Map();
     const actors = new Map(values(globalThis.game?.actors).map(actor => [actor.uuid, actor]));
-    for (const [uuid, { actor }] of lightsByActor) if (!actors.has(uuid)) actors.set(uuid, actor);
+    for (const [uuid, actor] of lightActors) if (!actors.has(uuid)) actors.set(uuid, actor);
     for (const [uuid, actor] of actors) {
       const queued = this.#startupSyncs.delete(uuid);
-      if (!queued && !lightsByActor.has(uuid) && !this.#needsStartupSync(actor)) continue;
+      if (!queued && !lightActors.has(uuid) && !this.#needsStartupSync(actor)) continue;
       // Native dnd5e final preparation appends base damage parts. Reset the models first.
       actor.reset?.();
-      await this.requestSync(actor, "ready", lightsByActor.get(uuid)?.lights ?? []);
+      await this.requestSync(actor);
     }
     const remaining = [...this.#startupSyncs];
     this.#startupSyncs.clear();
-    for (const uuid of remaining) await this.requestSync(uuid, "ready", []);
+    for (const uuid of remaining) await this.requestSync(uuid);
   }
 }

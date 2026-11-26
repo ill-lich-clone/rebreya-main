@@ -333,13 +333,36 @@ test("upgrade startup visits world lights once and resets only affected actors",
   } });
   globalThis.game = { system: { id: "dnd5e" }, actors, scenes };
   globalThis.fromUuid = async () => null;
+  let authority = true;
   const service = new ItemUpgradeAutomationService({ worldMutationCoordinator: new WorldMutationCoordinator() }, {
-    isAuthority: () => true, getManifest: async () => [], getWeaponModCatalog: async () => ({ rows: [], hosts: [] }),
+    isAuthority: () => authority, getManifest: async () => [], getWeaponModCatalog: async () => ({ rows: [], hosts: [] }),
     readActor(uuid) { counts.actorReads++; return actors.find(actor => actor.uuid === uuid); }, project: () => ({ contributions: [] })
   });
   await service.initialize();
   assert.deepEqual(counts, { resets: 2, actorReads: 2, lightReads: 241 });
   assert.deepEqual(removed, [["AmbientLight", id], ["ActiveEffect", "orphan-effect"]]);
+
+  const hooks = new Map();
+  const previousHooks = globalThis.Hooks;
+  t.after(() => { globalThis.Hooks = previousHooks; });
+  globalThis.Hooks = { on: (event, handler) => hooks.set(event, handler) };
+  registerCombatHooks({ itemUpgradeAutomationService: service });
+  await hooks.get("updateItem")({ actor: actors[0] }, { "flags.rebreya-main.itemUpgrades": {} }, {});
+  await hooks.get("updateItem")({ actor: actors[0] }, { "system.quantity": 2 }, {});
+  assert.deepEqual(counts, { resets: 2, actorReads: 4, lightReads: 241 });
+
+  authority = false;
+  hooks.get("userConnected")();
+  const takeoverMarker = { ...marker, actorUuid: actors[2].uuid };
+  const takeoverId = createStableGearDocumentId(`weapon-mod-light:${takeoverMarker.actorUuid}:${takeoverMarker.hostItemId}:${takeoverMarker.childItemId}:${takeoverMarker.tokenUuid}`);
+  scenes[0].lights.push({ id: takeoverId, getFlag() { counts.lightReads++; return takeoverMarker; }, async delete() {
+    removed.push(["AmbientLight", takeoverId]); scenes[0].lights.pop();
+  } });
+  authority = true;
+  await service.requestSync(actors[2]);
+  await service.requestSync(actors[2]);
+  assert.deepEqual(counts, { resets: 2, actorReads: 6, lightReads: 483 });
+  assert.deepEqual(removed.at(-1), ["AmbientLight", takeoverId]);
 });
 
 test("holy steel restores only its own base dice and respects source edits and removal", () => {
