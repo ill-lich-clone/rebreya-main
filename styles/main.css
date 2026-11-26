@@ -10074,9 +10074,7 @@ summary:focus-visible {
 }
 
 .rm-modification-tab__copy h2,
-.rm-modification-tab__copy p,
-.rm-modification-tab__list h3,
-.rm-modification-tab__list ul {
+.rm-modification-tab__copy p {
   margin: 0;
 }
 
@@ -10106,14 +10104,6 @@ summary:focus-visible {
 .rm-modification-tab__points strong {
   color: var(--rm-accent-strong);
   font-size: 20px;
-}
-
-.rm-modification-tab__list {
-  padding: 12px 14px;
-}
-
-.rm-modification-tab__list li {
-  margin-top: 4px;
 }
 
 .rm-implant-dialog .rm-implant-dialog__item .item-row {

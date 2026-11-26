@@ -398,6 +398,7 @@ test("NPC doll listeners bind through both actor sheet and ApplicationV2 renders
 });
 test("registerDnd5eSheetExtensions prepares the three character tabs and lists implants independently of inventory", async () => {
   const stubs = installSheetExtensionStubs();
+  const previousCustomElements = globalThis.customElements;
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-tabs=${Date.now()}`);
     const { ImplantService } = await import("../scripts/data/implant-service.js");
@@ -420,6 +421,10 @@ test("registerDnd5eSheetExtensions prepares the three character tabs and lists i
     const union = implant("Система термоконтроля", { type: "Общая" });
     const bag = { id: "bag", name: "Сумка", type: "container" };
     const implantService = new ImplantService();
+    globalThis.customElements = { get(name) {
+      assert.equal(name, "dnd5e-inventory");
+      return { mapColumns: (ids) => ids.map((id) => ({ id })) };
+    } };
     actor.items.push(
       { id: "craftsman-class", type: "class", system: { identifier: "craftsman-v01", levels: 1 } },
       bag, armor, contained, union,
@@ -428,6 +433,7 @@ test("registerDnd5eSheetExtensions prepares the three character tabs and lists i
       implant("Имплант без цены", { pointsMax: null }),
       implant("Пустой стак", {}, { quantity: 0, gearId: "dopolnitelnaya-konechnost" })
     );
+    actor.items.get = (id) => actor.items.find((item) => item.id === id);
     const calls = [];
     const moduleApi = {
       heroDollService: {
@@ -459,7 +465,7 @@ test("registerDnd5eSheetExtensions prepares the three character tabs and lists i
     );
     assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.modification.template, /modification-tab\.hbs$/u);
-    assert.equal(stubs.CharacterActorSheet.PARTS.modification.templates, undefined);
+    assert.ok(stubs.CharacterActorSheet.PARTS.modification.templates.includes("systems/dnd5e/templates/inventory/inventory.hbs"));
     assert.match(stubs.CharacterActorSheet.PARTS.downtime.template, /character-downtime-tab\.hbs$/u);
     assert.equal(
       stubs.CharacterActorSheet.PARTS.features.template,
@@ -469,15 +475,34 @@ test("registerDnd5eSheetExtensions prepares the three character tabs and lists i
 
     const sheet = new stubs.CharacterActorSheet(actor);
     const heroContext = await sheet._preparePartContext("heroDoll", { base: true }, {});
-    const modificationContext = await sheet._preparePartContext("modification", { base: true }, {});
+    sheet.expandedSections = new Map([[`items.${contained.id}`, true]]);
+    const containedSummary = { description: "Описание станка" };
+    contained.getChatData = async () => containedSummary;
+    const itemContext = { [armor.id]: { clickAction: "use", subtitle: "Чудесный предмет", columns: [{ id: "roll" }] } };
+    const modificationContext = await sheet._preparePartContext("modification", {
+      elements: { inventory: "dnd5e-inventory" }, itemContext
+    }, {});
     const downtimeContext = await sheet._preparePartContext("downtime", { base: true }, {});
 
     assert.equal(heroContext.heroDoll.actorId, "actor-a");
     assert.equal(modificationContext.preparedPartId, "modification");
     assert.deepEqual(modificationContext.modification.installedEntries.map(({ name, uuid }) => ({ name, uuid })),
       [{ name: armor.name, uuid: armor.uuid }]);
-    assert.deepEqual(modificationContext.installableImplants.map(({ name, uuid }) => ({ name, uuid })),
-      [contained, union].map(({ name, uuid }) => ({ name, uuid })));
+    assert.deepEqual(modificationContext.sections.map(({ label, items, columns }) => ({ label, items, columns })), [
+      { label: "Установленные", items: [armor], columns: [{ id: "controls" }] },
+      { label: "Доступные к установке", items: [contained, union], columns: [{ id: "controls" }] }
+    ]);
+    for (const item of [armor, contained, union]) {
+      const row = modificationContext.itemContext[item.id];
+      assert.equal(row.clickAction, "view");
+      assert.equal(row.subtitle, null);
+      assert.equal(row.columns, null);
+    }
+    assert.equal(itemContext[armor.id].clickAction, "use");
+    assert.equal(modificationContext.itemContext[contained.id].isExpanded, true);
+    assert.equal(modificationContext.itemContext[contained.id].expanded, containedSummary);
+    assert.equal(modificationContext.listControls, null);
+    assert.equal(modificationContext.showCurrency, false);
     assert.equal(modificationContext.modification.capacity, 2);
     assert.equal(modificationContext.modification.used, 1);
     assert.equal(modificationContext.modification.remaining, 1);
@@ -489,6 +514,7 @@ test("registerDnd5eSheetExtensions prepares the three character tabs and lists i
     ]);
   }
   finally {
+    globalThis.customElements = previousCustomElements;
     stubs.restore();
   }
 });

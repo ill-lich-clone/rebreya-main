@@ -2382,6 +2382,11 @@ function ensureHeroDollTabDefinition(CharacterActorSheet, { characterTabs = true
       classes: ["flexcol"],
       container: { classes: ["tab-body"], id: "tabs" },
       template: MODIFICATION_TEMPLATE,
+      templates: [
+        "systems/dnd5e/templates/inventory/inventory.hbs",
+        "systems/dnd5e/templates/inventory/activity.hbs",
+        "systems/dnd5e/templates/inventory/columns/controls.hbs"
+      ],
       scrollable: [""]
     },
     [CHARACTER_DOWNTIME_TAB_ID]: {
@@ -2492,12 +2497,39 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi, { characterTab
         && entry.maximumInstallableCount > 0
         && entry.pointsMin <= modification.capacity
       ));
+      const Inventory = customElements.get(prepared.elements.inventory);
+      const columns = Inventory.mapColumns(["controls"]);
+      const sections = [
+        ["Установленные", "Нет установленных имплантов", modification.installedEntries],
+        ["Доступные к установке", "Нет доступных имплантов", installableImplants]
+      ].map(([label, emptyLabel, entries]) => {
+        const items = entries.map(({ itemId }) => this.actor.items.get(itemId)).filter(Boolean);
+        return { label: items.length ? label : emptyLabel, items, columns };
+      });
+      const itemContext = {};
+      for (const { items } of sections) {
+        for (const item of items) {
+          const native = prepared.itemContext?.[item.id];
+          const isExpanded = this.expandedSections?.get(`items.${item.id}`) === true;
+          itemContext[item.id] = {
+            ...native,
+            clickAction: "view",
+            columns: null,
+            subtitle: null,
+            isExpanded,
+            expanded: isExpanded ? native?.expanded ?? await item.getChatData({ secrets: item.isOwner }) : undefined
+          };
+        }
+      }
       return {
         ...preparedWithFeatGroups,
         tab,
         modificationTab: tab,
         modification,
-        installableImplants
+        sections,
+        itemContext,
+        showCurrency: false,
+        listControls: null
       };
     }
 

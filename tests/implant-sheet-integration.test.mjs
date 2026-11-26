@@ -2,17 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-test("modification tab shows installed and installable item names without the inventory renderer", async () => {
+test("modification tab delegates item rows to the native inventory renderer", async () => {
   const template = await readFile(
     new URL("../templates/modification-tab.hbs", import.meta.url),
     "utf8"
   );
   assert.match(
     template,
-    /Установленные[\s\S]*\{\{#each modification\.installedEntries\}\}[\s\S]*Доступные к установке[\s\S]*\{\{#each installableImplants\}\}/u
+    /\{\{> "systems\/dnd5e\/templates\/inventory\/inventory\.hbs"\s*\}\}/u
   );
-  assert.equal(template.match(/data-link data-uuid="\{\{uuid\}\}" href="#">\{\{name\}\}/gu)?.length, 2);
-  assert.doesNotMatch(template, /inventory\.hbs|Бросок|\{\{img\}\}/u);
+  assert.doesNotMatch(template, /href=|data-link|Бросок/u);
   assert.doesNotMatch(template, /rm-(?:implant|modification)-(?:card|tile)/u);
   assert.match(template, /modification\.used/u);
   assert.match(template, /modification\.capacity/u);

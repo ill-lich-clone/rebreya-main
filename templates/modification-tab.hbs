@@ -12,25 +12,5 @@
     </div>
   </header>
 
-  <section class="rm-modification-tab__list card">
-    <h3>Установленные</h3>
-    <ul class="unlist">
-      {{#each modification.installedEntries}}
-        <li><a class="content-link" data-link data-uuid="{{uuid}}" href="#">{{name}}</a></li>
-      {{else}}
-        <li>Нет установленных имплантов</li>
-      {{/each}}
-    </ul>
-  </section>
-
-  <section class="rm-modification-tab__list card">
-    <h3>Доступные к установке</h3>
-    <ul class="unlist">
-      {{#each installableImplants}}
-        <li><a class="content-link" data-link data-uuid="{{uuid}}" href="#">{{name}}</a></li>
-      {{else}}
-        <li>Нет доступных имплантов</li>
-      {{/each}}
-    </ul>
-  </section>
+  {{> "systems/dnd5e/templates/inventory/inventory.hbs" }}
 </section>
