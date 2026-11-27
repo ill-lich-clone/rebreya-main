@@ -90,18 +90,27 @@ export function registerCombatHooks(moduleApi) {
       moduleApi.sandChildPlacement?.refreshTokenHud(effect.parent);
       void runSand(sandChild.observeManifestationEffect(effect));
     });
-    Hooks.on("moveToken", (token, movement, operation, user) => {
-      moduleApi.sandChildPlacement?.close(token.uuid);
+    const observeSandMovement = (token, movement, operation, user) => {
       const currentUser = globalThis.game?.user;
       const localUser = user?.id === currentUser?.id;
       if (!localUser && !sandChild.isActiveGM() && !token.actor?.testUserPermission?.(currentUser, "OWNER")) return;
-      void runSand(sandChild.observeMovement(token, movement, user, operation).then(opportunity => {
-        if (opportunity && localUser) moduleApi.sandChildPlacement?.open(token, opportunity);
+      const observation = sandChild.observeMovement(token, movement, user, operation);
+      moduleApi.sandChildPlacement?.closeStale();
+      void runSand(observation.then(opportunity => {
+        if (opportunity && localUser) return moduleApi.sandChildPlacement?.open(token, opportunity);
       }));
-    });
-    Hooks.on("updateToken", (token, changed) => {
-      if (!["width", "height", "elevation"].some(key => Object.hasOwn(changed, key))) return;
+    };
+    Hooks.on("moveToken", observeSandMovement);
+    Hooks.on("updateToken", (token, changed, operation) => {
+      if (!["x", "y", "width", "height", "elevation"].some(key => Object.hasOwn(changed, key))) return;
+      const native = token.movement;
+      const route = operation?._movement?.[token.id];
+      if (route) {
+        if (native?.id === route.id && native.state === "completed") observeSandMovement(token, native, operation, native.user);
+        return;
+      }
       void runSand(sandChild.forgetToken(token));
+      moduleApi.sandChildPlacement?.closeStale();
       void runSand(sandChild.reconcileCover(token));
     });
     for (const event of ["createTile", "updateTile", "deleteTile"]) Hooks.on(event, tile => {

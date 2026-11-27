@@ -25,7 +25,12 @@ export class SandChildPlacement {
     this.#bindControl(bar, "place", active, "reopen", "fa-hourglass-half", () => {
       const opportunity = this.service.getPlacementOpportunity(token);
       if (opportunity) void this.open(token, opportunity);
-      else this.service.report({ applied: false, reason: "stale" });
+      else {
+        const sender = this.game()?.user;
+        const manual = sender?.isGM && this.service.getManualPlacementOpportunity(token, sender);
+        if (manual) void this.open(token, manual);
+        else this.service.report({ applied: false, reason: sender?.isGM ? "manualUnavailable" : "stale" });
+      }
     });
     this.#bindControl(bar, "end", active, "end", "fa-xmark", () => {
       const effect = this.service.getManifestation(token);
@@ -61,23 +66,26 @@ export class SandChildPlacement {
   }
 
   async open(token, opportunity) {
-    if (!opportunity || (this.#selection?.tokenUuid === token?.uuid && this.#selection?.movementId === opportunity.movementId)) return;
-    const cell = await this.pickCell(token, opportunity.cells, { movementId: opportunity.movementId });
+    const { movementId, effectId } = opportunity ?? {};
+    if (!opportunity || (this.#selection?.tokenUuid === token?.uuid && this.#selection?.movementId === movementId
+      && this.#selection?.effectId === effectId)) return;
+    const cell = await this.pickCell(token, opportunity.cells, { movementId, effectId });
     if (!cell || !this.#owns(token)) return;
-    const current = this.service.getPlacementOpportunity(token);
-    if (current?.movementId !== opportunity.movementId) return this.service.report({ applied: false, reason: "stale" });
     const { row, col } = cell;
-    return this.service.request("place", { tokenUuid: token.uuid, movementId: opportunity.movementId, row, col });
+    if (effectId) return this.service.request("placeManual", { tokenUuid: token.uuid, effectId, row, col });
+    const current = this.service.getPlacementOpportunity(token);
+    if (current?.movementId !== movementId) return this.service.report({ applied: false, reason: "stale" });
+    return this.service.request("place", { tokenUuid: token.uuid, movementId, row, col });
   }
 
-  pickCell(token, cells, { movementId = null } = {}) {
+  pickCell(token, cells, { movementId, effectId } = {}) {
     const canvas = this.canvas();
     if (!cells?.length || !this.#owns(token) || canvas?.scene?.id !== token?.parent?.id) return Promise.resolve(null);
     this.close();
     const document = this.document();
     const root = document.createElement("section");
     root.className = "rm-sand-placement";
-    const title = this.#localize(movementId ? "place" : "absorb");
+    const title = this.#localize(effectId ? "placeManual" : movementId ? "place" : "absorb");
     root.setAttribute("aria-label", title);
     const bar = document.createElement("div");
     bar.className = "rm-sand-placement-bar";
@@ -124,7 +132,7 @@ export class SandChildPlacement {
       };
       const bindings = [["canvasPan", hooks?.on("canvasPan", layout)],
         ["canvasTearDown", hooks?.on("canvasTearDown", () => finish(null))]];
-      this.#selection = { token, tokenUuid: token.uuid, movementId, finish };
+      this.#selection = { token, tokenUuid: token.uuid, movementId, effectId, x: token.x, y: token.y, finish };
       cancel.addEventListener("click", () => finish(null), { signal: controller.signal });
       win.addEventListener("keydown", event => {
         if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -145,7 +153,11 @@ export class SandChildPlacement {
 
   closeStale() {
     const selection = this.#selection;
-    if (selection?.movementId && this.service.getPlacementOpportunity(selection.token)?.movementId !== selection.movementId) this.close();
+    if (!selection) return;
+    const { token, movementId, effectId, x, y } = selection;
+    if (token.x !== x || token.y !== y
+      || (movementId && this.service.getPlacementOpportunity(token)?.movementId !== movementId)
+      || (effectId && this.service.getManifestation(token)?.id !== effectId)) this.close();
   }
 
   async absorbFromSelection() {

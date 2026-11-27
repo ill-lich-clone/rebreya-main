@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { SAND_CHILD_FEATURE_IDS, SAND_MANIFESTATION_ACTIVITY_ID } from "../scripts/data/sand-child-features.js";
 import { SandChildService } from "../scripts/combat/sand-child-service.js";
+import { registerCombatHooks } from "../scripts/combat/hooks.js";
 
 const namespace = "rebreya-main";
 
@@ -215,6 +216,89 @@ test("offers one placement per completed voluntary movement", async () => {
   await movement(f, "stale", 400);
   await movement(f, "later", 300);
   assert.equal((await f.service.placeSand({ ...request, movementId: "stale" }, context)).applied, false);
+});
+
+test("opens for the committed Foundry movement before other movement callbacks finish", async () => {
+  const f = fixture();
+  await f.service.activate(f.payload, { sender: f.owner });
+  const origin = { x: f.token.x, y: f.token.y };
+  f.token.x = 400;
+  const destination = { x: f.token.x, y: f.token.y };
+  const workflow = Promise.withResolvers();
+  const route = {
+    id: "recorded-walk", origin, destination, chain: [], finished: workflow.promise,
+    pending: { waypoints: [] },
+    passed: { distance: 15, cost: 15, waypoints: [200, 300, 400].map(x => ({ x, y: f.token.y, cost: 5, action: "walk" })) }
+  };
+  f.token.movement = { ...route, user: f.owner, state: "completed" };
+  const observed = f.service.observeMovement(f.token, route, f.owner);
+  const timer = setTimeout(() => workflow.resolve(false), 40);
+  try {
+    const opportunity = await observed;
+    assert.equal(opportunity?.movementId, route.id);
+    assert.equal(opportunity.cells.length, 9);
+    assert.equal(await f.service.observeMovement(f.token, route, f.owner), null);
+  } finally {
+    clearTimeout(timer);
+    workflow.resolve(true);
+  }
+});
+
+test("the token update and move hooks together open the picker exactly once", async () => {
+  const f = fixture();
+  await f.service.activate(f.payload, { sender: f.owner });
+  const previous = { game: globalThis.game, Hooks: globalThis.Hooks };
+  const callbacks = new Map();
+  const prompts = [];
+  globalThis.game = { ...f.game, user: f.owner };
+  globalThis.Hooks = { on: (event, cb) => callbacks.set(event, [...(callbacks.get(event) ?? []), cb]) };
+  try {
+    registerCombatHooks({ sandChildService: f.service, sandChildPlacement: {
+      closeStale() {}, open(token, opportunity) { prompts.push([token.uuid, opportunity.movementId]); }
+    } });
+    const origin = { x: f.token.x, y: f.token.y };
+    f.token.x = 200;
+    const destination = { x: f.token.x, y: f.token.y };
+    const route = { id: "native", origin, destination, state: "completed", user: f.owner, chain: [],
+      pending: { waypoints: [] }, passed: { distance: 5, cost: 5, waypoints: [{ ...destination, action: "walk", cost: 5 }] } };
+    f.token.movement = route;
+    const options = { _movement: { [f.token.id]: route } };
+    for (const cb of callbacks.get("updateToken")) cb(f.token, { x: 200, width: 1 }, options, f.owner.id);
+    for (const cb of callbacks.get("moveToken")) cb(f.token, route, options, f.owner);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(prompts, [[f.token.uuid, route.id]]);
+  } finally {
+    Object.assign(globalThis, previous);
+  }
+});
+
+test("duplicate native callbacks do not reread effects for ordinary tokens", async () => {
+  const f = fixture();
+  const route = { id: "ordinary", finished: Promise.resolve(true) };
+  let reads = 0;
+  f.actor.effects.values = function () { reads++; return Map.prototype.values.call(this); };
+  assert.equal(await f.service.observeMovement(f.token, route, f.owner), null);
+  assert.equal(await f.service.observeMovement(f.token, route, f.owner), null);
+  assert.equal(reads, 1);
+});
+
+test("GM can place manually with no cached move, within the same budget as automatic sand", async () => {
+  const f = fixture();
+  f.item.system.uses.spent = 0;
+  f.actor.system.attributes.prof = 1;
+  await f.service.activate(f.payload, { sender: f.owner });
+  const effectId = f.service.getManifestation(f.token).id;
+  assert.equal(f.service.getPlacementOpportunity(f.token), null);
+  assert.equal(f.service.getManualPlacementOpportunity(f.token, f.owner), null);
+  assert.equal(f.service.getManualPlacementOpportunity(f.token, f.gm).cells.length, 9);
+  const request = { tokenUuid: f.token.uuid, effectId, row: 1, col: 2 };
+  assert.equal((await f.service.placeManualSand(request, { sender: f.owner, operationId: "player" })).applied, false);
+  assert.equal((await f.service.placeManualSand({ ...request, col: 5 }, { sender: f.gm, operationId: "distant" })).applied, false);
+  const result = await f.service.placeManualSand(request, { sender: f.gm, operationId: "gm" });
+  assert.equal(result.applied, true);
+  assert.equal((await f.service.placeManualSand(request, { sender: f.gm, operationId: "gm" })).tileId, result.tileId);
+  assert.equal(f.scene.tiles.size, 1);
+  assert.equal(await movement(f, "walk", 200), null);
 });
 
 test("placement can arrive before the GM's movement cover update finishes", async () => {

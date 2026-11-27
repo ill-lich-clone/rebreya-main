@@ -10,6 +10,7 @@ export function registerSandChildCommands(gateway, service) {
     activate: { itemUuid, messageId: identifier, method: "activate" },
     end: { effectId: identifier, method: "endManifestation" },
     place: { movementId: identifier, row: cell, col: cell, method: "placeSand" },
+    placeManual: { effectId: identifier, row: cell, col: cell, method: "placeManualSand" },
     absorb: { tileId: identifier, method: "absorbSand" }
   };
   for (const [operation, { method, ...fields }] of Object.entries(operations)) {
@@ -17,7 +18,8 @@ export function registerSandChildCommands(gateway, service) {
     gateway.registerCommand(`combat.sandChild.${operation}`, {
       validate: payload => Boolean(payload && typeof payload === "object" && Object.keys(payload).length === shape.length
         && shape.every(([key, validator]) => Object.hasOwn(payload, key) && validator(payload[key]))),
-      authorize: (payload, { sender }) => service.canControl(payload.tokenUuid, sender),
+      authorize: (payload, { sender }) => (operation !== "placeManual" || sender?.isGM === true)
+        && service.canControl(payload.tokenUuid, sender),
       scheduling: keyedMutationScheduling(payload => [aggregateKey("sand-child-scene", payload.tokenUuid.split(".")[1])]),
       execute: (payload, context) => service[method](payload, context)
     });

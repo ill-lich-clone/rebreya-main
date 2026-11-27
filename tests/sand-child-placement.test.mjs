@@ -86,3 +86,32 @@ test("two intentional macro invocations on the same tile let the gateway assign 
   await placement.absorbFromSelection();
   assert.deepEqual(requests, Array(2).fill(["absorb", { tokenUuid: token.uuid, tileId: "tile" }]));
 });
+
+test("the GM HUD button opens a manual cell picker without a stored movement", async () => {
+  const doc = { body: new Element(), createElement: () => new Element() };
+  const user = { id: "gm", isGM: true };
+  const scene = { id: "scene", grid: { size: 100 } };
+  const token = { id: "token", uuid: "Scene.scene.Token.token", parent: scene, actor: {} };
+  const requests = [];
+  const service = {
+    getManifestation: () => ({ id: "manifest" }),
+    getPlacementOpportunity: () => null,
+    getManualPlacementOpportunity: () => ({ effectId: "manifest", cells: [{ row: 3, col: 2, underToken: true }] }),
+    request: async (...args) => requests.push(args), report: () => {}
+  };
+  const placement = new SandChildPlacement(service, {
+    document: () => doc, win: () => new EventTarget(),
+    canvas: () => ({ scene, clientCoordinatesFromCanvas: point => point }),
+    game: () => ({ user }), hooks: () => ({ on: () => 1, off() {} })
+  });
+  const bar = new Element();
+  bar.className = "col right";
+  const root = new Element();
+  root.append(bar);
+  placement.bindTokenHud({ object: { document: token } }, root);
+  bar.children.find(button => button.dataset.rmSandHud === "place").dispatchEvent(new Event("click"));
+  assert.equal(doc.body.children.length, 1);
+  doc.body.children[0].children.find(entry => entry.dataset.row === "3").dispatchEvent(new Event("click"));
+  await Promise.resolve();
+  assert.deepEqual(requests, [["placeManual", { tokenUuid: token.uuid, effectId: "manifest", row: 3, col: 2 }]]);
+});
