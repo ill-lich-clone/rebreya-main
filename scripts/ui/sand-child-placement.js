@@ -1,11 +1,14 @@
+import { SAND_ABSORPTION_BENEFITS } from "../combat/sand-child-service.js?v=1.6.15";
+
 const PREFIX = "REBREYA_MAIN.SandChild.";
 
 export class SandChildPlacement {
   #selection = null;
 
   constructor(service, { document = () => globalThis.document, win = () => globalThis.window,
-    canvas = () => globalThis.canvas, game = () => globalThis.game, hooks = () => globalThis.Hooks } = {}) {
-    Object.assign(this, { service, document, win, canvas, game, hooks });
+    canvas = () => globalThis.canvas, game = () => globalThis.game, hooks = () => globalThis.Hooks,
+    chooseBenefit = () => this.#chooseAbsorptionBenefit() } = {}) {
+    Object.assign(this, { service, document, win, canvas, game, hooks, chooseBenefit });
   }
 
   #localize(key) {
@@ -160,6 +163,17 @@ export class SandChildPlacement {
       || (effectId && this.service.getManifestation(token)?.id !== effectId)) this.close();
   }
 
+  #chooseAbsorptionBenefit() {
+    return globalThis.foundry.applications.api.DialogV2.wait({
+      window: { title: this.#localize("chooseBenefit") },
+      position: { width: 530 },
+      buttons: SAND_ABSORPTION_BENEFITS.map(action => ({
+        action, label: this.#localize(`benefit.${action}`), callback: () => action
+      })),
+      rejectClose: false
+    });
+  }
+
   async absorbFromSelection() {
     const tokens = this.canvas()?.tokens?.controlled ?? [];
     const token = tokens[0]?.document;
@@ -176,6 +190,8 @@ export class SandChildPlacement {
       if (!selected) return;
       tile = tiles.find(candidate => candidate.id === selected.tileId);
     }
-    return this.service.request("absorb", { tokenUuid: token.uuid, tileId: tile.id });
+    const benefit = await this.chooseBenefit();
+    if (!SAND_ABSORPTION_BENEFITS.includes(benefit)) return;
+    return this.service.request("absorb", { tokenUuid: token.uuid, tileId: tile.id, benefit });
   }
 }

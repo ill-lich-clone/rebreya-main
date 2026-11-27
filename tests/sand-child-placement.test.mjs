@@ -80,11 +80,51 @@ test("two intentional macro invocations on the same tile let the gateway assign 
     request: async (...args) => requests.push(args)
   }, {
     canvas: () => ({ tokens: { controlled: [{ document: token }] } }),
-    game: () => ({ user: { isGM: true } })
+    game: () => ({ user: { isGM: true } }),
+    chooseBenefit: async () => "reach"
   });
   await placement.absorbFromSelection();
   await placement.absorbFromSelection();
-  assert.deepEqual(requests, Array(2).fill(["absorb", { tokenUuid: token.uuid, tileId: "tile" }]));
+  assert.deepEqual(requests, Array(2).fill(["absorb", { tokenUuid: token.uuid, tileId: "tile", benefit: "reach" }]));
+});
+
+test("closing the Ancestral Art dialog consumes nothing", async () => {
+  const token = { id: "token", uuid: "Scene.scene.Token.token", actor: {} };
+  const requests = [];
+  const placement = new SandChildPlacement({
+    getAbsorbableSand: () => [{ id: "tile" }],
+    request: async (...args) => requests.push(args)
+  }, {
+    canvas: () => ({ tokens: { controlled: [{ document: token }] } }),
+    game: () => ({ user: { isGM: true } }),
+    chooseBenefit: async () => null
+  });
+  await placement.absorbFromSelection();
+  assert.deepEqual(requests, []);
+});
+
+test("the native dialog offers all three Ancestral Art choices", async () => {
+  const previous = globalThis.foundry;
+  const token = { id: "token", uuid: "Scene.scene.Token.token", actor: {} };
+  const requests = [];
+  globalThis.foundry = { applications: { api: { DialogV2: { async wait(options) {
+    assert.equal(options.rejectClose, false);
+    assert.deepEqual(options.buttons.map(button => button.action), ["tempHp", "reach", "safeMove"]);
+    return options.buttons[2].callback();
+  } } } } };
+  try {
+    const placement = new SandChildPlacement({
+      getAbsorbableSand: () => [{ id: "tile" }],
+      request: async (...args) => requests.push(args)
+    }, {
+      canvas: () => ({ tokens: { controlled: [{ document: token }] } }),
+      game: () => ({ user: { isGM: true } })
+    });
+    await placement.absorbFromSelection();
+    assert.deepEqual(requests, [["absorb", { tokenUuid: token.uuid, tileId: "tile", benefit: "safeMove" }]]);
+  } finally {
+    globalThis.foundry = previous;
+  }
 });
 
 test("the GM HUD button opens a manual cell picker without a stored movement", async () => {

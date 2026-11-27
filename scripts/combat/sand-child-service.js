@@ -11,6 +11,7 @@ const ACTIVATION_RECEIPTS = "sandChildActivationReceipts";
 const SAND = "sandChild";
 const PLACEMENTS = "sandChildPlacements";
 const ABSORPTIONS = "sandChildAbsorptions";
+const ABSORPTION_CHAT = "sandChildAbsorption";
 const COVER = "sandChildCover";
 const SAND_TEXTURE = "modules/rebreya-main/assets/sand-child/sand-tile.webp";
 const DURATION = 60;
@@ -29,6 +30,8 @@ const tileKey = (row, col) => `${row}:${col}`;
 const elevation = document => Number(document.elevation) || 0;
 const isManifestationActivity = activity => activity?.id === SAND_MANIFESTATION_ACTIVITY_ID
   && sandChildFeatureKind(activity.item) === "manifestation";
+
+export const SAND_ABSORPTION_BENEFITS = Object.freeze(["tempHp", "reach", "safeMove"]);
 
 function cannotManifest(actor) {
   if (INCAPACITATED.some(status => actor.statuses?.has(status))) return "incapacitated";
@@ -60,8 +63,9 @@ export class SandChildService {
     roll = async actor => (await new globalThis.Roll("1d10 + @abilities.cha.mod", actor.getRollData()).evaluate()).total,
     halfCover = async () => (await globalThis.ActiveEffect.fromStatusEffect("coverHalf")).toObject(),
     newId = () => globalThis.foundry?.utils?.randomID?.() ?? globalThis.crypto.randomUUID().replaceAll("-", "").slice(0, 16),
+    createChat = data => globalThis.ChatMessage.create(data, { keepId: true }),
     gateway } = {}) {
-    Object.assign(this, { game, resolve, isActiveGM, now, roll, halfCover, newId, gateway });
+    Object.assign(this, { game, resolve, isActiveGM, now, roll, halfCover, newId, createChat, gateway });
   }
 
   worldTime() {
@@ -566,7 +570,8 @@ export class SandChildService {
       && !receipts.some(entry => entry.sceneId === token.parent.id && entry.tileId === tile.id));
   }
 
-  async absorbSand({ tokenUuid, tileId }, { sender, operationId } = {}) {
+  async absorbSand({ tokenUuid, tileId, benefit = "tempHp" }, { sender, operationId } = {}) {
+    if (!SAND_ABSORPTION_BENEFITS.includes(benefit)) return rejected("invalidBenefit");
     const token = await this.#ownedToken(tokenUuid, sender);
     if (!this.isActiveGM() || !token) return rejected("token");
     const actor = token.actor;
@@ -574,28 +579,35 @@ export class SandChildService {
     return runInQueue(this.#sceneOperations, scene.id, () => this.#forActor(actor, async () => {
       const key = this.#turnKey(token, false);
       const old = flag(actor, ABSORPTIONS);
-      const receipts = (old?.receipts ?? []).filter(entry => entry.expiresAt > this.worldTime());
+      const at = this.worldTime();
+      const receipts = (old?.receipts ?? []).filter(entry => entry.expiresAt > at
+        || this.game()?.scenes?.get(entry.sceneId)?.tiles?.has(entry.tileId));
       const tile = scene.tiles.get(tileId);
       const receipt = receipts.find(entry => entry.sceneId === scene.id && entry.tileId === tileId);
       if (receipt) {
-        if (flag(tile, SAND)?.absorption?.operationId === receipt.operationId) await this.#deleteSand(tile);
+        await this.#finishAbsorption(scene, actor, tile, receipt);
         return { applied: true, tileId };
       }
       if (old?.key === key) return rejected("absorbed");
       if (!this.getAbsorbableSand(token).some(candidate => candidate.id === tileId)) return rejected("noSand");
       const data = flag(tile, SAND);
       const absorption = data.absorption ?? { operationId, hidden: Boolean(tile.hidden) };
+      let committed;
       try {
         if (!data.absorption) await tile.update({ [flagPath(SAND)]: { ...data, absorption }, hidden: true });
         await this.observeTile(tile);
-        const updated = Math.max(0, tempHp(actor), prof(actor));
-        const changes = { [flagPath(ABSORPTIONS)]: { key, receipts: [...receipts, {
-          sceneId: scene.id, tileId, operationId: absorption.operationId, expiresAt: data.expiresAt
-        }] } };
-        if (updated !== tempHp(actor)) changes["system.attributes.hp.temp"] = updated;
+        const proficiency = prof(actor);
+        const previousHp = tempHp(actor);
+        committed = { sceneId: scene.id, tileId, operationId: absorption.operationId, expiresAt: data.expiresAt,
+          benefit, tokenId: token.id, chatId: this.newId(), proficiency,
+          retainedHp: benefit === "tempHp" && previousHp > proficiency ? previousHp : 0 };
+        const changes = { [flagPath(ABSORPTIONS)]: { key, receipts: [...receipts, committed] } };
+        if (benefit === "tempHp" && proficiency > previousHp) changes["system.attributes.hp.temp"] = proficiency;
         await actor.update(changes);
       } catch (error) {
-        if (!flag(actor, ABSORPTIONS)?.receipts?.some(entry => entry.tileId === tileId && entry.operationId === absorption.operationId)) {
+        committed = flag(actor, ABSORPTIONS)?.receipts?.find(entry => entry.sceneId === scene.id
+          && entry.tileId === tileId && entry.operationId === absorption.operationId);
+        if (!committed) {
           if (flag(tile, SAND)?.absorption?.operationId === absorption.operationId) {
             await tile.update({ [`${flagPath(SAND)}.absorption`]: null, hidden: absorption.hidden });
             await this.observeTile(tile);
@@ -603,9 +615,41 @@ export class SandChildService {
           throw error;
         }
       }
-      await this.#deleteSand(tile);
+      await this.#finishAbsorption(scene, actor, tile, committed);
       return { applied: true, tileId };
     }));
+  }
+
+  async #finishAbsorption(scene, actor, tile, receipt) {
+    const sand = flag(tile, SAND);
+    if (sand?.creatorActorUuid !== actor.uuid || !sand.absorption || sand.absorption.operationId !== receipt.operationId) return;
+    if (receipt.chatId && SAND_ABSORPTION_BENEFITS.includes(receipt.benefit)) {
+      const game = this.game();
+      const marker = `${scene.id}:${receipt.tileId}`;
+      const existing = () => game.messages?.get(receipt.chatId);
+      const matches = () => flag(existing(), ABSORPTION_CHAT) === marker;
+      if (!existing()) {
+        const candidate = scene.tokens?.get(receipt.tokenId);
+        const token = candidate?.actor?.uuid === actor.uuid ? candidate : null;
+        const prefix = "REBREYA_MAIN.SandChild.";
+        const label = game.i18n.localize(`${prefix}ancestralArt`);
+        const retainedHp = Number(receipt.retainedHp) || 0;
+        const detail = game.i18n.format(`${prefix}chat.${retainedHp > 0 && receipt.benefit === "tempHp" ? "tempHpRetained" : receipt.benefit}`,
+          { proficiency: Number(receipt.proficiency) || 0, retainedHp });
+        try {
+          await this.createChat({
+            _id: receipt.chatId,
+            speaker: { scene: scene.id, token: token?.id ?? null, actor: actor.id, alias: token?.name ?? actor.name },
+            content: `<p><strong>${label}</strong></p><p>${detail}</p>`,
+            flags: { [MODULE_ID]: { [ABSORPTION_CHAT]: marker } }
+          });
+        } catch (error) {
+          if (!matches()) throw error;
+        }
+      }
+      if (!matches()) throw new Error("Ancestral Art chat receipt was not confirmed");
+    }
+    if (flag(tile, SAND)?.absorption?.operationId === receipt.operationId) await this.#deleteSand(tile);
   }
 
   async #deleteSand(tile) {
@@ -643,25 +687,28 @@ export class SandChildService {
     if (!this.isActiveGM()) return;
     const indexes = onlyScene ? [this.#tileIndex(onlyScene)] : this.#tileIndexes.values();
     for (const { scene, tiles } of indexes) {
-      const ids = [...tiles].filter(([, state]) => state.expiresAt <= worldTime || (recover && state.absorption)).map(([id]) => id);
+      const ids = [...tiles].filter(([, state]) => state.expiresAt <= worldTime || state.absorption).map(([id]) => id);
       if (!ids.length) continue;
       await runInQueue(this.#sceneOperations, scene.id, async () => {
         for (const id of ids) {
           const tile = scene.tiles.get(id);
           const data = flag(tile, SAND);
           if (!data) continue;
-          if (data.expiresAt <= worldTime) {
-            await this.#deleteSand(tile);
-          } else if (recover && data.absorption) {
+          if (data.absorption) {
             const actor = await this.resolve(data.creatorActorUuid);
-            const committed = flag(actor, ABSORPTIONS)?.receipts?.some(entry => entry.sceneId === scene.id
+            const committed = flag(actor, ABSORPTIONS)?.receipts?.find(entry => entry.sceneId === scene.id
               && entry.tileId === id && entry.operationId === data.absorption.operationId);
-            if (committed) await this.#deleteSand(tile);
-            else {
+            if (committed) {
+              try { await this.#finishAbsorption(scene, actor, tile, committed); }
+              catch (error) { console.error(`${MODULE_ID} | Ancestral Art chat recovery failed.`, error); }
+              continue;
+            }
+            if (recover && data.expiresAt > worldTime) {
               await tile.update({ [`${flagPath(SAND)}.absorption`]: null, hidden: data.absorption.hidden });
               await this.observeTile(tile);
             }
           }
+          if (data.expiresAt <= worldTime) await this.#deleteSand(tile);
         }
       });
     }

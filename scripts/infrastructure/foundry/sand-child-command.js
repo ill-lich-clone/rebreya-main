@@ -1,4 +1,5 @@
 import { aggregateKey, keyedMutationScheduling } from "../../application/socket-command-scheduling.js?v=1.5.3";
+import { SAND_ABSORPTION_BENEFITS } from "../../combat/sand-child-service.js?v=1.6.15";
 
 const tokenUuid = value => typeof value === "string" && /^Scene\.[\w-]{1,64}\.Token\.[\w-]{1,64}$/u.test(value);
 const itemUuid = value => typeof value === "string" && /^(?:Actor\.[\w-]{1,64}|Scene\.[\w-]{1,64}\.Token\.[\w-]{1,64}\.Actor\.[\w-]{1,64})\.Item\.[\w-]{1,64}$/u.test(value);
@@ -16,8 +17,13 @@ export function registerSandChildCommands(gateway, service) {
   for (const [operation, { method, ...fields }] of Object.entries(operations)) {
     const shape = Object.entries({ tokenUuid, ...fields });
     gateway.registerCommand(`combat.sandChild.${operation}`, {
-      validate: payload => Boolean(payload && typeof payload === "object" && Object.keys(payload).length === shape.length
-        && shape.every(([key, validator]) => Object.hasOwn(payload, key) && validator(payload[key]))),
+      validate: payload => {
+        if (!payload || typeof payload !== "object") return false;
+        const hasBenefit = operation === "absorb" && Object.hasOwn(payload, "benefit");
+        return Object.keys(payload).length === shape.length + Number(hasBenefit)
+          && (!hasBenefit || SAND_ABSORPTION_BENEFITS.includes(payload.benefit))
+          && shape.every(([key, validator]) => Object.hasOwn(payload, key) && validator(payload[key]));
+      },
       authorize: (payload, { sender }) => (operation !== "placeManual" || sender?.isGM === true)
         && service.canControl(payload.tokenUuid, sender),
       scheduling: keyedMutationScheduling(payload => [aggregateKey("sand-child-scene", payload.tokenUuid.split(".")[1])]),

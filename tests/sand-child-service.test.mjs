@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { SAND_CHILD_FEATURE_IDS, SAND_MANIFESTATION_ACTIVITY_ID } from "../scripts/data/sand-child-features.js";
 import { SandChildService } from "../scripts/combat/sand-child-service.js";
 import { registerCombatHooks } from "../scripts/combat/hooks.js";
 
 const namespace = "rebreya-main";
+const ru = JSON.parse(readFileSync(new URL("../lang/ru.json", import.meta.url), "utf8").replace(/^\uFEFF/u, ""));
 
 function applyUpdate(document, patch) {
   for (const [path, value] of Object.entries(patch)) {
@@ -32,7 +34,7 @@ function fixture() {
     } };
   const effects = new Map();
   const actor = {
-    uuid: "Actor.mage", flags: {}, items: new Map(), effects, statuses: new Set(),
+    id: "mage", name: "Чародей", uuid: "Actor.mage", flags: {}, items: new Map(), effects, statuses: new Set(),
     system: { attributes: { hp: { temp: 4 }, prof: 3 }, abilities: { cha: { mod: 2 } } },
     testUserPermission: user => user.id === owner.id || user.isGM,
     async update(patch) { return applyUpdate(this, patch); },
@@ -46,7 +48,7 @@ function fixture() {
       });
     }
   };
-  const token = { id: "mage", uuid: "Scene.test.Token.mage", parent: scene, actor, x: 100, y: 100, width: 1, height: 1 };
+  const token = { id: "mage", name: "Чародей на карте", uuid: "Scene.test.Token.mage", parent: scene, actor, x: 100, y: 100, width: 1, height: 1 };
   scene.tokens.set(token.id, token);
   const item = {
     id: "manifest", uuid: "Actor.mage.Item.manifest", name: "Проявление духов", actor, parent: actor, img: "sand.webp",
@@ -58,12 +60,15 @@ function fixture() {
   const message = { id: "message", author: owner, timestamp: 50, flags: { dnd5e: { activity: { uuid: activityUuid } } },
     speaker: { scene: scene.id, token: token.id, actor: "mage" } };
   const game = { time: { worldTime: 120 }, user: gm, messages: new Map([[message.id, message]]), scenes: new Map([[scene.id, scene]]), system: { id: "dnd5e" } };
+  game.i18n = { localize: key => ru[key] ?? key, format: (key, data) => (ru[key] ?? key).replace(/\{(\w+)\}/gu, (_, name) => data[name]) };
+  const published = [];
   let rolls = 0;
-  const service = new SandChildService({ game: () => game, resolve: async uuid => [token, item].find(document => document.uuid === uuid),
+  const service = new SandChildService({ game: () => game, resolve: async uuid => [token, actor, item].find(document => document.uuid === uuid),
     isActiveGM: () => true, now: () => 50, roll: async () => { rolls += 1; return 9; },
+    createChat: async data => { published.push(data); game.messages.set(data._id, data); return data; },
     halfCover: async () => ({ name: "Half Cover", statuses: ["coverHalf"] }) });
   const payload = { tokenUuid: token.uuid, itemUuid: item.uuid, messageId: message.id };
-  return { actor, item, scene, token, effects, game, gm, owner, service, payload, rolls: () => rolls };
+  return { actor, item, scene, token, effects, game, gm, owner, service, payload, published, rolls: () => rolls };
 }
 
 test("spends and grants manifestation exactly once", async () => {
@@ -349,14 +354,15 @@ test("a global combat resets absorption between turns even when the world clock 
     assert.equal((await f.service.placeSand({ tokenUuid: f.token.uuid, movementId: id, row: 1, col },
       { sender: f.owner, operationId: id })).applied, true);
   }
-  const absorb = async id => {
+  const absorb = async (id, benefit) => {
     const [tile] = f.service.getAbsorbableSand(f.token);
-    return f.service.absorbSand({ tokenUuid: f.token.uuid, tileId: tile.id }, { sender: f.owner, operationId: id });
+    return f.service.absorbSand({ tokenUuid: f.token.uuid, tileId: tile.id, benefit }, { sender: f.owner, operationId: id });
   };
-  assert.equal((await absorb("a1")).applied, true);
-  combat.turn = 1;
+  assert.equal((await absorb("a1", "reach")).applied, true);
   await movement(f, "back", 200);
-  assert.equal((await absorb("a2")).applied, true);
+  assert.deepEqual(await absorb("same-turn", "tempHp"), { applied: false, reason: "absorbed" });
+  combat.turn = 1;
+  assert.equal((await absorb("a2", "safeMove")).applied, true);
 });
 
 test("deleting a token leaves its actor without sand's half cover", async () => {
@@ -475,4 +481,57 @@ test("cover update failure before the absorption award permits a fresh retry", a
   assert.equal((await f.service.absorbSand(absorb, { sender: f.owner, operationId: "retry" })).applied, true);
   assert.equal(f.actor.system.attributes.hp.temp, 3);
   assert.equal(f.scene.tiles.size, 0);
+});
+
+test("each Ancestral Art choice consumes the tile and posts its own benefit once", async () => {
+  for (const [benefit, text, hp] of [
+    ["tempHp", /Временные хиты.*3/u, 3],
+    ["reach", /досягаемост[ьи].*5 футов/iu, 1],
+    ["safeMove", /15 футов.*не провоцируют/iu, 1]
+  ]) {
+    const f = fixture();
+    f.actor.items.set("art", { flags: { [namespace]: { featureId: SAND_CHILD_FEATURE_IDS.ancestralArt } } });
+    await f.service.activate(f.payload, { sender: f.owner });
+    await movement(f, "walk", 200);
+    const { tileId } = await f.service.placeSand({ tokenUuid: f.token.uuid, movementId: "walk", row: 1, col: 2 },
+      { sender: f.owner, operationId: "sand" });
+    f.actor.system.attributes.hp.temp = 1;
+    const payload = { tokenUuid: f.token.uuid, tileId, benefit };
+    const invalid = await f.service.absorbSand({ ...payload, benefit: "unknown" }, { sender: f.owner, operationId: "bad" });
+    assert.equal(invalid.applied, false);
+    assert.equal(f.published.length, 0);
+    assert.equal(f.scene.tiles.size, 1);
+    assert.equal((await f.service.absorbSand(payload, { sender: f.owner, operationId: "first" })).applied, true);
+    assert.equal((await f.service.absorbSand(payload, { sender: f.owner, operationId: "retry" })).applied, true);
+    assert.equal(f.scene.tiles.size, 0);
+    assert.equal(f.actor.system.attributes.hp.temp, hp);
+    assert.equal(f.published.length, 1);
+    assert.match(f.published[0].content, /Искусство предков/u);
+    assert.match(f.published[0].content, text);
+    assert.deepEqual(f.published[0].speaker, { scene: f.scene.id, token: f.token.id, actor: f.actor.id, alias: f.token.name });
+    f.game.messages.delete(f.published[0]._id);
+    assert.equal((await f.service.absorbSand(payload, { sender: f.owner, operationId: "old-retry" })).applied, true);
+    assert.equal(f.published.length, 1);
+  }
+});
+
+test("a failed chat post can resume without changing the committed benefit", async () => {
+  const f = fixture();
+  f.actor.items.set("art", { flags: { [namespace]: { featureId: SAND_CHILD_FEATURE_IDS.ancestralArt } } });
+  await f.service.activate(f.payload, { sender: f.owner });
+  await movement(f, "walk", 200);
+  const { tileId } = await f.service.placeSand({ tokenUuid: f.token.uuid, movementId: "walk", row: 1, col: 2 },
+    { sender: f.owner, operationId: "sand" });
+  const create = f.service.createChat;
+  f.service.createChat = async () => { throw new Error("Interrupted chat post"); };
+  f.actor.system.attributes.hp.temp = 1;
+  const payload = { tokenUuid: f.token.uuid, tileId, benefit: "reach" };
+  await assert.rejects(f.service.absorbSand(payload, { sender: f.owner, operationId: "first" }), /Interrupted chat post/);
+  assert.equal(f.actor.system.attributes.hp.temp, 1);
+  f.service.createChat = create;
+  await f.service.expireSand(180);
+  assert.equal(f.scene.tiles.size, 0);
+  assert.equal(f.published.length, 1);
+  assert.match(f.published[0].content, /досягаемост/iu);
+  assert.equal(f.actor.system.attributes.hp.temp, 1);
 });

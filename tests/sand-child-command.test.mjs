@@ -21,4 +21,10 @@ test("registers bounded sand child requests and delegates authenticated sender",
   assert.equal(manual.validate(cell), true);
   assert.equal(await manual.authorize(cell, { sender: { id: "owner" } }), false);
   assert.equal(await manual.authorize(cell, { sender: { id: "owner", isGM: true } }), true);
+  const absorb = seen.get("combat.sandChild.absorb");
+  const tile = { tokenUuid: payload.tokenUuid, tileId: "tile" };
+  assert.equal(absorb.validate(tile), true);
+  for (const benefit of ["tempHp", "reach", "safeMove"]) assert.equal(absorb.validate({ ...tile, benefit }), true);
+  assert.equal(absorb.validate({ ...tile, benefit: "unknown" }), false);
+  assert.equal(absorb.validate({ ...tile, benefit: "reach", amount: 20 }), false);
 });
