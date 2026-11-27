@@ -1,3 +1,4 @@
+import { buildSandChildFeatureAutomation } from "./sand-child-features.js?v=1.6.13";
 import {
   CLASS_FEATURES_COMPENDIUM_LABEL,
   CLASS_FEATURES_COMPENDIUM_NAME,
@@ -3496,6 +3497,8 @@ function createFighterMultiattackAutomation(feature, classIdentifier) {
 }
 
 function createFeatureAutomation(feature, classIdentifier) {
+  const sandChild = buildSandChildFeatureAutomation(feature);
+  if (sandChild) return sandChild;
   if (feature.featureId === CRAFTSMAN_CONSTRUCT_FEATURE_ID) {
     return buildCraftsmanConstructSummonAutomation(feature);
   }

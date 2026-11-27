@@ -1,5 +1,65 @@
 @import url("./combat-turn-title.css?v=1.5.83");
 
+.rm-sand-placement {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  pointer-events: none;
+}
+
+.rm-sand-placement-bar {
+  position: absolute;
+  top: 3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0.4rem 0.25rem 0.8rem;
+  border: 1px solid #a98b52;
+  border-radius: 6px;
+  background: #292116;
+  color: #fff1cf;
+  box-shadow: 0 2px 12px #000a;
+  pointer-events: auto;
+}
+
+.rm-sand-placement-bar > button {
+  min-width: 1.65rem;
+  height: 1.65rem;
+  color: inherit;
+}
+
+.rm-sand-placement > .rm-sand-cell {
+  position: absolute;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  pointer-events: auto;
+  background: transparent;
+}
+
+.rm-sand-cell::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 2px solid #ffd580;
+  border-radius: 5px;
+  background: #de9b2c28;
+  box-shadow: 0 0 0 1px #362509bb;
+}
+
+.rm-sand-cell.rm-sand-under-token::after {
+  border-style: dashed;
+}
+
+.rm-sand-cell:is(:hover, :focus-visible)::after {
+  background: #efb44558;
+  border-color: #fff1bc;
+}
+
 :root {
   --rm-color-ink: #0f1116;
   --rm-color-ink-rgb: 15 17 22;

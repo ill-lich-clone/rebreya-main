@@ -55,6 +55,69 @@ function combatTurnChangeDirection(previous = {}, current = {}) {
 }
 
 export function registerCombatHooks(moduleApi) {
+  const sandChild = moduleApi?.sandChildService;
+  if (sandChild && globalThis.game?.system?.id === "dnd5e") {
+    const runSand = task => Promise.resolve(task).catch(error => console.error(`${MODULE_ID} | Sand Child automation failed.`, error));
+    Hooks.on("dnd5e.preUseActivity", (activity, usage, _dialog, message) => sandChild.prepareManifestation(activity, usage, message));
+    Hooks.on("dnd5e.postUseActivity", (activity, _usage, results) => { void runSand(sandChild.requestManifestation(activity, results)); });
+    Hooks.on("dnd5e.rollAttack", (rolls, { subject } = {}) => {
+      if (!rolls?.length || subject?.item?.type !== "weapon") return;
+      void runSand(sandChild.attackCompleted({ token: sandChild.tokenForActor(subject.actor), item: subject.item,
+        attackId: rolls[0], attackMode: rolls[0].options?.attackMode }));
+    });
+    Hooks.on("midi-qol.AttackRollComplete", workflow => {
+      if (!workflow?.attackRoll || workflow.item?.type !== "weapon") return;
+      void runSand(sandChild.attackCompleted({ token: workflow.token?.document ?? workflow.token ?? sandChild.tokenForActor(workflow.actor),
+        item: workflow.item, attackId: workflow.attackRoll, attackMode: workflow.attackRoll.options?.attackMode }));
+    });
+    Hooks.on("createItem", item => {
+      void runSand(sandChild.repairItem(item));
+      if (item.type === "equipment" && item.system?.equipped) void runSand(sandChild.reconcileActor(item.actor));
+    });
+    Hooks.on("updateItem", (item, changed) => {
+      if (item.type === "equipment" && (Object.hasOwn(changed.system ?? {}, "equipped") || Object.hasOwn(changed.system ?? {}, "type")
+        || Object.hasOwn(changed, "system.equipped") || Object.hasOwn(changed, "system.type.value"))) void runSand(sandChild.reconcileActor(item.actor));
+    });
+    for (const hook of ["createActiveEffect", "updateActiveEffect"]) Hooks.on(hook, (effect, changed) => {
+      if (effect.statuses?.size || changed?.statuses) void runSand(sandChild.reconcileActor(effect.actor ?? effect.parent));
+      void runSand(sandChild.observeManifestationEffect(effect));
+      if (effect.flags?.[MODULE_ID]?.sandChildManifestation) moduleApi.sandChildPlacement?.refreshTokenHud(effect.parent);
+    });
+    Hooks.on("deleteActiveEffect", effect => {
+      const state = effect.flags?.[MODULE_ID]?.sandChildManifestation;
+      if (!state) return;
+      moduleApi.sandChildPlacement?.close(state.tokenUuid);
+      moduleApi.sandChildPlacement?.refreshTokenHud(effect.parent);
+      void runSand(sandChild.observeManifestationEffect(effect));
+    });
+    Hooks.on("moveToken", (token, movement, operation, user) => {
+      moduleApi.sandChildPlacement?.close(token.uuid);
+      const currentUser = globalThis.game?.user;
+      const localUser = user?.id === currentUser?.id;
+      if (!localUser && !sandChild.isActiveGM() && !token.actor?.testUserPermission?.(currentUser, "OWNER")) return;
+      void runSand(sandChild.observeMovement(token, movement, user, operation).then(opportunity => {
+        if (opportunity && localUser) moduleApi.sandChildPlacement?.open(token, opportunity);
+      }));
+    });
+    Hooks.on("updateToken", (token, changed) => {
+      if (!["width", "height", "elevation"].some(key => Object.hasOwn(changed, key))) return;
+      void runSand(sandChild.forgetToken(token));
+      void runSand(sandChild.reconcileCover(token));
+    });
+    for (const event of ["createTile", "updateTile", "deleteTile"]) Hooks.on(event, tile => {
+      void runSand(sandChild.observeTile(tile, event === "deleteTile"));
+    });
+    Hooks.on("updateWorldTime", worldTime => {
+      moduleApi.sandChildPlacement?.closeStale();
+      void runSand(sandChild.expireSand(worldTime));
+    });
+    Hooks.on("combatTurnChange", () => moduleApi.sandChildPlacement?.closeStale());
+    Hooks.on("canvasReady", canvas => { void runSand(sandChild.initializeScene(canvas?.scene ?? globalThis.canvas?.scene)); });
+    Hooks.on("deleteToken", token => {
+      moduleApi.sandChildPlacement?.close(token.uuid);
+      void runSand(sandChild.forgetToken(token, { removed: true }));
+    });
+  }
   const hasStatusService = Boolean(moduleApi?.combatStatusService);
   const hasAttackService = Boolean(moduleApi?.combatAttackService);
   const hasRaceService = Boolean(moduleApi?.raceAutomationService);
@@ -604,6 +667,7 @@ export function registerCombatHooks(moduleApi) {
     });
 
     Hooks.on("renderTokenHUD", (app, html) => {
+      moduleApi.sandChildPlacement?.bindTokenHud(app, html);
       moduleApi.combatStatusService.bindTokenHud(app, html).catch((error) => {
         console.error(`${MODULE_ID} | Failed to bind token HUD status interactions.`, error);
       });

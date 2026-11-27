@@ -1235,6 +1235,32 @@ test("sorcerer packages expose both updated starting-equipment choices", () => {
   assert.deepEqual(config.getPackage("b").currency, { gp: 50 });
 });
 
+test("projects current Sand Child cards and one bonus-action use", async () => {
+  const { sandChildFeatureKind } = await import("../scripts/data/sand-child-features.js");
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const definitions = buildFeatureDefinitions(sorcerer);
+  const ids = makeUuidMap(definitions);
+  const card = (id) => createFeatureEntryData(definitions.find(entry => entry.featureId.endsWith(`::${id}`)), new Map(), null, { featureUuidById: ids });
+  const manifestation = card("sorcerer-9-feature-1");
+  const art = card("sorcerer-9-feature-2");
+  assert.equal(sandChildFeatureKind(manifestation), "manifestation");
+  assert.equal(sandChildFeatureKind(art), "ancestralArt");
+  assert.equal(manifestation.system.uses.max, "@prof");
+  assert.deepEqual(manifestation.system.uses.recovery.map(entry => [entry.period, entry.type]), [["lr", "recoverAll"]]);
+  assert.deepEqual(Object.values(manifestation.system.activities).map(activity => activity.activation.type), ["bonus"]);
+  assert.equal(art.system.uses.max, "");
+  assert.equal(manifestation.system.prerequisites.level, 1);
+  assert.equal(art.system.prerequisites.level, 1);
+  assert.match(manifestation.system.description.value, /восьм[ьи].*смежн/iu);
+  assert.match(manifestation.system.description.value, /бонусу мастерства/iu);
+  assert.doesNotMatch(manifestation.system.description.value, /превосходит вас|сбитие с ног/iu);
+  assert.match(art.system.description.value, /один раз в ход.*поглотить/iu);
+  assert.match(art.system.description.value, /Бонусу мастерства/iu);
+  assert.match(art.system.description.value, /рукопашной атаки увеличивается на 5 футов/iu);
+  assert.match(art.system.description.value, /15 футов перемещения не будут провоцировать/iu);
+  assert.doesNotMatch(art.system.description.value, /до окончания вашего текущего превращения/iu);
+});
+
 test("sorcerer V0.11 is a full Charisma caster with source-table progressions", () => {
   const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
   const featureDefinitions = buildFeatureDefinitions(sorcerer);

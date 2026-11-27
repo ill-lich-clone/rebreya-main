@@ -13,6 +13,7 @@ export const START_COMBAT_MACRO_SOURCE_ID = "start-combat-macro";
 export const END_COMBAT_TURN_MACRO_SOURCE_ID = "end-combat-turn-macro";
 export const DECAYING_RECOVERY_MACRO_SOURCE_ID = "decaying-recovery-macro";
 export const MOUNTED_MACRO_SOURCE_ID = "mounted-toggle-macro";
+export const ABSORB_SAND_MACRO_SOURCE_ID = "absorb-sand-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -149,6 +150,11 @@ export function buildMountedMacroData(folderId, options = {}) {
     sourceId: MOUNTED_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
 }
 
+export function buildAbsorbSandMacroData(folderId, options = {}) {
+  return macroData({ name: "Поглотить песок", command: "await game.rebreyaMain?.absorbSandFromSelection?.();",
+    sourceId: ABSORB_SAND_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function macroSnapshot(macro) {
   return {
     name: macro?.name,
@@ -200,6 +206,9 @@ export class GrappleMacroService {
     const folderId = documentId(folder);
     if (!folderId) throw new Error("Grapple macro folder has no id");
     const macros = [
+      await this.#syncMacro(game, ABSORB_SAND_MACRO_SOURCE_ID, buildAbsorbSandMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
       await this.#syncMacro(game, DECAYING_RECOVERY_MACRO_SOURCE_ID, buildDecayingRecoveryMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),

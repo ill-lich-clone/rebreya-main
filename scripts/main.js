@@ -40,7 +40,7 @@ import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.3
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
 import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.330";
 import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.330";
-import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.5.70";
+import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.6.13";
 import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js?v=1.4.330";
 import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.5.61";
 import {
@@ -331,7 +331,10 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.91";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.6.12";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.6.13";
+import { SandChildService } from "./combat/sand-child-service.js?v=1.6.13";
+import { SandChildPlacement } from "./ui/sand-child-placement.js?v=1.6.13";
+import { registerSandChildCommands } from "./infrastructure/foundry/sand-child-command.js?v=1.6.13";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.96";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";
@@ -390,7 +393,7 @@ import { MOUNTED_TOGGLE_COMMAND, registerMountedToggleCommand, registerMountedCh
 import { registerClassCombatCommands } from "./infrastructure/foundry/class-combat-command.js?v=1.5.70";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.5.70";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js?v=1.5.81";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.5.95";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.6.13";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.5.59";
 import { getActorHandReservations } from "./integrations/held-items.js?v=1.5.29";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js?v=1.5.60";
@@ -550,7 +553,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.6.12";
+const MODULE_STYLE_VERSION = "1.6.13";
 const REBREYA_GROUPED_COMBAT_ENABLED = false; // Temporary native NEXT comparison.
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
@@ -2134,6 +2137,8 @@ export class RebreyaMainModule {
     });
     this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);
+    this.sandChildService = new SandChildService({ gateway: this.privilegedMutationGateway });
+    this.sandChildPlacement = new SandChildPlacement(this.sandChildService);
     this.sizeAutomationService = new SizeAutomationService(this);
     this.equipmentSizeService = new EquipmentSizeService(this, { buildItemUpdate: buildEquipmentSizeUpdate,
       getHeldWeapons: getHeldEquipmentWeapons, readItemData: readEquipmentItemData });
@@ -2410,6 +2415,10 @@ export class RebreyaMainModule {
     }
   }
 
+  absorbSandFromSelection() {
+    return this.sandChildPlacement.absorbFromSelection();
+  }
+
   async toggleMounted() {
     try {
       const controlled = globalThis.canvas?.tokens?.controlled ?? [];
@@ -2544,6 +2553,7 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    registerSandChildCommands(this.privilegedMutationGateway, this.sandChildService);
     this.spikedTrimService.registerCommand(this.privilegedMutationGateway);
     registerAntagonizeCommand(this.privilegedMutationGateway);
     registerGroupedCombatCommands(this);
@@ -4979,6 +4989,7 @@ export class RebreyaMainModule {
     try {
       await this.craftsmanConstructCompendium.sync();
       await this.classesCompendium.sync();
+      await this.sandChildService.initializeWorld();
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync classes or Craftsman construct compendium.`, error);
