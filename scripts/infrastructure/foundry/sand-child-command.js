@@ -1,5 +1,5 @@
 import { aggregateKey, keyedMutationScheduling } from "../../application/socket-command-scheduling.js?v=1.5.3";
-import { SAND_ABSORPTION_BENEFITS } from "../../combat/sand-child-service.js?v=1.6.15";
+import { SAND_ABSORPTION_BENEFITS } from "../../combat/sand-child-service.js?v=1.6.16";
 
 const tokenUuid = value => typeof value === "string" && /^Scene\.[\w-]{1,64}\.Token\.[\w-]{1,64}$/u.test(value);
 const itemUuid = value => typeof value === "string" && /^(?:Actor\.[\w-]{1,64}|Scene\.[\w-]{1,64}\.Token\.[\w-]{1,64}\.Actor\.[\w-]{1,64})\.Item\.[\w-]{1,64}$/u.test(value);

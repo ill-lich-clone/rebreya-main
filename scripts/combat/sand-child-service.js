@@ -2,7 +2,7 @@ import { CLASS_FEATURES_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { SAND_MANIFESTATION_ACTIVITY_ID, buildSandChildItemPatch, sandChildFeatureKind } from "../data/sand-child-features.js?v=1.6.13";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { getItemHeldHands, itemRequiresTwoHandsForUse } from "../integrations/held-items.js?v=1.5.29";
-import { completedSandMovementDistance, sandDestinationIsFree, sandPlacementCells, sandTokenBounds, sandTokenContainsCell } from "./sand-child-geometry.js?v=1.6.13";
+import { completedSandMovementDistance, recordedSandMovement, sandDestinationIsFree, sandPlacementCells, sandTokenBounds, sandTokenContainsCell } from "./sand-child-geometry.js?v=1.6.16";
 import { GROUPED_COMBAT_FLAG } from "./turn-group-rules.js?v=1.5.87";
 
 const MANIFESTATION = "sandChildManifestation";
@@ -53,6 +53,7 @@ export class SandChildService {
   #sceneOperations = new Map();
   #coverOperations = new Map();
   #observedRoutes = new WeakMap();
+  #blockedRecordedRoutes = new WeakMap();
   #movements = new Map();
   #tileIndexes = new Map();
   #manifestingActors = new Map();
@@ -180,7 +181,8 @@ export class SandChildService {
       if (reason) return rejected(reason);
       const total = await this.roll(actor);
       if (!Number.isFinite(total)) return rejected("failed");
-      const state = { messageId, tokenUuid, startedAt: this.worldTime(), issuedAt: Number(message.timestamp), total };
+      const state = { messageId, tokenUuid, startedAt: this.worldTime(), issuedAt: Number(message.timestamp), total,
+        previousMovementId: token.movementHistory?.at(-1)?.movementId ?? null };
       await item.update({ "system.uses.spent": spentUses(item) + 1, [flagPath(ACTIVATION)]: state });
       return this.#finishActivation(actor, item, state);
     });
@@ -201,7 +203,9 @@ export class SandChildService {
         await actor.createEmbeddedDocuments("ActiveEffect", [{
           name: item.name, img: item.img, origin: item.uuid,
           duration: { seconds: DURATION, startTime: state.startedAt },
-          flags: { [MODULE_ID]: { [MANIFESTATION]: { tokenUuid: state.tokenUuid, messageId: state.messageId, expiresAt } } }
+          flags: { [MODULE_ID]: { [MANIFESTATION]: {
+            tokenUuid: state.tokenUuid, messageId: state.messageId, expiresAt, previousMovementId: state.previousMovementId ?? null
+          } } }
         }]);
       }
       this.#manifestingActors.set(actor.uuid, actor);
@@ -339,13 +343,14 @@ export class SandChildService {
     const committed = native?.state === "completed";
     const destination = committed ? (movement.passed?.waypoints?.at(-1) ?? movement.destination) : movement.destination;
     const state = {
-      movementId: continuation ? previous.movementId : movement.id, lastId: movement.id,
+      movementId: movement.id, lastId: movement.id, blocked: Boolean(forced || native?.state === "stopped"),
       x: destination?.x, y: destination?.y,
       effectId: effect.id, userId: user.id, key: this.#turnKey(token, true),
       distance: forced ? 0 : (continuation ? previous.distance : 0) + completedSandMovementDistance(movement, grid)
     };
     this.#movements.set(token.uuid, state);
     state.completion = Promise.resolve(committed || movement.finished).then(completed => {
+      if (completed === false) state.blocked = true;
       if (completed !== true || this.#movements.get(token.uuid) !== state || movement.pending?.waypoints?.length
         || token.x !== state.x || token.y !== state.y || state.distance < 5 || !sandDestinationIsFree(token, grid)) return null;
       state.completed = true;
@@ -356,9 +361,15 @@ export class SandChildService {
   }
 
   getPlacementOpportunity(token) {
-    const state = this.#movements.get(token?.uuid);
-    if (!state?.completed || this.getManifestation(token)?.id !== state.effectId || state.key !== this.#turnKey(token, true)
-      || token.x !== state.x || token.y !== state.y) return null;
+    const effect = this.getManifestation(token);
+    if (!effect) return null;
+    const key = this.#turnKey(token, true);
+    let state = this.#movements.get(token.uuid);
+    if (!state?.completed || effect.id !== state.effectId || state.key !== key || token.x !== state.x || token.y !== state.y) {
+      const recovered = this.#recordedPlacement(token, effect, key, state);
+      if (!recovered) return null;
+      state = recovered;
+    }
     const ledger = flag(token.actor, PLACEMENTS);
     const entries = ledger?.key === state.key ? ledger.entries : [];
     const placement = entries.find(entry => entry.tokenUuid === token.uuid && entry.movementId === state.movementId);
@@ -370,6 +381,29 @@ export class SandChildService {
     if (entries.length >= prof(token.actor)) return null;
     const cells = this.#availablePlacementCells(token);
     return cells.length ? { movementId: state.movementId, cells } : null;
+  }
+
+  #recordedPlacement(token, effect, key, previous) {
+    const lastId = token.movementHistory?.at(-1)?.movementId;
+    if (!lastId || this.#blockedRecordedRoutes.get(token) === lastId || flag(effect, MANIFESTATION)?.previousMovementId === lastId
+      || (previous?.lastId === lastId && (previous.blocked || previous.key !== key || previous.effectId !== effect.id))) return null;
+    const grid = token.parent.grid;
+    const movement = recordedSandMovement(token, grid);
+    if (!movement || completedSandMovementDistance(movement, grid) < 5 || !sandDestinationIsFree(token, grid)) return null;
+    const state = { movementId: movement.id, lastId: movement.id, x: token.x, y: token.y, effectId: effect.id, key, completed: true };
+    this.#movements.set(token.uuid, state);
+    return state;
+  }
+
+  async observeRecordedMovement(token, user, operation) {
+    const effect = this.getManifestation(token);
+    const movement = effect && recordedSandMovement(token);
+    if (!movement || user?.id !== movement.userId || this.#blockedRecordedRoutes.get(token) === movement.id
+      || flag(effect, MANIFESTATION)?.previousMovementId === movement.id) {
+      if (effect || this.hasManualSandCover(token)) await this.reconcileCover(token);
+      return null;
+    }
+    return this.observeMovement(token, movement, user, operation);
   }
 
   getManualPlacementOpportunity(token, sender) {
@@ -459,7 +493,9 @@ export class SandChildService {
     return runInQueue(this.#coverOperations, token.uuid, async () => {
       const actor = token.actor;
       const effect = collectionValues(actor.effects).find(candidate => flag(candidate, COVER) === token.uuid);
-      const shouldCover = this.getManifestation(token) && this.#tilesUnder(token).length > 0;
+      const onSand = Boolean(this.getManifestation(token) && this.#tilesUnder(token).length > 0);
+      const manual = onSand && this.#hasLinkedCopies(token);
+      const shouldCover = onSand && !manual;
       if (shouldCover && !effect) {
         const data = await this.halfCover();
         if (!data) return;
@@ -467,7 +503,18 @@ export class SandChildService {
         data.flags = { ...data.flags, [MODULE_ID]: { ...data.flags?.[MODULE_ID], [COVER]: token.uuid } };
         await actor.createEmbeddedDocuments("ActiveEffect", [data]);
       } else if (!shouldCover && effect) await effect.delete();
+      if (this.hasManualSandCover(token) !== manual) await token.update({ [flagPath(COVER)]: manual || null });
     });
+  }
+
+  #hasLinkedCopies(token) {
+    if (!token.actorLink) return false;
+    const linked = token.actor.getDependentTokens?.({ linked: true, concreteOnly: true }) ?? collectionValues(token.parent.tokens);
+    return linked.some(other => other.uuid !== token.uuid && other.actorLink && other.actor?.uuid === token.actor.uuid);
+  }
+
+  hasManualSandCover(token) {
+    return flag(token, COVER) === true;
   }
 
   async observeManifestationEffect(effect) {
@@ -477,8 +524,9 @@ export class SandChildService {
     if (token) await this.reconcileCover(token);
   }
 
-  async forgetToken(token, { removed = false } = {}) {
+  async forgetToken(token, { removed = false, blockRecorded = false } = {}) {
     this.#movements.delete(token?.uuid);
+    if (blockRecorded && token?.movementHistory?.length) this.#blockedRecordedRoutes.set(token, token.movementHistory.at(-1).movementId);
     if (!removed || !this.isActiveGM()) return;
     const actor = token.actor ?? (token.actorLink && this.game()?.actors?.get(token.actorId));
     if (!actor) return;
@@ -487,6 +535,7 @@ export class SandChildService {
         if (flag(effect, COVER) === token.uuid || flag(effect, MANIFESTATION)?.tokenUuid === token.uuid) await effect.delete();
       }
     });
+    if (token.actorLink) await this.reconcileActor(actor);
   }
 
   placeSand(payload, context) {
@@ -514,8 +563,11 @@ export class SandChildService {
         return recorded.pending ? this.#finishPlacement(token, key, entries, recorded) : { applied: true, tileId: recorded.tileId };
       }
       const motion = effectId ? null : this.#movements.get(tokenUuid);
-      if (motion?.movementId === movementId) await motion.completion;
-      const opportunity = effectId ? this.getManualPlacementOpportunity(token, sender) : this.getPlacementOpportunity(token);
+      let opportunity = effectId ? this.getManualPlacementOpportunity(token, sender) : this.getPlacementOpportunity(token);
+      if (!opportunity && motion?.movementId === movementId) {
+        await motion.completion;
+        opportunity = this.getPlacementOpportunity(token);
+      }
       const matches = effectId ? opportunity?.effectId === effectId : opportunity?.movementId === movementId;
       if (!matches || !opportunity.cells.some(cell => cell.row === row && cell.col === col)
         || (!effectId && !sandDestinationIsFree(token))) return rejected(effectId ? "manualUnavailable" : "stale");
@@ -664,6 +716,7 @@ export class SandChildService {
     if (!this.isActiveGM()) return;
     for (const token of collectionValues(scene.tokens)) {
       if (token.actorLink === false) await this.initializeActor(token.actor);
+      if (this.hasManualSandCover(token) || this.getManifestation(token)) await this.reconcileCover(token);
       const actor = token.actor;
       const ledger = flag(actor, PLACEMENTS);
       if (!ledger?.entries.some(entry => entry.pending && entry.tokenUuid === token.uuid)) continue;

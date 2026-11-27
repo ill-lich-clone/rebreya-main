@@ -331,10 +331,10 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.5.91";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.6.14";
-import { SandChildService } from "./combat/sand-child-service.js?v=1.6.15";
-import { SandChildPlacement } from "./ui/sand-child-placement.js?v=1.6.15";
-import { registerSandChildCommands } from "./infrastructure/foundry/sand-child-command.js?v=1.6.15";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.6.16";
+import { SandChildService } from "./combat/sand-child-service.js?v=1.6.16";
+import { SandChildPlacement } from "./ui/sand-child-placement.js?v=1.6.16";
+import { registerSandChildCommands } from "./infrastructure/foundry/sand-child-command.js?v=1.6.16";
 import { GroupedCombatService } from "./application/grouped-combat-service.js?v=1.5.96";
 import { GroupedCombatRepository } from "./infrastructure/foundry/grouped-combat-repository.js?v=1.5.87";
 import { registerGroupedCombatCommands } from "./infrastructure/foundry/grouped-combat-command-contract.js?v=1.5.96";

@@ -49,6 +49,7 @@ function fixture() {
     }
   };
   const token = { id: "mage", name: "Чародей на карте", uuid: "Scene.test.Token.mage", parent: scene, actor, x: 100, y: 100, width: 1, height: 1 };
+  token.update = async function (patch) { return applyUpdate(this, patch); };
   scene.tokens.set(token.id, token);
   const item = {
     id: "manifest", uuid: "Actor.mage.Item.manifest", name: "Проявление духов", actor, parent: actor, img: "sand.webp",
@@ -285,6 +286,111 @@ test("duplicate native callbacks do not reread effects for ordinary tokens", asy
   assert.equal(await f.service.observeMovement(f.token, route, f.owner), null);
   assert.equal(await f.service.observeMovement(f.token, route, f.owner), null);
   assert.equal(reads, 1);
+});
+
+test("an independent GM and a refreshed player recover the recorded five-foot walk", async () => {
+  const f = fixture();
+  f.owner.role = 2;
+  f.token.x = 1700; f.token.y = 1900;
+  f.scene.dimensions.sceneWidth = 2400;
+  f.scene.dimensions.sceneHeight = 2400;
+  const origin = { x: 1700, y: 1900, action: "displace", cost: 0, checkpoint: true, movementId: "before" };
+  f.token.movementHistory = [origin];
+  await f.service.activate(f.payload, { sender: f.owner });
+  f.token.x = 1600;
+  const destination = { x: 1600, y: 1900, action: "walk", cost: 5, checkpoint: true, movementId: "DljBIueL6X5YoYBS", userId: f.owner.id };
+  f.token.movementHistory = [origin, destination];
+
+  const actorCopy = { ...f.actor, effects: new Map(f.actor.effects), flags: structuredClone(f.actor.flags) };
+  const tokenCopy = { ...f.token, actor: actorCopy };
+  const player = new SandChildService({ game: () => ({ ...f.game, user: f.owner }), isActiveGM: () => false });
+  const reopened = player.getPlacementOpportunity(tokenCopy);
+  assert.equal(reopened?.movementId, destination.movementId);
+  assert.equal(reopened.cells.length, 9);
+  const payload = { tokenUuid: f.token.uuid, movementId: reopened.movementId, row: 19, col: 16 };
+  const result = await f.service.placeSand(payload, { sender: f.owner, operationId: "player-click" });
+  assert.equal(result.applied, true);
+  assert.equal(f.scene.tiles.size, 1);
+  assert.equal(f.service.getPlacementOpportunity(f.token), null);
+  assert.equal((await f.service.placeSand({ ...payload, col: 15 }, { sender: f.owner, operationId: "second" })).applied, false);
+});
+
+test("the player sees one picker when only the recorded token update is delivered", async () => {
+  const f = fixture();
+  await f.service.activate(f.payload, { sender: f.owner });
+  const callbacks = new Map();
+  const prompts = [];
+  const player = new SandChildService({ game: () => globalThis.game, isActiveGM: () => false });
+  const previous = { game: globalThis.game, Hooks: globalThis.Hooks };
+  globalThis.game = { ...f.game, user: f.owner, users: new Map([[f.owner.id, f.owner]]) };
+  globalThis.Hooks = { on: (event, cb) => callbacks.set(event, [...(callbacks.get(event) ?? []), cb]) };
+  try {
+    registerCombatHooks({ sandChildService: player, sandChildPlacement: {
+      closeStale() {}, open(_token, opportunity) { prompts.push(opportunity.movementId); }
+    } });
+    f.token.x = 200;
+    f.token.movementHistory = [
+      { x: 100, y: 100, action: "displace", cost: 0, movementId: "origin" },
+      { x: 200, y: 100, action: "walk", cost: 5, checkpoint: true, movementId: "player-walk", userId: f.owner.id }
+    ];
+    for (const cb of callbacks.get("updateToken")) cb(f.token, { x: 200, _movementHistory: f.token.movementHistory }, {}, f.owner.id);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(prompts, ["player-walk"]);
+  } finally {
+    Object.assign(globalThis, previous);
+  }
+});
+
+test("the GM can accept recorded placement while its transient movement promise is still pending", async () => {
+  const f = fixture();
+  await f.service.activate(f.payload, { sender: f.owner });
+  const origin = { x: 100, y: 100, action: "displace", cost: 0, movementId: "origin" };
+  f.token.x = 200;
+  const destination = { x: 200, y: 100, action: "walk", cost: 5, checkpoint: true, movementId: "late", userId: f.owner.id };
+  f.token.movementHistory = [origin, destination];
+  const delayed = Promise.withResolvers();
+  const observing = f.service.observeMovement(f.token, { id: "late", origin, destination, finished: delayed.promise,
+    passed: { distance: 5, cost: 5, waypoints: [destination] } }, f.owner);
+  const timer = setTimeout(() => delayed.resolve(false), 40);
+  try {
+    const result = await f.service.placeSand({ tokenUuid: f.token.uuid, movementId: "late", row: 1, col: 2 },
+      { sender: f.owner, operationId: "click-before-finished" });
+    assert.equal(result.applied, true);
+  } finally {
+    clearTimeout(timer);
+    delayed.resolve(true);
+    await observing;
+  }
+});
+
+test("recorded movement before the transformation cannot be used afterwards", async () => {
+  const f = fixture();
+  f.token.movementHistory = [
+    { x: 0, y: 100, action: "displace", cost: 0, checkpoint: true, movementId: "origin" },
+    { x: 100, y: 100, action: "walk", cost: 5, checkpoint: true, movementId: "before", userId: f.owner.id }
+  ];
+  await f.service.activate(f.payload, { sender: f.owner });
+  assert.equal(f.service.getPlacementOpportunity(f.token), null);
+  assert.equal((await f.service.placeSand({ tokenUuid: f.token.uuid, movementId: "before", row: 1, col: 1 },
+    { sender: f.owner, operationId: "too-early" })).applied, false);
+});
+
+test("cover for linked copies is shown on the sand token without changing their shared Actor AC", async () => {
+  const f = fixture();
+  f.token.actorLink = true;
+  const other = { ...f.token, id: "copy", uuid: "Scene.test.Token.copy", x: 500, flags: {} };
+  f.scene.tokens.set(other.id, other);
+  f.actor.getDependentTokens = () => [...f.scene.tokens.values()];
+  await f.service.activate(f.payload, { sender: f.owner });
+  await movement(f, "step", 200);
+  const placed = await f.service.placeSand({ tokenUuid: f.token.uuid, movementId: "step", row: 1, col: 2 },
+    { sender: f.owner, operationId: "place" });
+  assert.equal(placed.applied, true);
+  assert.ok(f.token.flags?.[namespace]?.sandChildCover);
+  assert.equal(other.flags?.[namespace]?.sandChildCover, undefined);
+  assert.equal([...f.effects.values()].some(effect => effect.statuses?.includes("coverHalf")), false);
+  await movement(f, "away", 300);
+  assert.equal(Boolean(f.token.flags?.[namespace]?.sandChildCover), false);
 });
 
 test("GM can place manually with no cached move, within the same budget as automatic sand", async () => {

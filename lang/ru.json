@@ -2,6 +2,7 @@
   "REBREYA_MAIN.SandChild.place": "Оставить песок",
   "REBREYA_MAIN.SandChild.placeManual": "Оставить песок вручную",
   "REBREYA_MAIN.SandChild.manualUnavailable": "Лимит песка исчерпан или рядом нет доступной клетки.",
+  "REBREYA_MAIN.SandChild.manualCover": "Песок даёт этому токену +2 к КД и спасброскам Ловкости. Учтите бонус вручную.",
   "REBREYA_MAIN.SandChild.absorb": "Поглотить песок",
   "REBREYA_MAIN.SandChild.ancestralArt": "Искусство предков",
   "REBREYA_MAIN.SandChild.chooseBenefit": "На что поглотить песок?",

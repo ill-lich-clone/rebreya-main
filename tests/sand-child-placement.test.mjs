@@ -155,3 +155,23 @@ test("the GM HUD button opens a manual cell picker without a stored movement", a
   await Promise.resolve();
   assert.deepEqual(requests, [["placeManual", { tokenUuid: token.uuid, effectId: "manifest", row: 3, col: 2 }]]);
 });
+
+test("the shield shows only on the token with the manual sand cover marker", () => {
+  const user = { id: "gm", isGM: true };
+  const document = { createElement: () => new Element() };
+  const actor = {};
+  const token = { id: "token", actor };
+  const copy = { id: "copy", actor };
+  const placement = new SandChildPlacement({
+    getManifestation: () => ({ id: "effect" }),
+    hasManualSandCover: current => current === token
+  }, { document: () => document, game: () => ({ user }) });
+  const bar = new Element();
+  bar.className = "col right";
+  const root = new Element();
+  root.append(bar);
+  placement.bindTokenHud({ object: { document: token } }, root);
+  assert.ok(bar.children.some(button => button.dataset.rmSandHud === "cover"));
+  placement.bindTokenHud({ object: { document: copy } }, root);
+  assert.equal(bar.children.some(button => button.dataset.rmSandHud === "cover"), false);
+});

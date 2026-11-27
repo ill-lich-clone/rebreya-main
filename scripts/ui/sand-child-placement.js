@@ -1,4 +1,4 @@
-import { SAND_ABSORPTION_BENEFITS } from "../combat/sand-child-service.js?v=1.6.15";
+import { SAND_ABSORPTION_BENEFITS } from "../combat/sand-child-service.js?v=1.6.16";
 
 const PREFIX = "REBREYA_MAIN.SandChild.";
 
@@ -38,6 +38,9 @@ export class SandChildPlacement {
     this.#bindControl(bar, "end", active, "end", "fa-xmark", () => {
       const effect = this.service.getManifestation(token);
       if (effect) void this.service.request("end", { tokenUuid: token.uuid, effectId: effect.id });
+    });
+    this.#bindControl(bar, "cover", active && this.service.hasManualSandCover?.(token), "manualCover", "fa-shield-halved", () => {
+      globalThis.ui?.notifications?.info(this.#localize("manualCover"));
     });
   }
 

@@ -62,3 +62,26 @@ export function completedSandMovementDistance(movement, grid, actions = globalTh
   }
   return allEligible ? passed.distance : Math.min(passed.distance, eligibleDistance);
 }
+
+export function recordedSandMovement(token, grid = token.parent?.grid) {
+  const history = token.movementHistory;
+  if (!Array.isArray(history) || history.length < 2 || !sandTokenBounds(token, grid)) return null;
+  const destination = history.at(-1);
+  const id = destination.movementId;
+  if (!id || !destination.userId || !destination.checkpoint || destination.x !== token.x || destination.y !== token.y
+    || (token.level != null && destination.level != null && destination.level !== token.level)) return null;
+  const native = token.movement?.id === id ? token.movement : null;
+  if (native && native.state !== "completed") return null;
+  let first = history.length - 1;
+  while (first > 0 && history[first - 1].movementId === id) first--;
+  const previous = history[first - 1] ?? native?.origin;
+  const origin = previous ?? history[0];
+  const waypoints = history.slice(previous ? first : 1);
+  const points = [origin, ...waypoints];
+  const distance = grid.measurePath?.(points)?.distance ?? waypoints.reduce((sum, point, index) => {
+    const prior = points[index];
+    return sum + Math.max(Math.abs(point.x - prior.x), Math.abs(point.y - prior.y)) / grid.size * grid.distance;
+  }, 0);
+  const cost = waypoints.reduce((sum, point) => sum + (Number(point.cost) || 0), 0);
+  return { id, userId: destination.userId, origin, destination, passed: { cost, distance, waypoints }, finished: true };
+}
