@@ -18,7 +18,7 @@ import {
 } from "../data/inventory-folder-tree.js?v=1.6.1";
 import { inventoryWeightToPounds } from "../data/inventory-weight.js?v=1.5.94";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.6.1";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.6.17";
 import { promptStorageTransferQuantity } from "./storage-transfer-ui.js?v=1.5.10";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,

@@ -21,9 +21,9 @@ test("current release advances the module cache version", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes(`- Версия: \`${manifest.version}\`.`), "README release must match module.json");
   assert.ok(readme.includes(`\`${manifest.esmodules[0]}\``), "README entrypoint must match module.json");
-  assert.equal(manifest.version, "1.6.16");
+  assert.equal(manifest.version, "1.6.17");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
-  for (const entry of [manifest.esmodules[0], "scripts/main-1.6.11.js", "scripts/main-1.6.3.js", "scripts/main-1.6.2.js", "scripts/main-1.5.107.js", "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
+  for (const entry of [manifest.esmodules[0], "scripts/main-1.6.16.js", "scripts/main-1.6.11.js", "scripts/main-1.6.3.js", "scripts/main-1.6.2.js", "scripts/main-1.5.107.js", "scripts/main-1.5.99.js", "scripts/main-1.5.86.js", "scripts/main-1.5.85.js", "scripts/main-1.5.84.js"]) {
     assert.equal((await readFile(new URL(`../${entry}`, import.meta.url), "utf8")).trim(), 'import "./main.js";');
   }
 });
@@ -52,9 +52,9 @@ test("clock and inventory runtime owners each share one canonical module URL", a
   }
   assert.ok(imports >= 12);
   const updatedKeys = new Map([
-    ["inventory-app.js", "1.6.1"],
-    ["inventory-service.js", "1.6.1"],
-    ["inventory-sync.js", "1.6.1"],
+    ["inventory-app.js", "1.6.17"],
+    ["inventory-service.js", "1.6.17"],
+    ["inventory-sync.js", "1.6.17"],
     ["group-context-service.js", "1.5.90"],
     ["group-state-repository.js", "1.5.90"],
     ["calendar-service.js", "1.5.90"],
@@ -146,7 +146,7 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.6.16");
+  assert.equal(manifest.version, "1.6.17");
   assert.deepEqual(manifest.esmodules, [`scripts/main-${manifest.version}.js`]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
@@ -365,7 +365,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.5.49",
     "data/downtime-service.js?v=1.5.71",
-    "data/inventory-service.js?v=1.6.1",
+    "data/inventory-service.js?v=1.6.17",
     "data/inventory-ingress-descriptor.js?v=1.4.396",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.5.74",
@@ -376,7 +376,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/durability-hooks.js?v=1.5.48",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.5.68",
-    "integrations/inventory-sync.js?v=1.6.1",
+    "integrations/inventory-sync.js?v=1.6.17",
     "ui/lootgen-chat.js?v=1.5.69",
     "integrations/dfreds-exhaustion-icons.js?v=1.5.69",
     "data/gear-compendium.js?v=1.5.95",

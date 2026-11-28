@@ -1993,6 +1993,8 @@ function buildSupplyItemData(resourceKey, quantity) {
 }
 
 export class InventoryService {
+  #catalogNameIndexes = new WeakMap();
+
   async consumeTreatWoundsKitOnce(payload, context) {
     return consumeTreatWoundsKitOnce(this, payload, context, { adapter: this.moduleApi.treatWoundsAdapter });
   }
@@ -5415,6 +5417,21 @@ export class InventoryService {
     };
   }
 
+  #findUniqueCatalogName(catalog, normalizedName) {
+    if (!catalog) return null;
+
+    let index = this.#catalogNameIndexes.get(catalog);
+    if (!index) {
+      index = new Map();
+      for (const entry of catalog) {
+        const name = normalizeText(entry.name);
+        index.set(name, index.has(name) ? null : entry);
+      }
+      this.#catalogNameIndexes.set(catalog, index);
+    }
+    return index.get(normalizedName) ?? null;
+  }
+
   #matchInventorySource(model, item) {
     const sourceFlags = foundry.utils.deepClone(item.flags?.[MODULE_ID] ?? {});
     const itemName = normalizeText(item.name);
@@ -5427,17 +5444,13 @@ export class InventoryService {
       || normalizeInventorySourceType(sourceFlags.itemType) === "magicItem"
       || normalizeInventorySourceType(sourceFlags.magicItemType) === "magicItem"
       || Boolean(sourceFlags.magical);
-    const matchingMaterials = isManualSource ? [] : (model.materials ?? [])
-      .filter((material) => normalizeText(material.name) === itemName);
-    const matchingGear = isManualSource ? [] : (model.gear ?? [])
-      .filter((gearItem) => normalizeText(gearItem.name) === itemName);
     const matchedMaterial = model.materialById?.get(sourceFlags.materialId)
       ?? model.materialById?.get(sourceFlags.sourceId)
       ?? model.materialByGoodId?.get(sourceFlags.linkedGoodId)
-      ?? (matchingMaterials.length === 1 ? matchingMaterials[0] : null);
+      ?? (isManualSource ? null : this.#findUniqueCatalogName(model.materials, itemName));
     const matchedGear = model.gearById?.get(sourceFlags.gearId)
       ?? model.gearById?.get(sourceFlags.sourceId)
-      ?? (matchingGear.length === 1 ? matchingGear[0] : null);
+      ?? (isManualSource ? null : this.#findUniqueCatalogName(model.gear, itemName));
     const resourceKey = String(sourceFlags.resourceKey ?? "").trim().toLowerCase();
     let sourceType = normalizedSourceType;
     if (!sourceType) {

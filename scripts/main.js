@@ -110,7 +110,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.6.1";
+} from "./data/inventory-service.js?v=1.6.17";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -425,7 +425,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { installCprLegendaryActionCompat } from "./integrations/cpr-legendary-compat.js?v=1.5.45";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard, patchDnd5eInventoryResizeGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.5.21";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.6.1";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.6.17";
 import { RebreyaSiteService, createFoundrySettingsAdapter } from "./integrations/rebreya-site-service.js";
 import { SiteSpellsCompendiumService } from "./data/site-spells-compendium.js";
 import { RebreyaCharacterSync } from "./integrations/rebreya-character-sync.js";
@@ -1716,7 +1716,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.6.1"
+          "./ui/inventory-app.js?v=1.6.17"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -8466,7 +8466,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.6.1");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.6.17");
 
       const secondary = options?.newWindow === true;
       const viewKey = "full:secondary";
@@ -8523,7 +8523,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.6.1");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.6.17");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

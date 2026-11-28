@@ -603,6 +603,102 @@ test("getInventorySnapshot filters saved implants and notes by their flags", asy
   }
 });
 
+test("inventory and party snapshots reuse catalog name lookups until the catalog changes", async () => {
+  const groupActor = createActor({
+    id: "group-1", type: "group", isOwner: true,
+    items: ["Набор", "Молоток", "Верёвка"].map((name, index) => createItem({ id: String(index), name }))
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  let nameReads = 0;
+  const row = (id, name) => ({ id, get name() { nameReads++; return name; } });
+  const model = {
+    materials: [row("wood", "Дерево"), row("steel", "Сталь")],
+    gear: [row("spade", "Лопата"), row("saw", "Пила"), row("brush", "Щётка")]
+  };
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => model
+  });
+
+  try {
+    const snapshots = await Promise.all([
+      service.getInventorySnapshot(),
+      service.getPartySnapshot({ actor: groupActor }),
+      service.getInventorySnapshot()
+    ]);
+    assert.deepEqual(snapshots[0].items.map((item) => item.sourceType), ["custom", "custom", "custom"]);
+    assert.deepEqual(snapshots[2].items, snapshots[0].items);
+    assert.ok(nameReads <= 5, `Read ${nameReads} names for five catalog entries`);
+
+    model.gear = [{ id: "kit", name: "Набор", equipmentType: "Инструмент" }];
+    const refreshed = await service.getInventorySnapshot();
+    const kit = refreshed.items.find((item) => item.itemId === "0");
+    assert.equal(kit.sourceType, "gear");
+    assert.equal(kit.sourceId, "kit");
+    assert.equal(kit.itemTypeLabel, "Инструмент");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inventory catalog matches preserve explicit identities and require unique normalized names", async () => {
+  const cloth = { id: "cloth", name: "  «ЛЬНЯНАЯ   ткань»  ", type: "Материал" };
+  const wood = { id: "wood", name: "Дерево", type: "Древесина" };
+  const tools = { id: "tools", name: "Инструменты", equipmentType: "Комплект" };
+  const model = {
+    materials: [cloth, wood, { id: "linen", name: "Лён" }],
+    gear: [
+      tools,
+      { id: "ambiguous-1", name: "КОШЕЛЬ" },
+      { id: "ambiguous-2", name: "«Кошель»" },
+      { id: "ambiguous-3", name: " Кошель " },
+      { id: "linen-gear", name: "Лён", equipmentType: "Снаряжение" },
+      { id: "saw", name: "Пила", equipmentType: "Инструмент" }
+    ],
+    materialById: new Map([[wood.id, wood]]),
+    materialByGoodId: new Map([["wood-good", wood]]),
+    gearById: new Map([[tools.id, tools]])
+  };
+  const makeItem = (id, name, flags = {}) => createItem({ id, name, flags: { [MODULE_ID]: flags } });
+  const groupActor = createActor({
+    id: "group-1", type: "group", isOwner: true,
+    items: [
+      makeItem("normalized", "Льняная ткань"),
+      makeItem("ambiguous", "Кошель"),
+      makeItem("material-id", "Льняная ткань", { materialId: "wood" }),
+      makeItem("linked-good", "Льняная ткань", { linkedGoodId: "wood-good" }),
+      makeItem("gear-id", "Пила", { gearId: "tools", sourceType: "gear" }),
+      makeItem("both", "Лён"),
+      makeItem("manual", "Инструменты", { sourceType: "manual", sourceId: "authored" })
+    ]
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => model
+  });
+
+  try {
+    const { items } = await service.getInventorySnapshot();
+    const sources = Object.fromEntries(items.map(({ itemId, sourceType, sourceId }) => [itemId, [sourceType, sourceId]]));
+    assert.deepEqual(sources, {
+      normalized: ["material", "cloth"],
+      ambiguous: ["custom", "ambiguous"],
+      "material-id": ["material", "wood"],
+      "linked-good": ["material", "wood"],
+      "gear-id": ["gear", "tools"],
+      both: ["material", "linen"],
+      manual: ["manual", "authored"]
+    });
+    assert.equal(items.find((item) => item.itemId === "gear-id").itemTypeLabel, "Комплект");
+    assert.equal(items.find((item) => item.itemId === "manual").itemTypeLabel, "loot");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("manual inventory item data preserves unit economics and never falls back to a same-name catalog entry", async () => {
   const fixture = installInventoryFixture();
   const service = new InventoryService({
